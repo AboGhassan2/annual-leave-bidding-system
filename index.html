@@ -1,0 +1,1938 @@
+import React, { useState, useCallback } from 'react';
+import { Calendar, Upload, Users, Clock, CheckCircle, AlertCircle, X } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+const LeaveBiddingSystem = () => {
+  const [employees, setEmployees] = useState([]);
+  const [employeePasswords, setEmployeePasswords] = useState({});
+  const [bids, setBids] = useState([]);
+  const [biddingDeadline, setBiddingDeadline] = useState('');
+  const [biddingYear, setBiddingYear] = useState(2026);
+  const [isProcessed, setIsProcessed] = useState(false);
+  const [activeView, setActiveView] = useState('login');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [verifiedEmployee, setVerifiedEmployee] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userType, setUserType] = useState(null);
+  const [plannerPassword, setPlannerPassword] = useState('admin123');
+  const [results, setResults] = useState([]);
+  const [selectedDepartment, setSelectedDepartment] = useState('all');
+  const [slotCapacities, setSlotCapacities] = useState({});
+
+  const departments = [
+    'L4/6-SA', 'L4/6-DEP-DM', 'L4/6-DEP-EFC', 'L3-DEP-DC', 'L3-DEP-TC',
+    'L5-LSS/SS', 'L5-DEP-DC', 'L3465-DEP-TCC', 'L3-DEP-DM', 'L5-DEP-DM',
+    'L46-DEP-TC', 'L3-DEP- LTSS/TSS', 'L5-DEP-GSM', 'L5-DEP-SC', 'L5-DEP- LTSS/TSS',
+    'L3-DEP-EFC', 'L3-DEP-GSM', 'L46-TA-T', 'L46-DEP- LTSS/TSS', 'L3-TA-T',
+    'L3-DS', 'L5-DEP-TC', 'L3-P&R', 'L5-DEP-EFC', 'L46-DEP-DC',
+    'L3-LSS/SS', 'L3-DEP-SC', 'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC',
+    'L46 SAMB', 'L5 SA', 'L3-SA', 'L3 SAMB', 'L5 - TA-T',
+    'L46-P&R', 'L5 SAMB', 'L46-AOCC'
+  ];
+
+  const calculateYearsOfService = (seniorityDate) => {
+    const today = new Date();
+    const joinDate = new Date(seniorityDate);
+    const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+    return years;
+  };
+
+  const getEmployeeEntitlement = (employee) => {
+    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+    return yearsOfService >= 5 ? 35 : 30;
+  };
+
+  const slotTypes = [
+    { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
+    { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
+    { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' }
+  ];
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.name.match(/\.(xlsx|xls)$/)) {
+      alert('Please upload a valid Excel file (.xlsx or .xls)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { 
+          type: 'array',
+          cellText: false,
+          cellDates: true
+        });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Get the range to understand the sheet structure
+        const range = XLSX.utils.decode_range(firstSheet['!ref']);
+        console.log('Sheet range:', firstSheet['!ref']);
+        
+        // Read with header row
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {
+          raw: false,
+          defval: ''
+        });
+
+        console.log('==========================================');
+        console.log('TOTAL ROWS:', jsonData.length);
+        console.log('==========================================');
+        
+        if (jsonData.length > 0) {
+          const firstRow = jsonData[0];
+          const allColumns = Object.keys(firstRow);
+          
+          console.log('ALL COLUMNS:');
+          allColumns.forEach((col, idx) => {
+            console.log(`  ${idx + 1}. "${col}" = "${firstRow[col]}"`);
+          });
+          console.log('==========================================');
+        }
+
+        const employeeData = jsonData.map((row, index) => {
+          const id = String(
+            row['Personnel number'] || 
+            row['Personnel Number'] || 
+            row['Personnel_number'] ||
+            row['Personnelnumber'] ||
+            row['ID'] || 
+            row['id'] || 
+            row['EmployeeID'] || 
+            row['Employee ID'] || 
+            ''
+          );
+          
+          const forename = String(
+            row['Forename'] || 
+            row['forename'] ||
+            row['FORENAME'] ||
+            row['Name'] || 
+            row['name'] || 
+            row['First Name'] || 
+            row['EmployeeName'] || 
+            ''
+          );
+          
+          const surname = String(
+            row['Surname'] || 
+            row['surname'] ||
+            row['SURNAME'] ||
+            row['Last Name'] || 
+            row['LastName'] || 
+            ''
+          );
+          
+          const name = surname ? `${forename} ${surname}` : forename;
+          
+          const seniorityDate = row['Seniority Date'] || 
+            row['SeniorityDate'] || 
+            row['seniorityDate'] ||
+            row['Start of staff membership'] || 
+            row['Start_of_staff_membership'] ||
+            row['Start Date'] || 
+            row['start date'] ||
+            row['StartDate'] || 
+            row['Seniority'] ||
+            row['Joining Date'] ||
+            row['JoiningDate'] ||
+            row['Date of Joining'] ||
+            new Date();
+
+          const role = String(
+            row['Role'] ||
+            row['role'] ||
+            row['ROLE'] ||
+            row['Position'] ||
+            row['Job Title'] ||
+            row['Designation'] ||
+            row['Job title'] ||
+            ''
+          );
+
+          // Get all keys and try EVERY single one
+          let department = '';
+          const allKeys = Object.keys(row);
+          
+          // Print ALL keys and values for first row
+          if (index === 0) {
+            console.log('========== FIRST ROW DATA ==========');
+            allKeys.forEach((key, idx) => {
+              const value = row[key];
+              console.log(`${idx}. "${key}" = "${value}"`);
+            });
+            console.log('====================================');
+          }
+          
+          // Check for "Scheduling row" column (this is where department data is)
+          if (row['Scheduling row'] || row['Scheduling_row'] || row['SchedulingRow']) {
+            const schedValue = String(row['Scheduling row'] || row['Scheduling_row'] || row['SchedulingRow'] || '');
+            if (schedValue.trim() !== '') {
+              // Remove the ".1" or any trailing number
+              department = schedValue.split('.')[0].trim();
+              if (index === 0) {
+                console.log(`✓✓✓ FOUND DEPARTMENT in "Scheduling row": "${department}"`);
+              }
+            }
+          }
+          
+          // Fallback: Try standard department columns
+          if (!department) {
+            for (const key of allKeys) {
+              const value = row[key];
+              const trimmedKey = key.trim();
+              const lowerKey = trimmedKey.toLowerCase();
+              
+              // Check if this key contains department-like words
+              if (lowerKey === 'department' || 
+                  lowerKey === 'departments' ||
+                  lowerKey === 'dept') {
+                
+                if (value && String(value).trim() !== '') {
+                  department = String(value).trim();
+                  if (index === 0) {
+                    console.log(`✓✓✓ FOUND DEPARTMENT in column "${key}": "${department}"`);
+                  }
+                  break;
+                } else if (index === 0) {
+                  console.log(`⚠️ Column "${key}" exists but is EMPTY (value: "${value}")`);
+                }
+              }
+            }
+          }
+
+          const gender = String(
+            row['Gender'] ||
+            row['gender'] ||
+            row['GENDER'] ||
+            row['Sex'] ||
+            ''
+          );
+
+          const nationality = String(
+            row['Nationality'] ||
+            row['nationality'] ||
+            row['NATIONALITY'] ||
+            row['Country'] ||
+            row['Citizen'] ||
+            ''
+          );
+
+          return {
+            id: id.trim(),
+            name: name.trim(),
+            seniorityDate: formatExcelDate(seniorityDate),
+            role: role.trim(),
+            department: department,
+            gender: gender.trim(),
+            nationality: nationality.trim()
+          };
+        }).filter(emp => emp.id && emp.name);
+
+        employeeData.sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+        
+        setEmployees(employeeData);
+        alert(`Successfully loaded ${employeeData.length} employees`);
+      } catch (error) {
+        console.error('Error processing Excel file:', error);
+        alert('Error processing Excel file. Please check the format.');
+      }
+    };
+    
+    reader.onerror = () => {
+      alert('Error reading file');
+    };
+    
+    reader.readAsArrayBuffer(file);
+  };
+
+  const formatExcelDate = (dateValue) => {
+    if (typeof dateValue === 'number') {
+      const excelEpoch = new Date(1899, 11, 30);
+      const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
+      return jsDate;
+    } else if (typeof dateValue === 'string') {
+      const date = new Date(dateValue);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+    } else if (dateValue instanceof Date) {
+      return dateValue;
+    }
+    
+    return new Date();
+  };
+
+  const calculateDaysBetween = (startDate, endDate) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end - start);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return diffDays;
+  };
+
+  const checkDateOverlap = (startDate1, endDate1, startDate2, endDate2) => {
+    const start1 = new Date(startDate1);
+    const end1 = new Date(endDate1);
+    const start2 = new Date(startDate2);
+    const end2 = new Date(endDate2);
+    
+    return (start1 <= end2 && end1 >= start2);
+  };
+
+  const handleBidSubmit = useCallback((slotType, startDate, endDate) => {
+    if (!verifiedEmployee) {
+      alert('Please enter and verify your Employee ID first');
+      return;
+    }
+
+    if (isProcessed) {
+      alert('Bidding has been processed. No more bids allowed.');
+      return;
+    }
+
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
+      return;
+    }
+
+    const slot = slotTypes.find(s => s.id === slotType);
+    const days = calculateDaysBetween(startDate, endDate);
+
+    if (days !== slot.days) {
+      alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.`);
+      return;
+    }
+
+    const start = new Date(startDate);
+    const yearStart = new Date(biddingYear, 0, 1);
+    const yearEnd = new Date(biddingYear, 11, 31);
+
+    if (start < yearStart || start > yearEnd) {
+      alert(`Start date must be within ${biddingYear}`);
+      return;
+    }
+
+    const existingBid = bids.find(
+      bid => bid.employeeId === verifiedEmployee.id && bid.slotType === slotType
+    );
+    
+    if (existingBid) {
+      alert(`You have already bid for ${slot.name}. You cannot bid for the same slot twice.`);
+      return;
+    }
+
+    const userBids = bids.filter(bid => bid.employeeId === verifiedEmployee.id);
+    const entitlement = getEmployeeEntitlement(verifiedEmployee);
+    
+    if (userBids.length >= 2) {
+      alert('You can only place 2 bids maximum.');
+      return;
+    }
+
+    const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+    if (totalBidDays + days > entitlement) {
+      alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
+      return;
+    }
+    for (const bid of userBids) {
+      if (checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+        alert(`Date overlap detected with your existing ${slotTypes.find(s => s.id === bid.slotType).name} bid (${bid.startDate} to ${bid.endDate})`);
+        return;
+      }
+    }
+
+    const newBid = {
+      employeeId: verifiedEmployee.id,
+      employeeName: verifiedEmployee.name,
+      seniorityDate: verifiedEmployee.seniorityDate,
+      department: verifiedEmployee.department,
+      slotType,
+      startDate,
+      endDate,
+      days,
+      timestamp: new Date()
+    };
+
+    setBids(prevBids => [...prevBids, newBid]);
+    alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
+  }, [verifiedEmployee, isProcessed, bids, biddingYear, slotTypes]);
+
+  const processBids = () => {
+    if (employees.length === 0) {
+      alert('No employees to process');
+      return;
+    }
+
+    console.log('Starting bid processing...');
+    console.log('Total employees:', employees.length);
+    console.log('Total bids:', bids.length);
+
+    const employeesByDept = {};
+    employees.forEach(emp => {
+      const dept = emp.department || 'Unassigned';
+      if (!employeesByDept[dept]) {
+        employeesByDept[dept] = [];
+      }
+      employeesByDept[dept].push(emp);
+    });
+
+    console.log('Departments:', Object.keys(employeesByDept));
+
+    const allAssignments = [];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+    Object.keys(employeesByDept).forEach(dept => {
+      const deptEmployees = employeesByDept[dept];
+      
+      const sortedEmployees = [...deptEmployees].sort((a, b) => 
+        new Date(a.seniorityDate) - new Date(b.seniorityDate)
+      );
+
+      const employeesWhoBid = new Set(bids.filter(b => {
+        const emp = employees.find(e => e.id === b.employeeId);
+        return emp && (emp.department || 'Unassigned') === dept;
+      }).map(bid => bid.employeeId));
+      
+      const biddingEmployees = sortedEmployees.filter(emp => employeesWhoBid.has(emp.id));
+      const nonBiddingEmployees = sortedEmployees.filter(emp => !employeesWhoBid.has(emp.id));
+
+      console.log(`Dept ${dept}: ${biddingEmployees.length} bidders, ${nonBiddingEmployees.length} non-bidders`);
+
+      // Track used slots per month/slot type
+      const usedSlots = {};
+
+      // PHASE 1: Process bidding employees (SENIORITY MATTERS - most senior gets priority)
+      biddingEmployees.forEach(employee => {
+        const employeeBids = bids
+          .filter(bid => bid.employeeId === employee.id)
+          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        employeeBids.forEach(bid => {
+          const slot = slotTypes.find(s => s.id === bid.slotType);
+          
+          // Find which month this bid falls into
+          const bidStart = new Date(bid.startDate);
+          const bidMonth = months[bidStart.getMonth()];
+          
+          // Check if slot has available capacity
+          const slotKey = `${bidMonth}-${bid.slotType}`;
+          const capacity = slotCapacities[`${bidMonth}-${bid.slotType.replace('slot', '')}`] || 0;
+          const used = usedSlots[slotKey] || 0;
+
+          if (used < capacity) {
+            // Award the bid
+            allAssignments.push({
+              employeeId: employee.id,
+              employeeName: employee.name,
+              department: dept,
+              slotType: bid.slotType,
+              slotName: slot.name,
+              startDate: bid.startDate,
+              endDate: bid.endDate,
+              days: bid.days,
+              type: 'Bid Awarded',
+              month: bidMonth,
+              seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+            });
+
+            // Track this slot as used
+            if (!usedSlots[slotKey]) {
+              usedSlots[slotKey] = 0;
+            }
+            usedSlots[slotKey]++;
+          } else {
+            // Capacity exceeded - bid rejected
+            console.log(`Bid rejected for ${employee.name} - ${bidMonth} ${slot.name} at capacity`);
+          }
+        });
+      });
+
+      // PHASE 2: Auto-assign LEFTOVER slots to non-bidding employees (NO SENIORITY PRIORITY)
+      // Shuffle non-bidding employees to randomize or just take them in any order
+      const shuffledNonBidders = [...nonBiddingEmployees]; // No sorting, just as-is
+      // PHASE 2: Auto-assign LEFTOVER slots to non-bidding employees (NO SENIORITY PRIORITY)
+      // Take non-bidding employees in any order
+      nonBiddingEmployees.forEach(employee => {
+        const entitlement = getEmployeeEntitlement(employee);
+        let assignedDays = 0;
+        const employeeAssignments = [];
+
+        // Try to assign 2 slots from LEFTOVER capacity only
+        for (const month of months) {
+          if (assignedDays >= entitlement || employeeAssignments.length >= 2) break;
+
+          // Try each slot type (A, B, C) in order
+          for (const slotType of slotTypes) {
+            if (assignedDays >= entitlement || employeeAssignments.length >= 2) break;
+
+            const slotKey = `${month}-${slotType.id}`;
+            const capacity = slotCapacities[`${month}-${slotType.id.replace('slot', '')}`] || 0;
+            const used = usedSlots[slotKey] || 0;
+
+            // Only assign if there's LEFTOVER capacity and it fits their entitlement
+            if (used < capacity && assignedDays + slotType.days <= entitlement) {
+              // Calculate dates for this month
+              const year = biddingYear;
+              const monthIndex = months.indexOf(month);
+              const startDate = new Date(year, monthIndex, 1);
+              const endDate = new Date(startDate);
+              endDate.setDate(endDate.getDate() + slotType.days - 1);
+
+              employeeAssignments.push({
+                employeeId: employee.id,
+                employeeName: employee.name,
+                department: dept,
+                slotType: slotType.id,
+                slotName: slotType.name,
+                startDate: startDate.toISOString().split('T')[0],
+                endDate: endDate.toISOString().split('T')[0],
+                days: slotType.days,
+                type: 'Auto-Assigned (Leftover)',
+                month: month,
+                seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+              });
+
+              assignedDays += slotType.days;
+              
+              // Mark slot as used
+              if (!usedSlots[slotKey]) {
+                usedSlots[slotKey] = 0;
+              }
+              usedSlots[slotKey]++;
+
+              // Stop after 2 slots
+              if (employeeAssignments.length >= 2) break;
+            }
+          }
+        }
+
+        // Add all assignments for this employee
+        allAssignments.push(...employeeAssignments);
+
+        // If couldn't assign enough, mark as not fully assigned
+        if (employeeAssignments.length === 0) {
+          // Add a "No Assignment" record
+          allAssignments.push({
+            employeeId: employee.id,
+            employeeName: employee.name,
+            department: dept,
+            slotType: 'none',
+            slotName: 'No Assignment',
+            startDate: '-',
+            endDate: '-',
+            days: 0,
+            type: 'Not Assigned (No Leftover)',
+            month: '-',
+            seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+          });
+        }
+      });
+    });
+
+    console.log('Total assignments:', allAssignments.length);
+
+    if (allAssignments.length === 0) {
+      alert('⚠️ No assignments created.\n\nPossible reasons:\n- No employees uploaded\n- No slot capacities configured\n\nPlease check Configure Slots and try again.');
+      return;
+    }
+
+    setResults(allAssignments);
+    setIsProcessed(true);
+    
+    const deptCount = Object.keys(employeesByDept).length;
+    const bidderCount = new Set(bids.map(b => b.employeeId)).size;
+    const autoAssignedCount = allAssignments.filter(a => a.type === 'Auto-Assigned').length;
+    const nonBidderCount = employees.length - bidderCount;
+    const notAssignedCount = allAssignments.filter(a => a.type === 'Not Assigned').length;
+    
+    let message = `✓ Processing complete!\n\n`;
+    message += `${deptCount} departments processed\n`;
+    message += `${bidderCount} employees with bids\n`;
+    message += `${nonBidderCount} employees without bids\n`;
+    message += `${autoAssignedCount} auto-assignments made\n`;
+    message += `${allAssignments.length} total assignments\n`;
+    
+    if (notAssignedCount > 0) {
+      message += `\n⚠️ ${notAssignedCount} employees could not be assigned (insufficient slot capacity)`;
+    }
+    
+    alert(message);
+    
+    // Automatically switch to results view
+    setActiveView('results');
+  };
+
+  const resetSystem = () => {
+    if (!window.confirm('Are you sure you want to reset the system? This will clear all bids and results.')) {
+      return;
+    }
+    setBids([]);
+    setResults([]);
+    setIsProcessed(false);
+    setSelectedEmployeeId('');
+    alert('✓ System has been reset successfully!');
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setUserType(null);
+    setVerifiedEmployee(null);
+    setSelectedEmployeeId('');
+    setActiveView('login');
+  };
+
+  const exportToExcel = (data, filename) => {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Leave Assignments');
+    XLSX.writeFile(wb, filename);
+  };
+
+  const LoginView = () => {
+    const [loginType, setLoginType] = useState('employee');
+    const [loginId, setLoginId] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+
+    const handleLogin = () => {
+      if (loginType === 'planner') {
+        if (loginPassword === plannerPassword) {
+          setCurrentUser({ type: 'planner', name: 'Planner Admin' });
+          setUserType('planner');
+          setActiveView('upload');
+          alert('Welcome, Planner!');
+        } else {
+          alert('Incorrect planner password');
+        }
+      } else {
+        if (!loginId || !loginPassword) {
+          alert('Please enter both ID and password');
+          return;
+        }
+        
+        const employee = employees.find(emp => emp.id === loginId);
+        if (!employee) {
+          alert('Employee ID not found');
+          return;
+        }
+        
+        const storedPassword = employeePasswords[loginId] || loginId;
+        if (loginPassword === storedPassword) {
+          setCurrentUser({ type: 'employee', ...employee });
+          setUserType('employee');
+          setVerifiedEmployee(employee);
+          setSelectedEmployeeId(loginId);
+          setActiveView('employee');
+          alert(`Welcome, ${employee.name}!`);
+        } else {
+          alert('Incorrect password');
+        }
+      }
+    };
+
+    return (
+      <div className="max-w-md mx-auto mt-20">
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h1 className="text-3xl font-bold text-center mb-6 text-blue-600">
+            Annual Leave Bidding System
+          </h1>
+          
+          <div className="mb-6">
+            <label className="block font-semibold mb-3">Login As:</label>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setLoginType('employee')}
+                className={`flex-1 px-4 py-3 rounded-lg font-semibold ${
+                  loginType === 'employee'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Employee
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginType('planner')}
+                className={`flex-1 px-4 py-3 rounded-lg font-semibold ${
+                  loginType === 'planner'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                Planner
+              </button>
+            </div>
+          </div>
+
+          {loginType === 'employee' && employees.length === 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+              <AlertCircle className="inline mr-2 text-yellow-600" />
+              <span className="text-sm">No employee data loaded. Please ask the planner to upload employee data first.</span>
+            </div>
+          )}
+
+          {loginType === 'employee' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block font-semibold mb-2">Employee ID:</label>
+                <input
+                  type="text"
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleLogin();
+                    }
+                  }}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  placeholder="Enter your ID"
+                  disabled={employees.length === 0}
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-2">Password:</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleLogin();
+                    }
+                  }}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                  placeholder="Enter your password"
+                  disabled={employees.length === 0}
+                  autoComplete="off"
+                />
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
+                  <p className="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loginType === 'planner' && (
+            <div>
+              <label className="block font-semibold mb-2">Planner Password:</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleLogin();
+                  }
+                }}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                placeholder="Enter planner password"
+                autoComplete="off"
+              />
+              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
+                <p className="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
+                <p className="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleLogin}
+            disabled={loginType === 'employee' && employees.length === 0}
+            className="w-full mt-6 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const ChangePasswordView = () => {
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+
+    const handleChangePassword = () => {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        alert('Please fill in all fields');
+        return;
+      }
+
+      const storedPassword = employeePasswords[verifiedEmployee.id] || verifiedEmployee.id;
+      
+      if (currentPassword !== storedPassword) {
+        alert('Current password is incorrect');
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        alert('New passwords do not match');
+        return;
+      }
+
+      if (newPassword.length < 4) {
+        alert('Password must be at least 4 characters long');
+        return;
+      }
+
+      setEmployeePasswords({
+        ...employeePasswords,
+        [verifiedEmployee.id]: newPassword
+      });
+
+      alert('Password changed successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setActiveView('employee');
+    };
+
+    return (
+      <div className="max-w-md mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h2 className="text-2xl font-bold mb-6">Change Password</h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block font-semibold mb-2">Current Password:</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Enter current password"
+                autoComplete="off"
+              />
+            </div>
+            
+            <div>
+              <label className="block font-semibold mb-2">New Password:</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Enter new password"
+                autoComplete="off"
+              />
+            </div>
+            
+            <div>
+              <label className="block font-semibold mb-2">Confirm New Password:</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleChangePassword();
+                }}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Confirm new password"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+            >
+              Change Password
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('employee')}
+              className="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const ConfigureSlotsView = () => {
+    const [localCapacities, setLocalCapacities] = useState(() => {
+      const initial = {};
+      const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+      
+      // Get all unique departments
+      const allDepts = ['All', ...new Set(employees.map(e => e.department || 'Unassigned'))];
+      
+      months.forEach(month => {
+        allDepts.forEach(dept => {
+          initial[`${month}-${dept}-A`] = slotCapacities[`${month}-${dept}-A`] || 0;
+          initial[`${month}-${dept}-B`] = slotCapacities[`${month}-${dept}-B`] || 0;
+          initial[`${month}-${dept}-C`] = slotCapacities[`${month}-${dept}-C`] || 0;
+        });
+      });
+      return initial;
+    });
+
+    const [selectedDeptFilter, setSelectedDeptFilter] = useState('All');
+
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+    // Get unique departments from employees
+    const uniqueDepartments = ['All', ...new Set(employees.map(e => e.department || 'Unassigned'))].sort((a, b) => {
+      if (a === 'All') return -1;
+      if (b === 'All') return 1;
+      return a.localeCompare(b);
+    });
+
+    const periods = months.map(month => ({ id: month, name: month }));
+
+    const updateCapacity = (periodId, dept, slot, value) => {
+      setLocalCapacities(prev => ({
+        ...prev,
+        [`${periodId}-${dept}-${slot}`]: parseInt(value) || 0
+      }));
+    };
+
+    const saveConfiguration = () => {
+      setSlotCapacities(localCapacities);
+      
+      const totalSlots = Object.values(localCapacities).reduce((sum, val) => sum + val, 0);
+      
+      alert(`✓ Slot capacities saved successfully!\n\n` +
+            `Total slot positions configured: ${totalSlots}\n\n` +
+            `Returning to Admin Panel...`);
+      
+      // Automatically navigate to admin panel
+      setActiveView('admin');
+    };
+
+    // Filter periods to display based on selected department
+    const getDisplayDepartments = () => {
+      if (selectedDeptFilter === 'All') {
+        return uniqueDepartments.filter(d => d !== 'All');
+      }
+      return [selectedDeptFilter];
+    };
+
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-2xl font-bold mb-4">Configure Slot Capacities for {biddingYear}</h2>
+          <p className="text-gray-600 mb-6">
+            Set how many employees can take leave in each month per department. Each month has 3 slots: A (15 days), B (15 days), C (20 days)
+          </p>
+
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+            <label className="block font-semibold mb-2">Filter by Department:</label>
+            <select
+              value={selectedDeptFilter}
+              onChange={(e) => setSelectedDeptFilter(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+            >
+              {uniqueDepartments.map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+            <p className="text-sm text-gray-600 mt-2">
+              {selectedDeptFilter === 'All' ? 'Configuring for all departments' : `Configuring for ${selectedDeptFilter} only`}
+            </p>
+          </div>
+
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {periods.map(period => {
+              const displayDepts = getDisplayDepartments();
+              
+              return (
+                <div key={period.id} className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-bold text-lg mb-3 text-blue-600">{period.name} {biddingYear}</h3>
+                  
+                  {displayDepts.map(dept => (
+                    <div key={dept} className="mb-4 p-3 bg-white rounded-lg border border-gray-200">
+                      <h4 className="font-semibold text-md mb-2 text-purple-600">{dept}</h4>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-green-50 border border-green-300 rounded p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-green-800">Slot A (15 days)</span>
+                            <Users className="text-green-600 w-5 h-5" />
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={localCapacities[`${period.id}-${dept}-A`]}
+                            onChange={(e) => updateCapacity(period.id, dept, 'A', e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-green-400 rounded-lg text-center text-lg font-bold focus:border-green-600 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </div>
+
+                        <div className="bg-blue-50 border border-blue-300 rounded p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-blue-800">Slot B (15 days)</span>
+                            <Users className="text-blue-600 w-5 h-5" />
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={localCapacities[`${period.id}-${dept}-B`]}
+                            onChange={(e) => updateCapacity(period.id, dept, 'B', e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-blue-400 rounded-lg text-center text-lg font-bold focus:border-blue-600 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </div>
+
+                        <div className="bg-purple-50 border border-purple-300 rounded p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-purple-800">Slot C (20 days)</span>
+                            <Users className="text-purple-600 w-5 h-5" />
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            value={localCapacities[`${period.id}-${dept}-C`]}
+                            onChange={(e) => updateCapacity(period.id, dept, 'C', e.target.value)}
+                            className="w-full px-3 py-2 border-2 border-purple-400 rounded-lg text-center text-lg font-bold focus:border-purple-600 focus:outline-none"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={saveConfiguration}
+              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+            >
+              Save Configuration
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('upload')}
+              className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const UploadView = () => {
+    const [dragActive, setDragActive] = useState(false);
+
+    const handleDrag = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === "dragenter" || e.type === "dragover") {
+        setDragActive(true);
+      } else if (e.type === "dragleave") {
+        setDragActive(false);
+      }
+    };
+
+    const handleDrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragActive(false);
+      
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFileUpload({ target: { files: e.dataTransfer.files } });
+      }
+    };
+
+    return (
+      <div className="max-w-2xl mx-auto text-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+            <label className="block font-semibold mb-2 text-lg">Select Bidding Year:</label>
+            <select
+              value={biddingYear}
+              onChange={(e) => setBiddingYear(parseInt(e.target.value))}
+              className="w-full px-4 py-3 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+              disabled={isProcessed || bids.length > 0}
+            >
+              {[2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032].map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+            {(isProcessed || bids.length > 0) && (
+              <p className="text-xs text-red-600 mt-2 font-semibold">
+                ⚠️ Year cannot be changed after bids have been placed or processed
+              </p>
+            )}
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="font-bold text-blue-800 mb-2">Leave Entitlement Rules:</h3>
+            <ul className="text-sm text-blue-700 space-y-1">
+              <li>• Employees with 5+ years of service: <span className="font-bold">35 days</span></li>
+              <li>• Employees with less than 5 years: <span className="font-bold">30 days</span></li>
+              <li>• Each employee can place <span className="font-bold">2 bids</span> only</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <Upload className="w-16 h-16 mx-auto mb-4 text-blue-600" />
+          <h2 className="text-2xl font-bold mb-4">Upload Employee Data</h2>
+          <p className="text-gray-600 mb-6">
+            Upload an Excel file with employee information
+          </p>
+          
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 mb-4 transition-colors ${
+              dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <p className="mb-4 text-gray-600">
+              Drag and drop your Excel file here or click to browse
+            </p>
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <span className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-block">
+                Browse Files
+              </span>
+            </label>
+          </div>
+
+          {employees.length > 0 && (
+            <div className="mt-6">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <CheckCircle className="inline mr-2 text-green-600" />
+                <span className="text-green-800 font-semibold">
+                  ✓ {employees.length} employees loaded for {biddingYear}
+                </span>
+              </div>
+              
+              <div className="max-h-96 overflow-y-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-left">ID</th>
+                      <th className="p-2 text-left">Name</th>
+                      <th className="p-2 text-left">Department</th>
+                      <th className="p-2 text-left">Role</th>
+                      <th className="p-2 text-left">Years</th>
+                      <th className="p-2 text-left">Entitlement</th>
+                      <th className="p-2 text-left">Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.map((emp, idx) => {
+                      const years = calculateYearsOfService(emp.seniorityDate);
+                      const entitlement = getEmployeeEntitlement(emp);
+                      return (
+                        <tr key={emp.id} className="border-b">
+                          <td className="p-2">{emp.id}</td>
+                          <td className="p-2">{emp.name}</td>
+                          <td className="p-2 font-semibold text-blue-600">{emp.department || '-'}</td>
+                          <td className="p-2">{emp.role || '-'}</td>
+                          <td className="p-2">{years.toFixed(1)}</td>
+                          <td className="p-2 font-bold">{entitlement} days</td>
+                          <td className="p-2">{idx + 1}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const EmployeeBiddingView = () => {
+    const [selectedSlot, setSelectedSlot] = useState('slotA');
+    const [selectedMonth, setSelectedMonth] = useState('January');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                    'July', 'August', 'September', 'October', 'November', 'December'];
+
+    const userBids = bids.filter(bid => bid.employeeId === verifiedEmployee?.id);
+    const currentSlot = slotTypes.find(s => s.id === selectedSlot);
+    const days = startDate && endDate ? calculateDaysBetween(startDate, endDate) : 0;
+    const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+    const entitlement = getEmployeeEntitlement(verifiedEmployee);
+
+    const handleStartDateChange = (date) => {
+      setStartDate(date);
+      if (date && currentSlot) {
+        const start = new Date(date);
+        const end = new Date(start);
+        end.setDate(end.getDate() + currentSlot.days - 1);
+        setEndDate(end.toISOString().split('T')[0]);
+      }
+    };
+
+    const handleSubmitBid = () => {
+      if (!selectedMonth) {
+        alert('Please select a month');
+        return;
+      }
+      handleBidSubmit(selectedSlot, startDate, endDate, selectedMonth);
+      setStartDate('');
+      setEndDate('');
+    };
+
+    const removeBid = (bidToRemove) => {
+      if (isProcessed) {
+        alert('Cannot remove bids after processing');
+        return;
+      }
+      setBids(bids.filter(bid => 
+        !(bid.employeeId === bidToRemove.employeeId && 
+          bid.slotType === bidToRemove.slotType && 
+          bid.startDate === bidToRemove.startDate)
+      ));
+    };
+
+    // Get month index from month name
+    const getMonthIndex = (monthName) => {
+      return months.indexOf(monthName);
+    };
+
+    // Calculate min and max dates for the selected month
+    const getMonthDateRange = () => {
+      if (!selectedMonth) return { min: '', max: '' };
+      const monthIndex = getMonthIndex(selectedMonth);
+      const min = `${biddingYear}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(biddingYear, monthIndex + 1, 0).getDate();
+      const max = `${biddingYear}-${String(monthIndex + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      return { min, max };
+    };
+
+    const dateRange = getMonthDateRange();
+
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h2 className="text-2xl font-bold mb-4 flex items-center">
+            <Calendar className="mr-2" /> Leave Bidding for {biddingYear}
+          </h2>
+          <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+            <p className="font-semibold text-blue-800">
+              Your Leave Entitlement: {entitlement} days
+              <span className="text-sm ml-2">
+                ({calculateYearsOfService(verifiedEmployee).toFixed(1)} years of service)
+              </span>
+            </p>
+            <p className="text-sm text-blue-700">Slot A: 15 days | Slot B: 15 days | Slot C: 20 days</p>
+            <p className="text-sm text-blue-700 mt-2">You have placed {userBids.length}/2 bids totaling {totalBidDays} days</p>
+            <p className="text-sm text-blue-700">Remaining leave: {entitlement - totalBidDays} days</p>
+          </div>
+
+          {isProcessed && (
+            <div className="bg-red-50 border border-red-200 rounded p-4 mb-4">
+              <AlertCircle className="inline mr-2" />
+              <span className="font-semibold">Bidding has been processed and is now closed</span>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-bold mb-4">Place New Bid</h3>
+            
+            <div className="mb-4">
+              <label className="block font-semibold mb-2">Select Month:</label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value);
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                disabled={isProcessed}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none disabled:bg-gray-100"
+              >
+                {months.map(month => (
+                  <option key={month} value={month}>{month} {biddingYear}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block font-semibold mb-2">Select Slot Type:</label>
+              <div className="space-y-2">
+                {slotTypes.map(slot => {
+                  const hasBid = userBids.some(b => b.slotType === slot.id);
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSlot(slot.id);
+                        setStartDate('');
+                        setEndDate('');
+                      }}
+                      disabled={hasBid || isProcessed}
+                      className={`w-full p-3 rounded-lg font-semibold text-left transition-all ${
+                        selectedSlot === slot.id
+                          ? 'bg-blue-600 text-white'
+                          : hasBid
+                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span>{slot.name} - {slot.days} days</span>
+                        {hasBid && <span className="text-sm">✓ Already Bid</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
+              <p className="text-sm font-semibold text-yellow-800">
+                📅 Select dates within {selectedMonth} {biddingYear}
+              </p>
+              <p className="text-xs text-yellow-700 mt-1">
+                {currentSlot.name} requires exactly {currentSlot.days} consecutive days
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block font-semibold mb-2">Start Date:</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                min={dateRange.min}
+                max={dateRange.max}
+                disabled={isProcessed}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none disabled:bg-gray-100"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block font-semibold mb-2">End Date (Auto-calculated):</label>
+              <input
+                type="date"
+                value={endDate}
+                readOnly
+                disabled={isProcessed}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                End date is automatically calculated based on slot type
+              </p>
+            </div>
+
+            {startDate && endDate && (
+              <div className={`p-3 rounded mb-4 ${
+                days === currentSlot.days ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+              }`}>
+                <p className="font-semibold">
+                  Selected: {days} days
+                  {days === currentSlot.days ? ' ✓' : ` (Required: ${currentSlot.days} days)`}
+                </p>
+                <p className="text-sm mt-1">
+                  {startDate} to {endDate}
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSubmitBid}
+              disabled={isProcessed || !startDate || !endDate || days !== currentSlot.days}
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              Submit Bid
+            </button>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-bold mb-4">My Current Bids</h3>
+            
+            {userBids.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No bids placed yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {userBids.map((bid, idx) => {
+                  const slot = slotTypes.find(s => s.id === bid.slotType);
+                  return (
+                    <div key={idx} className="p-4 rounded-lg border-2 border-blue-300 bg-blue-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-bold text-lg">{slot.name}</p>
+                          <p className="text-sm text-gray-700 font-semibold">{bid.month} {biddingYear}</p>
+                          <p className="text-sm text-gray-700">{bid.startDate} to {bid.endDate}</p>
+                          <p className="text-sm font-semibold text-gray-800">{bid.days} days</p>
+                        </div>
+                        {!isProcessed && (
+                          <button
+                            type="button"
+                            onClick={() => removeBid(bid)}
+                            className="ml-2 p-2 bg-red-500 text-white rounded hover:bg-red-600"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const MyResultsView = () => {
+    const myResults = results.filter(r => r.employeeId === verifiedEmployee?.id);
+
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-2xl font-bold mb-4">My Leave Assignment</h2>
+          
+          {myResults.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertCircle className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600">Results not yet available. Please wait for the planner to process bids.</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                <p className="font-semibold">Your Assigned Slots:</p>
+                <p className="text-sm text-gray-600">You have been assigned {myResults.length} slot(s) for {biddingYear}</p>
+                <p className="text-sm text-gray-600">Total: {myResults.reduce((sum, r) => sum + r.days, 0)} days</p>
+              </div>
+              
+              <div className="space-y-3">
+                {myResults.map((result, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded p-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-lg text-blue-600">{result.slotName}</p>
+                        <p className="text-sm text-gray-600">{result.startDate} to {result.endDate}</p>
+                        <p className="text-sm font-semibold">{result.days} days</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded font-semibold ${
+                        result.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {result.type}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const AdminView = () => {
+    const handleExport = () => {
+      if (results.length === 0) {
+        alert('No results to export. Please process bids first.');
+        return;
+      }
+
+      const exportData = results.map(result => {
+        const employee = employees.find(e => e.id === result.employeeId);
+        return {
+          'Seniority Rank': result.seniorityRank,
+          'Employee ID': result.employeeId,
+          'Employee Name': result.employeeName,
+          'Department': result.department,
+          'Role': employee?.role || '',
+          'Gender': employee?.gender || '',
+          'Nationality': employee?.nationality || '',
+          'Slot Type': result.slotName,
+          'Month': result.month || '',
+          'Start Date': result.startDate,
+          'End Date': result.endDate,
+          'Days': result.days,
+          'Assignment Type': result.type
+        };
+      });
+
+      exportToExcel(exportData, `Leave_Assignments_${biddingYear}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      alert('Results exported successfully!');
+    };
+
+    // Get unique departments from uploaded employees
+    const uniqueDepartments = ['all', ...new Set(employees.map(e => e.department || 'Unassigned'))].sort((a, b) => {
+      if (a === 'all') return -1;
+      if (b === 'all') return 1;
+      return a.localeCompare(b);
+    });
+    
+    const filteredEmployees = selectedDepartment === 'all' 
+      ? employees 
+      : employees.filter(e => (e.department || 'Unassigned') === selectedDepartment);
+    
+    const filteredBids = selectedDepartment === 'all'
+      ? bids
+      : bids.filter(b => {
+          const emp = employees.find(e => e.id === b.employeeId);
+          return emp && (emp.department || 'Unassigned') === selectedDepartment;
+        });
+
+    const employeesWhoBid = new Set(filteredBids.map(b => b.employeeId));
+
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-2xl font-bold mb-6">Admin Panel</h2>
+          
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+            <label className="block font-semibold mb-2">Set Bidding Deadline:</label>
+            <input
+              type="datetime-local"
+              value={biddingDeadline}
+              onChange={(e) => setBiddingDeadline(e.target.value)}
+              className="w-full px-4 py-2 border rounded-lg"
+              disabled={isProcessed}
+            />
+            {biddingDeadline && (
+              <p className="text-sm text-gray-600 mt-2">
+                Deadline: {new Date(biddingDeadline).toLocaleString()}
+              </p>
+            )}
+          </div>
+
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg">
+            <label className="block font-semibold mb-2">Filter by Department:</label>
+            <select
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+            >
+              {uniqueDepartments.map(dept => (
+                <option key={dept} value={dept}>
+                  {dept === 'all' ? 'All Departments' : dept}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <Users className="mb-2 text-blue-600" />
+              <p className="text-2xl font-bold">{filteredEmployees.length}</p>
+              <p className="text-sm text-gray-600">
+                {selectedDepartment === 'all' ? 'Total Employees' : 'Employees in Department'}
+              </p>
+            </div>
+            <div className="bg-green-50 p-4 rounded-lg">
+              <CheckCircle className="mb-2 text-green-600" />
+              <p className="text-2xl font-bold">{filteredBids.length}</p>
+              <p className="text-sm text-gray-600">Total Bids Received</p>
+            </div>
+            <div className="bg-yellow-50 p-4 rounded-lg">
+              <Clock className="mb-2 text-yellow-600" />
+              <p className="text-2xl font-bold">{employeesWhoBid.size}</p>
+              <p className="text-sm text-gray-600">Employees Who Bid</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={processBids}
+              disabled={isProcessed || employees.length === 0}
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {isProcessed ? 'Bids Already Processed' : 'Process All Bids'}
+            </button>
+            
+            {isProcessed && results.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExport}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
+              >
+                Export Results to Excel
+              </button>
+            )}
+            
+            <button
+              type="button"
+              onClick={resetSystem}
+              className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+            >
+              Reset System
+            </button>
+          </div>
+
+          {filteredBids.length > 0 && (
+            <div className="mt-6">
+              <h3 className="font-bold mb-2">
+                Current Bids Summary
+                {selectedDepartment !== 'all' && ` - ${selectedDepartment}`}
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="p-2 text-left">Rank</th>
+                      <th className="p-2 text-left">Employee Name</th>
+                      <th className="p-2 text-left">Employee ID</th>
+                      <th className="p-2 text-left">Department</th>
+                      <th className="p-2 text-left">Bids</th>
+                      <th className="p-2 text-left">Total Days</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from(employeesWhoBid).map(empId => {
+                      const emp = employees.find(e => e.id === empId);
+                      const empBids = filteredBids.filter(b => b.employeeId === empId);
+                      const rank = filteredEmployees.findIndex(e => e.id === empId) + 1;
+                      const totalDays = empBids.reduce((sum, b) => sum + b.days, 0);
+                      
+                      return (
+                        <tr key={empId} className="border-b">
+                          <td className="p-2">#{rank}</td>
+                          <td className="p-2">{emp?.name}</td>
+                          <td className="p-2">{empId}</td>
+                          <td className="p-2">{emp?.department || 'Unassigned'}</td>
+                          <td className="p-2">
+                            {empBids.map(b => {
+                              const slot = slotTypes.find(s => s.id === b.slotType);
+                              return slot.name;
+                            }).join(', ')}
+                          </td>
+                          <td className="p-2 font-semibold">{totalDays} days</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const ResultsView = () => {
+    const handleExport = () => {
+      if (results.length === 0) {
+        alert('No results to export.');
+        return;
+      }
+
+      const exportData = results.map(result => {
+        const employee = employees.find(e => e.id === result.employeeId);
+        return {
+          'Seniority Rank': result.seniorityRank,
+          'Employee ID': result.employeeId,
+          'Employee Name': result.employeeName,
+          'Department': result.department,
+          'Role': employee?.role || '',
+          'Gender': employee?.gender || '',
+          'Nationality': employee?.nationality || '',
+          'Slot Type': result.slotName,
+          'Month': result.month || '',
+          'Start Date': result.startDate,
+          'End Date': result.endDate,
+          'Days': result.days,
+          'Assignment Type': result.type
+        };
+      });
+
+      exportToExcel(exportData, `Leave_Assignments_${biddingYear}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      alert('Results exported successfully!');
+    };
+
+    // Get unique departments from results
+    const uniqueDepartments = ['all', ...new Set(results.map(r => r.department))].sort((a, b) => {
+      if (a === 'all') return -1;
+      if (b === 'all') return 1;
+      return a.localeCompare(b);
+    });
+    const filteredResults = selectedDepartment === 'all'
+      ? results
+      : results.filter(r => r.department === selectedDepartment);
+
+    const employeeResults = {};
+    filteredResults.forEach(result => {
+      if (!employeeResults[result.employeeId]) {
+        employeeResults[result.employeeId] = {
+          employeeId: result.employeeId,
+          employeeName: result.employeeName,
+          department: result.department,
+          seniorityRank: result.seniorityRank,
+          slots: []
+        };
+      }
+      employeeResults[result.employeeId].slots.push(result);
+    });
+
+    const sortedEmployeeResults = Object.values(employeeResults).sort((a, b) => a.seniorityRank - b.seniorityRank);
+
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Leave Assignment Results for {biddingYear}</h2>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              Export to Excel
+            </button>
+          </div>
+
+          <div className="mb-6 p-4 bg-purple-50 rounded-lg">
+            <label className="block font-semibold mb-2">Filter by Department:</label>
+            <select
+              value={selectedDepartment}
+              onChange={(e) => setSelectedDepartment(e.target.value)}
+              className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+            >
+              {uniqueDepartments.map(dept => (
+                <option key={dept} value={dept}>
+                  {dept === 'all' ? 'All Departments' : dept}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {results.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertCircle className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-600">No results yet. Admin needs to process bids first.</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                <p className="font-semibold mb-2">Summary:</p>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Employees:</span>
+                    <p className="text-2xl font-bold text-blue-600">{sortedEmployeeResults.length}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Total Slots:</span>
+                    <p className="text-2xl font-bold text-green-600">{filteredResults.length}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Bid Awards:</span>
+                    <p className="text-2xl font-bold text-yellow-600">
+                      {filteredResults.filter(r => r.type === 'Bid Awarded').length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="p-3 text-left">Rank</th>
+                      <th className="p-3 text-left">Employee ID</th>
+                      <th className="p-3 text-left">Name</th>
+                      <th className="p-3 text-left">Department</th>
+                      <th className="p-3 text-left">Slot Type</th>
+                      <th className="p-3 text-left">Dates</th>
+                      <th className="p-3 text-left">Days</th>
+                      <th className="p-3 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedEmployeeResults.map((emp) => {
+                      return emp.slots.map((slot, idx) => (
+                        <tr key={`${emp.employeeId}-${idx}`} className="border-b hover:bg-gray-50">
+                          {idx === 0 && (
+                            <>
+                              <td className="p-3 font-semibold" rowSpan={emp.slots.length}>#{emp.seniorityRank}</td>
+                              <td className="p-3" rowSpan={emp.slots.length}>{emp.employeeId}</td>
+                              <td className="p-3" rowSpan={emp.slots.length}>{emp.employeeName}</td>
+                              <td className="p-3" rowSpan={emp.slots.length}>{emp.department}</td>
+                            </>
+                          )}
+                          <td className="p-3 font-semibold text-blue-600">{slot.slotName}</td>
+                          <td className="p-3 text-xs">{slot.startDate} to {slot.endDate}</td>
+                          <td className="p-3 font-semibold">{slot.days}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                              slot.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {slot.type}
+                            </span>
+                          </td>
+                        </tr>
+                      ));
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="mb-6">
+        <h1 className="text-4xl font-bold text-center text-gray-800 mb-2">
+          Annual Leave Bidding System
+        </h1>
+        {currentUser && (
+          <div className="flex justify-center items-center gap-4">
+            <div className="bg-white px-4 py-2 rounded-lg shadow">
+              <span className="text-sm text-gray-600">Logged in as: </span>
+              <span className="font-semibold">{currentUser.name}</span>
+              <span className={`ml-2 px-2 py-1 text-xs rounded ${
+                userType === 'planner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {userType === 'planner' ? 'Planner' : 'Employee'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold"
+            >
+              Logout
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!currentUser && <LoginView />}
+
+      {currentUser && userType === 'planner' && (
+        <>
+          <div className="flex justify-center space-x-4 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveView('upload')}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                activeView === 'upload' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+              }`}
+            >
+              Upload Data
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('configureSlots')}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                activeView === 'configureSlots' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+              }`}
+            >
+              Configure Slots
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('admin')}
+              disabled={employees.length === 0}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                activeView === 'admin' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              Admin Panel
+            </button>
+            {results.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveView('results')}
+                className={`px-4 py-2 rounded-lg font-semibold ${
+                  activeView === 'results' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+                }`}
+              >
+                View Results
+              </button>
+            )}
+          </div>
+
+          {activeView === 'upload' && <UploadView />}
+          {activeView === 'configureSlots' && <ConfigureSlotsView />}
+          {activeView === 'admin' && <AdminView />}
+          {activeView === 'results' && <ResultsView />}
+        </>
+      )}
+
+      {currentUser && userType === 'employee' && (
+        <>
+          <div className="flex justify-center space-x-4 mb-6">
+            <button
+              type="button"
+              onClick={() => setActiveView('employee')}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                activeView === 'employee' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+              }`}
+            >
+              Place Bids
+            </button>
+            {results.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveView('myResults')}
+                className={`px-4 py-2 rounded-lg font-semibold ${
+                  activeView === 'myResults' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'
+                }`}
+              >
+                My Results
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveView('changePassword')}
+              className={`px-4 py-2 rounded-lg font-semibold ${
+                activeView === 'changePassword' ? 'bg-green-600 text-white' : 'bg-white text-gray-700'
+              }`}
+            >
+              Change Password
+            </button>
+          </div>
+
+          {activeView === 'employee' && <EmployeeBiddingView />}
+          {activeView === 'myResults' && <MyResultsView />}
+          {activeView === 'changePassword' && <ChangePasswordView />}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default LeaveBiddingSystem;
