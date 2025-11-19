@@ -49,11 +49,9 @@
         // FIREBASE HELPER FUNCTIONS
         // ============================================
         const FirebaseService = {
-            // Save data to Firebase
             async saveData(collection, docId, data) {
                 try {
                     await db.collection(collection).doc(docId).set(data);
-                    console.log(`✓ Saved ${docId} to ${collection}`);
                     return true;
                 } catch (error) {
                     console.error(`Error saving ${docId}:`, error);
@@ -61,7 +59,6 @@
                 }
             },
 
-            // Get data from Firebase
             async getData(collection, docId) {
                 try {
                     const doc = await db.collection(collection).doc(docId).get();
@@ -75,7 +72,6 @@
                 }
             },
 
-            // Listen to real-time updates
             listenToData(collection, docId, callback) {
                 return db.collection(collection).doc(docId).onSnapshot((doc) => {
                     if (doc.exists) {
@@ -88,35 +84,41 @@
         };
 
         // Lucide Icons
-        const Calendar = (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
-        const Upload = (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>;
-        const AlertCircle = (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
-        const CheckCircle = (props) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
+        const Upload = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>;
+        const AlertCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>;
+        const CheckCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>;
+        const Users = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>;
+        const Clock = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+        const Calendar = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>;
+        const Filter = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>;
 
         const LeaveBiddingSystem = () => {
             const [employees, setEmployees] = useState([]);
             const [bids, setBids] = useState([]);
-            const [config, setConfig] = useState({
-                slotCapacities: {},
-                biddingYear: 2026,
-                biddingDeadline: '',
-                plannerPassword: 'admin123'
-            });
+            const [activeView, setActiveView] = useState('login');
+            const [currentUser, setCurrentUser] = useState(null);
+            const [userType, setUserType] = useState(null);
+            const [verifiedEmployee, setVerifiedEmployee] = useState(null);
+            const [isProcessed, setIsProcessed] = useState(false);
+            const [results, setResults] = useState([]);
+            const [selectedDepartment, setSelectedDepartment] = useState('all');
             const [isLoading, setIsLoading] = useState(true);
-            const [isConfigured, setIsConfigured] = useState(false);
+            
+            // System Parameters
+            const [systemConfigured, setSystemConfigured] = useState(false);
+            const [biddingYear, setBiddingYear] = useState('');
+            const [biddingStartDate, setBiddingStartDate] = useState('');
+            const [biddingEndDate, setBiddingEndDate] = useState('');
+            const [slotADays, setSlotADays] = useState(15);
+            const [slotBDays, setSlotBDays] = useState(15);
+            const [slotCDays, setSlotCDays] = useState(20);
+            const [slotCRequiredYears, setSlotCRequiredYears] = useState(5);
 
-            // Check if Firebase is configured
+            // Load data from Firebase on mount
             useEffect(() => {
-                if (firebaseConfig.apiKey === "YOUR_API_KEY_HERE") {
-                    setIsConfigured(false);
-                    setIsLoading(false);
-                } else {
-                    setIsConfigured(true);
-                    loadAllData();
-                }
+                loadAllData();
             }, []);
 
-            // Load all data from Firebase
             const loadAllData = async () => {
                 setIsLoading(true);
                 try {
@@ -126,11 +128,18 @@
                         FirebaseService.getData('system', 'config')
                     ]);
 
-                    if (empData) setEmployees(empData.list || []);
-                    if (bidsData) setBids(bidsData.list || []);
-                    if (configData) setConfig(configData);
-
-                    console.log('✓ All data loaded from Firebase');
+                    if (empData?.list) setEmployees(empData.list);
+                    if (bidsData?.list) setBids(bidsData.list);
+                    if (configData) {
+                        setBiddingYear(configData.biddingYear || '');
+                        setBiddingStartDate(configData.biddingStartDate || '');
+                        setBiddingEndDate(configData.biddingEndDate || '');
+                        setSlotADays(configData.slotADays || 15);
+                        setSlotBDays(configData.slotBDays || 15);
+                        setSlotCDays(configData.slotCDays || 20);
+                        setSlotCRequiredYears(configData.slotCRequiredYears || 5);
+                        setSystemConfigured(configData.systemConfigured || false);
+                    }
                 } catch (error) {
                     console.error('Error loading data:', error);
                 } finally {
@@ -138,159 +147,740 @@
                 }
             };
 
-            // Save employees to Firebase
             const saveEmployees = async (newEmployees) => {
                 setEmployees(newEmployees);
-                await FirebaseService.saveData('system', 'employees', { list: newEmployees, updatedAt: new Date().toISOString() });
+                await FirebaseService.saveData('system', 'employees', { 
+                    list: newEmployees, 
+                    updatedAt: new Date().toISOString() 
+                });
             };
 
-            // Save bids to Firebase
             const saveBids = async (newBids) => {
                 setBids(newBids);
-                await FirebaseService.saveData('system', 'bids', { list: newBids, updatedAt: new Date().toISOString() });
+                await FirebaseService.saveData('system', 'bids', { 
+                    list: newBids, 
+                    updatedAt: new Date().toISOString() 
+                });
             };
 
-            // Save config to Firebase
-            const saveConfig = async (newConfig) => {
-                setConfig(newConfig);
-                await FirebaseService.saveData('system', 'config', { ...newConfig, updatedAt: new Date().toISOString() });
+            const saveConfiguration = async (config) => {
+                await FirebaseService.saveData('system', 'config', {
+                    ...config,
+                    systemConfigured: true,
+                    updatedAt: new Date().toISOString()
+                });
             };
 
+            const formatExcelDate = (val) => {
+                if (typeof val === 'number') {
+                    const epoch = new Date(1899, 11, 30);
+                    return new Date(epoch.getTime() + val * 24 * 60 * 60 * 1000);
+                }
+                if (typeof val === 'string') {
+                    const d = new Date(val);
+                    if (!isNaN(d.getTime())) return d;
+                }
+                if (val instanceof Date) return val;
+                return new Date();
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const data = new Uint8Array(evt.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(ws);
+
+                        const empData = json.map(row => ({
+                            id: String(row['Personnel number'] || row['ID'] || '').trim(),
+                            name: String((row['Forename'] || row['Name'] || '') + ' ' + (row['Surname'] || '')).trim(),
+                            seniorityDate: formatExcelDate(row['Seniority Date'] || row['Start Date'] || new Date()).toISOString(),
+                            department: String(row['Department'] || '').trim(),
+                            role: String(row['Role'] || '').trim()
+                        })).filter(e => e.id && e.name);
+
+                        empData.sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                        saveEmployees(empData);
+                        alert('Loaded ' + empData.length + ' employees and saved to Firebase');
+                    } catch (err) {
+                        alert('Error loading file: ' + err.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            };
+
+            const getYearsOfService = (seniorityDate) => {
+                const today = new Date();
+                const start = new Date(seniorityDate);
+                const years = (today - start) / (1000 * 60 * 60 * 24 * 365.25);
+                return years;
+            };
+
+            const getEntitlement = (seniorityDate) => {
+                return getYearsOfService(seniorityDate) >= slotCRequiredYears ? 35 : 30;
+            };
+
+            const handleBidSubmit = (slotType, startDate, endDate) => {
+                if (!startDate || !endDate) {
+                    alert('Select dates');
+                    return;
+                }
+
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                let expected = slotADays;
+                
+                if (slotType === 'slotB') expected = slotBDays;
+                if (slotType === 'slotC') expected = slotCDays;
+
+                if (days !== expected) {
+                    alert('Must be ' + expected + ' days');
+                    return;
+                }
+
+                const newBids = [...bids, {
+                    employeeId: verifiedEmployee.id,
+                    employeeName: verifiedEmployee.name,
+                    department: verifiedEmployee.department,
+                    slotType: slotType,
+                    startDate: startDate,
+                    endDate: endDate,
+                    days: days,
+                    timestamp: new Date().toISOString()
+                }];
+                
+                saveBids(newBids);
+                alert('Bid placed and saved to Firebase!');
+            };
+
+            const processBids = () => {
+                if (bids.length === 0) {
+                    alert('No bids to process');
+                    return;
+                }
+
+                const slotResults = { slotA: [], slotB: [], slotC: [] };
+                const bidsBySlot = {
+                    slotA: bids.filter(b => b.slotType === 'slotA'),
+                    slotB: bids.filter(b => b.slotType === 'slotB'),
+                    slotC: bids.filter(b => b.slotType === 'slotC')
+                };
+
+                Object.keys(bidsBySlot).forEach(slot => {
+                    const slotBids = bidsBySlot[slot];
+                    
+                    slotBids.forEach(bid => {
+                        const emp = employees.find(e => e.id === bid.employeeId);
+                        if (emp) {
+                            slotResults[slot].push({
+                                ...bid,
+                                seniorityDate: emp.seniorityDate,
+                                yearsOfService: getYearsOfService(emp.seniorityDate)
+                            });
+                        }
+                    });
+
+                    slotResults[slot].sort((a, b) => 
+                        new Date(a.seniorityDate) - new Date(b.seniorityDate)
+                    );
+                });
+
+                setResults(slotResults);
+                setIsProcessed(true);
+                alert('Bids processed successfully!');
+            };
+
+            // LOADING SCREEN
             if (isLoading) {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
                         <div className="bg-white rounded-lg shadow-lg p-8 text-center">
                             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                            <p className="text-xl font-semibold text-gray-700">Loading System...</p>
+                            <p className="text-xl font-semibold text-gray-700">Loading from Firebase...</p>
                         </div>
                     </div>
                 );
             }
 
-            if (!isConfigured) {
+            // CONFIGURE VIEW
+            const ConfigureView = () => {
+                const [year, setYear] = useState(biddingYear || '');
+                const [startDate, setStartDate] = useState(biddingStartDate || '');
+                const [endDate, setEndDate] = useState(biddingEndDate || '');
+                const [slotA, setSlotA] = useState(slotADays);
+                const [slotB, setSlotB] = useState(slotBDays);
+                const [slotC, setSlotC] = useState(slotCDays);
+                const [reqYears, setReqYears] = useState(slotCRequiredYears);
+
+                const handleSave = async () => {
+                    if (!year || !startDate || !endDate) {
+                        alert('Please fill all required fields');
+                        return;
+                    }
+                    
+                    const config = {
+                        biddingYear: year,
+                        biddingStartDate: startDate,
+                        biddingEndDate: endDate,
+                        slotADays: slotA,
+                        slotBDays: slotB,
+                        slotCDays: slotC,
+                        slotCRequiredYears: reqYears
+                    };
+
+                    setBiddingYear(year);
+                    setBiddingStartDate(startDate);
+                    setBiddingEndDate(endDate);
+                    setSlotADays(slotA);
+                    setSlotBDays(slotB);
+                    setSlotCDays(slotC);
+                    setSlotCRequiredYears(reqYears);
+                    setSystemConfigured(true);
+                    
+                    await saveConfiguration(config);
+                    alert('System configured and saved to Firebase!');
+                };
+
                 return (
-                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-                        <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
-                            <div className="text-center mb-6">
-                                <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-                                <h1 className="text-3xl font-bold text-gray-800 mb-4">Firebase Configuration Required</h1>
-                            </div>
+                    <div className="max-w-2xl mx-auto">
+                        <div className="bg-white rounded-lg shadow-lg p-8">
+                            <h2 className="text-2xl font-bold mb-6 text-center text-blue-600">Configure Bidding System</h2>
+                            
+                            {systemConfigured && (
+                                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded flex items-center">
+                                    <CheckCircle />
+                                    <span className="font-semibold ml-2">System Configured Successfully!</span>
+                                </div>
+                            )}
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block font-semibold mb-2">Bidding Year *</label>
+                                    <input
+                                        type="number"
+                                        value={year}
+                                        onChange={(e) => setYear(e.target.value)}
+                                        placeholder="e.g., 2026"
+                                        className="w-full px-4 py-2 border-2 rounded-lg"
+                                    />
+                                </div>
 
-                            <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6 mb-6">
-                                <h2 className="text-xl font-bold text-yellow-800 mb-3">📋 Setup Instructions</h2>
-                                <ol className="list-decimal list-inside space-y-3 text-gray-700">
-                                    <li className="font-semibold">Create a Firebase Project:
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>Go to <a href="https://console.firebase.google.com/" target="_blank" className="text-blue-600 underline">Firebase Console</a></li>
-                                            <li>Click "Add project" or "Create a project"</li>
-                                            <li>Name it "leave-bidding-system"</li>
-                                            <li>Disable Google Analytics (optional)</li>
-                                            <li>Click "Create project"</li>
-                                        </ul>
-                                    </li>
-                                    <li className="font-semibold">Enable Firestore Database:
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>In Firebase Console, click "Firestore Database" in left menu</li>
-                                            <li>Click "Create database"</li>
-                                            <li>Select "Start in production mode"</li>
-                                            <li>Choose your region (closest to your location)</li>
-                                            <li>Click "Enable"</li>
-                                        </ul>
-                                    </li>
-                                    <li className="font-semibold">Set Firestore Security Rules:
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>Go to "Firestore Database" → "Rules" tab</li>
-                                            <li>Replace the rules with:</li>
-                                        </ul>
-                                        <pre className="bg-gray-800 text-green-400 p-4 rounded mt-2 text-sm overflow-x-auto">
-{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /system/{document=**} {
-      allow read, write: if true;
-    }
-  }
-}`}
-                                        </pre>
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>Click "Publish"</li>
-                                        </ul>
-                                    </li>
-                                    <li className="font-semibold">Get Your Firebase Configuration:
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>Click the gear icon (⚙️) → "Project settings"</li>
-                                            <li>Scroll down to "Your apps"</li>
-                                            <li>Click the web icon "&lt;/&gt;" to create a web app</li>
-                                            <li>Give it a nickname (e.g., "Leave Bidding Web")</li>
-                                            <li>Click "Register app"</li>
-                                            <li>Copy the <code className="bg-gray-200 px-2 py-1 rounded">firebaseConfig</code> object</li>
-                                        </ul>
-                                    </li>
-                                    <li className="font-semibold">Add Configuration to This File:
-                                        <ul className="list-disc list-inside ml-6 mt-2 space-y-1 font-normal">
-                                            <li>Open this HTML file in a text editor</li>
-                                            <li>Find the line: <code className="bg-gray-200 px-2 py-1 rounded">apiKey: "YOUR_API_KEY_HERE"</code></li>
-                                            <li>Replace ALL the placeholder values with your Firebase config</li>
-                                            <li>Save the file</li>
-                                            <li>Reload this page</li>
-                                        </ul>
-                                    </li>
-                                </ol>
-                            </div>
+                                <div>
+                                    <label className="block font-semibold mb-2">Bidding Start Date *</label>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="w-full px-4 py-2 border-2 rounded-lg"
+                                    />
+                                </div>
 
-                            <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-6">
-                                <h3 className="font-bold text-blue-800 mb-2">📝 Example Configuration:</h3>
-                                <pre className="bg-gray-800 text-green-400 p-4 rounded text-sm overflow-x-auto">
-{`const firebaseConfig = {
-    apiKey: "AIzaSyA1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q",
-    authDomain: "leave-bidding-12345.firebaseapp.com",
-    projectId: "leave-bidding-12345",
-    storageBucket: "leave-bidding-12345.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abc123def456"
-};`}
-                                </pre>
-                            </div>
+                                <div>
+                                    <label className="block font-semibold mb-2">Bidding End Date *</label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="w-full px-4 py-2 border-2 rounded-lg"
+                                    />
+                                </div>
 
-                            <div className="mt-6 p-4 bg-green-50 border border-green-400 rounded-lg">
-                                <p className="text-green-800 font-semibold">✓ After setup, this system will:</p>
-                                <ul className="list-disc list-inside mt-2 text-green-700 space-y-1">
-                                    <li>Work for 400+ employees simultaneously</li>
-                                    <li>Sync data in real-time across all devices</li>
-                                    <li>Store data permanently in the cloud</li>
-                                    <li>Handle unlimited concurrent users (Firebase free tier: 50K reads/day)</li>
-                                </ul>
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="block font-semibold mb-2">Slot A Days</label>
+                                        <input
+                                            type="number"
+                                            value={slotA}
+                                            onChange={(e) => setSlotA(Number(e.target.value))}
+                                            className="w-full px-4 py-2 border-2 rounded-lg"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block font-semibold mb-2">Slot B Days</label>
+                                        <input
+                                            type="number"
+                                            value={slotB}
+                                            onChange={(e) => setSlotB(Number(e.target.value))}
+                                            className="w-full px-4 py-2 border-2 rounded-lg"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block font-semibold mb-2">Slot C Days</label>
+                                        <input
+                                            type="number"
+                                            value={slotC}
+                                            onChange={(e) => setSlotC(Number(e.target.value))}
+                                            className="w-full px-4 py-2 border-2 rounded-lg"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block font-semibold mb-2">Slot C Required Years of Service</label>
+                                    <input
+                                        type="number"
+                                        value={reqYears}
+                                        onChange={(e) => setReqYears(Number(e.target.value))}
+                                        className="w-full px-4 py-2 border-2 rounded-lg"
+                                    />
+                                </div>
+
+                                <button 
+                                    onClick={handleSave}
+                                    className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold mt-6 hover:bg-blue-700"
+                                >
+                                    {systemConfigured ? 'Update Configuration' : 'Save Configuration'}
+                                </button>
                             </div>
                         </div>
                     </div>
                 );
-            }
+            };
 
-            // Main application UI
+            // LOGIN VIEW
+            const LoginView = () => {
+                const [type, setType] = useState('employee');
+                const [id, setId] = useState('');
+                const [pwd, setPwd] = useState('');
+
+                const login = () => {
+                    if (type === 'planner') {
+                        if (pwd === 'admin123') {
+                            setCurrentUser({ name: 'Admin' });
+                            setUserType('planner');
+                            setActiveView(systemConfigured ? 'admin' : 'configure');
+                        } else {
+                            alert('Wrong password');
+                        }
+                    } else {
+                        if (!systemConfigured) {
+                            alert('System not configured yet. Please contact administrator.');
+                            return;
+                        }
+                        const emp = employees.find(e => e.id === id);
+                        if (emp && pwd === id) {
+                            setCurrentUser(emp);
+                            setUserType('employee');
+                            setVerifiedEmployee(emp);
+                            setActiveView('employee');
+                        } else {
+                            alert('Invalid login. Check employee list or use password = Employee ID');
+                        }
+                    }
+                };
+
+                return (
+                    <div className="max-w-md mx-auto mt-20">
+                        <div className="bg-white rounded-lg shadow-lg p-8">
+                            <h1 className="text-3xl font-bold text-center mb-6 text-blue-600">
+                                Leave Bidding {biddingYear}
+                            </h1>
+                            
+                            {!systemConfigured && (
+                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded flex items-center">
+                                    <AlertCircle />
+                                    <span className="font-semibold ml-2">System not configured. Planner must configure first.</span>
+                                </div>
+                            )}
+                            
+                            <div className="flex gap-4 mb-6">
+                                <button 
+                                    onClick={() => setType('employee')} 
+                                    className={`flex-1 px-4 py-3 rounded-lg font-semibold ${type === 'employee' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                                >
+                                    Employee
+                                </button>
+                                <button 
+                                    onClick={() => setType('planner')} 
+                                    className={`flex-1 px-4 py-3 rounded-lg font-semibold ${type === 'planner' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                                >
+                                    Planner
+                                </button>
+                            </div>
+
+                            <input
+                                type="text"
+                                value={id}
+                                onChange={(e) => setId(e.target.value)}
+                                placeholder={type === 'planner' ? 'Username' : 'Employee ID'}
+                                className="w-full px-4 py-2 border-2 rounded-lg mb-4"
+                            />
+                            <input
+                                type="password"
+                                value={pwd}
+                                onChange={(e) => setPwd(e.target.value)}
+                                placeholder="Password"
+                                className="w-full px-4 py-2 border-2 rounded-lg mb-4"
+                            />
+                            
+                            <button 
+                                onClick={login} 
+                                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+                            >
+                                Login
+                            </button>
+                            
+                            <div className="mt-4 text-sm text-gray-600 text-center">
+                                <p>Planner password: admin123</p>
+                                <p>Employee: Use Employee ID as password</p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // UPLOAD VIEW
+            const UploadView = () => (
+                <div className="max-w-2xl mx-auto">
+                    <div className="bg-white rounded-lg shadow-lg p-8">
+                        <div className="flex justify-center mb-4"><Upload /></div>
+                        <h2 className="text-2xl font-bold mb-4 text-center">Upload Employees</h2>
+                        
+                        <label className="cursor-pointer block">
+                            <div className="border-2 border-dashed rounded-lg p-8 text-center hover:bg-gray-50">
+                                <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                                <span className="px-6 py-2 bg-blue-600 text-white rounded-lg inline-block hover:bg-blue-700">Choose Excel File</span>
+                            </div>
+                        </label>
+
+                        {employees.length > 0 && (
+                            <div className="mt-6 bg-green-50 border border-green-200 rounded p-4 flex items-center">
+                                <CheckCircle />
+                                <span className="font-semibold ml-2">{employees.length} employees loaded</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            // ADMIN VIEW
+            const AdminView = () => {
+                const departments = ['all', ...new Set(employees.map(e => e.department).filter(d => d))];
+                
+                const filteredEmployees = selectedDepartment === 'all' 
+                    ? employees 
+                    : employees.filter(e => e.department === selectedDepartment);
+                
+                const filteredBids = selectedDepartment === 'all'
+                    ? bids
+                    : bids.filter(b => b.department === selectedDepartment);
+
+                return (
+                    <div className="max-w-6xl mx-auto">
+                        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold">Admin Panel - Year {biddingYear}</h2>
+                                
+                                <div className="flex items-center gap-2">
+                                    <Filter />
+                                    <select 
+                                        value={selectedDepartment}
+                                        onChange={(e) => setSelectedDepartment(e.target.value)}
+                                        className="px-4 py-2 border-2 rounded-lg"
+                                    >
+                                        {departments.map(dept => (
+                                            <option key={dept} value={dept}>
+                                                {dept === 'all' ? 'All Departments' : dept}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-4 gap-4 mb-6">
+                                <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="flex justify-center mb-2"><Users /></div>
+                                    <p className="text-2xl font-bold text-center">{filteredEmployees.length}</p>
+                                    <p className="text-sm text-center">Employees</p>
+                                </div>
+                                <div className="bg-green-50 p-4 rounded-lg">
+                                    <div className="flex justify-center mb-2"><Calendar /></div>
+                                    <p className="text-2xl font-bold text-center">{filteredBids.length}</p>
+                                    <p className="text-sm text-center">Total Bids</p>
+                                </div>
+                                <div className="bg-yellow-50 p-4 rounded-lg">
+                                    <div className="flex justify-center mb-2"><Clock /></div>
+                                    <p className="text-2xl font-bold text-center">{new Set(filteredBids.map(b => b.employeeId)).size}</p>
+                                    <p className="text-sm text-center">Employees Who Bid</p>
+                                </div>
+                                <div className="bg-purple-50 p-4 rounded-lg">
+                                    <p className="text-2xl font-bold text-center">{filteredEmployees.length - new Set(filteredBids.map(b => b.employeeId)).size}</p>
+                                    <p className="text-sm text-center">Not Yet Bid</p>
+                                </div>
+                            </div>
+
+                            <div className="mb-4 p-4 bg-gray-50 rounded">
+                                <p className="font-semibold">Bidding Window:</p>
+                                <p className="text-sm">{biddingStartDate} to {biddingEndDate}</p>
+                            </div>
+
+                            <button 
+                                onClick={processBids}
+                                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mb-4"
+                            >
+                                Process Bids
+                            </button>
+
+                            {isProcessed && (
+                                <div className="mt-6 bg-green-50 border border-green-200 rounded p-4 flex items-center">
+                                    <CheckCircle />
+                                    <span className="font-semibold ml-2">Bids processed successfully!</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Bids List */}
+                        {filteredBids.length > 0 && (
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h3 className="text-xl font-bold mb-4">All Bids ({filteredBids.length})</h3>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left">Employee</th>
+                                                <th className="px-4 py-2 text-left">Department</th>
+                                                <th className="px-4 py-2 text-left">Slot</th>
+                                                <th className="px-4 py-2 text-left">Start Date</th>
+                                                <th className="px-4 py-2 text-left">End Date</th>
+                                                <th className="px-4 py-2 text-left">Days</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredBids.map((bid, idx) => (
+                                                <tr key={idx} className="border-b hover:bg-gray-50">
+                                                    <td className="px-4 py-2">{bid.employeeName}</td>
+                                                    <td className="px-4 py-2">{bid.department || 'N/A'}</td>
+                                                    <td className="px-4 py-2">
+                                                        <span className={`px-2 py-1 rounded text-sm ${
+                                                            bid.slotType === 'slotA' ? 'bg-blue-100 text-blue-800' :
+                                                            bid.slotType === 'slotB' ? 'bg-green-100 text-green-800' :
+                                                            'bg-purple-100 text-purple-800'
+                                                        }`}>
+                                                            {bid.slotType === 'slotA' ? 'Slot A' : bid.slotType === 'slotB' ? 'Slot B' : 'Slot C'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2">{bid.startDate}</td>
+                                                    <td className="px-4 py-2">{bid.endDate}</td>
+                                                    <td className="px-4 py-2">{bid.days}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Results Display */}
+                        {isProcessed && results && (
+                            <div className="mt-6 space-y-6">
+                                {['slotA', 'slotB', 'slotC'].map(slot => {
+                                    const slotData = results[slot] || [];
+                                    const filteredSlotData = selectedDepartment === 'all'
+                                        ? slotData
+                                        : slotData.filter(b => b.department === selectedDepartment);
+                                    
+                                    if (filteredSlotData.length === 0) return null;
+
+                                    return (
+                                        <div key={slot} className="bg-white rounded-lg shadow-lg p-6">
+                                            <h3 className="text-xl font-bold mb-4">
+                                                {slot === 'slotA' ? 'Slot A' : slot === 'slotB' ? 'Slot B' : 'Slot C'} Results ({filteredSlotData.length} bids)
+                                            </h3>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full">
+                                                    <thead className="bg-gray-100">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left">Rank</th>
+                                                            <th className="px-4 py-2 text-left">Employee</th>
+                                                            <th className="px-4 py-2 text-left">Department</th>
+                                                            <th className="px-4 py-2 text-left">Years of Service</th>
+                                                            <th className="px-4 py-2 text-left">Start Date</th>
+                                                            <th className="px-4 py-2 text-left">End Date</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {filteredSlotData.map((bid, idx) => (
+                                                            <tr key={idx} className="border-b hover:bg-gray-50">
+                                                                <td className="px-4 py-2 font-bold">{idx + 1}</td>
+                                                                <td className="px-4 py-2">{bid.employeeName}</td>
+                                                                <td className="px-4 py-2">{bid.department || 'N/A'}</td>
+                                                                <td className="px-4 py-2">{bid.yearsOfService.toFixed(1)}</td>
+                                                                <td className="px-4 py-2">{bid.startDate}</td>
+                                                                <td className="px-4 py-2">{bid.endDate}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            // EMPLOYEE BIDDING VIEW
+            const EmployeeBiddingView = () => {
+                const [aStart, setAStart] = useState('');
+                const [aEnd, setAEnd] = useState('');
+                const [bStart, setBStart] = useState('');
+                const [bEnd, setBEnd] = useState('');
+                const [cStart, setCStart] = useState('');
+                const [cEnd, setCEnd] = useState('');
+
+                const myBids = bids.filter(b => b.employeeId === verifiedEmployee?.id);
+                const hasA = myBids.some(b => b.slotType === 'slotA');
+                const hasB = myBids.some(b => b.slotType === 'slotB');
+                const hasC = myBids.some(b => b.slotType === 'slotC');
+                const ent = getEntitlement(verifiedEmployee?.seniorityDate);
+                const years = getYearsOfService(verifiedEmployee?.seniorityDate);
+
+                return (
+                    <div className="max-w-6xl mx-auto">
+                        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold mb-4">Select Leave Dates - Year {biddingYear}</h2>
+                            <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                                <p className="text-lg">Entitlement: <span className="font-bold">{ent} days</span></p>
+                                <p className="text-sm text-gray-600">Years of Service: {years.toFixed(1)} years</p>
+                                <p className="text-sm text-gray-600">Department: {verifiedEmployee?.department || 'N/A'}</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h3 className="text-xl font-bold mb-4 text-blue-600">Slot A - {slotADays} Days</h3>
+                                {hasA ? (
+                                    <div className="bg-green-50 p-4 rounded">
+                                        <div className="flex items-center mb-2"><CheckCircle /></div>
+                                        <p className="font-semibold">Bid Placed</p>
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            {myBids.find(b => b.slotType === 'slotA')?.startDate} to {myBids.find(b => b.slotType === 'slotA')?.endDate}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <label className="block text-sm font-semibold mb-2">Start Date</label>
+                                        <input type="date" value={aStart} onChange={(e) => setAStart(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <label className="block text-sm font-semibold mb-2">End Date</label>
+                                        <input type="date" value={aEnd} onChange={(e) => setAEnd(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <button onClick={() => handleBidSubmit('slotA', aStart, aEnd)} className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Submit Bid</button>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h3 className="text-xl font-bold mb-4 text-green-600">Slot B - {slotBDays} Days</h3>
+                                {hasB ? (
+                                    <div className="bg-green-50 p-4 rounded">
+                                        <div className="flex items-center mb-2"><CheckCircle /></div>
+                                        <p className="font-semibold">Bid Placed</p>
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            {myBids.find(b => b.slotType === 'slotB')?.startDate} to {myBids.find(b => b.slotType === 'slotB')?.endDate}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <label className="block text-sm font-semibold mb-2">Start Date</label>
+                                        <input type="date" value={bStart} onChange={(e) => setBStart(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <label className="block text-sm font-semibold mb-2">End Date</label>
+                                        <input type="date" value={bEnd} onChange={(e) => setBEnd(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <button onClick={() => handleBidSubmit('slotB', bStart, bEnd)} className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">Submit Bid</button>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-lg p-6">
+                                <h3 className="text-xl font-bold mb-4 text-purple-600">Slot C - {slotCDays} Days</h3>
+                                {years < slotCRequiredYears ? (
+                                    <div className="bg-gray-100 p-4 rounded">
+                                        <div className="flex items-center mb-2"><AlertCircle /></div>
+                                        <p className="font-semibold">Need {slotCRequiredYears}+ years</p>
+                                        <p className="text-sm text-gray-600 mt-2">You have {years.toFixed(1)} years</p>
+                                    </div>
+                                ) : hasC ? (
+                                    <div className="bg-green-50 p-4 rounded">
+                                        <div className="flex items-center mb-2"><CheckCircle /></div>
+                                        <p className="font-semibold">Bid Placed</p>
+                                        <p className="text-sm text-gray-600 mt-2">
+                                            {myBids.find(b => b.slotType === 'slotC')?.startDate} to {myBids.find(b => b.slotType === 'slotC')?.endDate}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <label className="block text-sm font-semibold mb-2">Start Date</label>
+                                        <input type="date" value={cStart} onChange={(e) => setCStart(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <label className="block text-sm font-semibold mb-2">End Date</label>
+                                        <input type="date" value={cEnd} onChange={(e) => setCEnd(e.target.value)} className="w-full px-4 py-2 border-2 rounded-lg mb-4" />
+                                        <button onClick={() => handleBidSubmit('slotC', cStart, cEnd)} className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Submit Bid</button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // MAIN RENDER
             return (
                 <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-                    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8">
-                        <div className="text-center">
-                            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                            <h1 className="text-3xl font-bold text-gray-800 mb-4">
-                                Annual Leave Bidding System
-                            </h1>
-                            <p className="text-gray-600 mb-4">
-                                ✓ Firebase Connected - System Ready
-                            </p>
-                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                <p className="text-green-800">
-                                    <strong>{employees.length}</strong> employees loaded | <strong>{bids.length}</strong> bids placed
-                                </p>
+                    <div className="mb-6">
+                        <h1 className="text-4xl font-bold text-center text-gray-800">Leave Bidding System</h1>
+                        {currentUser && (
+                            <div className="flex justify-center gap-4 mt-4">
+                                <div className="bg-white px-4 py-2 rounded-lg shadow">
+                                    <span className="font-semibold">{currentUser.name}</span>
+                                    <span className="text-sm text-gray-600 ml-2">({userType})</span>
+                                </div>
+                                <button onClick={() => {
+                                    setCurrentUser(null);
+                                    setUserType(null);
+                                    setVerifiedEmployee(null);
+                                    setActiveView('login');
+                                }} className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600">
+                                    Logout
+                                </button>
                             </div>
-                        </div>
-                        
-                        {/* Add your full application UI here - All the components from the previous version */}
-                        <div className="mt-8 text-center text-gray-600">
-                            <p>Full application UI will be integrated here after Firebase setup</p>
-                            <p className="text-sm mt-2">The complete system with all features is ready to deploy</p>
-                        </div>
+                        )}
                     </div>
+
+                    {activeView === 'login' && <LoginView />}
+                    {activeView === 'configure' && <ConfigureView />}
+                    {activeView === 'upload' && <UploadView />}
+                    {activeView === 'admin' && <AdminView />}
+                    {activeView === 'employee' && <EmployeeBiddingView />}
+                    
+                    {currentUser && userType === 'planner' && activeView !== 'login' && (
+                        <div className="flex justify-center gap-4 mt-6">
+                            <button 
+                                onClick={() => setActiveView('configure')} 
+                                className={`px-4 py-2 rounded-lg font-semibold ${activeView === 'configure' ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                            >
+                                Configure
+                            </button>
+                            <button 
+                                onClick={() => setActiveView('upload')} 
+                                className={`px-4 py-2 rounded-lg font-semibold ${activeView === 'upload' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'} ${!systemConfigured ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={!systemConfigured}
+                            >
+                                Upload
+                            </button>
+                            <button 
+                                onClick={() => setActiveView('admin')} 
+                                className={`px-4 py-2 rounded-lg font-semibold ${activeView === 'admin' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'} ${!systemConfigured ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                disabled={!systemConfigured}
+                            >
+                                Admin
+                            </button>
+                        </div>
+                    )}
                 </div>
             );
         };
