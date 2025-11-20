@@ -138,7 +138,10 @@
                         setSlotBDays(configData.slotBDays || 15);
                         setSlotCDays(configData.slotCDays || 20);
                         setSlotCRequiredYears(configData.slotCRequiredYears || 5);
-                        setSystemConfigured(configData.systemConfigured || false);
+                        // Check if system is configured by checking if year exists
+                        const isConfigured = !!(configData.biddingYear && configData.biddingStartDate && configData.biddingEndDate);
+                        setSystemConfigured(isConfigured);
+                        console.log('System configured status:', isConfigured);
                     }
                 } catch (error) {
                     console.error('Error loading data:', error);
