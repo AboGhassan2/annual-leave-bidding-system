@@ -177,6 +177,7 @@
         const GIST_ID = '2f3f246ef97e1165830bf95529d01b78'; // ← YOUR GIST ID HERE
         const GITHUB_TOKEN = ''; // Optional: For private gists
         const CLOUD_DATA_URL = `https://gist.githubusercontent.com/raw/${GIST_ID}/system_data.json`;
+        
         // ==================== STATE MANAGEMENT ====================
         let state = {
             employees: [],
@@ -194,8 +195,6 @@
             results: JSON.parse(localStorage.getItem('results')) || [],
             selectedDepartment: 'all',
             slotCapacities: JSON.parse(localStorage.getItem('slotCapacities')) || {},
-            // ... rest of departments, slotTypes, months arrays stay the same
-        };
             
             // Department list
             departments: [
@@ -263,7 +262,22 @@
             return (start1 <= end2 && end1 >= start2);
         }
 
-        function formatExcelDate(dateValue) 
+        function formatExcelDate(dateValue) {
+            if (typeof dateValue === 'number') {
+                const excelEpoch = new Date(1899, 11, 30);
+                const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
+                return jsDate;
+            } else if (typeof dateValue === 'string') {
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                    return date;
+                }
+            } else if (dateValue instanceof Date) {
+                return dateValue;
+            }
+            
+            return new Date();
+        }
                 // ==================== CLOUD FUNCTIONS ====================
         async function loadFromCloud() {
             try {
