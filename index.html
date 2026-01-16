@@ -126,17 +126,152 @@
         </div>
 
         <!-- Planner Navigation -->
-        <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
-            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Upload Data
-            </button>
-            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Configure Slots
-            </button>
-            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Admin Panel
+<div id="plannerNav" class="hidden flex flex-wrap justify-center gap-3 mb-6 fade-in">
+    <button onclick="setActiveView('upload')" class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold">
+        📤 Upload Data
+    </button>
+    <button onclick="setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+        ⚙️ Configure Slots
+    </button>
+    <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+        👑 Admin Panel
+    </button>
+    <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+        🔑 Change Password
+    </button>
+</div>
+
+<!-- Upload Data Modal -->
+<div id="uploadModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-2xl font-bold text-gray-800">📤 Upload Employee Data</h3>
+            <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700">
+                ✕
             </button>
         </div>
+        
+        <!-- File Upload -->
+        <div class="mb-8">
+            <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
+                <div class="text-5xl mb-4">📄</div>
+                <p class="font-semibold text-gray-700 mb-2">Upload Excel/CSV File</p>
+                <p class="text-sm text-gray-500 mb-4">Supported formats: .xlsx, .xls, .csv</p>
+                <input
+                    type="file"
+                    id="fileInput"
+                    accept=".xlsx,.xls,.csv"
+                    class="hidden"
+                    onchange="handleFileSelect(event)"
+                />
+                <label for="fileInput" class="inline-block px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold cursor-pointer">
+                    Choose File
+                </label>
+                <p id="fileName" class="text-sm text-gray-600 mt-3"></p>
+            </div>
+            
+            <!-- Required Columns Info -->
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="font-semibold text-blue-800 mb-2">📋 Required Columns:</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    <div class="bg-white px-3 py-2 rounded border">ID (Required)</div>
+                    <div class="bg-white px-3 py-2 rounded border">Name (Required)</div>
+                    <div class="bg-white px-3 py-2 rounded border">Department</div>
+                    <div class="bg-white px-3 py-2 rounded border">Seniority Date</div>
+                    <div class="bg-white px-3 py-2 rounded border">Email</div>
+                    <div class="bg-white px-3 py-2 rounded border">Phone</div>
+                    <div class="bg-white px-3 py-2 rounded border">Leave Balance</div>
+                    <div class="bg-white px-3 py-2 rounded border">Status</div>
+                </div>
+            </div>
+            
+            <!-- Sample Data Section -->
+            <div class="mt-6">
+                <button onclick="toggleSampleData()" class="flex items-center text-blue-600 hover:text-blue-800 font-semibold">
+                    <span>📥 Download Sample Template</span>
+                    <span id="sampleToggle" class="ml-2">▼</span>
+                </button>
+                <div id="sampleData" class="hidden mt-4">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full border border-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="border px-3 py-2">ID</th>
+                                    <th class="border px-3 py-2">Name</th>
+                                    <th class="border px-3 py-2">Department</th>
+                                    <th class="border px-3 py-2">Seniority Date</th>
+                                    <th class="border px-3 py-2">Email</th>
+                                    <th class="border px-3 py-2">Phone</th>
+                                    <th class="border px-3 py-2">Leave Balance</th>
+                                    <th class="border px-3 py-2">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="border px-3 py-2">EMP001</td>
+                                    <td class="border px-3 py-2">John Doe</td>
+                                    <td class="border px-3 py-2">L4/6-SA</td>
+                                    <td class="border px-3 py-2">2020-01-15</td>
+                                    <td class="border px-3 py-2">john@example.com</td>
+                                    <td class="border px-3 py-2">+1234567890</td>
+                                    <td class="border px-3 py-2">30</td>
+                                    <td class="border px-3 py-2">Active</td>
+                                </tr>
+                                <tr class="bg-gray-50">
+                                    <td class="border px-3 py-2">EMP002</td>
+                                    <td class="border px-3 py-2">Jane Smith</td>
+                                    <td class="border px-3 py-2">L5-DEP-DM</td>
+                                    <td class="border px-3 py-2">2018-06-20</td>
+                                    <td class="border px-3 py-2">jane@example.com</td>
+                                    <td class="border px-3 py-2">+1987654321</td>
+                                    <td class="border px-3 py-2">35</td>
+                                    <td class="border px-3 py-2">Active</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-4 flex gap-3">
+                        <button onclick="downloadSampleCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
+                            Download CSV Template
+                        </button>
+                        <button onclick="downloadSampleExcel()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                            Download Excel Template
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Upload Preview -->
+        <div id="uploadPreview" class="hidden">
+            <h4 class="font-bold text-lg mb-3 text-gray-700">📊 Upload Preview</h4>
+            <div id="previewTable" class="mb-6 max-h-64 overflow-y-auto border rounded-lg"></div>
+            
+            <div class="flex justify-between items-center">
+                <div id="previewStats" class="text-sm text-gray-600"></div>
+                <div class="flex gap-3">
+                    <button onclick="processUpload()" id="processBtn" class="px-6 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
+                        ✅ Process & Save
+                    </button>
+                    <button onclick="clearUpload()" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold">
+                        ❌ Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Current Employees -->
+        <div class="mt-8 pt-6 border-t">
+            <div class="flex justify-between items-center mb-4">
+                <h4 class="font-bold text-lg text-gray-700">👥 Current Employees</h4>
+                <span id="employeeCount" class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">0</span>
+            </div>
+            <div id="currentEmployees" class="text-sm text-gray-500 italic">
+                No employee data uploaded yet.
+            </div>
+        </div>
+    </div>
+</div>
 
         <!-- Employee Navigation -->
         <div id="employeeNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
@@ -320,6 +455,278 @@
             
             showMessage('✅ Logged out successfully');
         }
+        // ==================== UPLOAD DATA FUNCTIONS ====================
+let uploadedData = [];
+
+function setActiveView(view) {
+    if (view === 'upload') {
+        openUploadModal();
+        updateEmployeeList();
+    } else {
+        alert(view + ' view coming soon!');
+    }
+}
+
+function openUploadModal() {
+    document.getElementById('uploadModal').classList.remove('hidden');
+    updateEmployeeList();
+}
+
+function closeUploadModal() {
+    document.getElementById('uploadModal').classList.add('hidden');
+    document.getElementById('uploadPreview').classList.add('hidden');
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileName').textContent = '';
+}
+
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    document.getElementById('fileName').textContent = `Selected: ${file.name}`;
+    
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            let data;
+            
+            if (file.name.endsWith('.csv')) {
+                data = parseCSV(e.target.result);
+            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                // For Excel files - we'll use a simple approach
+                alert('Excel parsing requires XLSX library. For now, please save as CSV and upload.');
+                return;
+            } else {
+                alert('Unsupported file format. Please upload CSV, XLSX, or XLS files.');
+                return;
+            }
+            
+            if (data.length > 0) {
+                uploadedData = data;
+                previewUploadData(data);
+            }
+        } catch (error) {
+            alert('Error reading file: ' + error.message);
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+function parseCSV(csvText) {
+    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    
+    const data = [];
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',');
+        const row = {};
+        
+        headers.forEach((header, index) => {
+            row[header] = values[index] ? values[index].trim() : '';
+        });
+        
+        // Ensure required fields
+        if (!row.ID) row.ID = `EMP${String(data.length + 1).padStart(3, '0')}`;
+        if (!row.Name) row.Name = `Employee ${data.length + 1}`;
+        if (!row.Department) row.Department = 'General';
+        if (!row['Seniority Date']) row['Seniority Date'] = new Date().toISOString().split('T')[0];
+        
+        data.push(row);
+    }
+    
+    return data;
+}
+
+function previewUploadData(data) {
+    const previewTable = document.getElementById('previewTable');
+    const previewStats = document.getElementById('previewStats');
+    
+    // Create preview table
+    if (data.length > 0) {
+        const headers = Object.keys(data[0]);
+        let html = `
+            <table class="min-w-full border border-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        ${headers.map(h => `<th class="border px-3 py-2">${h}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        // Show first 5 rows for preview
+        const previewRows = data.slice(0, 5);
+        previewRows.forEach(row => {
+            html += '<tr>';
+            headers.forEach(header => {
+                html += `<td class="border px-3 py-2">${row[header] || ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        
+        if (data.length > 5) {
+            html += `
+                <tr>
+                    <td colspan="${headers.length}" class="border px-3 py-2 text-center text-gray-500">
+                        ... and ${data.length - 5} more rows
+                    </td>
+                </tr>
+            `;
+        }
+        
+        html += '</tbody></table>';
+        previewTable.innerHTML = html;
+        
+        // Update stats
+        previewStats.innerHTML = `
+            <div class="flex items-center gap-4">
+                <span>📊 <strong>${data.length}</strong> employees found</span>
+                <span>✅ <strong>${headers.length}</strong> columns</span>
+                <span>📅 Last: ${new Date().toLocaleDateString()}</span>
+            </div>
+        `;
+        
+        document.getElementById('uploadPreview').classList.remove('hidden');
+    }
+}
+
+function processUpload() {
+    if (uploadedData.length === 0) {
+        alert('No data to process!');
+        return;
+    }
+    
+    // Save to localStorage
+    localStorage.setItem('employees', JSON.stringify(uploadedData));
+    
+    // Create default passwords (ID as password)
+    const employeePasswords = {};
+    uploadedData.forEach(emp => {
+        if (emp.ID) {
+            employeePasswords[emp.ID] = emp.ID; // Default password = ID
+        }
+    });
+    localStorage.setItem('employeePasswords', JSON.stringify(employeePasswords));
+    
+    // Update state
+    if (typeof state !== 'undefined') {
+        state.employees = uploadedData;
+        state.employeePasswords = employeePasswords;
+    }
+    
+    alert(`✅ Successfully uploaded ${uploadedData.length} employees!\n\nDefault passwords have been set to their Employee IDs.`);
+    
+    updateEmployeeList();
+    closeUploadModal();
+}
+
+function clearUpload() {
+    uploadedData = [];
+    document.getElementById('uploadPreview').classList.add('hidden');
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileName').textContent = '';
+}
+
+function updateEmployeeList() {
+    const currentEmployeesDiv = document.getElementById('currentEmployees');
+    const employeeCountSpan = document.getElementById('employeeCount');
+    
+    try {
+        const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
+        
+        if (savedEmployees.length > 0) {
+            employeeCountSpan.textContent = savedEmployees.length;
+            
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
+            
+            savedEmployees.slice(0, 6).forEach(emp => {
+                html += `
+                    <div class="bg-white border rounded-lg p-3 shadow-sm">
+                        <div class="font-semibold text-gray-800">${emp.Name || 'Unnamed'}</div>
+                        <div class="text-sm text-gray-600">ID: ${emp.ID || 'N/A'}</div>
+                        <div class="text-xs text-gray-500">${emp.Department || 'No Department'}</div>
+                    </div>
+                `;
+            });
+            
+            if (savedEmployees.length > 6) {
+                html += `
+                    <div class="bg-gray-50 border rounded-lg p-3 flex items-center justify-center">
+                        <span class="text-gray-500">+ ${savedEmployees.length - 6} more employees</span>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            currentEmployeesDiv.innerHTML = html;
+        } else {
+            employeeCountSpan.textContent = '0';
+            currentEmployeesDiv.innerHTML = '<p class="text-gray-500 italic">No employee data uploaded yet.</p>';
+        }
+    } catch (error) {
+        employeeCountSpan.textContent = '0';
+        currentEmployeesDiv.innerHTML = '<p class="text-red-500">Error loading employee data</p>';
+    }
+}
+
+function toggleSampleData() {
+    const sampleData = document.getElementById('sampleData');
+    const toggle = document.getElementById('sampleToggle');
+    
+    if (sampleData.classList.contains('hidden')) {
+        sampleData.classList.remove('hidden');
+        toggle.textContent = '▲';
+    } else {
+        sampleData.classList.add('hidden');
+        toggle.textContent = '▼';
+    }
+}
+
+function downloadSampleCSV() {
+    const csvContent = `ID,Name,Department,Seniority Date,Email,Phone,Leave Balance,Status
+EMP001,John Doe,L4/6-SA,2020-01-15,john@example.com,+1234567890,30,Active
+EMP002,Jane Smith,L5-DEP-DM,2018-06-20,jane@example.com,+1987654321,35,Active
+EMP003,Robert Johnson,L3-DEP-DC,2019-03-10,robert@example.com,+1122334455,30,Active
+EMP004,Emily Davis,L46-DEP-TC,2021-11-05,emily@example.com,+1567890123,30,Active
+EMP005,Michael Brown,L5-SA,2017-08-15,michael@example.com,+1345678901,35,Active`;
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'employee_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function downloadSampleExcel() {
+    alert('Excel download requires additional libraries. Please use the CSV template for now.');
+    downloadSampleCSV(); // Fallback to CSV
+}
+        /* Add to your existing styles */
+#uploadModal::-webkit-scrollbar {
+    width: 8px;
+}
+
+#uploadModal::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#uploadModal::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#uploadModal::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
 
         // ==================== INITIALIZATION ====================
         function init() {
