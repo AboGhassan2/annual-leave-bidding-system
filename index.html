@@ -142,8 +142,9 @@
             </button>
             <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Admin Panel
-                <button onclick="publishToCloud()" class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
-            🌐 Publish Data
+            </button>
+            <button onclick="publishToCloud()" class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
+                🌐 Publish Data
             </button>
             <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Change Password
@@ -172,6 +173,7 @@
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
+        
         // ==================== CLOUD CONFIGURATION ====================
         // GitHub Gist Configuration (Free cloud storage)
         const GIST_ID = '2f3f246ef97e1165830bf95529d01b78'; // ← YOUR GIST ID HERE
@@ -217,7 +219,8 @@
             months: [
                 'January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'
-            ]
+            ],
+            loginType: 'employee'
         };
 
         // ==================== UTILITY FUNCTIONS ====================
@@ -278,7 +281,8 @@
             
             return new Date();
         }
-                // ==================== CLOUD FUNCTIONS ====================
+        
+        // ==================== CLOUD FUNCTIONS ====================
         async function loadFromCloud() {
             try {
                 console.log('Attempting to load from cloud...');
@@ -401,23 +405,6 @@
                 alert('Error publishing data. Please try again.');
             }
         }
-        
-        {
-            if (typeof dateValue === 'number') {
-                const excelEpoch = new Date(1899, 11, 30);
-                const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
-                return jsDate;
-            } else if (typeof dateValue === 'string') {
-                const date = new Date(dateValue);
-                if (!isNaN(date.getTime())) {
-                    return date;
-                }
-            } else if (dateValue instanceof Date) {
-                return dateValue;
-            }
-            
-            return new Date();
-        }
 
         // ==================== VIEW RENDERING ====================
         function renderView() {
@@ -474,7 +461,7 @@
             document.getElementById('loginView').classList.remove('hidden');
             document.getElementById('contentArea').innerHTML = '';
             
-            const loginForm = document.getElementById('loginForm')
+            const loginForm = document.getElementById('loginForm');
             if (state.loginType === 'planner') {
                 loginForm.innerHTML = `
                     <div>
@@ -2294,3 +2281,6 @@
         
         // Initialize the application
         init();
+    </script>
+</body>
+</html>
