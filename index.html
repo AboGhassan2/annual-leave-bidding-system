@@ -216,7 +216,6 @@
         lucide.createIcons();
         
         // ==================== CLOUD CONFIGURATION ====================
-        // Updated Gist URL format - CORRECTED
         const GIST_ID = '2f3f246ef97e1165830bf95529d01b78';
         const TOKEN = "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";
         const CLOUD_DATA_URL = `https://gist.githubusercontent.com/AboGhassan2/${GIST_ID}/raw/system_data.json`;
@@ -323,7 +322,7 @@
             return new Date();
         }
         
-        // ==================== IMPROVED CLOUD FUNCTIONS ====================
+        // ==================== CLOUD FUNCTIONS ====================
         async function syncWithCloud() {
             console.log('🔄 Syncing with cloud...');
             updateSystemStatus('Syncing with cloud...');
@@ -347,7 +346,6 @@
             console.log('🌐 Loading from cloud URL:', CLOUD_DATA_URL);
             
             try {
-                // Add cache busting and timeout
                 const timestamp = Date.now();
                 const response = await fetch(`${CLOUD_DATA_URL}?t=${timestamp}`, {
                     headers: {
@@ -369,7 +367,6 @@
                     return loadFromLocalStorage();
                 }
                 
-                // IMPORTANT: Only update state if cloud data is valid
                 if (cloudData.employees && cloudData.employees.length > 0) {
                     state.employees = cloudData.employees || [];
                     state.employeePasswords = cloudData.employeePasswords || {};
@@ -383,7 +380,6 @@
                     
                     console.log(`✅ Cloud data loaded: ${state.employees.length} employees`);
                     
-                    // Save to localStorage as backup
                     saveState();
                     
                     return true;
@@ -426,7 +422,6 @@
             if (statusElement) {
                 statusElement.textContent = message;
                 
-                // Add color based on message
                 if (message.includes('✅') || message.includes('Synced')) {
                     statusElement.className = 'text-xs text-green-700 font-semibold';
                 } else if (message.includes('⚠️') || message.includes('No data')) {
@@ -462,7 +457,6 @@
         
         async function saveToGist() {
             try {
-                // Prepare system data
                 const systemData = {
                     employees: state.employees,
                     employeePasswords: state.employeePasswords,
@@ -479,7 +473,6 @@
                 
                 const dataStr = JSON.stringify(systemData, null, 2);
                 
-                // Create downloadable file
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
                 const url = URL.createObjectURL(dataBlob);
                 
@@ -491,7 +484,6 @@
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
                 
-                // Instructions for planner
                 alert(`✅ System data ready for cloud publishing!\n\n` +
                       `1. A file named "system_data_${state.biddingYear}.json" has been downloaded\n` +
                       `2. Go to: https://gist.github.com/AboGhassan2/2f3f246ef97e1165830bf95529d01b78\n` +
@@ -527,13 +519,11 @@
             try {
                 const importedData = JSON.parse(jsonData);
                 
-                // Validate imported data
                 if (!importedData.employees || !Array.isArray(importedData.employees)) {
                     alert('Invalid data format: Missing employees array');
                     return;
                 }
                 
-                // Update state
                 state.employees = importedData.employees || [];
                 state.employeePasswords = importedData.employeePasswords || {};
                 state.bids = importedData.bids || [];
@@ -544,13 +534,11 @@
                 state.results = importedData.results || [];
                 state.slotCapacities = importedData.slotCapacities || {};
                 
-                // Save to localStorage
                 saveState();
                 
                 hideManualImport();
                 updateSystemStatus(`✅ Imported ${state.employees.length} employees`);
                 
-                // Refresh the view
                 setTimeout(() => {
                     renderView();
                     alert(`Successfully imported ${state.employees.length} employees!`);
@@ -566,7 +554,6 @@
         function renderView() {
             const contentArea = document.getElementById('contentArea');
             
-            // Update system status
             if (state.employees.length > 0) {
                 updateSystemStatus(`✅ ${state.employees.length} employees loaded`);
                 document.getElementById('manualImportSection').classList.add('hidden');
@@ -605,7 +592,6 @@
                     break;
             }
             
-            // Update navigation visibility
             document.getElementById('plannerNav').classList.toggle('hidden', state.userType !== 'planner');
             document.getElementById('employeeNav').classList.toggle('hidden', state.userType !== 'employee');
             document.getElementById('userInfo').classList.toggle('hidden', !state.currentUser);
@@ -618,6 +604,8 @@
                     ? 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800' 
                     : 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
             }
+            
+            saveState();
         }
 
         function renderLoginView() {
@@ -677,7 +665,6 @@
                 `;
             }
             
-            // Add manual import button if no data
             if (state.employees.length === 0) {
                 const importBtn = document.createElement('button');
                 importBtn.onclick = showManualImport;
@@ -686,9 +673,6 @@
                 loginForm.appendChild(importBtn);
             }
         }
-
-        // [Keep all the other render functions exactly as they were - renderUploadView, renderConfigureSlotsView, etc.]
-        // I'm keeping the structure short here, but you should include ALL your existing render functions
 
         function renderUploadView() {
             document.getElementById('loginView').classList.add('hidden');
@@ -766,7 +750,6 @@
             
             lucide.createIcons();
             
-            // Add event listeners
             document.getElementById('biddingYearSelect').addEventListener('change', (e) => {
                 state.biddingYear = parseInt(e.target.value);
                 renderView();
@@ -774,7 +757,6 @@
             
             document.getElementById('excelFile').addEventListener('change', handleFileUpload);
             
-            // Add drag and drop functionality
             const dropZone = document.getElementById('dropZone');
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
@@ -794,13 +776,804 @@
             });
         }
 
-        // [Include ALL your other existing functions here exactly as they were:
-        // renderConfigureSlotsView, renderEmployeeBiddingView, renderAdminView, 
-        // renderResultsView, renderMyResultsView, renderChangePasswordView, 
-        // renderChangePlannerPasswordView, setLoginType, handleLogin, handleLogout,
-        // setActiveView, handleFileUpload, saveSlotConfiguration, setSelectedSlot,
-        // updateSlotText, updateMonthText, updateEndDate, submitBid, removeBid,
-        // changePassword, changePlannerPassword, processBids, exportResults, resetSystem]
+        function renderConfigureSlotsView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            const initialCapacities = {};
+            const allDepts = ['All', ...new Set(state.employees.map(e => e.department || 'Unassigned'))];
+            
+            state.months.forEach(month => {
+                allDepts.forEach(dept => {
+                    initialCapacities[`${month}-${dept}-A`] = state.slotCapacities[`${month}-${dept}-A`] !== undefined 
+                        ? state.slotCapacities[`${month}-${dept}-A`] 
+                        : 5;
+                    initialCapacities[`${month}-${dept}-B`] = state.slotCapacities[`${month}-${dept}-B`] !== undefined
+                        ? state.slotCapacities[`${month}-${dept}-B`]
+                        : 5;
+                    initialCapacities[`${month}-${dept}-C`] = state.slotCapacities[`${month}-${dept}-C`] !== undefined
+                        ? state.slotCapacities[`${month}-${dept}-C`]
+                        : 5;
+                });
+            });
+            
+            const uniqueDepartments = ['All', ...new Set(state.employees.map(e => e.department || 'Unassigned'))].sort((a, b) => {
+                if (a === 'All') return -1;
+                if (b === 'All') return 1;
+                return a.localeCompare(b);
+            });
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-7xl mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-6">
+                        <h2 class="text-2xl font-bold mb-4">Configure Slot Capacities for ${state.biddingYear}</h2>
+                        <p class="text-gray-600 mb-6">
+                            Set how many employees can take leave in each month per department. Each month has 3 slots: A (15 days), B (15 days), C (20 days)
+                        </p>
+
+                        <div class="mb-6 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+                            <label class="block font-semibold mb-2">Filter by Department:</label>
+                            <select
+                                id="deptFilter"
+                                class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                            >
+                                ${uniqueDepartments.map(dept => `
+                                    <option value="${dept}">${dept}</option>
+                                `).join('')}
+                            </select>
+                            <p id="filterInfo" class="text-sm text-gray-600 mt-2">
+                                Configuring for all departments
+                            </p>
+                        </div>
+
+                        <div id="slotConfigArea" class="space-y-4 max-h-96 overflow-y-auto">
+                            ${state.months.map(month => `
+                                <div class="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                                    <h3 class="font-bold text-lg mb-3 text-blue-600">${month} ${state.biddingYear}</h3>
+                                    
+                                    ${uniqueDepartments.filter(d => d !== 'All').map(dept => `
+                                        <div class="mb-4 p-3 bg-white rounded-lg border border-gray-200 department-config" data-dept="${dept}">
+                                            <h4 class="font-semibold text-md mb-2 text-purple-600">${dept}</h4>
+                                            
+                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                <div class="bg-green-50 border border-green-300 rounded p-3">
+                                                    <div class="flex items-center justify-between mb-2">
+                                                        <span class="font-semibold text-green-800">Slot A (15 days)</span>
+                                                        <i data-lucide="users" class="text-green-600 w-5 h-5"></i>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        data-key="${month}-${dept}-A"
+                                                        value="${initialCapacities[`${month}-${dept}-A`] || 5}"
+                                                        class="slot-input w-full px-3 py-2 border-2 border-green-400 rounded-lg text-center text-lg font-bold focus:border-green-600 focus:outline-none"
+                                                        placeholder="5"
+                                                    />
+                                                </div>
+
+                                                <div class="bg-blue-50 border border-blue-300 rounded p-3">
+                                                    <div class="flex items-center justify-between mb-2">
+                                                        <span class="font-semibold text-blue-800">Slot B (15 days)</span>
+                                                        <i data-lucide="users" class="text-blue-600 w-5 h-5"></i>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        data-key="${month}-${dept}-B"
+                                                        value="${initialCapacities[`${month}-${dept}-B`] || 5}"
+                                                        class="slot-input w-full px-3 py-2 border-2 border-blue-400 rounded-lg text-center text-lg font-bold focus:border-blue-600 focus:outline-none"
+                                                        placeholder="5"
+                                                    />
+                                                </div>
+
+                                                <div class="bg-purple-50 border border-purple-300 rounded p-3">
+                                                    <div class="flex items-center justify-between mb-2">
+                                                        <span class="font-semibold text-purple-800">Slot C (20 days)</span>
+                                                        <i data-lucide="users" class="text-purple-600 w-5 h-5"></i>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        data-key="${month}-${dept}-C"
+                                                        value="${initialCapacities[`${month}-${dept}-C`] || 5}"
+                                                        class="slot-input w-full px-3 py-2 border-2 border-purple-400 rounded-lg text-center text-lg font-bold focus:border-purple-600 focus:outline-none"
+                                                        placeholder="5"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="mt-6 flex gap-3">
+                            <button
+                                onclick="saveSlotConfiguration()"
+                                class="flex-1 px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold"
+                            >
+                                Save Configuration
+                            </button>
+                            <button
+                                onclick="setActiveView('upload')"
+                                class="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+                            >
+                                Back
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+            
+            document.getElementById('deptFilter').addEventListener('change', (e) => {
+                const selectedDept = e.target.value;
+                document.getElementById('filterInfo').textContent = 
+                    selectedDept === 'All' 
+                        ? 'Configuring for all departments' 
+                        : `Configuring for ${selectedDept} only`;
+                
+                const deptConfigs = document.querySelectorAll('.department-config');
+                deptConfigs.forEach(config => {
+                    if (selectedDept === 'All' || config.dataset.dept === selectedDept) {
+                        config.classList.remove('hidden');
+                    } else {
+                        config.classList.add('hidden');
+                    }
+                });
+            });
+            
+            document.querySelectorAll('.slot-input').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    initialCapacities[e.target.dataset.key] = parseInt(e.target.value) || 5;
+                });
+            });
+        }
+
+        function renderAdminView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            const uniqueDepartments = ['all', ...new Set(state.employees.map(e => e.department || 'Unassigned'))].sort((a, b) => {
+                if (a === 'all') return -1;
+                if (b === 'all') return 1;
+                return a.localeCompare(b);
+            });
+            
+            const filteredEmployees = state.selectedDepartment === 'all' 
+                ? state.employees 
+                : state.employees.filter(e => (e.department || 'Unassigned') === state.selectedDepartment);
+            
+            const filteredBids = state.selectedDepartment === 'all'
+                ? state.bids
+                : state.bids.filter(b => {
+                    const emp = state.employees.find(e => e.id === b.employeeId);
+                    return emp && (emp.department || 'Unassigned') === state.selectedDepartment;
+                });
+
+            const employeesWhoBid = new Set(filteredBids.map(b => b.employeeId));
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-6xl mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-6">
+                        <h2 class="text-2xl font-bold mb-6">Admin Panel</h2>
+                        
+                        <div class="mb-6 p-4 bg-blue-50 rounded-lg">
+                            <label class="block font-semibold mb-2">Set Bidding Deadline:</label>
+                            <input
+                                type="datetime-local"
+                                id="biddingDeadline"
+                                value="${state.biddingDeadline}"
+                                class="w-full px-4 py-2 border rounded-lg"
+                                ${state.isProcessed ? 'disabled' : ''}
+                            />
+                            ${state.biddingDeadline ? `
+                                <p class="text-sm text-gray-600 mt-2">
+                                    Deadline: ${new Date(state.biddingDeadline).toLocaleString()}
+                                </p>
+                            ` : ''}
+                        </div>
+
+                        <div class="mb-6 p-4 bg-purple-50 rounded-lg">
+                            <label class="block font-semibold mb-2">Filter by Department:</label>
+                            <select
+                                id="adminDeptFilter"
+                                class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                            >
+                                ${uniqueDepartments.map(dept => `
+                                    <option value="${dept}" ${dept === state.selectedDepartment ? 'selected' : ''}>
+                                        ${dept === 'all' ? 'All Departments' : dept}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-blue-50 p-4 rounded-lg">
+                                <i data-lucide="users" class="mb-2 text-blue-600"></i>
+                                <p class="text-2xl font-bold">${filteredEmployees.length}</p>
+                                <p class="text-sm text-gray-600">
+                                    ${state.selectedDepartment === 'all' ? 'Total Employees' : 'Employees in Department'}
+                                </p>
+                            </div>
+                            <div class="bg-green-50 p-4 rounded-lg">
+                                <i data-lucide="check-circle" class="mb-2 text-green-600"></i>
+                                <p class="text-2xl font-bold">${filteredBids.length}</p>
+                                <p class="text-sm text-gray-600">Total Bids Received</p>
+                            </div>
+                            <div class="bg-yellow-50 p-4 rounded-lg">
+                                <i data-lucide="clock" class="mb-2 text-yellow-600"></i>
+                                <p class="text-2xl font-bold">${employeesWhoBid.size}</p>
+                                <p class="text-sm text-gray-600">Employees Who Bid</p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <button
+                                onclick="processBids()"
+                                ${state.isProcessed || state.employees.length === 0 ? 'disabled' : ''}
+                                class="w-full px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold ${state.isProcessed || state.employees.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}"
+                            >
+                                ${state.isProcessed ? 'Bids Already Processed' : 'Process All Bids'}
+                            </button>
+                            
+                            ${state.isProcessed && state.results.length > 0 ? `
+                                <button
+                                    onclick="exportResults()"
+                                    class="w-full px-6 py-3 gradient-green text-white rounded-lg hover:shadow-lg font-semibold"
+                                >
+                                    Export Results to Excel
+                                </button>
+                            ` : ''}
+                            
+                            <button
+                                onclick="resetSystem()"
+                                class="w-full px-6 py-3 gradient-red text-white rounded-lg hover:shadow-lg font-semibold"
+                            >
+                                Reset System
+                            </button>
+                        </div>
+
+                        ${filteredBids.length > 0 ? `
+                            <div class="mt-6">
+                                <h3 class="font-bold mb-2">
+                                    Current Bids Summary
+                                    ${state.selectedDepartment !== 'all' ? ` - ${state.selectedDepartment}` : ''}
+                                </h3>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-100">
+                                            <tr>
+                                                <th class="p-2 text-left">Rank</th>
+                                                <th class="p-2 text-left">Employee Name</th>
+                                                <th class="p-2 text-left">Employee ID</th>
+                                                <th class="p-2 text-left">Department</th>
+                                                <th class="p-2 text-left">Bids</th>
+                                                <th class="p-2 text-left">Total Days</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${Array.from(employeesWhoBid).map(empId => {
+                                                const emp = state.employees.find(e => e.id === empId);
+                                                const empBids = filteredBids.filter(b => b.employeeId === empId);
+                                                const rank = filteredEmployees.findIndex(e => e.id === empId) + 1;
+                                                const totalDays = empBids.reduce((sum, b) => sum + b.days, 0);
+                                                
+                                                return `
+                                                    <tr class="border-b">
+                                                        <td class="p-2">#${rank}</td>
+                                                        <td class="p-2">${emp?.name || 'Unknown'}</td>
+                                                        <td class="p-2">${empId}</td>
+                                                        <td class="p-2">${emp?.department || 'Unassigned'}</td>
+                                                        <td class="p-2">
+                                                            ${empBids.map(b => {
+                                                                const slot = state.slotTypes.find(s => s.id === b.slotType);
+                                                                return slot.name;
+                                                            }).join(', ')}
+                                                        </td>
+                                                        <td class="p-2 font-semibold">${totalDays} days</td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+            
+            document.getElementById('biddingDeadline').addEventListener('change', (e) => {
+                state.biddingDeadline = e.target.value;
+                saveState();
+            });
+            
+            document.getElementById('adminDeptFilter').addEventListener('change', (e) => {
+                state.selectedDepartment = e.target.value;
+                renderView();
+            });
+        }
+
+        function renderEmployeeBiddingView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            const userBids = state.bids.filter(bid => bid.employeeId === state.verifiedEmployee?.id);
+            const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+            const entitlement = getEmployeeEntitlement(state.verifiedEmployee);
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-6xl mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                        <h2 class="text-2xl font-bold mb-4 flex items-center">
+                            <i data-lucide="calendar" class="mr-2"></i> Leave Bidding for ${state.biddingYear}
+                        </h2>
+                        <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                            <p class="font-semibold text-blue-800">
+                                Your Leave Entitlement: ${entitlement} days
+                                <span class="text-sm ml-2">
+                                    (${calculateYearsOfService(state.verifiedEmployee.seniorityDate).toFixed(1)} years of service)
+                                </span>
+                            </p>
+                            <p class="text-sm text-blue-700">Slot A: 15 days | Slot B: 15 days | Slot C: 20 days</p>
+                            <p class="text-sm text-blue-700 mt-2">You have placed ${userBids.length}/2 bids totaling ${totalBidDays} days</p>
+                            <p class="text-sm text-blue-700">Remaining leave: ${entitlement - totalBidDays} days</p>
+                        </div>
+
+                        ${state.isProcessed ? `
+                            <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
+                                <i data-lucide="alert-circle" class="inline mr-2"></i>
+                                <span class="font-semibold">Bidding has been processed and is now closed</span>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Place New Bid Form -->
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <h3 class="text-xl font-bold mb-4">Place New Bid</h3>
+                            
+                            <div class="mb-4">
+                                <label class="block font-semibold mb-2">Select Month:</label>
+                                <select
+                                    id="selectedMonth"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none ${state.isProcessed ? 'bg-gray-100' : ''}"
+                                    ${state.isProcessed ? 'disabled' : ''}
+                                >
+                                    ${state.months.map(month => `
+                                        <option value="${month}">${month} ${state.biddingYear}</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                <div class="space-y-2" id="slotButtons">
+                                    ${state.slotTypes.map(slot => {
+                                        const hasBid = userBids.some(b => b.slotType === slot.id);
+                                        return `
+                                            <button
+                                                onclick="setSelectedSlot('${slot.id}')"
+                                                ${hasBid || state.isProcessed ? 'disabled' : ''}
+                                                class="slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all ${
+                                                    'selectedSlot' in window && window.selectedSlot === slot.id
+                                                        ? 'gradient-blue text-white'
+                                                        : hasBid
+                                                        ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                                        : state.isProcessed
+                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                        : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                                                }"
+                                                data-slot="${slot.id}"
+                                                ${hasBid ? 'data-hasbid="true"' : ''}
+                                            >
+                                                <div class="flex justify-between items-center">
+                                                    <span>${slot.name} - ${slot.days} days</span>
+                                                    ${hasBid ? '<span class="text-sm">✓ Already Bid</span>' : ''}
+                                                </div>
+                                            </button>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+
+                            <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
+                                <p class="text-sm font-semibold text-yellow-800">
+                                    📅 Select dates within <span id="selectedMonthText">January</span> ${state.biddingYear}
+                                </p>
+                                <p class="text-xs text-yellow-700 mt-1">
+                                    <span id="selectedSlotText">Slot A</span> requires exactly <span id="selectedSlotDays">15</span> consecutive days
+                                </p>
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block font-semibold mb-2">Start Date:</label>
+                                <input
+                                    type="date"
+                                    id="startDate"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none ${state.isProcessed ? 'bg-gray-100' : ''}"
+                                    ${state.isProcessed ? 'disabled' : ''}
+                                    onchange="updateEndDate()"
+                                />
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block font-semibold mb-2">End Date (Auto-calculated):</label>
+                                <input
+                                    type="date"
+                                    id="endDate"
+                                    readonly
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                                    ${state.isProcessed ? 'disabled' : ''}
+                                />
+                                <p class="text-xs text-gray-500 mt-1">
+                                    End date is automatically calculated based on slot type
+                                </p>
+                            </div>
+
+                            <div id="dateInfo" class="hidden p-3 rounded mb-4"></div>
+
+                            <button
+                                onclick="submitBid()"
+                                ${state.isProcessed ? 'disabled' : ''}
+                                class="w-full px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold ${state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
+                            >
+                                Submit Bid
+                            </button>
+                        </div>
+
+                        <!-- Current Bids -->
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <h3 class="text-xl font-bold mb-4">My Current Bids</h3>
+                            
+                            ${userBids.length === 0 ? `
+                                <div class="text-center py-8 text-gray-500">
+                                    <p>No bids placed yet</p>
+                                </div>
+                            ` : `
+                                <div class="space-y-3" id="currentBids">
+                                    ${userBids.map((bid, idx) => {
+                                        const slot = state.slotTypes.find(s => s.id === bid.slotType);
+                                        return `
+                                            <div class="p-4 rounded-lg border-2 border-blue-300 bg-blue-50">
+                                                <div class="flex justify-between items-start">
+                                                    <div class="flex-1">
+                                                        <p class="font-bold text-lg">${slot.name}</p>
+                                                        <p class="text-sm text-gray-700 font-semibold">${bid.startDate} to ${bid.endDate}</p>
+                                                        <p class="text-sm font-semibold text-gray-800">${bid.days} days</p>
+                                                    </div>
+                                                    ${!state.isProcessed ? `
+                                                        <button
+                                                            onclick="removeBid('${bid.employeeId}', '${bid.slotType}', '${bid.startDate}')"
+                                                            class="ml-2 p-2 gradient-red text-white rounded hover:shadow-lg"
+                                                        >
+                                                            <i data-lucide="x" class="w-4 h-4"></i>
+                                                        </button>
+                                                    ` : ''}
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+            
+            if (!window.selectedSlot) {
+                window.selectedSlot = 'slotA';
+                updateSlotText();
+            }
+            
+            document.getElementById('selectedMonth').addEventListener('change', updateMonthText);
+            updateMonthText();
+        }
+
+        function renderResultsView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            const uniqueDepartments = ['all', ...new Set(state.results.map(r => r.department))].sort((a, b) => {
+                if (a === 'all') return -1;
+                if (b === 'all') return 1;
+                return a.localeCompare(b);
+            });
+            
+            const filteredResults = state.selectedDepartment === 'all'
+                ? state.results
+                : state.results.filter(r => r.department === state.selectedDepartment);
+
+            const employeeResults = {};
+            filteredResults.forEach(result => {
+                if (!employeeResults[result.employeeId]) {
+                    employeeResults[result.employeeId] = {
+                        employeeId: result.employeeId,
+                        employeeName: result.employeeName,
+                        department: result.department,
+                        seniorityRank: result.seniorityRank,
+                        slots: []
+                    };
+                }
+                employeeResults[result.employeeId].slots.push(result);
+            });
+
+            const sortedEmployeeResults = Object.values(employeeResults).sort((a, b) => a.seniorityRank - b.seniorityRank);
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-6xl mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold">Leave Assignment Results for ${state.biddingYear}</h2>
+                            <button
+                                onclick="exportResults()"
+                                class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold flex items-center gap-2"
+                            >
+                                <i data-lucide="upload" class="w-4 h-4"></i>
+                                Export to Excel
+                            </button>
+                        </div>
+
+                        <div class="mb-6 p-4 bg-purple-50 rounded-lg">
+                            <label class="block font-semibold mb-2">Filter by Department:</label>
+                            <select
+                                id="resultsDeptFilter"
+                                class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                            >
+                                ${uniqueDepartments.map(dept => `
+                                    <option value="${dept}" ${dept === state.selectedDepartment ? 'selected' : ''}>
+                                        ${dept === 'all' ? 'All Departments' : dept}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        
+                        ${state.results.length === 0 ? `
+                            <div class="text-center py-8">
+                                <i data-lucide="alert-circle" class="w-16 h-16 mx-auto mb-4 text-gray-400"></i>
+                                <p class="text-gray-600">No results yet. Admin needs to process bids first.</p>
+                            </div>
+                        ` : `
+                            <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                <p class="font-semibold mb-2">Summary:</p>
+                                <div class="grid grid-cols-3 gap-4 text-sm">
+                                    <div>
+                                        <span class="text-gray-600">Employees:</span>
+                                        <p class="text-2xl font-bold text-blue-600">${sortedEmployeeResults.length}</p>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Total Slots:</span>
+                                        <p class="text-2xl font-bold text-green-600">${filteredResults.length}</p>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Bid Awards:</span>
+                                        <p class="text-2xl font-bold text-yellow-600">
+                                            ${filteredResults.filter(r => r.type === 'Bid Awarded').length}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-100">
+                                        <tr>
+                                            <th class="p-3 text-left">Rank</th>
+                                            <th class="p-3 text-left">Employee ID</th>
+                                            <th class="p-3 text-left">Name</th>
+                                            <th class="p-3 text-left">Department</th>
+                                            <th class="p-3 text-left">Slot Type</th>
+                                            <th class="p-3 text-left">Dates</th>
+                                            <th class="p-3 text-left">Days</th>
+                                            <th class="p-3 text-left">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${sortedEmployeeResults.map((emp) => {
+                                            return emp.slots.map((slot, idx) => `
+                                                <tr class="border-b hover:bg-gray-50">
+                                                    ${idx === 0 ? `
+                                                        <td class="p-3 font-semibold" rowspan="${emp.slots.length}">#${emp.seniorityRank}</td>
+                                                        <td class="p-3" rowspan="${emp.slots.length}">${emp.employeeId}</td>
+                                                        <td class="p-3" rowspan="${emp.slots.length}">${emp.employeeName}</td>
+                                                        <td class="p-3" rowspan="${emp.slots.length}">${emp.department}</td>
+                                                    ` : ''}
+                                                    <td class="p-3 font-semibold text-blue-600">${slot.slotName}</td>
+                                                    <td class="p-3 text-xs">${slot.startDate} to ${slot.endDate}</td>
+                                                    <td class="p-3 font-semibold">${slot.days}</td>
+                                                    <td class="p-3">
+                                                        <span class="px-2 py-1 rounded text-xs font-semibold ${
+                                                            slot.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                                                        }">
+                                                            ${slot.type}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            `).join('');
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+            
+            document.getElementById('resultsDeptFilter').addEventListener('change', (e) => {
+                state.selectedDepartment = e.target.value;
+                renderView();
+            });
+        }
+
+        function renderMyResultsView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            const myResults = state.results.filter(r => r.employeeId === state.verifiedEmployee?.id);
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-4xl mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-6">
+                        <h2 class="text-2xl font-bold mb-4">My Leave Assignment</h2>
+                        
+                        ${myResults.length === 0 ? `
+                            <div class="text-center py-8">
+                                <i data-lucide="alert-circle" class="w-16 h-16 mx-auto mb-4 text-gray-400"></i>
+                                <p class="text-gray-600">Results not yet available. Please wait for the planner to process bids.</p>
+                            </div>
+                        ` : `
+                            <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                <p class="font-semibold">Your Assigned Slots:</p>
+                                <p class="text-sm text-gray-600">You have been assigned ${myResults.length} slot(s) for ${state.biddingYear}</p>
+                                <p class="text-sm text-gray-600">Total: ${myResults.reduce((sum, r) => sum + r.days, 0)} days</p>
+                            </div>
+                            
+                            <div class="space-y-3">
+                                ${myResults.map((result, idx) => `
+                                    <div class="border border-gray-200 rounded p-4">
+                                        <div class="flex justify-between items-center">
+                                            <div>
+                                                <p class="font-bold text-lg text-blue-600">${result.slotName}</p>
+                                                <p class="text-sm text-gray-600">${result.startDate} to ${result.endDate}</p>
+                                                <p class="text-sm font-semibold">${result.days} days</p>
+                                            </div>
+                                            <span class="px-3 py-1 rounded font-semibold ${
+                                                result.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                                            }">
+                                                ${result.type}
+                                            </span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+            
+            lucide.createIcons();
+        }
+
+        function renderChangePasswordView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-md mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-8">
+                        <h2 class="text-2xl font-bold mb-6">Change Password</h2>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block font-semibold mb-2">Current Password:</label>
+                                <input
+                                    type="password"
+                                    id="currentPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter current password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">New Password:</label>
+                                <input
+                                    type="password"
+                                    id="newPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter new password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                <input
+                                    type="password"
+                                    id="confirmPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Confirm new password"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 mt-6">
+                            <button
+                                onclick="changePassword()"
+                                class="flex-1 px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold"
+                            >
+                                Change Password
+                            </button>
+                            <button
+                                onclick="setActiveView('employee')"
+                                class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChangePlannerPasswordView() {
+            document.getElementById('loginView').classList.add('hidden');
+            
+            document.getElementById('contentArea').innerHTML = `
+                <div class="max-w-md mx-auto fade-in">
+                    <div class="bg-white rounded-xl shadow-xl p-8">
+                        <h2 class="text-2xl font-bold mb-6">Change Planner Password</h2>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block font-semibold mb-2">Current Password:</label>
+                                <input
+                                    type="password"
+                                    id="currentPlannerPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                                    placeholder="Enter current password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">New Password:</label>
+                                <input
+                                    type="password"
+                                    id="newPlannerPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                                    placeholder="Enter new password (min 6 characters)"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                <input
+                                    type="password"
+                                    id="confirmPlannerPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                                    placeholder="Confirm new password"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="flex gap-3 mt-6">
+                            <button
+                                onclick="changePlannerPassword()"
+                                class="flex-1 px-6 py-3 gradient-purple text-white rounded-lg hover:shadow-lg font-semibold"
+                            >
+                                Change Password
+                            </button>
+                            <button
+                                onclick="setActiveView('admin')"
+                                class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         // ==================== EVENT HANDLERS ====================
         function setLoginType(type) {
@@ -861,6 +1634,20 @@
             }
         }
 
+        function handleLogout() {
+            state.currentUser = null;
+            state.userType = null;
+            state.verifiedEmployee = null;
+            state.selectedEmployeeId = '';
+            state.activeView = 'login';
+            renderView();
+        }
+
+        function setActiveView(view) {
+            state.activeView = view;
+            renderView();
+        }
+
         function handleFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -885,8 +1672,6 @@
                         raw: false,
                         defval: ''
                     });
-
-                    console.log('Processing Excel file...');
 
                     const employeeData = jsonData.map((row, index) => {
                         const id = String(
@@ -950,7 +1735,6 @@
 
                         let department = '';
                         
-                        // Check for "Scheduling row" column
                         if (row['Scheduling row'] || row['Scheduling_row'] || row['SchedulingRow']) {
                             const schedValue = String(row['Scheduling row'] || row['Scheduling_row'] || row['SchedulingRow'] || '');
                             if (schedValue.trim() !== '') {
@@ -958,7 +1742,6 @@
                             }
                         }
                         
-                        // Fallback: Try standard department columns
                         if (!department) {
                             const allKeys = Object.keys(row);
                             for (const key of allKeys) {
@@ -992,7 +1775,6 @@
                     
                     state.employees = employeeData;
                     
-                    // Initialize passwords for new employees
                     employeeData.forEach(emp => {
                         if (!state.employeePasswords[emp.id]) {
                             state.employeePasswords[emp.id] = emp.id;
@@ -1016,11 +1798,554 @@
             reader.readAsArrayBuffer(file);
         }
 
+        function saveSlotConfiguration() {
+            const inputs = document.querySelectorAll('.slot-input');
+            inputs.forEach(input => {
+                const key = input.dataset.key;
+                const value = parseInt(input.value) || 5;
+                state.slotCapacities[key] = value;
+            });
+            
+            const totalSlots = Object.values(state.slotCapacities).reduce((sum, val) => sum + val, 0);
+            
+            alert(`✓ Slot capacities saved successfully!\n\n` +
+                  `Total slot positions configured: ${totalSlots}\n\n` +
+                  `Returning to Admin Panel...`);
+            
+            saveState();
+            setActiveView('admin');
+        }
+
+        function setSelectedSlot(slotId) {
+            window.selectedSlot = slotId;
+            updateSlotText();
+            
+            document.querySelectorAll('.slot-btn').forEach(btn => {
+                if (btn.dataset.slot === slotId) {
+                    btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all gradient-blue text-white';
+                } else if (btn.dataset.hasbid === 'true' || state.isProcessed) {
+                    btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-200 text-gray-500 cursor-not-allowed';
+                } else {
+                    btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800';
+                }
+            });
+            
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('dateInfo').classList.add('hidden');
+        }
+
+        function updateSlotText() {
+            const slot = state.slotTypes.find(s => s.id === window.selectedSlot);
+            if (slot) {
+                document.getElementById('selectedSlotText').textContent = slot.name;
+                document.getElementById('selectedSlotDays').textContent = slot.days;
+            }
+        }
+
+        function updateMonthText() {
+            const monthSelect = document.getElementById('selectedMonth');
+            if (monthSelect) {
+                document.getElementById('selectedMonthText').textContent = monthSelect.value;
+            }
+        }
+
+        function updateEndDate() {
+            const startDateInput = document.getElementById('startDate');
+            const endDateInput = document.getElementById('endDate');
+            const dateInfo = document.getElementById('dateInfo');
+            
+            if (!startDateInput.value || !window.selectedSlot) {
+                endDateInput.value = '';
+                dateInfo.classList.add('hidden');
+                return;
+            }
+            
+            const slot = state.slotTypes.find(s => s.id === window.selectedSlot);
+            if (!slot) return;
+            
+            const startDate = new Date(startDateInput.value);
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + slot.days - 1);
+            
+            endDateInput.value = endDate.toISOString().split('T')[0];
+            
+            const days = calculateDaysBetween(startDateInput.value, endDateInput.value);
+            
+            if (days === slot.days) {
+                dateInfo.innerHTML = `
+                    <p class="font-semibold text-green-800">
+                        Selected: ${days} days ✓
+                    </p>
+                    <p class="text-sm mt-1 text-green-700">
+                        ${startDateInput.value} to ${endDateInput.value}
+                    </p>
+                `;
+                dateInfo.className = 'p-3 rounded mb-4 bg-green-50 border border-green-200';
+            } else {
+                dateInfo.innerHTML = `
+                    <p class="font-semibold text-red-800">
+                        Selected: ${days} days (Required: ${slot.days} days)
+                    </p>
+                    <p class="text-sm mt-1 text-red-700">
+                        ${startDateInput.value} to ${endDateInput.value}
+                    </p>
+                `;
+                dateInfo.className = 'p-3 rounded mb-4 bg-red-50 border border-red-200';
+            }
+            
+            dateInfo.classList.remove('hidden');
+        }
+
+        function submitBid() {
+            if (!state.verifiedEmployee) {
+                alert('Please enter and verify your Employee ID first');
+                return;
+            }
+
+            if (state.isProcessed) {
+                alert('Bidding has been processed. No more bids allowed.');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const monthSelect = document.getElementById('selectedMonth');
+            const month = monthSelect ? monthSelect.value : state.months[0];
+
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates');
+                return;
+            }
+
+            const slot = state.slotTypes.find(s => s.id === window.selectedSlot);
+            const days = calculateDaysBetween(startDate, endDate);
+
+            if (days !== slot.days) {
+                alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.`);
+                return;
+            }
+
+            const start = new Date(startDate);
+            const yearStart = new Date(state.biddingYear, 0, 1);
+            const yearEnd = new Date(state.biddingYear, 11, 31);
+
+            if (start < yearStart || start > yearEnd) {
+                alert(`Start date must be within ${state.biddingYear}`);
+                return;
+            }
+
+            const existingBid = state.bids.find(
+                bid => bid.employeeId === state.verifiedEmployee.id && bid.slotType === window.selectedSlot
+            );
+            
+            if (existingBid) {
+                alert(`You have already bid for ${slot.name}. You cannot bid for the same slot twice.`);
+                return;
+            }
+
+            const userBids = state.bids.filter(bid => bid.employeeId === state.verifiedEmployee.id);
+            const entitlement = getEmployeeEntitlement(state.verifiedEmployee);
+            
+            if (userBids.length >= 2) {
+                alert('You can only place 2 bids maximum.');
+                return;
+            }
+
+            const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+            if (totalBidDays + days > entitlement) {
+                alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
+                return;
+            }
+
+            for (const bid of userBids) {
+                if (checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                    alert(`Date overlap detected with your existing ${state.slotTypes.find(s => s.id === bid.slotType).name} bid (${bid.startDate} to ${bid.endDate})`);
+                    return;
+                }
+            }
+
+            const newBid = {
+                employeeId: state.verifiedEmployee.id,
+                employeeName: state.verifiedEmployee.name,
+                seniorityDate: state.verifiedEmployee.seniorityDate,
+                department: state.verifiedEmployee.department,
+                slotType: window.selectedSlot,
+                startDate,
+                endDate,
+                days,
+                timestamp: new Date().toISOString()
+            };
+
+            state.bids.push(newBid);
+            saveState();
+            alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
+            
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('dateInfo').classList.add('hidden');
+            renderView();
+        }
+
+        function removeBid(employeeId, slotType, startDate) {
+            if (state.isProcessed) {
+                alert('Cannot remove bids after processing');
+                return;
+            }
+            
+            if (confirm('Are you sure you want to remove this bid?')) {
+                state.bids = state.bids.filter(bid => 
+                    !(bid.employeeId === employeeId && 
+                      bid.slotType === slotType && 
+                      bid.startDate === startDate)
+                );
+                saveState();
+                renderView();
+            }
+        }
+
+        function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const storedPassword = state.employeePasswords[state.verifiedEmployee.id] || state.verifiedEmployee.id;
+            
+            if (currentPassword !== storedPassword) {
+                alert('Current password is incorrect');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert('New passwords do not match');
+                return;
+            }
+
+            if (newPassword.length < 4) {
+                alert('Password must be at least 4 characters long');
+                return;
+            }
+
+            state.employeePasswords[state.verifiedEmployee.id] = newPassword;
+            saveState();
+            alert('Password changed successfully!');
+            setActiveView('employee');
+        }
+
+        function changePlannerPassword() {
+            const currentPassword = document.getElementById('currentPlannerPassword').value;
+            const newPassword = document.getElementById('newPlannerPassword').value;
+            const confirmPassword = document.getElementById('confirmPlannerPassword').value;
+
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            if (currentPassword !== state.plannerPassword) {
+                alert('Current password is incorrect');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert('New passwords do not match');
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                alert('Password must be at least 6 characters long');
+                return;
+            }
+
+            state.plannerPassword = newPassword;
+            saveState();
+            alert('✓ Planner password changed successfully!');
+            setActiveView('admin');
+        }
+
+        function processBids() {
+            if (state.employees.length === 0) {
+                alert('No employees to process');
+                return;
+            }
+
+            console.log('Starting bid processing...');
+            console.log('Total employees:', state.employees.length);
+            console.log('Total bids:', state.bids.length);
+
+            const employeesByDept = {};
+            state.employees.forEach(emp => {
+                const dept = emp.department || 'Unassigned';
+                if (!employeesByDept[dept]) {
+                    employeesByDept[dept] = [];
+                }
+                employeesByDept[dept].push(emp);
+            });
+
+            console.log('Departments:', Object.keys(employeesByDept));
+
+            const allAssignments = [];
+
+            Object.keys(employeesByDept).forEach(dept => {
+                const deptEmployees = employeesByDept[dept];
+                
+                const sortedEmployees = [...deptEmployees].sort((a, b) => 
+                    new Date(a.seniorityDate) - new Date(b.seniorityDate)
+                );
+
+                const employeesWhoBid = new Set(state.bids.filter(b => {
+                    const emp = state.employees.find(e => e.id === b.employeeId);
+                    return emp && (emp.department || 'Unassigned') === dept;
+                }).map(bid => bid.employeeId));
+                
+                const biddingEmployees = sortedEmployees.filter(emp => employeesWhoBid.has(emp.id));
+                const nonBiddingEmployees = sortedEmployees.filter(emp => !employeesWhoBid.has(emp.id));
+
+                console.log(`Dept ${dept}: ${biddingEmployees.length} bidders, ${nonBiddingEmployees.length} non-bidders`);
+
+                const usedSlots = {};
+
+                biddingEmployees.forEach(employee => {
+                    const employeeBids = state.bids
+                        .filter(bid => bid.employeeId === employee.id)
+                        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                    employeeBids.forEach(bid => {
+                        const slot = state.slotTypes.find(s => s.id === bid.slotType);
+                        
+                        const bidStart = new Date(bid.startDate);
+                        const bidMonth = state.months[bidStart.getMonth()];
+                        
+                        const slotKey = `${bidMonth}-${bid.slotType}`;
+                        const capacity = state.slotCapacities[`${bidMonth}-${bid.slotType.replace('slot', '')}`] !== undefined 
+                            ? state.slotCapacities[`${bidMonth}-${bid.slotType.replace('slot', '')}`]
+                            : 5;
+                        const used = usedSlots[slotKey] || 0;
+
+                        if (used < capacity) {
+                            allAssignments.push({
+                                employeeId: employee.id,
+                                employeeName: employee.name,
+                                department: dept,
+                                slotType: bid.slotType,
+                                slotName: slot.name,
+                                startDate: bid.startDate,
+                                endDate: bid.endDate,
+                                days: bid.days,
+                                type: 'Bid Awarded',
+                                month: bidMonth,
+                                seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+                            });
+
+                            if (!usedSlots[slotKey]) {
+                                usedSlots[slotKey] = 0;
+                            }
+                            usedSlots[slotKey]++;
+                        } else {
+                            console.log(`Bid rejected for ${employee.name} - ${bidMonth} ${slot.name} at capacity`);
+                        }
+                    });
+                });
+
+                nonBiddingEmployees.forEach(employee => {
+                    const entitlement = getEmployeeEntitlement(employee);
+                    let assignedDays = 0;
+                    const employeeAssignments = [];
+
+                    for (const month of state.months) {
+                        if (assignedDays >= entitlement || employeeAssignments.length >= 2) break;
+
+                        for (const slotType of state.slotTypes) {
+                            if (assignedDays >= entitlement || employeeAssignments.length >= 2) break;
+
+                            const slotKey = `${month}-${slotType.id}`;
+                            const capacity = state.slotCapacities[`${month}-${slotType.id.replace('slot', '')}`] !== undefined
+                                ? state.slotCapacities[`${month}-${slotType.id.replace('slot', '')}`]
+                                : 5;
+                            const used = usedSlots[slotKey] || 0;
+
+                            if (used < capacity && assignedDays + slotType.days <= entitlement) {
+                                const year = state.biddingYear;
+                                const monthIndex = state.months.indexOf(month);
+                                const startDate = new Date(year, monthIndex, 1);
+                                const endDate = new Date(startDate);
+                                endDate.setDate(endDate.getDate() + slotType.days - 1);
+
+                                employeeAssignments.push({
+                                    employeeId: employee.id,
+                                    employeeName: employee.name,
+                                    department: dept,
+                                    slotType: slotType.id,
+                                    slotName: slotType.name,
+                                    startDate: startDate.toISOString().split('T')[0],
+                                    endDate: endDate.toISOString().split('T')[0],
+                                    days: slotType.days,
+                                    type: 'Auto-Assigned (Leftover)',
+                                    month: month,
+                                    seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+                                });
+
+                                assignedDays += slotType.days;
+                                
+                                if (!usedSlots[slotKey]) {
+                                    usedSlots[slotKey] = 0;
+                                }
+                                usedSlots[slotKey]++;
+
+                                if (employeeAssignments.length >= 2) break;
+                            }
+                        }
+                    }
+
+                    allAssignments.push(...employeeAssignments);
+
+                    if (employeeAssignments.length === 0) {
+                        allAssignments.push({
+                            employeeId: employee.id,
+                            employeeName: employee.name,
+                            department: dept,
+                            slotType: 'none',
+                            slotName: 'No Assignment',
+                            startDate: '-',
+                            endDate: '-',
+                            days: 0,
+                            type: 'Not Assigned (No Leftover)',
+                            month: '-',
+                            seniorityRank: sortedEmployees.findIndex(e => e.id === employee.id) + 1
+                        });
+                    }
+                });
+            });
+
+            console.log('Total assignments:', allAssignments.length);
+
+            if (allAssignments.length === 0) {
+                alert('⚠️ No assignments created.\n\nPossible reasons:\n- No employees uploaded\n- No slot capacities configured\n\nPlease check Configure Slots and try again.');
+                return;
+            }
+
+            state.results = allAssignments;
+            state.isProcessed = true;
+            
+            const deptCount = Object.keys(employeesByDept).length;
+            const bidderCount = new Set(state.bids.map(b => b.employeeId)).size;
+            const autoAssignedCount = allAssignments.filter(a => a.type === 'Auto-Assigned (Leftover)').length;
+            const nonBidderCount = state.employees.length - bidderCount;
+            const notAssignedCount = allAssignments.filter(a => a.type === 'Not Assigned (No Leftover)').length;
+            
+            let message = `✓ Processing complete!\n\n`;
+            message += `${deptCount} departments processed\n`;
+            message += `${bidderCount} employees with bids\n`;
+            message += `${nonBidderCount} employees without bids\n`;
+            message += `${autoAssignedCount} auto-assignments made\n`;
+            message += `${allAssignments.length} total assignments\n`;
+            
+            if (notAssignedCount > 0) {
+                message += `\n⚠️ ${notAssignedCount} employees could not be assigned (insufficient slot capacity)`;
+            }
+            
+            alert(message);
+            saveState();
+            
+            if (state.userType === 'planner') {
+                const plannerNav = document.getElementById('plannerNav');
+                if (!plannerNav.querySelector('[onclick="setActiveView(\'results\')"]')) {
+                    const resultsBtn = document.createElement('button');
+                    resultsBtn.onclick = () => setActiveView('results');
+                    resultsBtn.className = 'px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100';
+                    resultsBtn.textContent = 'View Results';
+                    plannerNav.appendChild(resultsBtn);
+                }
+            }
+            
+            if (state.userType === 'employee') {
+                const employeeNav = document.getElementById('employeeNav');
+                if (!employeeNav.querySelector('[onclick="setActiveView(\'myResults\')"]')) {
+                    const resultsBtn = document.createElement('button');
+                    resultsBtn.onclick = () => setActiveView('myResults');
+                    resultsBtn.className = 'px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100';
+                    resultsBtn.textContent = 'My Results';
+                    employeeNav.insertBefore(resultsBtn, employeeNav.children[1]);
+                }
+            }
+            
+            setActiveView('results');
+        }
+
+        function exportResults() {
+            if (state.results.length === 0) {
+                alert('No results to export.');
+                return;
+            }
+
+            const exportData = state.results.map(result => {
+                const employee = state.employees.find(e => e.id === result.employeeId);
+                return {
+                    'Seniority Rank': result.seniorityRank,
+                    'Employee ID': result.employeeId,
+                    'Employee Name': result.employeeName,
+                    'Department': result.department,
+                    'Role': employee?.role || '',
+                    'Gender': employee?.gender || '',
+                    'Nationality': employee?.nationality || '',
+                    'Slot Type': result.slotName,
+                    'Month': result.month || '',
+                    'Start Date': result.startDate,
+                    'End Date': result.endDate,
+                    'Days': result.days,
+                    'Assignment Type': result.type
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Leave Assignments');
+            XLSX.writeFile(wb, `Leave_Assignments_${state.biddingYear}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            alert('Results exported successfully!');
+        }
+
+        function resetSystem() {
+            if (!confirm('Are you sure you want to reset the system? This will clear all bids and results for ALL users.')) {
+                return;
+            }
+            
+            localStorage.clear();
+            
+            state = {
+                employees: [],
+                employeePasswords: {},
+                bids: [],
+                biddingDeadline: '',
+                biddingYear: 2026,
+                isProcessed: false,
+                activeView: 'login',
+                selectedEmployeeId: '',
+                verifiedEmployee: null,
+                currentUser: null,
+                userType: null,
+                plannerPassword: 'admin123',
+                results: [],
+                selectedDepartment: 'all',
+                slotCapacities: {},
+                departments: state.departments,
+                slotTypes: state.slotTypes,
+                months: state.months,
+                loginType: 'employee'
+            };
+            
+            alert('✓ System has been reset successfully for all users!');
+            renderView();
+        }
+
         // ==================== INITIALIZATION ====================
         async function init() {
             console.log('🚀 Initializing system...');
             
-            // Try to load from cloud first
             const cloudLoaded = await loadFromCloud();
             
             if (!cloudLoaded) {
@@ -1028,17 +2353,14 @@
                 updateSystemStatus('📱 Using local data');
             }
             
-            // Render initial view
             renderView();
             
-            // Add Enter key support for login
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && state.activeView === 'login') {
                     handleLogin();
                 }
             });
             
-            // Auto-sync every 30 seconds if logged in as employee
             setInterval(() => {
                 if (state.userType === 'employee' && state.employees.length === 0) {
                     loadFromCloud();
@@ -1046,7 +2368,6 @@
             }, 30000);
         }
         
-        // Initialize the application
         init();
     </script>
 </body>
