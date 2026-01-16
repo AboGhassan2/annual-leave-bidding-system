@@ -22,6 +22,10 @@
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         }
         
+        .gradient-orange {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        }
+        
         .fade-in {
             animation: fadeIn 0.5s ease-in;
         }
@@ -44,6 +48,54 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* Scrollbar styling */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Modal backdrop */
+        .modal-backdrop {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(3px);
+        }
+        
+        /* Card hover effects */
+        .hover-lift:hover {
+            transform: translateY(-2px);
+            transition: transform 0.2s ease;
+        }
+        
+        /* Status badges */
+        .status-active {
+            background-color: #10b98120;
+            color: #059669;
+        }
+        
+        .status-pending {
+            background-color: #f59e0b20;
+            color: #d97706;
+        }
+        
+        .status-processed {
+            background-color: #3b82f620;
+            color: #1d4ed8;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 md:p-6">
@@ -52,7 +104,7 @@
         <div id="loadingScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
             <div class="loading-spinner mb-4"></div>
             <p class="text-gray-600 font-semibold">Initializing system...</p>
-            <p id="loadingMessage" class="text-sm text-gray-500 mt-2"></p>
+            <p id="loadingMessage" class="text-sm text-gray-500 mt-2">Loading data...</p>
         </div>
 
         <!-- Header -->
@@ -68,7 +120,7 @@
                 </div>
                 <button
                     onclick="handleLogout()"
-                    class="px-4 py-2 gradient-red text-white rounded-lg hover:shadow-lg font-semibold transition-shadow"
+                    class="px-4 py-2 gradient-red text-white rounded-lg hover:shadow-lg font-semibold transition-shadow hover-lift"
                 >
                     Logout
                 </button>
@@ -88,14 +140,14 @@
                         <button
                             id="loginTypeEmployee"
                             onclick="setLoginType('employee')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white hover-lift"
                         >
                             Employee
                         </button>
                         <button
                             id="loginTypePlanner"
                             onclick="setLoginType('planner')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300 hover-lift"
                         >
                             Planner
                         </button>
@@ -103,188 +155,197 @@
                 </div>
 
                 <div id="loginForm">
-                    <!-- Employee login fields will be inserted here -->
+                    <!-- Login form will be inserted here -->
                 </div>
 
                 <button
                     onclick="handleLogin()"
-                    class="w-full mt-6 px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold transition-shadow"
+                    class="w-full mt-6 px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold transition-shadow hover-lift"
                 >
                     Login
                 </button>
                 
                 <!-- Demo Notice -->
-                <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p class="text-sm font-semibold text-yellow-800">DEMO MODE</p>
-                    <p class="text-xs text-yellow-700 mt-1">For demo purposes:</p>
-                    <ul class="text-xs text-yellow-700 mt-1 list-disc pl-4">
-                        <li>Employee: Use any ID (password is same as ID)</li>
-                        <li>Planner: Password = "admin123"</li>
+                <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="text-sm font-semibold text-blue-800">ℹ️ SYSTEM INFO</p>
+                    <p class="text-xs text-blue-700 mt-1">For first-time use:</p>
+                    <ul class="text-xs text-blue-700 mt-1 list-disc pl-4">
+                        <li><strong>Planner:</strong> Password = "admin123"</li>
+                        <li><strong>Employees:</strong> Upload data first, then login with ID (password = ID)</li>
+                        <li>All data is saved in your browser</li>
                     </ul>
                 </div>
             </div>
         </div>
 
         <!-- Planner Navigation -->
-<div id="plannerNav" class="hidden flex flex-wrap justify-center gap-3 mb-6 fade-in">
-    <button onclick="setActiveView('upload')" class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold">
-        📤 Upload Data
-    </button>
-    <button onclick="setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-        ⚙️ Configure Slots
-    </button>
-    <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-        👑 Admin Panel
-    </button>
-    <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-        🔑 Change Password
-    </button>
-</div>
-
-<!-- Upload Data Modal -->
-<div id="uploadModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-xl shadow-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-2xl font-bold text-gray-800">📤 Upload Employee Data</h3>
-            <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700">
-                ✕
+        <div id="plannerNav" class="hidden flex flex-wrap justify-center gap-3 mb-6 fade-in">
+            <button onclick="setActiveView('upload')" class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift">
+                📤 Upload Data
+            </button>
+            <button onclick="setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                ⚙️ Configure Slots
+            </button>
+            <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                👑 Admin Panel
+            </button>
+            <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                🔑 Change Password
             </button>
         </div>
-        
-        <!-- File Upload -->
-        <div class="mb-8">
-            <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
-                <div class="text-5xl mb-4">📄</div>
-                <p class="font-semibold text-gray-700 mb-2">Upload Excel/CSV File</p>
-                <p class="text-sm text-gray-500 mb-4">Supported formats: .xlsx, .xls, .csv</p>
-                <input
-                    type="file"
-                    id="fileInput"
-                    accept=".xlsx,.xls,.csv"
-                    class="hidden"
-                    onchange="handleFileSelect(event)"
-                />
-                <label for="fileInput" class="inline-block px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold cursor-pointer">
-                    Choose File
-                </label>
-                <p id="fileName" class="text-sm text-gray-600 mt-3"></p>
-            </div>
-            
-            <!-- Required Columns Info -->
-            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p class="font-semibold text-blue-800 mb-2">📋 Required Columns:</p>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                    <div class="bg-white px-3 py-2 rounded border">ID (Required)</div>
-                    <div class="bg-white px-3 py-2 rounded border">Name (Required)</div>
-                    <div class="bg-white px-3 py-2 rounded border">Department</div>
-                    <div class="bg-white px-3 py-2 rounded border">Seniority Date</div>
-                    <div class="bg-white px-3 py-2 rounded border">Email</div>
-                    <div class="bg-white px-3 py-2 rounded border">Phone</div>
-                    <div class="bg-white px-3 py-2 rounded border">Leave Balance</div>
-                    <div class="bg-white px-3 py-2 rounded border">Status</div>
-                </div>
-            </div>
-            
-            <!-- Sample Data Section -->
-            <div class="mt-6">
-                <button onclick="toggleSampleData()" class="flex items-center text-blue-600 hover:text-blue-800 font-semibold">
-                    <span>📥 Download Sample Template</span>
-                    <span id="sampleToggle" class="ml-2">▼</span>
-                </button>
-                <div id="sampleData" class="hidden mt-4">
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full border border-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="border px-3 py-2">ID</th>
-                                    <th class="border px-3 py-2">Name</th>
-                                    <th class="border px-3 py-2">Department</th>
-                                    <th class="border px-3 py-2">Seniority Date</th>
-                                    <th class="border px-3 py-2">Email</th>
-                                    <th class="border px-3 py-2">Phone</th>
-                                    <th class="border px-3 py-2">Leave Balance</th>
-                                    <th class="border px-3 py-2">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td class="border px-3 py-2">EMP001</td>
-                                    <td class="border px-3 py-2">John Doe</td>
-                                    <td class="border px-3 py-2">L4/6-SA</td>
-                                    <td class="border px-3 py-2">2020-01-15</td>
-                                    <td class="border px-3 py-2">john@example.com</td>
-                                    <td class="border px-3 py-2">+1234567890</td>
-                                    <td class="border px-3 py-2">30</td>
-                                    <td class="border px-3 py-2">Active</td>
-                                </tr>
-                                <tr class="bg-gray-50">
-                                    <td class="border px-3 py-2">EMP002</td>
-                                    <td class="border px-3 py-2">Jane Smith</td>
-                                    <td class="border px-3 py-2">L5-DEP-DM</td>
-                                    <td class="border px-3 py-2">2018-06-20</td>
-                                    <td class="border px-3 py-2">jane@example.com</td>
-                                    <td class="border px-3 py-2">+1987654321</td>
-                                    <td class="border px-3 py-2">35</td>
-                                    <td class="border px-3 py-2">Active</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="mt-4 flex gap-3">
-                        <button onclick="downloadSampleCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
-                            Download CSV Template
-                        </button>
-                        <button onclick="downloadSampleExcel()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
-                            Download Excel Template
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Upload Preview -->
-        <div id="uploadPreview" class="hidden">
-            <h4 class="font-bold text-lg mb-3 text-gray-700">📊 Upload Preview</h4>
-            <div id="previewTable" class="mb-6 max-h-64 overflow-y-auto border rounded-lg"></div>
-            
-            <div class="flex justify-between items-center">
-                <div id="previewStats" class="text-sm text-gray-600"></div>
-                <div class="flex gap-3">
-                    <button onclick="processUpload()" id="processBtn" class="px-6 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
-                        ✅ Process & Save
-                    </button>
-                    <button onclick="clearUpload()" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold">
-                        ❌ Clear
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Current Employees -->
-        <div class="mt-8 pt-6 border-t">
-            <div class="flex justify-between items-center mb-4">
-                <h4 class="font-bold text-lg text-gray-700">👥 Current Employees</h4>
-                <span id="employeeCount" class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">0</span>
-            </div>
-            <div id="currentEmployees" class="text-sm text-gray-500 italic">
-                No employee data uploaded yet.
-            </div>
-        </div>
-    </div>
-</div>
 
         <!-- Employee Navigation -->
-        <div id="employeeNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
-            <button onclick="showMessage('Employee bidding coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Place Bids
+        <div id="employeeNav" class="hidden flex flex-wrap justify-center gap-3 mb-6 fade-in">
+            <button onclick="setActiveView('bidding')" class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift">
+                📅 Place Bids
             </button>
-            <button onclick="showMessage('Change password coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Change Password
+            <button onclick="setActiveView('myBids')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                📋 My Bids
+            </button>
+            <button onclick="setActiveView('results')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                📊 My Results
+            </button>
+            <button onclick="setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border hover-lift">
+                🔐 Change Password
             </button>
         </div>
 
         <!-- Main Content Area -->
-        <div id="contentArea" class="mt-8"></div>
+        <div id="contentArea" class="mt-8 fade-in"></div>
+    </div>
+
+    <!-- Upload Data Modal -->
+    <div id="uploadModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="modal-backdrop absolute inset-0" onclick="closeUploadModal()"></div>
+        <div class="bg-white rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto relative custom-scrollbar">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold text-gray-800">📤 Upload Employee Data</h3>
+                <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700 text-2xl">
+                    ✕
+                </button>
+            </div>
+            
+            <!-- File Upload -->
+            <div class="mb-8">
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors">
+                    <div class="text-5xl mb-4">📄</div>
+                    <p class="font-semibold text-gray-700 mb-2">Upload Excel/CSV File</p>
+                    <p class="text-sm text-gray-500 mb-4">Supported formats: .xlsx, .xls, .csv</p>
+                    <input
+                        type="file"
+                        id="fileInput"
+                        accept=".xlsx,.xls,.csv"
+                        class="hidden"
+                        onchange="handleFileSelect(event)"
+                    />
+                    <label for="fileInput" class="inline-block px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold cursor-pointer hover-lift">
+                        Choose File
+                    </label>
+                    <p id="fileName" class="text-sm text-gray-600 mt-3"></p>
+                </div>
+                
+                <!-- Required Columns Info -->
+                <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p class="font-semibold text-blue-800 mb-2">📋 Required Columns:</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                        <div class="bg-white px-3 py-2 rounded border font-medium">ID (Required)</div>
+                        <div class="bg-white px-3 py-2 rounded border font-medium">Name (Required)</div>
+                        <div class="bg-white px-3 py-2 rounded border">Department</div>
+                        <div class="bg-white px-3 py-2 rounded border">Seniority Date</div>
+                        <div class="bg-white px-3 py-2 rounded border">Email</div>
+                        <div class="bg-white px-3 py-2 rounded border">Phone</div>
+                        <div class="bg-white px-3 py-2 rounded border">Leave Balance</div>
+                        <div class="bg-white px-3 py-2 rounded border">Status</div>
+                    </div>
+                    <p class="text-xs text-blue-600 mt-3"><strong>Note:</strong> First row must be headers. Use the template below.</p>
+                </div>
+                
+                <!-- Sample Data Section -->
+                <div class="mt-6">
+                    <button onclick="toggleSampleData()" class="flex items-center text-blue-600 hover:text-blue-800 font-semibold">
+                        <span>📥 Download Sample Template</span>
+                        <span id="sampleToggle" class="ml-2">▼</span>
+                    </button>
+                    <div id="sampleData" class="hidden mt-4">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full border border-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="border px-3 py-2 font-semibold">ID</th>
+                                        <th class="border px-3 py-2 font-semibold">Name</th>
+                                        <th class="border px-3 py-2 font-semibold">Department</th>
+                                        <th class="border px-3 py-2 font-semibold">Seniority Date</th>
+                                        <th class="border px-3 py-2 font-semibold">Email</th>
+                                        <th class="border px-3 py-2 font-semibold">Phone</th>
+                                        <th class="border px-3 py-2 font-semibold">Leave Balance</th>
+                                        <th class="border px-3 py-2 font-semibold">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="border px-3 py-2">EMP001</td>
+                                        <td class="border px-3 py-2">John Doe</td>
+                                        <td class="border px-3 py-2">L4/6-SA</td>
+                                        <td class="border px-3 py-2">2020-01-15</td>
+                                        <td class="border px-3 py-2">john@example.com</td>
+                                        <td class="border px-3 py-2">+1234567890</td>
+                                        <td class="border px-3 py-2">30</td>
+                                        <td class="border px-3 py-2">Active</td>
+                                    </tr>
+                                    <tr class="bg-gray-50">
+                                        <td class="border px-3 py-2">EMP002</td>
+                                        <td class="border px-3 py-2">Jane Smith</td>
+                                        <td class="border px-3 py-2">L5-DEP-DM</td>
+                                        <td class="border px-3 py-2">2018-06-20</td>
+                                        <td class="border px-3 py-2">jane@example.com</td>
+                                        <td class="border px-3 py-2">+1987654321</td>
+                                        <td class="border px-3 py-2">35</td>
+                                        <td class="border px-3 py-2">Active</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mt-4 flex gap-3">
+                            <button onclick="downloadSampleCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold hover-lift">
+                                Download CSV Template
+                            </button>
+                            <button onclick="downloadSampleExcel()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold hover-lift">
+                                Download Excel Template
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Upload Preview -->
+            <div id="uploadPreview" class="hidden">
+                <h4 class="font-bold text-lg mb-3 text-gray-700">📊 Upload Preview</h4>
+                <div id="previewTable" class="mb-6 max-h-64 overflow-y-auto border rounded-lg custom-scrollbar"></div>
+                
+                <div class="flex justify-between items-center">
+                    <div id="previewStats" class="text-sm text-gray-600"></div>
+                    <div class="flex gap-3">
+                        <button onclick="processUpload()" id="processBtn" class="px-6 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold hover-lift">
+                            ✅ Process & Save
+                        </button>
+                        <button onclick="clearUpload()" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold hover-lift">
+                            ❌ Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Current Employees -->
+            <div class="mt-8 pt-6 border-t">
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="font-bold text-lg text-gray-700">👥 Current Employees</h4>
+                    <span id="employeeCount" class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">0</span>
+                </div>
+                <div id="currentEmployees" class="text-sm text-gray-500 italic">
+                    No employee data uploaded yet.
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -293,11 +354,53 @@
             loginType: 'employee',
             currentUser: null,
             userType: null,
-            plannerPassword: 'admin123'
+            plannerPassword: 'admin123',
+            employees: [],
+            employeePasswords: {},
+            bids: [],
+            biddingDeadline: '',
+            biddingYear: new Date().getFullYear(),
+            isProcessed: false,
+            activeView: 'login',
+            selectedEmployeeId: '',
+            verifiedEmployee: null,
+            results: [],
+            slotCapacities: {},
+            
+            departments: [
+                'L4/6-SA', 'L4/6-DEP-DM', 'L4/6-DEP-EFC', 'L3-DEP-DC', 'L3-DEP-TC',
+                'L5-LSS/SS', 'L5-DEP-DC', 'L3465-DEP-TCC', 'L3-DEP-DM', 'L5-DEP-DM',
+                'L46-DEP-TC', 'L3-DEP- LTSS/TSS', 'L5-DEP-GSM', 'L5-DEP-SC', 'L5-DEP- LTSS/TSS',
+                'L3-DEP-EFC', 'L3-DEP-GSM', 'L46-TA-T', 'L46-DEP- LTSS/TSS', 'L3-TA-T',
+                'L3-DS', 'L5-DEP-TC', 'L3-P&R', 'L5-DEP-EFC', 'L46-DEP-DC',
+                'L3-LSS/SS', 'L3-DEP-SC', 'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC',
+                'L46 SAMB', 'L5 SA', 'L3-SA', 'L3 SAMB', 'L5 - TA-T',
+                'L46-P&R', 'L5 SAMB', 'L46-AOCC'
+            ],
+            
+            slotTypes: [
+                { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
+                { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
+                { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' }
+            ],
+            
+            months: [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+            ]
         };
 
+        let uploadedData = [];
+
         // ==================== UI FUNCTIONS ====================
-        function showMessage(message) {
+        function showMessage(message, type = 'info') {
+            const colors = {
+                info: 'blue',
+                success: 'green',
+                warning: 'yellow',
+                error: 'red'
+            };
+            
             alert(message);
         }
 
@@ -307,11 +410,11 @@
             const plannerBtn = document.getElementById('loginTypePlanner');
             
             if (type === 'employee') {
-                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
-                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700';
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white hover-lift';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300 hover-lift';
             } else {
-                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700';
-                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300 hover-lift';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white hover-lift';
             }
             
             renderLoginForm();
@@ -347,7 +450,6 @@
                                 id="loginId"
                                 class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
                                 placeholder="Enter your ID"
-                                value="EMP001"
                             />
                         </div>
                         <div>
@@ -357,11 +459,10 @@
                                 id="loginPassword"
                                 class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
                                 placeholder="Enter your password"
-                                value="EMP001"
                             />
                             <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                                <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
-                                <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
+                                <p class="text-sm font-semibold text-blue-800">📌 Password Info:</p>
+                                <p class="text-xs text-blue-700 mt-1">Default password is your Employee ID</p>
                             </div>
                         </div>
                     </div>
@@ -385,42 +486,61 @@
                     document.getElementById('loginView').classList.add('hidden');
                     document.getElementById('plannerNav').classList.remove('hidden');
                     
-                    showMessage('✅ Welcome, Planner! You can now access planner features.');
+                    // Load saved data
+                    loadSavedData();
+                    
+                    showMessage('✅ Welcome, Planner! You can now manage the system.', 'success');
                 } else {
-                    alert('❌ Incorrect planner password. Try: admin123');
+                    showMessage('❌ Incorrect planner password. Try: admin123', 'error');
                 }
             } else {
                 const id = document.getElementById('loginId')?.value.trim();
                 const password = document.getElementById('loginPassword')?.value.trim();
                 
                 if (!id) {
-                    alert('❌ Please enter Employee ID');
+                    showMessage('❌ Please enter Employee ID', 'error');
                     return;
                 }
                 
                 if (!password) {
-                    alert('❌ Please enter password');
+                    showMessage('❌ Please enter password', 'error');
                     return;
                 }
                 
-                // For demo: accept any ID if password matches ID
-                if (password === id) {
+                // Load employee data first
+                loadSavedData();
+                
+                // Find employee
+                const employee = state.employees.find(emp => emp.ID === id);
+                if (!employee) {
+                    showMessage('❌ Employee ID not found. Please contact planner.', 'error');
+                    return;
+                }
+                
+                // Check password
+                const storedPassword = state.employeePasswords[id] || id;
+                if (password === storedPassword) {
                     state.currentUser = { 
                         type: 'employee', 
                         id: id,
-                        name: 'Employee ' + id,
-                        department: 'Demo Department'
+                        name: employee.Name || 'Employee',
+                        department: employee.Department || 'General'
                     };
                     state.userType = 'employee';
+                    state.verifiedEmployee = employee;
+                    state.selectedEmployeeId = id;
                     
                     // Update UI
                     updateUserInfo();
                     document.getElementById('loginView').classList.add('hidden');
                     document.getElementById('employeeNav').classList.remove('hidden');
                     
-                    showMessage(`✅ Welcome, Employee ${id}! You can now access employee features.`);
+                    // Show employee view
+                    setActiveView('bidding');
+                    
+                    showMessage(`✅ Welcome, ${employee.Name || 'Employee'}!`, 'success');
                 } else {
-                    alert('❌ Incorrect password. For demo, use your Employee ID as password.');
+                    showMessage('❌ Incorrect password. Default is your Employee ID.', 'error');
                 }
             }
         }
@@ -443,290 +563,1148 @@
         function handleLogout() {
             state.currentUser = null;
             state.userType = null;
+            state.verifiedEmployee = null;
+            state.selectedEmployeeId = '';
             
             // Show login view
             document.getElementById('loginView').classList.remove('hidden');
             document.getElementById('plannerNav').classList.add('hidden');
             document.getElementById('employeeNav').classList.add('hidden');
             document.getElementById('userInfo').classList.add('hidden');
+            document.getElementById('contentArea').innerHTML = '';
             
             // Reset to employee login
             setLoginType('employee');
             
-            showMessage('✅ Logged out successfully');
+            showMessage('✅ Logged out successfully', 'success');
         }
-        // ==================== UPLOAD DATA FUNCTIONS ====================
-let uploadedData = [];
 
-function setActiveView(view) {
-    if (view === 'upload') {
-        openUploadModal();
-        updateEmployeeList();
-    } else {
-        alert(view + ' view coming soon!');
-    }
-}
-
-function openUploadModal() {
-    document.getElementById('uploadModal').classList.remove('hidden');
-    updateEmployeeList();
-}
-
-function closeUploadModal() {
-    document.getElementById('uploadModal').classList.add('hidden');
-    document.getElementById('uploadPreview').classList.add('hidden');
-    document.getElementById('fileInput').value = '';
-    document.getElementById('fileName').textContent = '';
-}
-
-function handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    document.getElementById('fileName').textContent = `Selected: ${file.name}`;
-    
-    const reader = new FileReader();
-    
-    reader.onload = function(e) {
-        try {
-            let data;
+        function setActiveView(view) {
+            state.activeView = view;
+            const contentArea = document.getElementById('contentArea');
             
-            if (file.name.endsWith('.csv')) {
-                data = parseCSV(e.target.result);
-            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                // For Excel files - we'll use a simple approach
-                alert('Excel parsing requires XLSX library. For now, please save as CSV and upload.');
-                return;
-            } else {
-                alert('Unsupported file format. Please upload CSV, XLSX, or XLS files.');
-                return;
+            switch(view) {
+                case 'upload':
+                    openUploadModal();
+                    break;
+                case 'configureSlots':
+                    renderConfigureSlots();
+                    break;
+                case 'admin':
+                    renderAdminPanel();
+                    break;
+                case 'changePlannerPassword':
+                    renderChangePlannerPassword();
+                    break;
+                case 'bidding':
+                    renderBiddingView();
+                    break;
+                case 'myBids':
+                    renderMyBids();
+                    break;
+                case 'results':
+                    renderMyResults();
+                    break;
+                case 'changePassword':
+                    renderChangePassword();
+                    break;
+                default:
+                    contentArea.innerHTML = `<p class="text-center text-gray-500">View not implemented yet</p>`;
             }
+        }
+
+        // ==================== UPLOAD DATA FUNCTIONS ====================
+        function openUploadModal() {
+            document.getElementById('uploadModal').classList.remove('hidden');
+            updateEmployeeList();
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.add('hidden');
+            document.getElementById('uploadPreview').classList.add('hidden');
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileName').textContent = '';
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            document.getElementById('fileName').textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    let data;
+                    
+                    if (file.name.endsWith('.csv')) {
+                        data = parseCSV(e.target.result);
+                    } else {
+                        showMessage('Please upload CSV files only. Excel files require additional libraries.', 'warning');
+                        return;
+                    }
+                    
+                    if (data.length > 0) {
+                        uploadedData = data;
+                        previewUploadData(data);
+                    }
+                } catch (error) {
+                    showMessage('Error reading file: ' + error.message, 'error');
+                }
+            };
+            
+            reader.onerror = function() {
+                showMessage('Error reading file. Please try again.', 'error');
+            };
+            
+            reader.readAsText(file);
+        }
+
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n').filter(line => line.trim() !== '');
+            if (lines.length < 2) {
+                showMessage('CSV file must have at least 2 lines (header + data)', 'error');
+                return [];
+            }
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            // Check for required columns
+            if (!headers.includes('ID')) {
+                showMessage('CSV must have an "ID" column', 'error');
+                return [];
+            }
+            
+            if (!headers.includes('Name')) {
+                showMessage('CSV must have a "Name" column', 'error');
+                return [];
+            }
+            
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',').map(v => v.trim());
+                const row = {};
+                
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                
+                // Ensure required fields have values
+                if (!row.ID) row.ID = `EMP${String(data.length + 1).padStart(3, '0')}`;
+                if (!row.Name) row.Name = `Employee ${data.length + 1}`;
+                if (!row.Department) row.Department = 'General';
+                if (!row['Seniority Date']) {
+                    row['Seniority Date'] = new Date().toISOString().split('T')[0];
+                }
+                if (!row.Status) row.Status = 'Active';
+                if (!row['Leave Balance']) row['Leave Balance'] = '30';
+                
+                data.push(row);
+            }
+            
+            return data;
+        }
+
+        function previewUploadData(data) {
+            const previewTable = document.getElementById('previewTable');
+            const previewStats = document.getElementById('previewStats');
             
             if (data.length > 0) {
-                uploadedData = data;
-                previewUploadData(data);
-            }
-        } catch (error) {
-            alert('Error reading file: ' + error.message);
-        }
-    };
-    
-    reader.readAsText(file);
-}
-
-function parseCSV(csvText) {
-    const lines = csvText.split('\n').filter(line => line.trim() !== '');
-    if (lines.length < 2) return [];
-    
-    const headers = lines[0].split(',').map(h => h.trim());
-    
-    const data = [];
-    for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',');
-        const row = {};
-        
-        headers.forEach((header, index) => {
-            row[header] = values[index] ? values[index].trim() : '';
-        });
-        
-        // Ensure required fields
-        if (!row.ID) row.ID = `EMP${String(data.length + 1).padStart(3, '0')}`;
-        if (!row.Name) row.Name = `Employee ${data.length + 1}`;
-        if (!row.Department) row.Department = 'General';
-        if (!row['Seniority Date']) row['Seniority Date'] = new Date().toISOString().split('T')[0];
-        
-        data.push(row);
-    }
-    
-    return data;
-}
-
-function previewUploadData(data) {
-    const previewTable = document.getElementById('previewTable');
-    const previewStats = document.getElementById('previewStats');
-    
-    // Create preview table
-    if (data.length > 0) {
-        const headers = Object.keys(data[0]);
-        let html = `
-            <table class="min-w-full border border-gray-200 text-sm">
-                <thead class="bg-gray-50">
-                    <tr>
-                        ${headers.map(h => `<th class="border px-3 py-2">${h}</th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-        
-        // Show first 5 rows for preview
-        const previewRows = data.slice(0, 5);
-        previewRows.forEach(row => {
-            html += '<tr>';
-            headers.forEach(header => {
-                html += `<td class="border px-3 py-2">${row[header] || ''}</td>`;
-            });
-            html += '</tr>';
-        });
-        
-        if (data.length > 5) {
-            html += `
-                <tr>
-                    <td colspan="${headers.length}" class="border px-3 py-2 text-center text-gray-500">
-                        ... and ${data.length - 5} more rows
-                    </td>
-                </tr>
-            `;
-        }
-        
-        html += '</tbody></table>';
-        previewTable.innerHTML = html;
-        
-        // Update stats
-        previewStats.innerHTML = `
-            <div class="flex items-center gap-4">
-                <span>📊 <strong>${data.length}</strong> employees found</span>
-                <span>✅ <strong>${headers.length}</strong> columns</span>
-                <span>📅 Last: ${new Date().toLocaleDateString()}</span>
-            </div>
-        `;
-        
-        document.getElementById('uploadPreview').classList.remove('hidden');
-    }
-}
-
-function processUpload() {
-    if (uploadedData.length === 0) {
-        alert('No data to process!');
-        return;
-    }
-    
-    // Save to localStorage
-    localStorage.setItem('employees', JSON.stringify(uploadedData));
-    
-    // Create default passwords (ID as password)
-    const employeePasswords = {};
-    uploadedData.forEach(emp => {
-        if (emp.ID) {
-            employeePasswords[emp.ID] = emp.ID; // Default password = ID
-        }
-    });
-    localStorage.setItem('employeePasswords', JSON.stringify(employeePasswords));
-    
-    // Update state
-    if (typeof state !== 'undefined') {
-        state.employees = uploadedData;
-        state.employeePasswords = employeePasswords;
-    }
-    
-    alert(`✅ Successfully uploaded ${uploadedData.length} employees!\n\nDefault passwords have been set to their Employee IDs.`);
-    
-    updateEmployeeList();
-    closeUploadModal();
-}
-
-function clearUpload() {
-    uploadedData = [];
-    document.getElementById('uploadPreview').classList.add('hidden');
-    document.getElementById('fileInput').value = '';
-    document.getElementById('fileName').textContent = '';
-}
-
-function updateEmployeeList() {
-    const currentEmployeesDiv = document.getElementById('currentEmployees');
-    const employeeCountSpan = document.getElementById('employeeCount');
-    
-    try {
-        const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
-        
-        if (savedEmployees.length > 0) {
-            employeeCountSpan.textContent = savedEmployees.length;
-            
-            let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
-            
-            savedEmployees.slice(0, 6).forEach(emp => {
-                html += `
-                    <div class="bg-white border rounded-lg p-3 shadow-sm">
-                        <div class="font-semibold text-gray-800">${emp.Name || 'Unnamed'}</div>
-                        <div class="text-sm text-gray-600">ID: ${emp.ID || 'N/A'}</div>
-                        <div class="text-xs text-gray-500">${emp.Department || 'No Department'}</div>
+                const headers = Object.keys(data[0]);
+                let html = `
+                    <table class="min-w-full border border-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                ${headers.map(h => `<th class="border px-3 py-2 font-medium">${h}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                // Show first 5 rows for preview
+                const previewRows = data.slice(0, 5);
+                previewRows.forEach(row => {
+                    html += '<tr>';
+                    headers.forEach(header => {
+                        html += `<td class="border px-3 py-2">${row[header] || ''}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                
+                if (data.length > 5) {
+                    html += `
+                        <tr>
+                            <td colspan="${headers.length}" class="border px-3 py-2 text-center text-gray-500 bg-gray-50">
+                                ... and ${data.length - 5} more rows
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                html += '</tbody></table>';
+                previewTable.innerHTML = html;
+                
+                // Update stats
+                previewStats.innerHTML = `
+                    <div class="flex flex-wrap items-center gap-4">
+                        <span class="flex items-center gap-1">📊 <strong>${data.length}</strong> employees</span>
+                        <span class="flex items-center gap-1">✅ <strong>${headers.length}</strong> columns</span>
+                        <span class="flex items-center gap-1">📅 Uploaded: ${new Date().toLocaleDateString()}</span>
                     </div>
                 `;
-            });
-            
-            if (savedEmployees.length > 6) {
-                html += `
-                    <div class="bg-gray-50 border rounded-lg p-3 flex items-center justify-center">
-                        <span class="text-gray-500">+ ${savedEmployees.length - 6} more employees</span>
-                    </div>
-                `;
+                
+                document.getElementById('uploadPreview').classList.remove('hidden');
+            }
+        }
+
+        function processUpload() {
+            if (uploadedData.length === 0) {
+                showMessage('No data to process!', 'error');
+                return;
             }
             
-            html += '</div>';
-            currentEmployeesDiv.innerHTML = html;
-        } else {
-            employeeCountSpan.textContent = '0';
-            currentEmployeesDiv.innerHTML = '<p class="text-gray-500 italic">No employee data uploaded yet.</p>';
+            // Validate data
+            const invalidEmployees = uploadedData.filter(emp => !emp.ID || !emp.Name);
+            if (invalidEmployees.length > 0) {
+                showMessage(`${invalidEmployees.length} employees missing ID or Name. Please fix before uploading.`, 'error');
+                return;
+            }
+            
+            // Save to localStorage
+            localStorage.setItem('employees', JSON.stringify(uploadedData));
+            
+            // Create or update passwords (default = ID)
+            const employeePasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
+            uploadedData.forEach(emp => {
+                if (emp.ID && !employeePasswords[emp.ID]) {
+                    employeePasswords[emp.ID] = emp.ID; // Default password = ID
+                }
+            });
+            localStorage.setItem('employeePasswords', JSON.stringify(employeePasswords));
+            
+            // Update state
+            state.employees = uploadedData;
+            state.employeePasswords = employeePasswords;
+            
+            // Save state
+            saveState();
+            
+            showMessage(`✅ Successfully uploaded ${uploadedData.length} employees!\n\nDefault passwords have been set to their Employee IDs.`, 'success');
+            
+            updateEmployeeList();
+            closeUploadModal();
+            
+            // If planner is logged in, refresh admin panel
+            if (state.userType === 'planner') {
+                renderAdminPanel();
+            }
         }
-    } catch (error) {
-        employeeCountSpan.textContent = '0';
-        currentEmployeesDiv.innerHTML = '<p class="text-red-500">Error loading employee data</p>';
-    }
-}
 
-function toggleSampleData() {
-    const sampleData = document.getElementById('sampleData');
-    const toggle = document.getElementById('sampleToggle');
-    
-    if (sampleData.classList.contains('hidden')) {
-        sampleData.classList.remove('hidden');
-        toggle.textContent = '▲';
-    } else {
-        sampleData.classList.add('hidden');
-        toggle.textContent = '▼';
-    }
-}
+        function clearUpload() {
+            uploadedData = [];
+            document.getElementById('uploadPreview').classList.add('hidden');
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileName').textContent = '';
+        }
 
-function downloadSampleCSV() {
-    const csvContent = `ID,Name,Department,Seniority Date,Email,Phone,Leave Balance,Status
+        function updateEmployeeList() {
+            const currentEmployeesDiv = document.getElementById('currentEmployees');
+            const employeeCountSpan = document.getElementById('employeeCount');
+            
+            try {
+                const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
+                
+                if (savedEmployees.length > 0) {
+                    employeeCountSpan.textContent = savedEmployees.length;
+                    
+                    let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
+                    
+                    savedEmployees.slice(0, 6).forEach(emp => {
+                        html += `
+                            <div class="bg-white border rounded-lg p-3 shadow-sm hover-lift">
+                                <div class="font-semibold text-gray-800">${emp.Name || 'Unnamed'}</div>
+                                <div class="text-sm text-gray-600">ID: ${emp.ID || 'N/A'}</div>
+                                <div class="text-xs text-gray-500">${emp.Department || 'No Department'}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    if (savedEmployees.length > 6) {
+                        html += `
+                            <div class="bg-gray-50 border rounded-lg p-3 flex items-center justify-center">
+                                <span class="text-gray-500">+ ${savedEmployees.length - 6} more employees</span>
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                    currentEmployeesDiv.innerHTML = html;
+                } else {
+                    employeeCountSpan.textContent = '0';
+                    currentEmployeesDiv.innerHTML = '<p class="text-gray-500 italic">No employee data uploaded yet.</p>';
+                }
+            } catch (error) {
+                employeeCountSpan.textContent = '0';
+                currentEmployeesDiv.innerHTML = '<p class="text-red-500">Error loading employee data</p>';
+            }
+        }
+
+        function toggleSampleData() {
+            const sampleData = document.getElementById('sampleData');
+            const toggle = document.getElementById('sampleToggle');
+            
+            if (sampleData.classList.contains('hidden')) {
+                sampleData.classList.remove('hidden');
+                toggle.textContent = '▲';
+            } else {
+                sampleData.classList.add('hidden');
+                toggle.textContent = '▼';
+            }
+        }
+
+        function downloadSampleCSV() {
+            const csvContent = `ID,Name,Department,Seniority Date,Email,Phone,Leave Balance,Status
 EMP001,John Doe,L4/6-SA,2020-01-15,john@example.com,+1234567890,30,Active
 EMP002,Jane Smith,L5-DEP-DM,2018-06-20,jane@example.com,+1987654321,35,Active
 EMP003,Robert Johnson,L3-DEP-DC,2019-03-10,robert@example.com,+1122334455,30,Active
 EMP004,Emily Davis,L46-DEP-TC,2021-11-05,emily@example.com,+1567890123,30,Active
-EMP005,Michael Brown,L5-SA,2017-08-15,michael@example.com,+1345678901,35,Active`;
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'employee_template.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
+EMP005,Michael Brown,L5-SA,2017-08-15,michael@example.com,+1345678901,35,Active
+EMP006,Sarah Wilson,L3-SA,2020-07-22,sarah@example.com,+1456789012,30,Active
+EMP007,David Lee,L46-DEP-DC,2019-11-30,david@example.com,+1678901234,30,Active
+EMP008,Lisa Chen,L5-DEP-TC,2022-02-14,lisa@example.com,+1789012345,30,Active`;
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'employee_template.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showMessage('CSV template downloaded! Fill in your employee data and upload.', 'success');
+        }
 
-function downloadSampleExcel() {
-    alert('Excel download requires additional libraries. Please use the CSV template for now.');
-    downloadSampleCSV(); // Fallback to CSV
-}
-        /* Add to your existing styles */
-#uploadModal::-webkit-scrollbar {
-    width: 8px;
-}
+        function downloadSampleExcel() {
+            showMessage('For Excel files, please save your data as CSV and upload.', 'info');
+            downloadSampleCSV();
+        }
 
-#uploadModal::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
-}
+        // ==================== OTHER VIEW RENDER FUNCTIONS ====================
+        function renderConfigureSlots() {
+            const contentArea = document.getElementById('contentArea');
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">⚙️ Configure Leave Slots</h2>
+                    
+                    <div class="mb-6">
+                        <h3 class="text-lg font-semibold mb-4">📅 Set Bidding Deadline</h3>
+                        <div class="flex items-center gap-4">
+                            <input
+                                type="date"
+                                id="biddingDeadline"
+                                class="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                value="${state.biddingDeadline}"
+                            />
+                            <button
+                                onclick="saveBiddingDeadline()"
+                                class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                            >
+                                Save Deadline
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-2">Employees cannot place bids after this date</p>
+                    </div>
+                    
+                    <div class="mb-8">
+                        <h3 class="text-lg font-semibold mb-4">🎯 Configure Slot Capacities</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            ${state.slotTypes.map(slot => `
+                                <div class="border rounded-lg p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h4 class="font-bold text-lg" style="color: ${slot.color}">${slot.name}</h4>
+                                        <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background-color: ${slot.color}20; color: ${slot.color}">
+                                            ${slot.days} days
+                                        </span>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="block text-sm font-medium mb-1">Capacity (employees):</label>
+                                        <input
+                                            type="number"
+                                            id="${slot.id}Capacity"
+                                            class="w-full px-3 py-2 border rounded-lg"
+                                            placeholder="Enter capacity"
+                                            value="${state.slotCapacities[slot.id] || ''}"
+                                            min="1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium mb-1">Priority Order:</label>
+                                        <select id="${slot.id}Priority" class="w-full px-3 py-2 border rounded-lg">
+                                            <option value="1" ${state.slotCapacities[`${slot.id}_priority`] === 1 ? 'selected' : ''}>1st Priority</option>
+                                            <option value="2" ${state.slotCapacities[`${slot.id}_priority`] === 2 ? 'selected' : ''}>2nd Priority</option>
+                                            <option value="3" ${state.slotCapacities[`${slot.id}_priority`] === 3 ? 'selected' : ''}>3rd Priority</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <button
+                            onclick="saveSlotConfig()"
+                            class="mt-6 px-6 py-3 gradient-green text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                        >
+                            💾 Save Slot Configuration
+                        </button>
+                    </div>
+                    
+                    <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p class="font-semibold text-blue-800">ℹ️ Configuration Tips:</p>
+                        <ul class="text-sm text-blue-700 mt-1 list-disc pl-5">
+                            <li>Set realistic capacities based on department size</li>
+                            <li>Slot A is typically first preference</li>
+                            <li>Ensure total capacity covers all employees</li>
+                            <li>Deadline should give employees enough time to bid</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
 
-#uploadModal::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-}
+        function renderAdminPanel() {
+            loadSavedData();
+            const totalEmployees = state.employees.length;
+            const totalBids = state.bids.length;
+            const processed = state.isProcessed;
+            
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">👑 Admin Panel</h2>
+                    
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="text-3xl font-bold text-blue-600">${totalEmployees}</div>
+                            <div class="text-sm text-blue-800">Total Employees</div>
+                        </div>
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <div class="text-3xl font-bold text-green-600">${totalBids}</div>
+                            <div class="text-sm text-green-800">Total Bids</div>
+                        </div>
+                        <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                            <div class="text-3xl font-bold text-purple-600">${state.departments.length}</div>
+                            <div class="text-sm text-purple-800">Departments</div>
+                        </div>
+                        <div class="${processed ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'} rounded-lg p-4">
+                            <div class="text-3xl font-bold ${processed ? 'text-green-600' : 'text-yellow-600'}">${processed ? '✅' : '⏳'}</div>
+                            <div class="text-sm ${processed ? 'text-green-800' : 'text-yellow-800'}">${processed ? 'Processed' : 'Pending'}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Actions -->
+                    <div class="mb-8">
+                        <h3 class="text-lg font-semibold mb-4">🚀 Quick Actions</h3>
+                        <div class="flex flex-wrap gap-3">
+                            <button
+                                onclick="openUploadModal()"
+                                class="px-4 py-2 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                            >
+                                📤 Upload More Data
+                            </button>
+                            <button
+                                onclick="processBids()"
+                                class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                                ${totalBids === 0 ? 'disabled' : ''}
+                            >
+                                🔄 Process All Bids
+                            </button>
+                            <button
+                                onclick="viewAllBids()"
+                                class="px-4 py-2 gradient-purple text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                                ${totalBids === 0 ? 'disabled' : ''}
+                            >
+                                📋 View All Bids
+                            </button>
+                            <button
+                                onclick="exportResults()"
+                                class="px-4 py-2 gradient-orange text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                                ${state.results.length === 0 ? 'disabled' : ''}
+                            >
+                                📊 Export Results
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- System Status -->
+                    <div class="p-4 border rounded-lg mb-6">
+                        <h3 class="font-semibold mb-2">📊 System Status</h3>
+                        <div class="space-y-2">
+                            <div class="flex justify-between">
+                                <span>Bidding Deadline:</span>
+                                <span class="font-semibold">${state.biddingDeadline || 'Not set'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Bidding Year:</span>
+                                <span class="font-semibold">${state.biddingYear}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Processing Status:</span>
+                                <span class="font-semibold ${processed ? 'text-green-600' : 'text-yellow-600'}">
+                                    ${processed ? 'Completed' : 'Not Processed'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Employee Management -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">👥 Employee Management</h3>
+                        ${totalEmployees === 0 ? 
+                            '<p class="text-gray-500 italic">No employees uploaded yet. Click "Upload Data" to add employees.</p>' : 
+                            `<div class="overflow-x-auto">
+                                <table class="min-w-full border border-gray-200 text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="border px-3 py-2">ID</th>
+                                            <th class="border px-3 py-2">Name</th>
+                                            <th class="border px-3 py-2">Department</th>
+                                            <th class="border px-3 py-2">Seniority Date</th>
+                                            <th class="border px-3 py-2">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${state.employees.slice(0, 10).map(emp => `
+                                            <tr>
+                                                <td class="border px-3 py-2">${emp.ID}</td>
+                                                <td class="border px-3 py-2">${emp.Name}</td>
+                                                <td class="border px-3 py-2">${emp.Department || 'N/A'}</td>
+                                                <td class="border px-3 py-2">${emp['Seniority Date'] || 'N/A'}</td>
+                                                <td class="border px-3 py-2">
+                                                    <button onclick="resetEmployeePassword('${emp.ID}')" class="text-blue-600 hover:text-blue-800 text-sm">
+                                                        Reset Password
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                                ${totalEmployees > 10 ? 
+                                    `<p class="text-sm text-gray-500 mt-2">Showing 10 of ${totalEmployees} employees</p>` : 
+                                    ''
+                                }
+                            </div>`
+                        }
+                    </div>
+                </div>
+            `;
+        }
 
-#uploadModal::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
+        function renderChangePlannerPassword() {
+            contentArea.innerHTML = `
+                <div class="max-w-md mx-auto">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">🔑 Change Planner Password</h2>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block font-semibold mb-2">Current Password:</label>
+                                <input
+                                    type="password"
+                                    id="currentPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter current password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">New Password:</label>
+                                <input
+                                    type="password"
+                                    id="newPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter new password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                <input
+                                    type="password"
+                                    id="confirmPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Confirm new password"
+                                />
+                            </div>
+                            
+                            <div class="mt-6">
+                                <button
+                                    onclick="changePlannerPassword()"
+                                    class="w-full px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                                >
+                                    Change Password
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBiddingView() {
+            if (!state.verifiedEmployee) {
+                contentArea.innerHTML = `
+                    <div class="text-center py-8">
+                        <p class="text-gray-500">Please login first.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const employee = state.verifiedEmployee;
+            const employeeBids = state.bids.filter(bid => bid.employeeId === employee.ID);
+            
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">📅 Place Leave Bids</h2>
+                    
+                    <!-- Employee Info -->
+                    <div class="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <p class="text-sm text-blue-800">Employee ID</p>
+                                <p class="font-semibold">${employee.ID}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-blue-800">Name</p>
+                                <p class="font-semibold">${employee.Name}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-blue-800">Department</p>
+                                <p class="font-semibold">${employee.Department || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-blue-800">Leave Balance</p>
+                                <p class="font-semibold">${employee['Leave Balance'] || '30'} days</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-blue-800">Seniority Date</p>
+                                <p class="font-semibold">${employee['Seniority Date'] || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-blue-800">Bidding Deadline</p>
+                                <p class="font-semibold ${state.biddingDeadline ? 'text-green-600' : 'text-yellow-600'}">
+                                    ${state.biddingDeadline || 'Not set'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Bidding Form -->
+                    <div class="mb-8">
+                        <h3 class="text-lg font-semibold mb-4">🎯 Submit New Bid</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block font-semibold mb-2">Preferred Slot:</label>
+                                <select id="bidSlot" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none">
+                                    <option value="">Select a slot</option>
+                                    ${state.slotTypes.map(slot => `
+                                        <option value="${slot.id}">${slot.name} (${slot.days} days)</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block font-semibold mb-2">Priority (1-3):</label>
+                                <select id="bidPriority" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none">
+                                    <option value="1">1st Priority</option>
+                                    <option value="2">2nd Priority</option>
+                                    <option value="3">3rd Priority</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block font-semibold mb-2">Comments (Optional):</label>
+                                <textarea
+                                    id="bidComments"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    rows="3"
+                                    placeholder="Any special requests or comments..."
+                                ></textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <button
+                                onclick="submitBid()"
+                                class="px-6 py-3 gradient-green text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                            >
+                                ✅ Submit Bid
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- My Current Bids -->
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">📋 My Current Bids (${employeeBids.length})</h3>
+                        ${employeeBids.length === 0 ? 
+                            '<p class="text-gray-500 italic">No bids submitted yet.</p>' : 
+                            `<div class="overflow-x-auto">
+                                <table class="min-w-full border border-gray-200 text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="border px-3 py-2">Slot</th>
+                                            <th class="border px-3 py-2">Priority</th>
+                                            <th class="border px-3 py-2">Status</th>
+                                            <th class="border px-3 py-2">Date Submitted</th>
+                                            <th class="border px-3 py-2">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${employeeBids.map((bid, index) => `
+                                            <tr>
+                                                <td class="border px-3 py-2">${bid.slot}</td>
+                                                <td class="border px-3 py-2">${bid.priority}</td>
+                                                <td class="border px-3 py-2">
+                                                    <span class="px-2 py-1 rounded-full text-xs ${bid.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                                        ${bid.status || 'pending'}
+                                                    </span>
+                                                </td>
+                                                <td class="border px-3 py-2">${bid.submittedDate || 'N/A'}</td>
+                                                <td class="border px-3 py-2">
+                                                    <button onclick="deleteBid(${index})" class="text-red-600 hover:text-red-800 text-sm">
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>`
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== DATA MANAGEMENT FUNCTIONS ====================
+        function loadSavedData() {
+            try {
+                // Load employees
+                const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
+                if (savedEmployees.length > 0) {
+                    state.employees = savedEmployees;
+                }
+                
+                // Load passwords
+                const savedPasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
+                state.employeePasswords = savedPasswords;
+                
+                // Load other data
+                state.bids = JSON.parse(localStorage.getItem('bids')) || [];
+                state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
+                state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || new Date().getFullYear();
+                state.isProcessed = JSON.parse(localStorage.getItem('isProcessed')) || false;
+                state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
+                state.results = JSON.parse(localStorage.getItem('results')) || [];
+                state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities')) || {};
+                
+                return true;
+            } catch (error) {
+                console.error('Error loading saved data:', error);
+                return false;
+            }
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem('employees', JSON.stringify(state.employees));
+                localStorage.setItem('employeePasswords', JSON.stringify(state.employeePasswords));
+                localStorage.setItem('bids', JSON.stringify(state.bids));
+                localStorage.setItem('biddingDeadline', state.biddingDeadline);
+                localStorage.setItem('biddingYear', state.biddingYear.toString());
+                localStorage.setItem('isProcessed', JSON.stringify(state.isProcessed));
+                localStorage.setItem('plannerPassword', state.plannerPassword);
+                localStorage.setItem('results', JSON.stringify(state.results));
+                localStorage.setItem('slotCapacities', JSON.stringify(state.slotCapacities));
+                return true;
+            } catch (error) {
+                console.error('Error saving state:', error);
+                return false;
+            }
+        }
+
+        // ==================== OTHER FUNCTION STUBS ====================
+        function saveBiddingDeadline() {
+            const deadline = document.getElementById('biddingDeadline').value;
+            if (!deadline) {
+                showMessage('Please select a deadline date', 'error');
+                return;
+            }
+            
+            state.biddingDeadline = deadline;
+            saveState();
+            showMessage('Bidding deadline saved successfully!', 'success');
+        }
+
+        function saveSlotConfig() {
+            state.slotCapacities = {};
+            state.slotTypes.forEach(slot => {
+                const capacity = document.getElementById(`${slot.id}Capacity`).value;
+                const priority = document.getElementById(`${slot.id}Priority`).value;
+                
+                if (capacity) {
+                    state.slotCapacities[slot.id] = parseInt(capacity);
+                }
+                if (priority) {
+                    state.slotCapacities[`${slot.id}_priority`] = parseInt(priority);
+                }
+            });
+            
+            saveState();
+            showMessage('Slot configuration saved successfully!', 'success');
+        }
+
+        function submitBid() {
+            if (!state.verifiedEmployee) {
+                showMessage('Please login first', 'error');
+                return;
+            }
+            
+            const slot = document.getElementById('bidSlot').value;
+            const priority = document.getElementById('bidPriority').value;
+            const comments = document.getElementById('bidComments').value;
+            
+            if (!slot) {
+                showMessage('Please select a slot', 'error');
+                return;
+            }
+            
+            // Check if bidding deadline has passed
+            if (state.biddingDeadline) {
+                const today = new Date();
+                const deadline = new Date(state.biddingDeadline);
+                if (today > deadline) {
+                    showMessage('Bidding deadline has passed!', 'error');
+                    return;
+                }
+            }
+            
+            // Create new bid
+            const newBid = {
+                employeeId: state.verifiedEmployee.ID,
+                employeeName: state.verifiedEmployee.Name,
+                department: state.verifiedEmployee.Department || 'General',
+                slot: slot,
+                priority: parseInt(priority),
+                comments: comments,
+                status: 'pending',
+                submittedDate: new Date().toISOString().split('T')[0]
+            };
+            
+            state.bids.push(newBid);
+            saveState();
+            
+            showMessage('Bid submitted successfully!', 'success');
+            renderBiddingView();
+        }
+
+        function deleteBid(index) {
+            if (confirm('Are you sure you want to delete this bid?')) {
+                state.bids.splice(index, 1);
+                saveState();
+                showMessage('Bid deleted successfully!', 'success');
+                renderBiddingView();
+            }
+        }
+
+        function resetEmployeePassword(employeeId) {
+            if (confirm(`Reset password for employee ${employeeId}? Default will be their ID.`)) {
+                state.employeePasswords[employeeId] = employeeId;
+                saveState();
+                showMessage(`Password reset for ${employeeId}. New password is their ID.`, 'success');
+            }
+        }
+
+        function changePlannerPassword() {
+            const current = document.getElementById('currentPassword').value;
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+            
+            if (!current || !newPass || !confirmPass) {
+                showMessage('Please fill all fields', 'error');
+                return;
+            }
+            
+            if (current !== state.plannerPassword) {
+                showMessage('Current password is incorrect', 'error');
+                return;
+            }
+            
+            if (newPass !== confirmPass) {
+                showMessage('New passwords do not match', 'error');
+                return;
+            }
+            
+            if (newPass.length < 6) {
+                showMessage('Password must be at least 6 characters', 'error');
+                return;
+            }
+            
+            state.plannerPassword = newPass;
+            saveState();
+            
+            showMessage('Planner password changed successfully!', 'success');
+            renderChangePlannerPassword();
+        }
+
+        function processBids() {
+            if (state.bids.length === 0) {
+                showMessage('No bids to process', 'warning');
+                return;
+            }
+            
+            if (Object.keys(state.slotCapacities).length === 0) {
+                showMessage('Please configure slot capacities first', 'error');
+                return;
+            }
+            
+            // Simple processing logic (placeholder)
+            // In a real system, you would implement proper allocation logic
+            state.results = state.bids.map(bid => ({
+                ...bid,
+                status: 'processed',
+                allocation: 'To be allocated'
+            }));
+            
+            state.isProcessed = true;
+            saveState();
+            
+            showMessage(`${state.bids.length} bids processed successfully!`, 'success');
+            renderAdminPanel();
+        }
+
+        function viewAllBids() {
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">📋 All Bids (${state.bids.length})</h2>
+                    
+                    ${state.bids.length === 0 ? 
+                        '<p class="text-gray-500 italic">No bids submitted yet.</p>' : 
+                        `<div class="overflow-x-auto">
+                            <table class="min-w-full border border-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="border px-3 py-2">Employee ID</th>
+                                        <th class="border px-3 py-2">Name</th>
+                                        <th class="border px-3 py-2">Department</th>
+                                        <th class="border px-3 py-2">Slot</th>
+                                        <th class="border px-3 py-2">Priority</th>
+                                        <th class="border px-3 py-2">Status</th>
+                                        <th class="border px-3 py-2">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${state.bids.map(bid => `
+                                        <tr>
+                                            <td class="border px-3 py-2">${bid.employeeId}</td>
+                                            <td class="border px-3 py-2">${bid.employeeName}</td>
+                                            <td class="border px-3 py-2">${bid.department}</td>
+                                            <td class="border px-3 py-2">${bid.slot}</td>
+                                            <td class="border px-3 py-2">${bid.priority}</td>
+                                            <td class="border px-3 py-2">
+                                                <span class="px-2 py-1 rounded-full text-xs ${bid.status === 'processed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                                    ${bid.status}
+                                                </span>
+                                            </td>
+                                            <td class="border px-3 py-2">${bid.submittedDate}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>`
+                    }
+                </div>
+            `;
+        }
+
+        function exportResults() {
+            if (state.results.length === 0) {
+                showMessage('No results to export', 'warning');
+                return;
+            }
+            
+            const csvContent = 'Employee ID,Name,Department,Slot,Priority,Status,Allocation\n' +
+                state.results.map(r => 
+                    `${r.employeeId},${r.employeeName},${r.department},${r.slot},${r.priority},${r.status},${r.allocation}`
+                ).join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `leave_bidding_results_${state.biddingYear}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showMessage('Results exported as CSV!', 'success');
+        }
+
+        function renderMyBids() {
+            if (!state.verifiedEmployee) {
+                contentArea.innerHTML = '<p class="text-gray-500">Please login first.</p>';
+                return;
+            }
+            
+            const myBids = state.bids.filter(bid => bid.employeeId === state.verifiedEmployee.ID);
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">📋 My Bids (${myBids.length})</h2>
+                    ${renderBidsTable(myBids)}
+                </div>
+            `;
+        }
+
+        function renderMyResults() {
+            if (!state.verifiedEmployee) {
+                contentArea.innerHTML = '<p class="text-gray-500">Please login first.</p>';
+                return;
+            }
+            
+            const myResults = state.results.filter(r => r.employeeId === state.verifiedEmployee.ID);
+            contentArea.innerHTML = `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">📊 My Results (${myResults.length})</h2>
+                    ${myResults.length === 0 ? 
+                        '<p class="text-gray-500 italic">No results yet. Bids are still being processed.</p>' : 
+                        renderBidsTable(myResults)}
+                </div>
+            `;
+        }
+
+        function renderChangePassword() {
+            if (!state.verifiedEmployee) {
+                contentArea.innerHTML = '<p class="text-gray-500">Please login first.</p>';
+                return;
+            }
+            
+            contentArea.innerHTML = `
+                <div class="max-w-md mx-auto">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-6">🔐 Change Password</h2>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block font-semibold mb-2">Current Password:</label>
+                                <input
+                                    type="password"
+                                    id="empCurrentPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter current password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">New Password:</label>
+                                <input
+                                    type="password"
+                                    id="empNewPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Enter new password"
+                                />
+                            </div>
+                            
+                            <div>
+                                <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                <input
+                                    type="password"
+                                    id="empConfirmPassword"
+                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                    placeholder="Confirm new password"
+                                />
+                            </div>
+                            
+                            <div class="mt-6">
+                                <button
+                                    onclick="changeEmployeePassword()"
+                                    class="w-full px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold hover-lift"
+                                >
+                                    Change Password
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderBidsTable(bids) {
+            if (bids.length === 0) return '<p class="text-gray-500 italic">No data available.</p>';
+            
+            return `
+                <div class="overflow-x-auto">
+                    <table class="min-w-full border border-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="border px-3 py-2">Slot</th>
+                                <th class="border px-3 py-2">Priority</th>
+                                <th class="border px-3 py-2">Status</th>
+                                <th class="border px-3 py-2">Date Submitted</th>
+                                <th class="border px-3 py-2">Comments</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${bids.map(bid => `
+                                <tr>
+                                    <td class="border px-3 py-2">${bid.slot}</td>
+                                    <td class="border px-3 py-2">${bid.priority}</td>
+                                    <td class="border px-3 py-2">
+                                        <span class="px-2 py-1 rounded-full text-xs ${bid.status === 'approved' || bid.status === 'processed' ? 'bg-green-100 text-green-800' : bid.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}">
+                                            ${bid.status || 'pending'}
+                                        </span>
+                                    </td>
+                                    <td class="border px-3 py-2">${bid.submittedDate || 'N/A'}</td>
+                                    <td class="border px-3 py-2">${bid.comments || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function changeEmployeePassword() {
+            const current = document.getElementById('empCurrentPassword').value;
+            const newPass = document.getElementById('empNewPassword').value;
+            const confirmPass = document.getElementById('empConfirmPassword').value;
+            
+            if (!current || !newPass || !confirmPass) {
+                showMessage('Please fill all fields', 'error');
+                return;
+            }
+            
+            const currentStored = state.employeePasswords[state.verifiedEmployee.ID] || state.verifiedEmployee.ID;
+            if (current !== currentStored) {
+                showMessage('Current password is incorrect', 'error');
+                return;
+            }
+            
+            if (newPass !== confirmPass) {
+                showMessage('New passwords do not match', 'error');
+                return;
+            }
+            
+            if (newPass.length < 4) {
+                showMessage('Password must be at least 4 characters', 'error');
+                return;
+            }
+            
+            state.employeePasswords[state.verifiedEmployee.ID] = newPass;
+            saveState();
+            
+            showMessage('Password changed successfully!', 'success');
+            renderChangePassword();
+        }
 
         // ==================== INITIALIZATION ====================
         function init() {
@@ -737,14 +1715,17 @@ function downloadSampleExcel() {
                 // Render initial login form
                 renderLoginForm();
                 
-                // Add Enter key support
+                // Load saved data
+                loadSavedData();
+                
+                // Add Enter key support for login
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) {
                         handleLogin();
                     }
                 });
                 
-                console.log('✅ System initialized successfully');
+                console.log('✅ Annual Leave Bidding System initialized');
             }, 1000);
         }
 
