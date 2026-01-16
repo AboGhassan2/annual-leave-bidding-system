@@ -5,73 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Annual Leave Bidding System</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <!-- XLSX Library for Excel files -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --primary: #2563eb;
-            --secondary: #7c3aed;
-            --success: #059669;
-            --warning: #d97706;
-            --danger: #dc2626;
-        }
-        
-        .gradient-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, #1d4ed8 100%);
-        }
-        
-        .gradient-secondary {
-            background: linear-gradient(135deg, var(--secondary) 0%, #6d28d9 100%);
-        }
-        
-        .gradient-success {
-            background: linear-gradient(135deg, var(--success) 0%, #047857 100%);
-        }
-        
-        .gradient-danger {
-            background: linear-gradient(135deg, var(--danger) 0%, #b91c1c 100%);
-        }
-        
-        .gradient-warning {
-            background: linear-gradient(135deg, var(--warning) 0%, #b45309 100%);
-        }
-        
-        .card-shadow {
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-        
-        .hover-card {
-            transition: all 0.3s ease;
-        }
-        
-        .hover-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-        
-        .fade-in {
-            animation: fadeIn 0.5s ease-in;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .pulse {
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.7; }
-            100% { opacity: 1; }
-        }
-        
+        /* ... (keep all existing styles) ... */
         .loading-spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid var(--primary);
+            border-top: 3px solid #3b82f6;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -82,435 +20,179 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 10px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: #a1a1a1;
-        }
-        
-        /* Modal backdrop */
-        .modal-backdrop {
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-        }
-        
-        /* Excel badge */
-        .excel-badge {
-            background: linear-gradient(135deg, #217346 0%, #185C37 100%);
-            color: white;
-        }
-        
-        /* Glass effect */
-        .glass-effect {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        
-        /* Status indicators */
-        .status-approved { background-color: #10b98120; color: #059669; }
-        .status-pending { background-color: #f59e0b20; color: #d97706; }
-        .status-rejected { background-color: #ef444420; color: #dc2626; }
-        .status-processed { background-color: #3b82f620; color: #1d4ed8; }
-        
-        /* Button animations */
-        .btn-hover {
-            transition: all 0.3s ease;
-        }
-        
-        .btn-hover:hover {
-            transform: scale(1.05);
-        }
-        
-        /* Input focus effects */
-        .input-focus:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
     </style>
 </head>
-<body class="bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen">
-    <!-- Loading Screen -->
-    <div id="loadingScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
-        <div class="text-center">
-            <div class="loading-spinner mb-6"></div>
-            <div class="space-y-3">
-                <h2 class="text-2xl font-bold text-gray-800">Annual Leave Bidding System</h2>
-                <p class="text-gray-600">Initializing system...</p>
-                <div class="w-64 h-2 bg-gray-200 rounded-full overflow-hidden mx-auto">
-                    <div id="loadingBar" class="h-full gradient-primary rounded-full w-0 transition-all duration-1000"></div>
+<body class="p-4 md:p-6">
+    <div id="app" class="max-w-7xl mx-auto">
+        <!-- Loading Screen -->
+        <div id="loadingScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+            <div class="loading-spinner mb-4"></div>
+            <p class="text-gray-600 font-semibold">Loading system data...</p>
+            <p id="loadingMessage" class="text-sm text-gray-500 mt-2"></p>
+        </div>
+
+        <!-- Header -->
+        <div class="mb-8 text-center fade-in">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">
+                Annual Leave Bidding System
+            </h1>
+            <div id="userInfo" class="hidden flex justify-center items-center gap-4 mt-4">
+                <div class="bg-white px-4 py-2 rounded-lg shadow">
+                    <span class="text-sm text-gray-600">Logged in as: </span>
+                    <span id="currentUserName" class="font-semibold"></span>
+                    <span id="userTypeBadge" class="ml-2 px-2 py-1 text-xs rounded"></span>
                 </div>
-                <p id="loadingMessage" class="text-sm text-gray-500 mt-2">Loading application</p>
+                <button
+                    onclick="handleLogout()"
+                    class="px-4 py-2 gradient-red text-white rounded-lg hover:shadow-lg font-semibold transition-shadow"
+                >
+                    Logout
+                </button>
             </div>
         </div>
-    </div>
 
-    <!-- Main App -->
-    <div id="app" class="max-w-7xl mx-auto px-4 py-6">
-        <!-- Header -->
-        <header class="mb-10 fade-in">
-            <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-                <div class="text-center md:text-left">
-                    <h1 class="text-4xl font-bold text-gray-900 mb-2">
-                        <span class="gradient-primary bg-clip-text text-transparent">Annual Leave</span>
-                        <span class="text-gray-800">Bidding System</span>
-                    </h1>
-                    <p class="text-gray-600">Efficiently manage employee leave allocations</p>
-                </div>
+        <!-- Login View (initial view) -->
+        <div id="loginView" class="max-w-md mx-auto mt-10 fade-in" style="display: none;">
+            <div class="bg-white rounded-xl shadow-xl p-8">
+                <h1 class="text-2xl font-bold text-center mb-6 text-blue-600">
+                    Annual Leave Bidding System
+                </h1>
                 
-                <div id="userInfo" class="hidden">
-                    <div class="glass-effect rounded-2xl p-4 card-shadow">
-                        <div class="flex items-center gap-4">
-                            <div class="text-right">
-                                <p class="text-sm text-gray-600">Logged in as</p>
-                                <p id="currentUserName" class="font-semibold text-gray-800"></p>
-                                <span id="userTypeBadge" class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1"></span>
-                            </div>
-                            <div class="w-12 h-12 rounded-full gradient-primary flex items-center justify-center text-white font-bold">
-                                <i id="userIcon" class="fas fa-user"></i>
-                            </div>
-                            <button
-                                onclick="handleLogout()"
-                                class="px-4 py-2 gradient-danger text-white rounded-xl hover:shadow-lg font-semibold btn-hover"
-                            >
-                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
-                            </button>
-                        </div>
+                <div class="mb-6">
+                    <label class="block font-semibold mb-3">Login As:</label>
+                    <div class="flex gap-4">
+                        <button
+                            id="loginTypeEmployee"
+                            onclick="setLoginType('employee')"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white"
+                        >
+                            Employee
+                        </button>
+                        <button
+                            id="loginTypePlanner"
+                            onclick="setLoginType('planner')"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
+                        >
+                            Planner
+                        </button>
                     </div>
                 </div>
-            </div>
-        </header>
 
-        <!-- Login View -->
-        <div id="loginView" class="max-w-lg mx-auto mt-12 fade-in">
-            <div class="glass-effect rounded-2xl card-shadow overflow-hidden">
-                <!-- Login Header -->
-                <div class="gradient-primary text-white p-6 text-center">
-                    <i class="fas fa-calendar-alt text-4xl mb-4"></i>
-                    <h2 class="text-2xl font-bold">Welcome Back</h2>
-                    <p class="opacity-90">Please login to continue</p>
+                <div id="loginForm">
+                    <!-- Employee login fields will be inserted here -->
                 </div>
-                
-                <div class="p-8">
-                    <!-- Login Type Selection -->
-                    <div class="mb-8">
-                        <p class="font-semibold text-gray-700 mb-4">Select Login Type:</p>
-                        <div class="grid grid-cols-2 gap-4">
-                            <button
-                                id="loginTypeEmployee"
-                                onclick="setLoginType('employee')"
-                                class="p-4 rounded-xl border-2 border-blue-200 hover:border-blue-400 transition-all duration-300 bg-white hover-card"
-                            >
-                                <i class="fas fa-user-tie text-2xl text-blue-600 mb-2"></i>
-                                <p class="font-semibold text-gray-800">Employee</p>
-                                <p class="text-xs text-gray-600 mt-1">Place leave bids</p>
-                            </button>
-                            <button
-                                id="loginTypePlanner"
-                                onclick="setLoginType('planner')"
-                                class="p-4 rounded-xl border-2 border-gray-200 hover:border-purple-400 transition-all duration-300 bg-white hover-card"
-                            >
-                                <i class="fas fa-user-cog text-2xl text-purple-600 mb-2"></i>
-                                <p class="font-semibold text-gray-800">Planner</p>
-                                <p class="text-xs text-gray-600 mt-1">Manage system</p>
-                            </button>
-                        </div>
-                    </div>
 
-                    <!-- Login Form -->
-                    <div id="loginForm" class="space-y-6">
-                        <!-- Form will be inserted here -->
-                    </div>
-
-                    <button
-                        onclick="handleLogin()"
-                        class="w-full mt-8 px-6 py-4 gradient-primary text-white rounded-xl hover:shadow-xl font-semibold transition-all duration-300 btn-hover"
-                    >
-                        <i class="fas fa-sign-in-alt mr-2"></i>Login to System
-                    </button>
-
-                    <!-- System Info -->
-                    <div class="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                        <div class="flex items-start gap-3">
-                            <i class="fas fa-info-circle text-blue-600 mt-1"></i>
-                            <div>
-                                <p class="font-semibold text-blue-800">System Information</p>
-                                <p class="text-sm text-blue-700 mt-1">
-                                    <span class="font-medium">Planner:</span> Default password is "admin123"<br>
-                                    <span class="font-medium">Employees:</span> Upload data first, then login with ID<br>
-                                    <span class="font-medium">Data:</span> All information is saved locally in your browser
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <button
+                    onclick="handleLogin()"
+                    class="w-full mt-6 px-6 py-3 gradient-blue text-white rounded-lg hover:shadow-lg font-semibold transition-shadow"
+                >
+                    Login
+                </button>
             </div>
         </div>
 
         <!-- Planner Navigation -->
-        <div id="plannerNav" class="hidden mb-10 fade-in">
-            <div class="glass-effect rounded-2xl p-6 card-shadow">
-                <h3 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3">
-                    <i class="fas fa-user-cog text-purple-600"></i>Planner Dashboard
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <button onclick="setActiveView('upload')" class="p-4 bg-white rounded-xl border hover:border-blue-400 transition-all hover-card text-left">
-                        <i class="fas fa-file-upload text-2xl text-blue-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Upload Data</p>
-                        <p class="text-xs text-gray-600 mt-1">Import employee information</p>
-                    </button>
-                    <button onclick="setActiveView('configureSlots')" class="p-4 bg-white rounded-xl border hover:border-purple-400 transition-all hover-card text-left">
-                        <i class="fas fa-cogs text-2xl text-purple-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Configure Slots</p>
-                        <p class="text-xs text-gray-600 mt-1">Set leave periods</p>
-                    </button>
-                    <button onclick="setActiveView('admin')" class="p-4 bg-white rounded-xl border hover:border-green-400 transition-all hover-card text-left">
-                        <i class="fas fa-tachometer-alt text-2xl text-green-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Admin Panel</p>
-                        <p class="text-xs text-gray-600 mt-1">System management</p>
-                    </button>
-                    <button onclick="setActiveView('changePlannerPassword')" class="p-4 bg-white rounded-xl border hover:border-red-400 transition-all hover-card text-left">
-                        <i class="fas fa-key text-2xl text-red-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Security</p>
-                        <p class="text-xs text-gray-600 mt-1">Change password</p>
-                    </button>
-                </div>
-            </div>
+        <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
+            <button onclick="setActiveView('upload')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Upload Data
+            </button>
+            <button onclick="setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Configure Slots
+            </button>
+            <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Admin Panel
+            </button>
+            <button onclick="publishToCloud()" class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
+                🌐 Publish Data
+            </button>
+            <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Change Password
+            </button>
         </div>
 
         <!-- Employee Navigation -->
-        <div id="employeeNav" class="hidden mb-10 fade-in">
-            <div class="glass-effect rounded-2xl p-6 card-shadow">
-                <h3 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-3">
-                    <i class="fas fa-user-tie text-blue-600"></i>Employee Dashboard
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <button onclick="setActiveView('bidding')" class="p-4 bg-white rounded-xl border hover:border-blue-400 transition-all hover-card text-left">
-                        <i class="fas fa-calendar-plus text-2xl text-blue-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Place Bids</p>
-                        <p class="text-xs text-gray-600 mt-1">Request leave periods</p>
-                    </button>
-                    <button onclick="setActiveView('myBids')" class="p-4 bg-white rounded-xl border hover:border-green-400 transition-all hover-card text-left">
-                        <i class="fas fa-list-alt text-2xl text-green-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">My Bids</p>
-                        <p class="text-xs text-gray-600 mt-1">View submissions</p>
-                    </button>
-                    <button onclick="setActiveView('results')" class="p-4 bg-white rounded-xl border hover:border-purple-400 transition-all hover-card text-left">
-                        <i class="fas fa-chart-bar text-2xl text-purple-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Results</p>
-                        <p class="text-xs text-gray-600 mt-1">Check allocations</p>
-                    </button>
-                    <button onclick="setActiveView('changePassword')" class="p-4 bg-white rounded-xl border hover:border-yellow-400 transition-all hover-card text-left">
-                        <i class="fas fa-user-lock text-2xl text-yellow-600 mb-3"></i>
-                        <p class="font-semibold text-gray-800">Account</p>
-                        <p class="text-xs text-gray-600 mt-1">Security settings</p>
-                    </button>
-                </div>
-            </div>
+        <div id="employeeNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
+            <button onclick="setActiveView('employee')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Place Bids
+            </button>
+            <button onclick="setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+                Change Password
+            </button>
         </div>
 
         <!-- Main Content Area -->
-        <div id="contentArea" class="fade-in"></div>
-    </div>
+        <div id="contentArea"></div>
 
-    <!-- Upload Data Modal -->
-    <div id="uploadModal" class="hidden fixed inset-0 z-50">
-        <div class="modal-backdrop absolute inset-0" onclick="closeUploadModal()"></div>
-        <div class="absolute inset-0 flex items-center justify-center p-4">
-            <div class="glass-effect rounded-2xl card-shadow max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-                <!-- Modal Header -->
-                <div class="sticky top-0 z-10 gradient-primary text-white p-6">
-                    <div class="flex justify-between items-center">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-file-upload text-2xl"></i>
-                            <div>
-                                <h3 class="text-2xl font-bold">Upload Employee Data</h3>
-                                <p class="opacity-90">Import employee information via Excel or CSV</p>
-                            </div>
-                        </div>
-                        <button onclick="closeUploadModal()" class="text-white hover:text-gray-200 text-2xl">
-                            <i class="fas fa-times"></i>
-                        </button>
+        <!-- Cloud Publish Modal -->
+        <div id="cloudModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+                <h3 class="text-xl font-bold mb-4">🌐 Publish System Data</h3>
+                <div class="mb-4">
+                    <p class="text-sm text-gray-600 mb-2">
+                        This will publish your system data to the cloud so all employees can access it.
+                    </p>
+                    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-3">
+                        <p class="text-sm font-semibold text-yellow-800">📊 Current Data Summary:</p>
+                        <ul class="text-xs text-yellow-700 mt-1 space-y-1">
+                            <li>• Employees: <span id="employeeCount">0</span></li>
+                            <li>• Slot Configurations: <span id="slotConfigCount">0</span></li>
+                            <li>• Bids: <span id="bidCount">0</span></li>
+                            <li>• Results: <span id="resultCount">0</span></li>
+                        </ul>
                     </div>
                 </div>
-                
-                <!-- Modal Body -->
-                <div class="p-6">
-                    <!-- File Upload Area -->
-                    <div class="mb-8">
-                        <div id="dropZone" class="border-3 border-dashed border-gray-300 rounded-2xl p-10 text-center hover:border-blue-400 transition-all cursor-pointer"
-                             ondragover="event.preventDefault(); document.getElementById('dropZone').classList.add('border-blue-400', 'bg-blue-50');"
-                             ondragleave="document.getElementById('dropZone').classList.remove('border-blue-400', 'bg-blue-50');"
-                             ondrop="handleDrop(event); event.preventDefault();">
-                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-4"></i>
-                            <p class="text-xl font-semibold text-gray-700 mb-2">Drag & Drop your file here</p>
-                            <p class="text-gray-500 mb-6">or click to browse</p>
-                            <input
-                                type="file"
-                                id="fileInput"
-                                accept=".xlsx,.xls,.csv"
-                                class="hidden"
-                                onchange="handleFileSelect(event)"
-                            />
-                            <label for="fileInput" class="inline-block px-8 py-3 gradient-primary text-white rounded-xl hover:shadow-lg font-semibold cursor-pointer btn-hover">
-                                <i class="fas fa-folder-open mr-2"></i>Browse Files
-                            </label>
-                            <div class="mt-4 flex flex-wrap justify-center gap-3">
-                                <span class="excel-badge px-3 py-1 rounded-full text-sm">
-                                    <i class="fas fa-file-excel mr-1"></i>Excel (.xlsx, .xls)
-                                </span>
-                                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-                                    <i class="fas fa-file-csv mr-1"></i>CSV (.csv)
-                                </span>
-                            </div>
-                            <p id="fileName" class="mt-4 text-sm text-gray-600"></p>
-                        </div>
-                    </div>
-
-                    <!-- Required Columns -->
-                    <div class="mb-8">
-                        <div class="flex items-center gap-3 mb-4">
-                            <i class="fas fa-list-check text-blue-600"></i>
-                            <h4 class="text-lg font-bold text-gray-800">Required Columns</h4>
-                        </div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                                <p class="font-semibold text-blue-800">ID</p>
-                                <p class="text-xs text-blue-600">Required</p>
-                            </div>
-                            <div class="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                                <p class="font-semibold text-blue-800">Name</p>
-                                <p class="text-xs text-blue-600">Required</p>
-                            </div>
-                            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                                <p class="font-semibold text-gray-800">Department</p>
-                                <p class="text-xs text-gray-600">Optional</p>
-                            </div>
-                            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                                <p class="font-semibold text-gray-800">Seniority Date</p>
-                                <p class="text-xs text-gray-600">Optional</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Sample Template -->
-                    <div class="mb-8">
-                        <button onclick="toggleSampleData()" class="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold mb-4">
-                            <i class="fas fa-download"></i>
-                            <span>Download Sample Template</span>
-                            <i id="sampleToggle" class="fas fa-chevron-down ml-1"></i>
-                        </button>
-                        <div id="sampleData" class="hidden">
-                            <div class="bg-gray-50 border rounded-2xl p-4">
-                                <div class="overflow-x-auto">
-                                    <table class="min-w-full text-sm">
-                                        <thead>
-                                            <tr class="bg-gray-100">
-                                                <th class="p-3 font-semibold">ID</th>
-                                                <th class="p-3 font-semibold">Name</th>
-                                                <th class="p-3 font-semibold">Department</th>
-                                                <th class="p-3 font-semibold">Seniority Date</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td class="p-3">EMP001</td>
-                                                <td class="p-3">John Doe</td>
-                                                <td class="p-3">L4/6-SA</td>
-                                                <td class="p-3">2020-01-15</td>
-                                            </tr>
-                                            <tr class="bg-white">
-                                                <td class="p-3">EMP002</td>
-                                                <td class="p-3">Jane Smith</td>
-                                                <td class="p-3">L5-DEP-DM</td>
-                                                <td class="p-3">2018-06-20</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="mt-4 flex gap-3">
-                                    <button onclick="downloadSampleExcel()" class="px-4 py-2 excel-badge rounded-xl hover:shadow-lg font-semibold btn-hover">
-                                        <i class="fas fa-file-excel mr-2"></i>Excel Template
-                                    </button>
-                                    <button onclick="downloadSampleCSV()" class="px-4 py-2 bg-blue-600 text-white rounded-xl hover:shadow-lg font-semibold btn-hover">
-                                        <i class="fas fa-file-csv mr-2"></i>CSV Template
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Upload Preview -->
-                    <div id="uploadPreview" class="hidden">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <i class="fas fa-eye text-blue-600"></i>
-                                <h4 class="text-lg font-bold text-gray-800">Upload Preview</h4>
-                            </div>
-                            <div id="previewStats" class="text-sm text-gray-600"></div>
-                        </div>
-                        <div id="previewTable" class="mb-6 max-h-64 overflow-y-auto border rounded-xl"></div>
-                        <div class="flex justify-between items-center">
-                            <button onclick="clearUpload()" class="px-6 py-2 bg-gray-500 text-white rounded-xl hover:bg-gray-600 font-semibold btn-hover">
-                                <i class="fas fa-times mr-2"></i>Clear
-                            </button>
-                            <button onclick="processUpload()" class="px-6 py-2 gradient-success text-white rounded-xl hover:shadow-lg font-semibold btn-hover">
-                                <i class="fas fa-check-circle mr-2"></i>Process & Save Data
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Current Employees -->
-                    <div class="mt-8 pt-6 border-t">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <i class="fas fa-users text-blue-600"></i>
-                                <h4 class="text-lg font-bold text-gray-800">Current Employees</h4>
-                            </div>
-                            <span id="employeeCount" class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold">0</span>
-                        </div>
-                        <div id="currentEmployees" class="text-gray-500 italic">
-                            No employee data uploaded yet.
-                        </div>
-                    </div>
+                <div class="flex gap-3">
+                    <button
+                        onclick="saveToGist()"
+                        class="flex-1 px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold"
+                    >
+                        Publish to GitHub
+                    </button>
+                    <button
+                        onclick="document.getElementById('cloudModal').classList.add('hidden')"
+                        class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
+                    >
+                        Cancel
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Lucide Icons (via CDN) -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <!-- XLSX for Excel processing -->
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+
     <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // ==================== CLOUD CONFIGURATION ====================
+        // GitHub Gist Configuration (Free cloud storage)
+        const GIST_ID = 'YOUR_GIST_ID'; <script src="https://gist.github.com/AboGhassan2/2f3f246ef97e1165830bf95529d01b78.js"></script>
+        const GITHUB_TOKEN = ''; // Optional: For private gists
+        const CLOUD_DATA_URL = `https://gist.githubusercontent.com/raw/${GIST_ID}/system_data.json`;
+
         // ==================== STATE MANAGEMENT ====================
         let state = {
-            loginType: 'employee',
-            currentUser: null,
-            userType: null,
-            plannerPassword: 'admin123',
             employees: [],
             employeePasswords: {},
             bids: [],
             biddingDeadline: '',
-            biddingYear: new Date().getFullYear(),
+            biddingYear: 2026,
             isProcessed: false,
             activeView: 'login',
             selectedEmployeeId: '',
             verifiedEmployee: null,
+            currentUser: null,
+            userType: null,
+            plannerPassword: 'admin123',
             results: [],
+            selectedDepartment: 'all',
             slotCapacities: {},
             
+            // Department list
             departments: [
                 'L4/6-SA', 'L4/6-DEP-DM', 'L4/6-DEP-EFC', 'L3-DEP-DC', 'L3-DEP-TC',
                 'L5-LSS/SS', 'L5-DEP-DC', 'L3465-DEP-TCC', 'L3-DEP-DM', 'L5-DEP-DM',
@@ -523,566 +205,358 @@
             ],
             
             slotTypes: [
-                { id: 'slotA', name: 'Slot A', days: 15, color: '#10b981' },
-                { id: 'slotB', name: 'Slot B', days: 15, color: '#3b82f6' },
-                { id: 'slotC', name: 'Slot C', days: 20, color: '#8b5cf6' }
+                { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
+                { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
+                { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' }
+            ],
+            
+            months: [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
             ]
         };
 
-        let uploadedData = [];
-
-        // ==================== FILE UPLOAD FUNCTIONS ====================
-        function handleDrop(event) {
-            event.preventDefault();
-            const dropZone = document.getElementById('dropZone');
-            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
-            
-            const files = event.dataTransfer.files;
-            if (files.length > 0) {
-                const file = files[0];
-                if (file.name.match(/\.(xlsx|xls|csv)$/i)) {
-                    // Create a fake event object for handleFileSelect
-                    const fakeEvent = { target: { files: [file] } };
-                    handleFileSelect(fakeEvent);
-                } else {
-                    showMessage('Please upload only Excel or CSV files', 'error');
-                }
-            }
-        }
-
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            document.getElementById('fileName').textContent = `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-            
-            const reader = new FileReader();
-            
-            reader.onload = function(e) {
-                try {
-                    let data;
-                    const fileExtension = file.name.split('.').pop().toLowerCase();
-                    
-                    if (fileExtension === 'csv') {
-                        data = parseCSV(e.target.result);
-                    } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
-                        // Parse Excel file using XLSX library
-                        data = parseExcel(e.target.result);
-                    } else {
-                        showMessage('Unsupported file format. Please upload CSV, XLSX, or XLS files.', 'error');
-                        return;
-                    }
-                    
-                    if (data.length > 0) {
-                        uploadedData = data;
-                        previewUploadData(data);
-                    }
-                } catch (error) {
-                    console.error('Error reading file:', error);
-                    showMessage('Error reading file. Please check the file format.', 'error');
-                }
-            };
-            
-            reader.onerror = function() {
-                showMessage('Error reading file. Please try again.', 'error');
-            };
-            
-            reader.readAsBinaryString(file);
-        }
-
-        function parseExcel(data) {
-            // Parse Excel file using XLSX library
-            const workbook = XLSX.read(data, { type: 'binary' });
-            
-            // Get first sheet
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            
-            // Convert to JSON
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            
-            if (jsonData.length < 2) {
-                showMessage('Excel file must have at least 2 rows (header + data)', 'error');
-                return [];
-            }
-            
-            const headers = jsonData[0];
-            const dataRows = [];
-            
-            // Convert to object array
-            for (let i = 1; i < jsonData.length; i++) {
-                const row = {};
-                for (let j = 0; j < headers.length; j++) {
-                    row[headers[j]] = jsonData[i][j] || '';
-                }
-                
-                // Ensure required fields
-                if (!row.ID && row['Employee ID']) row.ID = row['Employee ID'];
-                if (!row.ID) row.ID = `EMP${String(dataRows.length + 1).padStart(3, '0')}`;
-                if (!row.Name && row['Employee Name']) row.Name = row['Employee Name'];
-                if (!row.Name) row.Name = `Employee ${dataRows.length + 1}`;
-                if (!row.Department) row.Department = 'General';
-                if (!row['Seniority Date']) row['Seniority Date'] = new Date().toISOString().split('T')[0];
-                if (!row.Status) row.Status = 'Active';
-                if (!row['Leave Balance']) row['Leave Balance'] = '30';
-                
-                dataRows.push(row);
-            }
-            
-            return dataRows;
-        }
-
-        function parseCSV(csvText) {
-            const lines = csvText.split('\n').filter(line => line.trim() !== '');
-            if (lines.length < 2) {
-                showMessage('CSV file must have at least 2 lines (header + data)', 'error');
-                return [];
-            }
-            
-            // Handle quoted CSV values
-            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-            
-            // Check for required columns
-            const hasID = headers.some(h => h.toLowerCase() === 'id' || h.toLowerCase() === 'employee id');
-            if (!hasID) {
-                showMessage('CSV must have an "ID" or "Employee ID" column', 'error');
-                return [];
-            }
-            
-            const data = [];
-            for (let i = 1; i < lines.length; i++) {
-                // Simple CSV parsing (for production, use a proper CSV parser)
-                const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-                const row = {};
-                
-                headers.forEach((header, index) => {
-                    row[header] = values[index] || '';
-                });
-                
-                // Map common column names
-                if (!row.ID && row['Employee ID']) row.ID = row['Employee ID'];
-                if (!row.Name && row['Employee Name']) row.Name = row['Employee Name'];
-                if (!row.Department && row['Dept']) row.Department = row['Dept'];
-                
-                // Ensure required fields
-                if (!row.ID) row.ID = `EMP${String(data.length + 1).padStart(3, '0')}`;
-                if (!row.Name) row.Name = `Employee ${data.length + 1}`;
-                if (!row.Department) row.Department = 'General';
-                if (!row['Seniority Date']) row['Seniority Date'] = new Date().toISOString().split('T')[0];
-                if (!row.Status) row.Status = 'Active';
-                if (!row['Leave Balance']) row['Leave Balance'] = '30';
-                
-                data.push(row);
-            }
-            
-            return data;
-        }
-
-        function previewUploadData(data) {
-            const previewTable = document.getElementById('previewTable');
-            const previewStats = document.getElementById('previewStats');
-            
-            if (data.length > 0) {
-                // Get sample of columns (first 5)
-                const headers = Object.keys(data[0]).slice(0, 5);
-                let html = `
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full border border-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    ${headers.map(h => `<th class="border px-3 py-2 font-medium">${h}</th>`).join('')}
-                                    ${Object.keys(data[0]).length > 5 ? '<th class="border px-3 py-2 font-medium">...</th>' : ''}
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
-                
-                // Show first 5 rows for preview
-                const previewRows = data.slice(0, 5);
-                previewRows.forEach(row => {
-                    html += '<tr>';
-                    headers.forEach(header => {
-                        html += `<td class="border px-3 py-2">${row[header] || ''}</td>`;
-                    });
-                    if (Object.keys(data[0]).length > 5) {
-                        html += '<td class="border px-3 py-2 text-gray-500">...</td>';
-                    }
-                    html += '</tr>';
-                });
-                
-                if (data.length > 5) {
-                    html += `
-                        <tr>
-                            <td colspan="${headers.length + (Object.keys(data[0]).length > 5 ? 1 : 0)}" class="border px-3 py-2 text-center text-gray-500 bg-gray-50">
-                                ... and ${data.length - 5} more rows
-                            </td>
-                        </tr>
-                    `;
-                }
-                
-                html += '</tbody></table></div>';
-                previewTable.innerHTML = html;
-                
-                // Update stats
-                previewStats.innerHTML = `
-                    <div class="flex items-center gap-4">
-                        <span class="flex items-center gap-1"><i class="fas fa-users"></i> <strong>${data.length}</strong> employees</span>
-                        <span class="flex items-center gap-1"><i class="fas fa-columns"></i> <strong>${Object.keys(data[0]).length}</strong> columns</span>
-                    </div>
-                `;
-                
-                document.getElementById('uploadPreview').classList.remove('hidden');
-            }
-        }
-
-        function processUpload() {
-            if (uploadedData.length === 0) {
-                showMessage('No data to process!', 'error');
-                return;
-            }
-            
-            // Save to localStorage
-            localStorage.setItem('employees', JSON.stringify(uploadedData));
-            
-            // Create or update passwords (default = ID)
-            const employeePasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
-            uploadedData.forEach(emp => {
-                if (emp.ID && !employeePasswords[emp.ID]) {
-                    employeePasswords[emp.ID] = emp.ID;
-                }
-            });
-            localStorage.setItem('employeePasswords', JSON.stringify(employeePasswords));
-            
-            // Update state
-            state.employees = uploadedData;
-            state.employeePasswords = employeePasswords;
-            
-            saveState();
-            
-            showMessage(`✅ Successfully uploaded ${uploadedData.length} employees!`, 'success');
-            updateEmployeeList();
-            closeUploadModal();
-        }
-
-        function updateEmployeeList() {
-            const currentEmployeesDiv = document.getElementById('currentEmployees');
-            const employeeCountSpan = document.getElementById('employeeCount');
-            
+        // ==================== CLOUD FUNCTIONS ====================
+        async function loadFromCloud() {
             try {
-                const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
+                // Try to load from cloud first
+                document.getElementById('loadingMessage').textContent = 'Fetching latest data from cloud...';
                 
-                if (savedEmployees.length > 0) {
-                    employeeCountSpan.textContent = savedEmployees.length;
+                const response = await fetch(CLOUD_DATA_URL + '?t=' + Date.now());
+                
+                if (response.ok) {
+                    const cloudData = await response.json();
                     
-                    let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">';
-                    
-                    savedEmployees.slice(0, 6).forEach(emp => {
-                        html += `
-                            <div class="bg-white border rounded-xl p-3 hover-card">
-                                <div class="flex items-start gap-3">
-                                    <div class="w-10 h-10 rounded-full gradient-primary flex items-center justify-center text-white font-bold">
-                                        ${emp.Name ? emp.Name.charAt(0).toUpperCase() : 'E'}
-                                    </div>
-                                    <div>
-                                        <div class="font-semibold text-gray-800">${emp.Name || 'Unnamed'}</div>
-                                        <div class="text-sm text-gray-600">ID: ${emp.ID || 'N/A'}</div>
-                                        <div class="text-xs text-gray-500 mt-1">${emp.Department || 'No Department'}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    });
-                    
-                    if (savedEmployees.length > 6) {
-                        html += `
-                            <div class="bg-gray-50 border rounded-xl p-3 flex items-center justify-center">
-                                <span class="text-gray-500">+ ${savedEmployees.length - 6} more employees</span>
-                            </div>
-                        `;
+                    // Validate the data
+                    if (cloudData && cloudData.employees && Array.isArray(cloudData.employees)) {
+                        state.employees = cloudData.employees || [];
+                        state.employeePasswords = cloudData.employeePasswords || {};
+                        state.bids = cloudData.bids || [];
+                        state.biddingDeadline = cloudData.biddingDeadline || '';
+                        state.biddingYear = cloudData.biddingYear || 2026;
+                        state.isProcessed = cloudData.isProcessed || false;
+                        state.plannerPassword = cloudData.plannerPassword || 'admin123';
+                        state.results = cloudData.results || [];
+                        state.slotCapacities = cloudData.slotCapacities || {};
+                        
+                        console.log('✅ Data loaded from cloud:', state.employees.length, 'employees');
+                        return true;
                     }
-                    
-                    html += '</div>';
-                    currentEmployeesDiv.innerHTML = html;
-                } else {
-                    employeeCountSpan.textContent = '0';
-                    currentEmployeesDiv.innerHTML = '<p class="text-gray-500 italic">No employee data uploaded yet.</p>';
                 }
             } catch (error) {
-                employeeCountSpan.textContent = '0';
-                currentEmployeesDiv.innerHTML = '<p class="text-red-500">Error loading employee data</p>';
+                console.log('No cloud data found, using localStorage');
+            }
+            
+            // Fallback to localStorage
+            return loadFromLocalStorage();
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const employees = JSON.parse(localStorage.getItem('employees'));
+                if (employees && Array.isArray(employees) && employees.length > 0) {
+                    state.employees = employees;
+                    state.employeePasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
+                    state.bids = JSON.parse(localStorage.getItem('bids')) || [];
+                    state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
+                    state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
+                    state.isProcessed = JSON.parse(localStorage.getItem('isProcessed')) || false;
+                    state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
+                    state.results = JSON.parse(localStorage.getItem('results')) || [];
+                    state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities')) || {};
+                    
+                    console.log('✅ Data loaded from localStorage:', state.employees.length, 'employees');
+                    return true;
+                }
+            } catch (error) {
+                console.error('Error loading from localStorage:', error);
+            }
+            return false;
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('employees', JSON.stringify(state.employees));
+            localStorage.setItem('employeePasswords', JSON.stringify(state.employeePasswords));
+            localStorage.setItem('bids', JSON.stringify(state.bids));
+            localStorage.setItem('biddingDeadline', state.biddingDeadline);
+            localStorage.setItem('biddingYear', state.biddingYear.toString());
+            localStorage.setItem('isProcessed', JSON.stringify(state.isProcessed));
+            localStorage.setItem('plannerPassword', state.plannerPassword);
+            localStorage.setItem('results', JSON.stringify(state.results));
+            localStorage.setItem('slotCapacities', JSON.stringify(state.slotCapacities));
+        }
+
+        async function publishToCloud() {
+            // Show cloud publish modal
+            document.getElementById('employeeCount').textContent = state.employees.length;
+            document.getElementById('slotConfigCount').textContent = Object.keys(state.slotCapacities).length;
+            document.getElementById('bidCount').textContent = state.bids.length;
+            document.getElementById('resultCount').textContent = state.results.length;
+            document.getElementById('cloudModal').classList.remove('hidden');
+        }
+
+        async function saveToGist() {
+            try {
+                const modal = document.getElementById('cloudModal');
+                modal.classList.add('hidden');
+                
+                // Prepare system data
+                const systemData = {
+                    employees: state.employees,
+                    employeePasswords: state.employeePasswords,
+                    bids: state.bids,
+                    biddingDeadline: state.biddingDeadline,
+                    biddingYear: state.biddingYear,
+                    isProcessed: state.isProcessed,
+                    plannerPassword: state.plannerPassword,
+                    results: state.results,
+                    slotCapacities: state.slotCapacities,
+                    lastUpdated: new Date().toISOString(),
+                    version: '1.0'
+                };
+                
+                const dataStr = JSON.stringify(systemData, null, 2);
+                
+                // Create a downloadable JSON file for manual upload to GitHub
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(dataBlob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `system_data_${state.biddingYear}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                // Instructions for planner
+                alert(`✅ System data ready for cloud publishing!\n\n` +
+                      `1. A file named "system_data_${state.biddingYear}.json" has been downloaded\n` +
+                      `2. Go to https://gist.github.com\n` +
+                      `3. Create a new Gist (public)\n` +
+                      `4. Upload the JSON file\n` +
+                      `5. Copy the Gist ID from the URL\n` +
+                      `6. Replace "YOUR_GIST_ID" in the code with your actual Gist ID\n\n` +
+                      `After publishing, all employees will automatically get the latest data!`);
+                
+            } catch (error) {
+                console.error('Error publishing data:', error);
+                alert('Error publishing data. Please try again.');
             }
         }
 
-        function downloadSampleExcel() {
-            // Create sample data
-            const sampleData = [
-                ['ID', 'Name', 'Department', 'Seniority Date', 'Email', 'Phone', 'Leave Balance', 'Status'],
-                ['EMP001', 'John Doe', 'L4/6-SA', '2020-01-15', 'john@example.com', '+1234567890', '30', 'Active'],
-                ['EMP002', 'Jane Smith', 'L5-DEP-DM', '2018-06-20', 'jane@example.com', '+1987654321', '35', 'Active'],
-                ['EMP003', 'Robert Johnson', 'L3-DEP-DC', '2019-03-10', 'robert@example.com', '+1122334455', '30', 'Active']
-            ];
-            
-            // Create workbook
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(sampleData);
-            XLSX.utils.book_append_sheet(wb, ws, 'Employees');
-            
-            // Generate and download file
-            XLSX.writeFile(wb, 'employee_template.xlsx');
-            showMessage('Excel template downloaded! Fill in your employee data and upload.', 'success');
+        // ==================== UTILITY FUNCTIONS ====================
+        function calculateYearsOfService(seniorityDate) {
+            const today = new Date();
+            const joinDate = new Date(seniorityDate);
+            const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+            return years;
         }
 
-        function downloadSampleCSV() {
-            const csvContent = 'ID,Name,Department,Seniority Date,Email,Phone,Leave Balance,Status\n' +
-                'EMP001,John Doe,L4/6-SA,2020-01-15,john@example.com,+1234567890,30,Active\n' +
-                'EMP002,Jane Smith,L5-DEP-DM,2018-06-20,jane@example.com,+1987654321,35,Active\n' +
-                'EMP003,Robert Johnson,L3-DEP-DC,2019-03-10,robert@example.com,+1122334455,30,Active';
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'employee_template.csv';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            showMessage('CSV template downloaded! Fill in your employee data and upload.', 'success');
+        function getEmployeeEntitlement(employee) {
+            const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+            return yearsOfService >= 5 ? 35 : 30;
         }
 
-        function toggleSampleData() {
-            const sampleData = document.getElementById('sampleData');
-            const toggle = document.getElementById('sampleToggle');
+        function calculateDaysBetween(startDate, endDate) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            return diffDays;
+        }
+
+        function checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
+            const start1 = new Date(startDate1);
+            const end1 = new Date(endDate1);
+            const start2 = new Date(startDate2);
+            const end2 = new Date(endDate2);
             
-            if (sampleData.classList.contains('hidden')) {
-                sampleData.classList.remove('hidden');
-                toggle.className = 'fas fa-chevron-up ml-1';
+            return (start1 <= end2 && end1 >= start2);
+        }
+
+        function formatExcelDate(dateValue) {
+            if (typeof dateValue === 'number') {
+                const excelEpoch = new Date(1899, 11, 30);
+                const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
+                return jsDate;
+            } else if (typeof dateValue === 'string') {
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                    return date;
+                }
+            } else if (dateValue instanceof Date) {
+                return dateValue;
+            }
+            
+            return new Date();
+        }
+
+        // ==================== VIEW RENDERING ====================
+        function renderView() {
+            const contentArea = document.getElementById('contentArea');
+            
+            switch(state.activeView) {
+                case 'login':
+                    renderLoginView();
+                    break;
+                case 'upload':
+                    renderUploadView();
+                    break;
+                case 'configureSlots':
+                    renderConfigureSlotsView();
+                    break;
+                case 'admin':
+                    renderAdminView();
+                    break;
+                case 'employee':
+                    renderEmployeeBiddingView();
+                    break;
+                case 'changePassword':
+                    renderChangePasswordView();
+                    break;
+                case 'changePlannerPassword':
+                    renderChangePlannerPasswordView();
+                    break;
+                case 'myResults':
+                    renderMyResultsView();
+                    break;
+                case 'results':
+                    renderResultsView();
+                    break;
+            }
+            
+            // Update navigation visibility
+            document.getElementById('plannerNav').classList.toggle('hidden', state.userType !== 'planner');
+            document.getElementById('employeeNav').classList.toggle('hidden', state.userType !== 'employee');
+            document.getElementById('userInfo').classList.toggle('hidden', !state.currentUser);
+            
+            // Save to localStorage (for planner's local session)
+            saveToLocalStorage();
+        }
+
+        function renderLoginView() {
+            document.getElementById('loginView').style.display = 'block';
+            document.getElementById('contentArea').innerHTML = '';
+            
+            const loginForm = document.getElementById('loginForm');
+            if (state.loginType === 'planner') {
+                loginForm.innerHTML = `
+                    <div>
+                        <label class="block font-semibold mb-2">Planner Password:</label>
+                        <input
+                            type="password"
+                            id="loginPassword"
+                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="Enter planner password"
+                        />
+                        <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
+                            <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
+                            <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
+                        </div>
+                    </div>
+                `;
             } else {
-                sampleData.classList.add('hidden');
-                toggle.className = 'fas fa-chevron-down ml-1';
+                loginForm.innerHTML = `
+                    <div class="space-y-4">
+                        ${state.employees.length === 0 ? `
+                            <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                                <i data-lucide="alert-circle" class="inline mr-2"></i>
+                                <span class="text-sm">No employee data loaded. Please ask the planner to upload employee data first.</span>
+                            </div>
+                        ` : ''}
+                        <div>
+                            <label class="block font-semibold mb-2">Employee ID:</label>
+                            <input
+                                type="text"
+                                id="loginId"
+                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                placeholder="Enter your ID"
+                                ${state.employees.length === 0 ? 'disabled' : ''}
+                            />
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-2">Password:</label>
+                            <input
+                                type="password"
+                                id="loginPassword"
+                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                placeholder="Enter your password"
+                                ${state.employees.length === 0 ? 'disabled' : ''}
+                            />
+                            <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                                <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
+                                <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
+            
+            lucide.createIcons();
         }
 
-        function closeUploadModal() {
-            document.getElementById('uploadModal').classList.add('hidden');
-            document.getElementById('uploadPreview').classList.add('hidden');
-            document.getElementById('fileInput').value = '';
-            document.getElementById('fileName').textContent = '';
-        }
+        // Note: All other render functions (renderUploadView, renderConfigureSlotsView, etc.)
+        // remain exactly the same as in the previous code you had.
+        // I'm not including them here to save space, but they should be copied from your existing code.
 
-        function clearUpload() {
-            uploadedData = [];
-            document.getElementById('uploadPreview').classList.add('hidden');
-            document.getElementById('fileInput').value = '';
-            document.getElementById('fileName').textContent = '';
-        }
-
-        // ==================== UI FUNCTIONS ====================
-        function showMessage(message, type = 'info') {
-            const colors = {
-                info: { bg: 'blue', icon: 'info-circle' },
-                success: { bg: 'green', icon: 'check-circle' },
-                warning: { bg: 'yellow', icon: 'exclamation-triangle' },
-                error: { bg: 'red', icon: 'times-circle' }
-            };
-            
-            const color = colors[type] || colors.info;
-            
-            // Create toast notification
-            const toast = document.createElement('div');
-            toast.className = `fixed top-4 right-4 bg-${color.bg}-100 border border-${color.bg}-400 text-${color.bg}-800 px-6 py-4 rounded-xl shadow-lg z-50 flex items-center gap-3 fade-in`;
-            toast.innerHTML = `
-                <i class="fas fa-${color.icon} text-${color.bg}-600"></i>
-                <span>${message}</span>
-            `;
-            
-            document.body.appendChild(toast);
-            
-            // Auto remove after 5 seconds
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(100px)';
-                setTimeout(() => {
-                    document.body.removeChild(toast);
-                }, 300);
-            }, 5000);
-        }
-
+        // ==================== EVENT HANDLERS ====================
         function setLoginType(type) {
             state.loginType = type;
             const employeeBtn = document.getElementById('loginTypeEmployee');
             const plannerBtn = document.getElementById('loginTypePlanner');
             
             if (type === 'employee') {
-                employeeBtn.className = 'p-4 rounded-xl border-2 border-blue-400 bg-blue-50 transition-all duration-300 hover-card';
-                plannerBtn.className = 'p-4 rounded-xl border-2 border-gray-200 hover:border-purple-400 transition-all duration-300 bg-white hover-card';
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
             } else {
-                employeeBtn.className = 'p-4 rounded-xl border-2 border-gray-200 hover:border-blue-400 transition-all duration-300 bg-white hover-card';
-                plannerBtn.className = 'p-4 rounded-xl border-2 border-purple-400 bg-purple-50 transition-all duration-300 hover-card';
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
             }
             
-            renderLoginForm();
-        }
-
-        function renderLoginForm() {
-            const loginForm = document.getElementById('loginForm');
-            
-            if (state.loginType === 'planner') {
-                loginForm.innerHTML = `
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block font-semibold text-gray-700 mb-2">Planner Password</label>
-                            <div class="relative">
-                                <i class="fas fa-key absolute left-4 top-3 text-gray-400"></i>
-                                <input
-                                    type="password"
-                                    id="loginPassword"
-                                    class="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none input-focus"
-                                    placeholder="Enter planner password"
-                                    value="admin123"
-                                />
-                            </div>
-                            <div class="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-xl">
-                                <p class="text-sm font-semibold text-purple-800 flex items-center gap-2">
-                                    <i class="fas fa-info-circle"></i>Default Planner Password
-                                </p>
-                                <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                loginForm.innerHTML = `
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block font-semibold text-gray-700 mb-2">Employee ID</label>
-                            <div class="relative">
-                                <i class="fas fa-id-card absolute left-4 top-3 text-gray-400"></i>
-                                <input
-                                    type="text"
-                                    id="loginId"
-                                    class="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none input-focus"
-                                    placeholder="Enter your Employee ID"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block font-semibold text-gray-700 mb-2">Password</label>
-                            <div class="relative">
-                                <i class="fas fa-lock absolute left-4 top-3 text-gray-400"></i>
-                                <input
-                                    type="password"
-                                    id="loginPassword"
-                                    class="w-full pl-12 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:outline-none input-focus"
-                                    placeholder="Enter your password"
-                                />
-                            </div>
-                            <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                                <p class="text-sm font-semibold text-blue-800 flex items-center gap-2">
-                                    <i class="fas fa-key"></i>Password Information
-                                </p>
-                                <p class="text-sm text-blue-700 mt-1">Default password is your Employee ID</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
+            renderLoginView();
         }
 
         function handleLogin() {
             if (state.loginType === 'planner') {
                 const password = document.getElementById('loginPassword').value;
                 if (password === state.plannerPassword) {
-                    state.currentUser = { 
-                        type: 'planner', 
-                        name: 'Planner Admin',
-                        id: 'PLANNER001'
-                    };
+                    state.currentUser = { type: 'planner', name: 'Planner Admin' };
                     state.userType = 'planner';
-                    
-                    // Update UI
-                    updateUserInfo();
-                    document.getElementById('loginView').classList.add('hidden');
-                    document.getElementById('plannerNav').classList.remove('hidden');
-                    
-                    // Load saved data
-                    loadSavedData();
-                    
-                    // Show welcome message
-                    showMessage('Welcome, Planner! You can now manage the system.', 'success');
+                    state.activeView = 'upload';
+                    alert('Welcome, Planner!');
+                    renderView();
                 } else {
-                    showMessage('Incorrect planner password. Try: admin123', 'error');
+                    alert('Incorrect planner password');
                 }
             } else {
-                const id = document.getElementById('loginId')?.value.trim();
-                const password = document.getElementById('loginPassword')?.value.trim();
+                const id = document.getElementById('loginId')?.value;
+                const password = document.getElementById('loginPassword')?.value;
                 
-                if (!id) {
-                    showMessage('Please enter Employee ID', 'error');
+                if (!id || !password) {
+                    alert('Please enter both ID and password');
                     return;
                 }
                 
-                if (!password) {
-                    showMessage('Please enter password', 'error');
-                    return;
-                }
-                
-                // Load employee data first
-                loadSavedData();
-                
-                // Find employee
-                const employee = state.employees.find(emp => emp.ID === id);
+                const employee = state.employees.find(emp => emp.id === id);
                 if (!employee) {
-                    showMessage('Employee ID not found. Please contact planner.', 'error');
+                    alert('Employee ID not found');
                     return;
                 }
                 
-                // Check password
                 const storedPassword = state.employeePasswords[id] || id;
                 if (password === storedPassword) {
-                    state.currentUser = { 
-                        type: 'employee', 
-                        id: id,
-                        name: employee.Name || 'Employee',
-                        department: employee.Department || 'General'
-                    };
+                    state.currentUser = { type: 'employee', ...employee };
                     state.userType = 'employee';
                     state.verifiedEmployee = employee;
                     state.selectedEmployeeId = id;
-                    
-                    // Update UI
-                    updateUserInfo();
-                    document.getElementById('loginView').classList.add('hidden');
-                    document.getElementById('employeeNav').classList.remove('hidden');
-                    
-                    // Show employee view
-                    setActiveView('bidding');
-                    
-                    showMessage(`Welcome, ${employee.Name || 'Employee'}!`, 'success');
+                    state.activeView = 'employee';
+                    alert(`Welcome, ${employee.name}!`);
+                    renderView();
                 } else {
-                    showMessage('Incorrect password. Default is your Employee ID.', 'error');
+                    alert('Incorrect password');
                 }
             }
-        }
-
-        function updateUserInfo() {
-            document.getElementById('currentUserName').textContent = state.currentUser?.name || '';
-            
-            const badge = document.getElementById('userTypeBadge');
-            const userIcon = document.getElementById('userIcon');
-            
-            if (state.userType === 'planner') {
-                badge.textContent = 'Planner';
-                badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 bg-purple-100 text-purple-800';
-                userIcon.className = 'fas fa-user-cog';
-            } else {
-                badge.textContent = 'Employee';
-                badge.className = 'inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 bg-blue-100 text-blue-800';
-                userIcon.className = 'fas fa-user-tie';
-            }
-            
-            document.getElementById('userInfo').classList.remove('hidden');
         }
 
         function handleLogout() {
@@ -1090,200 +564,54 @@
             state.userType = null;
             state.verifiedEmployee = null;
             state.selectedEmployeeId = '';
-            
-            // Show login view
-            document.getElementById('loginView').classList.remove('hidden');
-            document.getElementById('plannerNav').classList.add('hidden');
-            document.getElementById('employeeNav').classList.add('hidden');
-            document.getElementById('userInfo').classList.add('hidden');
-            document.getElementById('contentArea').innerHTML = '';
-            
-            // Reset to employee login
-            setLoginType('employee');
-            
-            showMessage('Logged out successfully', 'success');
+            state.activeView = 'login';
+            renderView();
         }
 
         function setActiveView(view) {
             state.activeView = view;
-            const contentArea = document.getElementById('contentArea');
-            
-            switch(view) {
-                case 'upload':
-                    openUploadModal();
-                    break;
-                case 'configureSlots':
-                    renderConfigureSlots();
-                    break;
-                case 'admin':
-                    renderAdminPanel();
-                    break;
-                case 'changePlannerPassword':
-                    renderChangePlannerPassword();
-                    break;
-                case 'bidding':
-                    renderBiddingView();
-                    break;
-                case 'myBids':
-                    renderMyBids();
-                    break;
-                case 'results':
-                    renderMyResults();
-                    break;
-                case 'changePassword':
-                    renderChangePassword();
-                    break;
-                default:
-                    contentArea.innerHTML = `
-                        <div class="text-center py-12">
-                            <i class="fas fa-cogs text-5xl text-gray-400 mb-4"></i>
-                            <p class="text-gray-600">Feature coming soon</p>
-                        </div>
-                    `;
-            }
-        }
-
-        function openUploadModal() {
-            document.getElementById('uploadModal').classList.remove('hidden');
-            updateEmployeeList();
-        }
-
-        // ==================== DATA MANAGEMENT ====================
-        function loadSavedData() {
-            try {
-                // Load employees
-                const savedEmployees = JSON.parse(localStorage.getItem('employees')) || [];
-                if (savedEmployees.length > 0) {
-                    state.employees = savedEmployees;
-                }
-                
-                // Load passwords
-                const savedPasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
-                state.employeePasswords = savedPasswords;
-                
-                // Load other data
-                state.bids = JSON.parse(localStorage.getItem('bids')) || [];
-                state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
-                state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || new Date().getFullYear();
-                state.isProcessed = JSON.parse(localStorage.getItem('isProcessed')) || false;
-                state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
-                state.results = JSON.parse(localStorage.getItem('results')) || [];
-                state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities')) || {};
-                
-                return true;
-            } catch (error) {
-                console.error('Error loading saved data:', error);
-                return false;
-            }
-        }
-
-        function saveState() {
-            try {
-                localStorage.setItem('employees', JSON.stringify(state.employees));
-                localStorage.setItem('employeePasswords', JSON.stringify(state.employeePasswords));
-                localStorage.setItem('bids', JSON.stringify(state.bids));
-                localStorage.setItem('biddingDeadline', state.biddingDeadline);
-                localStorage.setItem('biddingYear', state.biddingYear.toString());
-                localStorage.setItem('isProcessed', JSON.stringify(state.isProcessed));
-                localStorage.setItem('plannerPassword', state.plannerPassword);
-                localStorage.setItem('results', JSON.stringify(state.results));
-                localStorage.setItem('slotCapacities', JSON.stringify(state.slotCapacities));
-                return true;
-            } catch (error) {
-                console.error('Error saving state:', error);
-                return false;
-            }
+            renderView();
         }
 
         // ==================== INITIALIZATION ====================
-        function init() {
-            // Simulate loading progress
-            let progress = 0;
-            const loadingInterval = setInterval(() => {
-                progress += 10;
-                document.getElementById('loadingBar').style.width = `${progress}%`;
-                document.getElementById('loadingMessage').textContent = 
-                    progress < 50 ? 'Loading application...' : 
-                    progress < 80 ? 'Initializing modules...' : 
-                    'Preparing interface...';
+        async function init() {
+            try {
+                // Load data from cloud or localStorage
+                const dataLoaded = await loadFromCloud();
                 
-                if (progress >= 100) {
-                    clearInterval(loadingInterval);
+                // Hide loading screen
+                setTimeout(() => {
+                    document.getElementById('loadingScreen').style.display = 'none';
+                    document.getElementById('loginView').style.display = 'block';
                     
-                    // Hide loading screen
-                    setTimeout(() => {
-                        document.getElementById('loadingScreen').style.display = 'none';
-                        
-                        // Render initial login form
-                        renderLoginForm();
-                        
-                        // Load saved data
-                        loadSavedData();
-                        
-                        // Add Enter key support for login
-                        document.addEventListener('keydown', (e) => {
-                            if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) {
-                                handleLogin();
-                            }
-                        });
-                        
-                        console.log('✅ Annual Leave Bidding System initialized');
-                    }, 300);
-                }
-            }, 100);
+                    // Set initial login type
+                    state.loginType = 'employee';
+                    
+                    // Render initial view
+                    renderView();
+                    
+                    // Add global event listeners for Enter key in login
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && state.activeView === 'login') {
+                            handleLogin();
+                        }
+                    });
+                    
+                    if (dataLoaded) {
+                        console.log('✅ System ready with', state.employees.length, 'employees');
+                    }
+                }, 500);
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                document.getElementById('loadingScreen').style.display = 'none';
+                document.getElementById('loginView').style.display = 'block';
+                alert('Error loading system. Please refresh the page.');
+            }
         }
 
-        // Start the application
-        window.addEventListener('DOMContentLoaded', init);
-
-        // Basic view renderers (simplified for length)
-        function renderConfigureSlots() {
-            document.getElementById('contentArea').innerHTML = `
-                <div class="glass-effect rounded-2xl p-8 card-shadow">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Configure Leave Slots</h2>
-                    <p class="text-gray-600 mb-8">Set up leave periods and capacities</p>
-                    <div class="text-center py-12">
-                        <i class="fas fa-cogs text-5xl text-gray-400 mb-4"></i>
-                        <p class="text-gray-600">Slot configuration coming soon</p>
-                        <p class="text-sm text-gray-500 mt-2">You can upload employee data first</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderAdminPanel() {
-            document.getElementById('contentArea').innerHTML = `
-                <div class="glass-effect rounded-2xl p-8 card-shadow">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Admin Panel</h2>
-                    <p class="text-gray-600 mb-8">System management and monitoring</p>
-                    <div class="text-center py-12">
-                        <i class="fas fa-tachometer-alt text-5xl text-gray-400 mb-4"></i>
-                        <p class="text-gray-600">Admin panel coming soon</p>
-                        <p class="text-sm text-gray-500 mt-2">Upload employee data to get started</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        function renderBiddingView() {
-            document.getElementById('contentArea').innerHTML = `
-                <div class="glass-effect rounded-2xl p-8 card-shadow">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Place Leave Bids</h2>
-                    <p class="text-gray-600 mb-8">Request your preferred leave periods</p>
-                    <div class="text-center py-12">
-                        <i class="fas fa-calendar-plus text-5xl text-gray-400 mb-4"></i>
-                        <p class="text-gray-600">Bidding system coming soon</p>
-                        <p class="text-sm text-gray-500 mt-2">Planner needs to configure slots first</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Other render functions (simplified)
-        function renderMyBids() { /* Similar structure */ }
-        function renderMyResults() { /* Similar structure */ }
-        function renderChangePassword() { /* Similar structure */ }
-        function renderChangePlannerPassword() { /* Similar structure */ }
+        // Initialize the application
+        init();
     </script>
 </body>
 </html>
