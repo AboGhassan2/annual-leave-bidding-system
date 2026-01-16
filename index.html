@@ -165,453 +165,179 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
 
     <script>
-        // Initialize Lucide icons
-        lucide.createIcons();
+    // Initialize Lucide icons
+    lucide.createIcons();
 
-        // ==================== CLOUD CONFIGURATION ====================
-        // GitHub Gist Configuration (Free cloud storage)
-        const GIST_ID = 'YOUR_GIST_ID'; // You'll get this after first publish
-        const GITHUB_TOKEN = ''; // Optional: For private gists
-        const CLOUD_DATA_URL = `https://gist.githubusercontent.com/raw/${GIST_ID}/system_data.json`;
+    // ==================== SIMPLIFIED STATE ====================
+    let state = {
+        loginType: 'employee',
+        currentUser: null,
+        userType: null,
+        verifiedEmployee: null,
+        plannerPassword: 'admin123',
+        employees: [],
+        employeePasswords: {}
+    };
 
-        // ==================== STATE MANAGEMENT ====================
-        let state = {
-            employees: [],
-            employeePasswords: {},
-            bids: [],
-            biddingDeadline: '',
-            biddingYear: 2026,
-            isProcessed: false,
-            activeView: 'login',
-            selectedEmployeeId: '',
-            verifiedEmployee: null,
-            currentUser: null,
-            userType: null,
-            plannerPassword: 'admin123',
-            results: [],
-            selectedDepartment: 'all',
-            slotCapacities: {},
-            
-            // Department list
-            departments: [
-                'L4/6-SA', 'L4/6-DEP-DM', 'L4/6-DEP-EFC', 'L3-DEP-DC', 'L3-DEP-TC',
-                'L5-LSS/SS', 'L5-DEP-DC', 'L3465-DEP-TCC', 'L3-DEP-DM', 'L5-DEP-DM',
-                'L46-DEP-TC', 'L3-DEP- LTSS/TSS', 'L5-DEP-GSM', 'L5-DEP-SC', 'L5-DEP- LTSS/TSS',
-                'L3-DEP-EFC', 'L3-DEP-GSM', 'L46-TA-T', 'L46-DEP- LTSS/TSS', 'L3-TA-T',
-                'L3-DS', 'L5-DEP-TC', 'L3-P&R', 'L5-DEP-EFC', 'L46-DEP-DC',
-                'L3-LSS/SS', 'L3-DEP-SC', 'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC',
-                'L46 SAMB', 'L5 SA', 'L3-SA', 'L3 SAMB', 'L5 - TA-T',
-                'L46-P&R', 'L5 SAMB', 'L46-AOCC'
-            ],
-            
-            slotTypes: [
-                { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
-                { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
-                { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' }
-            ],
-            
-            months: [
-                'January', 'February', 'March', 'April', 'May', 'June',
-                'July', 'August', 'September', 'October', 'November', 'December'
-            ]
-        };
+    // ==================== SIMPLE RENDER FUNCTIONS ====================
+    function renderView() {
+        const contentArea = document.getElementById('contentArea');
+        contentArea.innerHTML = '';
+        
+        // Update navigation visibility
+        document.getElementById('plannerNav').classList.add('hidden');
+        document.getElementById('employeeNav').classList.add('hidden');
+        document.getElementById('userInfo').classList.add('hidden');
+    }
 
-        // ==================== CLOUD FUNCTIONS ====================
-        async function loadFromCloud() {
-            try {
-                // Try to load from cloud first
-                document.getElementById('loadingMessage').textContent = 'Fetching latest data from cloud...';
-                
-                const response = await fetch(CLOUD_DATA_URL + '?t=' + Date.now());
-                
-                if (response.ok) {
-                    const cloudData = await response.json();
-                    
-                    // Validate the data
-                    if (cloudData && cloudData.employees && Array.isArray(cloudData.employees)) {
-                        state.employees = cloudData.employees || [];
-                        state.employeePasswords = cloudData.employeePasswords || {};
-                        state.bids = cloudData.bids || [];
-                        state.biddingDeadline = cloudData.biddingDeadline || '';
-                        state.biddingYear = cloudData.biddingYear || 2026;
-                        state.isProcessed = cloudData.isProcessed || false;
-                        state.plannerPassword = cloudData.plannerPassword || 'admin123';
-                        state.results = cloudData.results || [];
-                        state.slotCapacities = cloudData.slotCapacities || {};
-                        
-                        console.log('✅ Data loaded from cloud:', state.employees.length, 'employees');
-                        return true;
-                    }
-                }
-            } catch (error) {
-                console.log('No cloud data found, using localStorage');
-            }
-            
-            // Fallback to localStorage
-            return loadFromLocalStorage();
-        }
-
-        function loadFromLocalStorage() {
-            try {
-                const employees = JSON.parse(localStorage.getItem('employees'));
-                if (employees && Array.isArray(employees) && employees.length > 0) {
-                    state.employees = employees;
-                    state.employeePasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
-                    state.bids = JSON.parse(localStorage.getItem('bids')) || [];
-                    state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
-                    state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
-                    state.isProcessed = JSON.parse(localStorage.getItem('isProcessed')) || false;
-                    state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
-                    state.results = JSON.parse(localStorage.getItem('results')) || [];
-                    state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities')) || {};
-                    
-                    console.log('✅ Data loaded from localStorage:', state.employees.length, 'employees');
-                    return true;
-                }
-            } catch (error) {
-                console.error('Error loading from localStorage:', error);
-            }
-            return false;
-        }
-
-        function saveToLocalStorage() {
-            localStorage.setItem('employees', JSON.stringify(state.employees));
-            localStorage.setItem('employeePasswords', JSON.stringify(state.employeePasswords));
-            localStorage.setItem('bids', JSON.stringify(state.bids));
-            localStorage.setItem('biddingDeadline', state.biddingDeadline);
-            localStorage.setItem('biddingYear', state.biddingYear.toString());
-            localStorage.setItem('isProcessed', JSON.stringify(state.isProcessed));
-            localStorage.setItem('plannerPassword', state.plannerPassword);
-            localStorage.setItem('results', JSON.stringify(state.results));
-            localStorage.setItem('slotCapacities', JSON.stringify(state.slotCapacities));
-        }
-
-        async function publishToCloud() {
-            // Show cloud publish modal
-            document.getElementById('employeeCount').textContent = state.employees.length;
-            document.getElementById('slotConfigCount').textContent = Object.keys(state.slotCapacities).length;
-            document.getElementById('bidCount').textContent = state.bids.length;
-            document.getElementById('resultCount').textContent = state.results.length;
-            document.getElementById('cloudModal').classList.remove('hidden');
-        }
-
-        async function saveToGist() {
-            try {
-                const modal = document.getElementById('cloudModal');
-                modal.classList.add('hidden');
-                
-                // Prepare system data
-                const systemData = {
-                    employees: state.employees,
-                    employeePasswords: state.employeePasswords,
-                    bids: state.bids,
-                    biddingDeadline: state.biddingDeadline,
-                    biddingYear: state.biddingYear,
-                    isProcessed: state.isProcessed,
-                    plannerPassword: state.plannerPassword,
-                    results: state.results,
-                    slotCapacities: state.slotCapacities,
-                    lastUpdated: new Date().toISOString(),
-                    version: '1.0'
-                };
-                
-                const dataStr = JSON.stringify(systemData, null, 2);
-                
-                // Create a downloadable JSON file for manual upload to GitHub
-                const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(dataBlob);
-                
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `system_data_${state.biddingYear}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-                
-                // Instructions for planner
-                alert(`✅ System data ready for cloud publishing!\n\n` +
-                      `1. A file named "system_data_${state.biddingYear}.json" has been downloaded\n` +
-                      `2. Go to https://gist.github.com\n` +
-                      `3. Create a new Gist (public)\n` +
-                      `4. Upload the JSON file\n` +
-                      `5. Copy the Gist ID from the URL\n` +
-                      `6. Replace "YOUR_GIST_ID" in the code with your actual Gist ID\n\n` +
-                      `After publishing, all employees will automatically get the latest data!`);
-                
-            } catch (error) {
-                console.error('Error publishing data:', error);
-                alert('Error publishing data. Please try again.');
-            }
-        }
-
-        // ==================== UTILITY FUNCTIONS ====================
-        function calculateYearsOfService(seniorityDate) {
-            const today = new Date();
-            const joinDate = new Date(seniorityDate);
-            const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
-            return years;
-        }
-
-        function getEmployeeEntitlement(employee) {
-            const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-            return yearsOfService >= 5 ? 35 : 30;
-        }
-
-        function calculateDaysBetween(startDate, endDate) {
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            const diffTime = Math.abs(end - start);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            return diffDays;
-        }
-
-        function checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
-            const start1 = new Date(startDate1);
-            const end1 = new Date(endDate1);
-            const start2 = new Date(startDate2);
-            const end2 = new Date(endDate2);
-            
-            return (start1 <= end2 && end1 >= start2);
-        }
-
-        function formatExcelDate(dateValue) {
-            if (typeof dateValue === 'number') {
-                const excelEpoch = new Date(1899, 11, 30);
-                const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
-                return jsDate;
-            } else if (typeof dateValue === 'string') {
-                const date = new Date(dateValue);
-                if (!isNaN(date.getTime())) {
-                    return date;
-                }
-            } else if (dateValue instanceof Date) {
-                return dateValue;
-            }
-            
-            return new Date();
-        }
-
-        // ==================== VIEW RENDERING ====================
-        function renderView() {
-            const contentArea = document.getElementById('contentArea');
-            
-            switch(state.activeView) {
-                case 'login':
-                    renderLoginView();
-                    break;
-                case 'upload':
-                    renderUploadView();
-                    break;
-                case 'configureSlots':
-                    renderConfigureSlotsView();
-                    break;
-                case 'admin':
-                    renderAdminView();
-                    break;
-                case 'employee':
-                    renderEmployeeBiddingView();
-                    break;
-                case 'changePassword':
-                    renderChangePasswordView();
-                    break;
-                case 'changePlannerPassword':
-                    renderChangePlannerPasswordView();
-                    break;
-                case 'myResults':
-                    renderMyResultsView();
-                    break;
-                case 'results':
-                    renderResultsView();
-                    break;
-            }
-            
-            // Update navigation visibility
-            document.getElementById('plannerNav').classList.toggle('hidden', state.userType !== 'planner');
-            document.getElementById('employeeNav').classList.toggle('hidden', state.userType !== 'employee');
-            document.getElementById('userInfo').classList.toggle('hidden', !state.currentUser);
-            
-            // Save to localStorage (for planner's local session)
-            saveToLocalStorage();
-        }
-
-        function renderLoginView() {
-            document.getElementById('loginView').style.display = 'block';
-            document.getElementById('contentArea').innerHTML = '';
-            
-            const loginForm = document.getElementById('loginForm');
-            if (state.loginType === 'planner') {
-                loginForm.innerHTML = `
+    function renderLoginView() {
+        const loginForm = document.getElementById('loginForm');
+        if (state.loginType === 'planner') {
+            loginForm.innerHTML = `
+                <div>
+                    <label class="block font-semibold mb-2">Planner Password:</label>
+                    <input
+                        type="password"
+                        id="loginPassword"
+                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                        placeholder="Enter planner password"
+                    />
+                    <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
+                        <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
+                        <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            loginForm.innerHTML = `
+                <div class="space-y-4">
                     <div>
-                        <label class="block font-semibold mb-2">Planner Password:</label>
+                        <label class="block font-semibold mb-2">Employee ID:</label>
+                        <input
+                            type="text"
+                            id="loginId"
+                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                            placeholder="Enter your ID"
+                        />
+                    </div>
+                    <div>
+                        <label class="block font-semibold mb-2">Password:</label>
                         <input
                             type="password"
                             id="loginPassword"
-                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                            placeholder="Enter planner password"
+                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                            placeholder="Enter your password"
                         />
-                        <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
-                            <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
-                            <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
+                        <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                            <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
+                            <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
                         </div>
                     </div>
-                `;
+                </div>
+            `;
+        }
+        
+        lucide.createIcons();
+    }
+
+    // ==================== EVENT HANDLERS ====================
+    function setLoginType(type) {
+        state.loginType = type;
+        const employeeBtn = document.getElementById('loginTypeEmployee');
+        const plannerBtn = document.getElementById('loginTypePlanner');
+        
+        if (type === 'employee') {
+            employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
+            plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
+        } else {
+            employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
+            plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
+        }
+        
+        renderLoginView();
+    }
+
+    function handleLogin() {
+        if (state.loginType === 'planner') {
+            const password = document.getElementById('loginPassword').value;
+            if (password === state.plannerPassword) {
+                state.currentUser = { type: 'planner', name: 'Planner Admin' };
+                state.userType = 'planner';
+                alert('Welcome, Planner! Demo mode active.');
+                // Show demo message
+                alert('DEMO MODE: Full system functionality requires complete implementation.\n\nFor now, you can test login functionality.\nThe planner features will be available when all render functions are implemented.');
             } else {
-                loginForm.innerHTML = `
-                    <div class="space-y-4">
-                        ${state.employees.length === 0 ? `
-                            <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
-                                <i data-lucide="alert-circle" class="inline mr-2"></i>
-                                <span class="text-sm">No employee data loaded. Please ask the planner to upload employee data first.</span>
-                            </div>
-                        ` : ''}
-                        <div>
-                            <label class="block font-semibold mb-2">Employee ID:</label>
-                            <input
-                                type="text"
-                                id="loginId"
-                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                placeholder="Enter your ID"
-                                ${state.employees.length === 0 ? 'disabled' : ''}
-                            />
-                        </div>
-                        <div>
-                            <label class="block font-semibold mb-2">Password:</label>
-                            <input
-                                type="password"
-                                id="loginPassword"
-                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                placeholder="Enter your password"
-                                ${state.employees.length === 0 ? 'disabled' : ''}
-                            />
-                            <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                                <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
-                                <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                alert('Incorrect planner password');
+            }
+        } else {
+            const id = document.getElementById('loginId')?.value;
+            const password = document.getElementById('loginPassword')?.value;
+            
+            if (!id || !password) {
+                alert('Please enter both ID and password');
+                return;
             }
             
-            lucide.createIcons();
-        }
-
-        // Note: All other render functions (renderUploadView, renderConfigureSlotsView, etc.)
-        // remain exactly the same as in the previous code you had.
-        // I'm not including them here to save space, but they should be copied from your existing code.
-
-        // ==================== EVENT HANDLERS ====================
-        function setLoginType(type) {
-            state.loginType = type;
-            const employeeBtn = document.getElementById('loginTypeEmployee');
-            const plannerBtn = document.getElementById('loginTypePlanner');
-            
-            if (type === 'employee') {
-                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
-                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
+            // Demo employee login (accepts any ID with matching password)
+            if (password === id) {
+                state.currentUser = { 
+                    type: 'employee', 
+                    id: id,
+                    name: 'Demo Employee',
+                    department: 'Demo Department'
+                };
+                state.userType = 'employee';
+                state.verifiedEmployee = state.currentUser;
+                state.selectedEmployeeId = id;
+                alert(`Welcome, Demo Employee! (ID: ${id})`);
+                alert('DEMO MODE: Employee bidding system will be available when all render functions are implemented.');
             } else {
-                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
-                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
+                alert('Incorrect password. For demo, use your Employee ID as password.');
             }
+        }
+        
+        // Update UI
+        document.getElementById('currentUserName').textContent = state.currentUser?.name || '';
+        document.getElementById('userTypeBadge').textContent = state.userType === 'planner' ? '👑 Planner' : '👤 Employee';
+        document.getElementById('userTypeBadge').className = `ml-2 px-2 py-1 text-xs rounded ${
+            state.userType === 'planner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+        }`;
+        document.getElementById('userInfo').classList.remove('hidden');
+    }
+
+    function handleLogout() {
+        state.currentUser = null;
+        state.userType = null;
+        state.verifiedEmployee = null;
+        state.selectedEmployeeId = '';
+        document.getElementById('userInfo').classList.add('hidden');
+        alert('Logged out successfully');
+    }
+
+    // ==================== INITIALIZATION ====================
+    function init() {
+        // Hide loading screen
+        setTimeout(() => {
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('loginView').style.display = 'block';
             
-            renderLoginView();
-        }
-
-        function handleLogin() {
-            if (state.loginType === 'planner') {
-                const password = document.getElementById('loginPassword').value;
-                if (password === state.plannerPassword) {
-                    state.currentUser = { type: 'planner', name: 'Planner Admin' };
-                    state.userType = 'planner';
-                    state.activeView = 'upload';
-                    alert('Welcome, Planner!');
-                    renderView();
-                } else {
-                    alert('Incorrect planner password');
+            // Set initial login type
+            state.loginType = 'employee';
+            setLoginType('employee');
+            
+            // Add global event listeners for Enter key in login
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleLogin();
                 }
-            } else {
-                const id = document.getElementById('loginId')?.value;
-                const password = document.getElementById('loginPassword')?.value;
-                
-                if (!id || !password) {
-                    alert('Please enter both ID and password');
-                    return;
-                }
-                
-                const employee = state.employees.find(emp => emp.id === id);
-                if (!employee) {
-                    alert('Employee ID not found');
-                    return;
-                }
-                
-                const storedPassword = state.employeePasswords[id] || id;
-                if (password === storedPassword) {
-                    state.currentUser = { type: 'employee', ...employee };
-                    state.userType = 'employee';
-                    state.verifiedEmployee = employee;
-                    state.selectedEmployeeId = id;
-                    state.activeView = 'employee';
-                    alert(`Welcome, ${employee.name}!`);
-                    renderView();
-                } else {
-                    alert('Incorrect password');
-                }
-            }
-        }
+            });
+            
+            console.log('✅ System ready in demo mode');
+        }, 1000);
+    }
 
-        function handleLogout() {
-            state.currentUser = null;
-            state.userType = null;
-            state.verifiedEmployee = null;
-            state.selectedEmployeeId = '';
-            state.activeView = 'login';
-            renderView();
-        }
-
-        function setActiveView(view) {
-            state.activeView = view;
-            renderView();
-        }
-
-        // ==================== INITIALIZATION ====================
-        async function init() {
-            try {
-                // Load data from cloud or localStorage
-                const dataLoaded = await loadFromCloud();
-                
-                // Hide loading screen
-                setTimeout(() => {
-                    document.getElementById('loadingScreen').style.display = 'none';
-                    document.getElementById('loginView').style.display = 'block';
-                    
-                    // Set initial login type
-                    state.loginType = 'employee';
-                    
-                    // Render initial view
-                    renderView();
-                    
-                    // Add global event listeners for Enter key in login
-                    document.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter' && state.activeView === 'login') {
-                            handleLogin();
-                        }
-                    });
-                    
-                    if (dataLoaded) {
-                        console.log('✅ System ready with', state.employees.length, 'employees');
-                    }
-                }, 500);
-                
-            } catch (error) {
-                console.error('Initialization error:', error);
-                document.getElementById('loadingScreen').style.display = 'none';
-                document.getElementById('loginView').style.display = 'block';
-                alert('Error loading system. Please refresh the page.');
-            }
-        }
-
-        // Initialize the application
-        init();
-    </script>
+    // Initialize the application
+    init();
+</script>
 </body>
 </html>
