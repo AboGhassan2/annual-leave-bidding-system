@@ -143,6 +143,8 @@
             <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Admin Panel
             </button>
+            <button onclick="publishToCloud()" class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
+            🌐 Publish Data
             <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Change Password
             </button>
@@ -170,13 +172,18 @@
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
+        // ==================== CLOUD CONFIGURATION ====================
+        // GitHub Gist Configuration (Free cloud storage)
+        const GIST_ID = '2f3f246ef97e1165830bf95529d01b78'; // ← YOUR GIST ID HERE
+        const GITHUB_TOKEN = ''; // Optional: For private gists
+        const CLOUD_DATA_URL = `https://gist.githubusercontent.com/raw/${GIST_ID}/system_data.json`;
 
         // ==================== STATE MANAGEMENT ====================
         let state = {
-            employees: JSON.parse(localStorage.getItem('employees')) || [],
-            employeePasswords: JSON.parse(localStorage.getItem('employeePasswords')) || {},
-            bids: JSON.parse(localStorage.getItem('bids')) || [],
-            biddingDeadline: localStorage.getItem('biddingDeadline') || '',
+            employees: [],
+            employeePasswords: {},
+            bids: [],
+            biddingDeadline: '',
             biddingYear: parseInt(localStorage.getItem('biddingYear')) || 2026,
             isProcessed: JSON.parse(localStorage.getItem('isProcessed')) || false,
             activeView: 'login',
@@ -188,6 +195,8 @@
             results: JSON.parse(localStorage.getItem('results')) || [],
             selectedDepartment: 'all',
             slotCapacities: JSON.parse(localStorage.getItem('slotCapacities')) || {},
+            // ... rest of departments, slotTypes, months arrays stay the same
+};
             
             // Department list
             departments: [
@@ -255,7 +264,129 @@
             return (start1 <= end2 && end1 >= start2);
         }
 
-        function formatExcelDate(dateValue) {
+        function formatExcelDate(dateValue) {// ==================== CLOUD FUNCTIONS ====================
+async function loadFromCloud() {
+    try {
+        console.log('Attempting to load from cloud...');
+        
+        const response = await fetch(CLOUD_DATA_URL + '?t=' + Date.now());
+        
+        if (response.ok) {
+            const cloudData = await response.json();
+            
+            // Validate the data
+            if (cloudData && cloudData.employees && Array.isArray(cloudData.employees)) {
+                state.employees = cloudData.employees || [];
+                state.employeePasswords = cloudData.employeePasswords || {};
+                state.bids = cloudData.bids || [];
+                state.biddingDeadline = cloudData.biddingDeadline || '';
+                state.biddingYear = cloudData.biddingYear || 2026;
+                state.isProcessed = cloudData.isProcessed || false;
+                state.plannerPassword = cloudData.plannerPassword || 'admin123';
+                state.results = cloudData.results || [];
+                state.slotCapacities = cloudData.slotCapacities || {};
+                
+                console.log('✅ Data loaded from cloud:', state.employees.length, 'employees');
+                return true;
+            }
+        }
+    } catch (error) {
+        console.log('No cloud data found, using localStorage');
+    }
+    
+    // Fallback to localStorage
+    return loadFromLocalStorage();
+}
+
+function loadFromLocalStorage() {
+    try {
+        const employees = JSON.parse(localStorage.getItem('employees'));
+        if (employees && Array.isArray(employees) && employees.length > 0) {
+            state.employees = employees;
+            state.employeePasswords = JSON.parse(localStorage.getItem('employeePasswords')) || {};
+            state.bids = JSON.parse(localStorage.getItem('bids')) || [];
+            state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
+            state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
+            state.isProcessed = JSON.parse(localStorage.getItem('isProcessed')) || false;
+            state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
+            state.results = JSON.parse(localStorage.getItem('results')) || [];
+            state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities')) || {};
+            
+            console.log('✅ Data loaded from localStorage:', state.employees.length, 'employees');
+            return true;
+        }
+    } catch (error) {
+        console.error('Error loading from localStorage:', error);
+    }
+    return false;
+}
+
+function publishToCloud() {
+    // Show cloud publish modal
+    const employeeCount = state.employees.length;
+    const slotConfigCount = Object.keys(state.slotCapacities).length;
+    const bidCount = state.bids.length;
+    const resultCount = state.results.length;
+    
+    const message = `🌐 PUBLISH SYSTEM DATA\n\n` +
+                    `📊 Current Data Summary:\n` +
+                    `• Employees: ${employeeCount}\n` +
+                    `• Slot Configurations: ${slotConfigCount}\n` +
+                    `• Bids: ${bidCount}\n` +
+                    `• Results: ${resultCount}\n\n` +
+                    `This will publish your system data to the cloud so all employees can access it.`;
+    
+    if (confirm(message)) {
+        saveToGist();
+    }
+}
+
+async function saveToGist() {
+    try {
+        // Prepare system data
+        const systemData = {
+            employees: state.employees,
+            employeePasswords: state.employeePasswords,
+            bids: state.bids,
+            biddingDeadline: state.biddingDeadline,
+            biddingYear: state.biddingYear,
+            isProcessed: state.isProcessed,
+            plannerPassword: state.plannerPassword,
+            results: state.results,
+            slotCapacities: state.slotCapacities,
+            lastUpdated: new Date().toISOString(),
+            version: '1.0'
+        };
+        
+        const dataStr = JSON.stringify(systemData, null, 2);
+        
+        // Create a downloadable JSON file for manual upload to GitHub
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `system_data_${state.biddingYear}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        // Instructions for planner
+        alert(`✅ System data ready for cloud publishing!\n\n` +
+              `1. A file named "system_data_${state.biddingYear}.json" has been downloaded\n` +
+              `2. Go to https://gist.github.com/AboGhassan2/2f3f246ef97e1165830bf95529d01b78\n` +
+              `3. Click "Edit" on your existing Gist\n` +
+              `4. Delete the current content\n` +
+              `5. Upload the downloaded JSON file\n` +
+              `6. Click "Update secret gist"\n\n` +
+              `After publishing, all employees will automatically get the latest data!`);
+        
+    } catch (error) {
+        console.error('Error publishing data:', error);
+        alert('Error publishing data. Please try again.');
+    }
+}
             if (typeof dateValue === 'number') {
                 const excelEpoch = new Date(1899, 11, 30);
                 const jsDate = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
@@ -2120,23 +2251,30 @@
         }
 
         // ==================== INITIALIZATION ====================
-        function init() {
-            // Set initial login type
-            state.loginType = 'employee';
-            
-            // Render initial view
-            renderView();
-            
-            // Add global event listeners for Enter key in login
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && state.activeView === 'login') {
-                    handleLogin();
-                }
-            });
+async function init() {
+    // Set initial login type
+    state.loginType = 'employee';
+    
+    // Try to load from cloud first
+    try {
+        const dataLoaded = await loadFromCloud();
+        if (dataLoaded) {
+            console.log('✅ System data loaded from cloud');
         }
+    } catch (error) {
+        console.log('Using local data');
+    }
+    
+    // Render initial view
+    renderView();
+    
+    // Add global event listeners for Enter key in login
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && state.activeView === 'login') {
+            handleLogin();
+        }
+    });
+}
 
-        // Initialize the application
-        init();
-    </script>
-</body>
-</html>
+// Initialize the application
+init();
