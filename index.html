@@ -6,7 +6,31 @@
     <title>Annual Leave Bidding System</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        /* ... (keep all existing styles) ... */
+        .gradient-blue {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        }
+        
+        .gradient-purple {
+            background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        }
+        
+        .gradient-red {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .gradient-green {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
         .loading-spinner {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #3b82f6;
@@ -22,12 +46,12 @@
         }
     </style>
 </head>
-<body class="p-4 md:p-6">
+<body class="bg-gray-50 min-h-screen p-4 md:p-6">
     <div id="app" class="max-w-7xl mx-auto">
         <!-- Loading Screen -->
         <div id="loadingScreen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
             <div class="loading-spinner mb-4"></div>
-            <p class="text-gray-600 font-semibold">Loading system data...</p>
+            <p class="text-gray-600 font-semibold">Initializing system...</p>
             <p id="loadingMessage" class="text-sm text-gray-500 mt-2"></p>
         </div>
 
@@ -52,7 +76,7 @@
         </div>
 
         <!-- Login View (initial view) -->
-        <div id="loginView" class="max-w-md mx-auto mt-10 fade-in" style="display: none;">
+        <div id="loginView" class="max-w-md mx-auto mt-10 fade-in">
             <div class="bg-white rounded-xl shadow-xl p-8">
                 <h1 class="text-2xl font-bold text-center mb-6 text-blue-600">
                     Annual Leave Bidding System
@@ -71,7 +95,7 @@
                         <button
                             id="loginTypePlanner"
                             onclick="setLoginType('planner')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700"
                         >
                             Planner
                         </button>
@@ -88,256 +112,237 @@
                 >
                     Login
                 </button>
+                
+                <!-- Demo Notice -->
+                <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p class="text-sm font-semibold text-yellow-800">DEMO MODE</p>
+                    <p class="text-xs text-yellow-700 mt-1">For demo purposes:</p>
+                    <ul class="text-xs text-yellow-700 mt-1 list-disc pl-4">
+                        <li>Employee: Use any ID (password is same as ID)</li>
+                        <li>Planner: Password = "admin123"</li>
+                    </ul>
+                </div>
             </div>
         </div>
 
         <!-- Planner Navigation -->
         <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
-            <button onclick="setActiveView('upload')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Upload Data
             </button>
-            <button onclick="setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Configure Slots
             </button>
-            <button onclick="setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+            <button onclick="showMessage('Planner features coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Admin Panel
-            </button>
-            <button onclick="publishToCloud()" class="px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold">
-                🌐 Publish Data
-            </button>
-            <button onclick="setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
-                Change Password
             </button>
         </div>
 
         <!-- Employee Navigation -->
         <div id="employeeNav" class="hidden flex justify-center space-x-4 mb-6 fade-in">
-            <button onclick="setActiveView('employee')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+            <button onclick="showMessage('Employee bidding coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Place Bids
             </button>
-            <button onclick="setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
+            <button onclick="showMessage('Change password coming soon')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100">
                 Change Password
             </button>
         </div>
 
         <!-- Main Content Area -->
-        <div id="contentArea"></div>
-
-        <!-- Cloud Publish Modal -->
-        <div id="cloudModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-                <h3 class="text-xl font-bold mb-4">🌐 Publish System Data</h3>
-                <div class="mb-4">
-                    <p class="text-sm text-gray-600 mb-2">
-                        This will publish your system data to the cloud so all employees can access it.
-                    </p>
-                    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-3">
-                        <p class="text-sm font-semibold text-yellow-800">📊 Current Data Summary:</p>
-                        <ul class="text-xs text-yellow-700 mt-1 space-y-1">
-                            <li>• Employees: <span id="employeeCount">0</span></li>
-                            <li>• Slot Configurations: <span id="slotConfigCount">0</span></li>
-                            <li>• Bids: <span id="bidCount">0</span></li>
-                            <li>• Results: <span id="resultCount">0</span></li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="flex gap-3">
-                    <button
-                        onclick="saveToGist()"
-                        class="flex-1 px-4 py-2 gradient-green text-white rounded-lg hover:shadow-lg font-semibold"
-                    >
-                        Publish to GitHub
-                    </button>
-                    <button
-                        onclick="document.getElementById('cloudModal').classList.add('hidden')"
-                        class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
+        <div id="contentArea" class="mt-8"></div>
     </div>
 
-    <!-- Lucide Icons (via CDN) -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    <!-- XLSX for Excel processing -->
-    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
-
     <script>
-    // Initialize Lucide icons
-    lucide.createIcons();
+        // ==================== STATE MANAGEMENT ====================
+        let state = {
+            loginType: 'employee',
+            currentUser: null,
+            userType: null,
+            plannerPassword: 'admin123'
+        };
 
-    // ==================== SIMPLIFIED STATE ====================
-    let state = {
-        loginType: 'employee',
-        currentUser: null,
-        userType: null,
-        verifiedEmployee: null,
-        plannerPassword: 'admin123',
-        employees: [],
-        employeePasswords: {}
-    };
+        // ==================== UI FUNCTIONS ====================
+        function showMessage(message) {
+            alert(message);
+        }
 
-    // ==================== SIMPLE RENDER FUNCTIONS ====================
-    function renderView() {
-        const contentArea = document.getElementById('contentArea');
-        contentArea.innerHTML = '';
-        
-        // Update navigation visibility
-        document.getElementById('plannerNav').classList.add('hidden');
-        document.getElementById('employeeNav').classList.add('hidden');
-        document.getElementById('userInfo').classList.add('hidden');
-    }
+        function setLoginType(type) {
+            state.loginType = type;
+            const employeeBtn = document.getElementById('loginTypeEmployee');
+            const plannerBtn = document.getElementById('loginTypePlanner');
+            
+            if (type === 'employee') {
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700';
+            } else {
+                employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700';
+                plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
+            }
+            
+            renderLoginForm();
+        }
 
-    function renderLoginView() {
-        const loginForm = document.getElementById('loginForm');
-        if (state.loginType === 'planner') {
-            loginForm.innerHTML = `
-                <div>
-                    <label class="block font-semibold mb-2">Planner Password:</label>
-                    <input
-                        type="password"
-                        id="loginPassword"
-                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                        placeholder="Enter planner password"
-                    />
-                    <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
-                        <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
-                        <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
-                    </div>
-                </div>
-            `;
-        } else {
-            loginForm.innerHTML = `
-                <div class="space-y-4">
+        function renderLoginForm() {
+            const loginForm = document.getElementById('loginForm');
+            
+            if (state.loginType === 'planner') {
+                loginForm.innerHTML = `
                     <div>
-                        <label class="block font-semibold mb-2">Employee ID:</label>
-                        <input
-                            type="text"
-                            id="loginId"
-                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                            placeholder="Enter your ID"
-                        />
-                    </div>
-                    <div>
-                        <label class="block font-semibold mb-2">Password:</label>
+                        <label class="block font-semibold mb-2">Planner Password:</label>
                         <input
                             type="password"
                             id="loginPassword"
-                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                            placeholder="Enter your password"
+                            class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="Enter planner password"
+                            value="admin123"
                         />
-                        <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                            <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
-                            <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
+                        <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
+                            <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
+                            <p class="text-lg font-mono font-bold text-purple-900 mt-1">admin123</p>
                         </div>
                     </div>
-                </div>
-            `;
-        }
-        
-        lucide.createIcons();
-    }
-
-    // ==================== EVENT HANDLERS ====================
-    function setLoginType(type) {
-        state.loginType = type;
-        const employeeBtn = document.getElementById('loginTypeEmployee');
-        const plannerBtn = document.getElementById('loginTypePlanner');
-        
-        if (type === 'employee') {
-            employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-blue text-white';
-            plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
-        } else {
-            employeeBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
-            plannerBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold gradient-purple text-white';
-        }
-        
-        renderLoginView();
-    }
-
-    function handleLogin() {
-        if (state.loginType === 'planner') {
-            const password = document.getElementById('loginPassword').value;
-            if (password === state.plannerPassword) {
-                state.currentUser = { type: 'planner', name: 'Planner Admin' };
-                state.userType = 'planner';
-                alert('Welcome, Planner! Demo mode active.');
-                // Show demo message
-                alert('DEMO MODE: Full system functionality requires complete implementation.\n\nFor now, you can test login functionality.\nThe planner features will be available when all render functions are implemented.');
+                `;
             } else {
-                alert('Incorrect planner password');
-            }
-        } else {
-            const id = document.getElementById('loginId')?.value;
-            const password = document.getElementById('loginPassword')?.value;
-            
-            if (!id || !password) {
-                alert('Please enter both ID and password');
-                return;
-            }
-            
-            // Demo employee login (accepts any ID with matching password)
-            if (password === id) {
-                state.currentUser = { 
-                    type: 'employee', 
-                    id: id,
-                    name: 'Demo Employee',
-                    department: 'Demo Department'
-                };
-                state.userType = 'employee';
-                state.verifiedEmployee = state.currentUser;
-                state.selectedEmployeeId = id;
-                alert(`Welcome, Demo Employee! (ID: ${id})`);
-                alert('DEMO MODE: Employee bidding system will be available when all render functions are implemented.');
-            } else {
-                alert('Incorrect password. For demo, use your Employee ID as password.');
+                loginForm.innerHTML = `
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block font-semibold mb-2">Employee ID:</label>
+                            <input
+                                type="text"
+                                id="loginId"
+                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                placeholder="Enter your ID"
+                                value="EMP001"
+                            />
+                        </div>
+                        <div>
+                            <label class="block font-semibold mb-2">Password:</label>
+                            <input
+                                type="password"
+                                id="loginPassword"
+                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                placeholder="Enter your password"
+                                value="EMP001"
+                            />
+                            <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                                <p class="text-sm font-semibold text-blue-800">📌 Default Password Info:</p>
+                                <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
             }
         }
-        
-        // Update UI
-        document.getElementById('currentUserName').textContent = state.currentUser?.name || '';
-        document.getElementById('userTypeBadge').textContent = state.userType === 'planner' ? '👑 Planner' : '👤 Employee';
-        document.getElementById('userTypeBadge').className = `ml-2 px-2 py-1 text-xs rounded ${
-            state.userType === 'planner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-        }`;
-        document.getElementById('userInfo').classList.remove('hidden');
-    }
 
-    function handleLogout() {
-        state.currentUser = null;
-        state.userType = null;
-        state.verifiedEmployee = null;
-        state.selectedEmployeeId = '';
-        document.getElementById('userInfo').classList.add('hidden');
-        alert('Logged out successfully');
-    }
+        function handleLogin() {
+            if (state.loginType === 'planner') {
+                const password = document.getElementById('loginPassword').value;
+                if (password === state.plannerPassword) {
+                    state.currentUser = { 
+                        type: 'planner', 
+                        name: 'Planner Admin',
+                        id: 'PLANNER001'
+                    };
+                    state.userType = 'planner';
+                    
+                    // Update UI
+                    updateUserInfo();
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('plannerNav').classList.remove('hidden');
+                    
+                    showMessage('✅ Welcome, Planner! You can now access planner features.');
+                } else {
+                    alert('❌ Incorrect planner password. Try: admin123');
+                }
+            } else {
+                const id = document.getElementById('loginId')?.value.trim();
+                const password = document.getElementById('loginPassword')?.value.trim();
+                
+                if (!id) {
+                    alert('❌ Please enter Employee ID');
+                    return;
+                }
+                
+                if (!password) {
+                    alert('❌ Please enter password');
+                    return;
+                }
+                
+                // For demo: accept any ID if password matches ID
+                if (password === id) {
+                    state.currentUser = { 
+                        type: 'employee', 
+                        id: id,
+                        name: 'Employee ' + id,
+                        department: 'Demo Department'
+                    };
+                    state.userType = 'employee';
+                    
+                    // Update UI
+                    updateUserInfo();
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('employeeNav').classList.remove('hidden');
+                    
+                    showMessage(`✅ Welcome, Employee ${id}! You can now access employee features.`);
+                } else {
+                    alert('❌ Incorrect password. For demo, use your Employee ID as password.');
+                }
+            }
+        }
 
-    // ==================== INITIALIZATION ====================
-    function init() {
-        // Hide loading screen
-        setTimeout(() => {
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('loginView').style.display = 'block';
+        function updateUserInfo() {
+            document.getElementById('currentUserName').textContent = state.currentUser?.name || '';
             
-            // Set initial login type
-            state.loginType = 'employee';
+            const badge = document.getElementById('userTypeBadge');
+            if (state.userType === 'planner') {
+                badge.textContent = '👑 Planner';
+                badge.className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
+            } else {
+                badge.textContent = '👤 Employee';
+                badge.className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+            }
+            
+            document.getElementById('userInfo').classList.remove('hidden');
+        }
+
+        function handleLogout() {
+            state.currentUser = null;
+            state.userType = null;
+            
+            // Show login view
+            document.getElementById('loginView').classList.remove('hidden');
+            document.getElementById('plannerNav').classList.add('hidden');
+            document.getElementById('employeeNav').classList.add('hidden');
+            document.getElementById('userInfo').classList.add('hidden');
+            
+            // Reset to employee login
             setLoginType('employee');
             
-            // Add global event listeners for Enter key in login
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    handleLogin();
-                }
-            });
-            
-            console.log('✅ System ready in demo mode');
-        }, 1000);
-    }
+            showMessage('✅ Logged out successfully');
+        }
 
-    // Initialize the application
-    init();
-</script>
+        // ==================== INITIALIZATION ====================
+        function init() {
+            // Hide loading screen after 1 second
+            setTimeout(() => {
+                document.getElementById('loadingScreen').style.display = 'none';
+                
+                // Render initial login form
+                renderLoginForm();
+                
+                // Add Enter key support
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !document.getElementById('loginView').classList.contains('hidden')) {
+                        handleLogin();
+                    }
+                });
+                
+                console.log('✅ System initialized successfully');
+            }, 1000);
+        }
+
+        // Start the application
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
 </body>
 </html>
