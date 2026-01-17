@@ -526,10 +526,10 @@
                 const form = document.getElementById('loginForm');
                 if (!form) return;
                 
-                if (this.state.loginType === 'Planner') {
+                if (this.state.loginType === 'planner') {
                     form.innerHTML = `
                         <div>
-                            <label class="block font-semibold mb-2">Planner Password:</label>
+                            <label class="block font-semibold mb-2">planner Password:</label>
                             <input
                                 type="password"
                                 id="loginPassword"
@@ -537,7 +537,7 @@
                                 placeholder="Enter planner password"
                             />
                             <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
-                                <p class="text-sm font-semibold text-purple-800">🔑 Default Planner Password:</p>
+                                <p class="text-sm font-semibold text-purple-800">🔑 Default planner Password: "adim123" if not change </p>
                                 <p class="text-xs text-purple-700 mt-1">Default "admin123" if not change </p>
                             </div>
                         </div>
@@ -582,12 +582,12 @@
             },
 
             handleLogin() {
-                if (this.state.loginType === 'Planner') {
+                if (this.state.loginType === 'planner') {
                     const input = document.getElementById('loginPassword');
                     const password = input ? input.value : '';
                     
                     if (password === this.state.plannerPassword) {
-                        this.state.currentUser = { name: 'Planner Admin' };
+                        this.state.currentUser = { name: 'planner Admin' };
                         this.state.userType = 'planner';
                         this.state.activeView = 'upload';
                         
@@ -595,8 +595,8 @@
                         document.getElementById('loginView').classList.add('hidden');
                         document.getElementById('plannerNav').classList.remove('hidden');
                         
-                        document.getElementById('currentUserName').textContent = 'Planner Admin';
-                        document.getElementById('userTypeBadge').textContent = 'Planner';
+                        document.getElementById('currentUserName').textContent = 'planner Admin';
+                        document.getElementById('userTypeBadge').textContent = 'planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
                         
                         this.renderView();
