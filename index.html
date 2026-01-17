@@ -926,6 +926,242 @@
                 
                 reader.readAsArrayBuffer(file);
             },
+                // ==================== VIEW RENDERING ====================
+                renderEmployeeBiddingView() {
+                    const content = document.getElementById('contentArea');
+                    if (!this.state.verifiedEmployee) {
+                        content.innerHTML = '<p class="text-center">Please login first.</p>';
+                        return;
+                    }
+                
+                    // Calculate employee's leave entitlement
+                    const calculateYearsOfService = (seniorityDate) => {
+                        const today = new Date();
+                        const joinDate = new Date(seniorityDate);
+                        const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                        return years;
+                    };
+                
+                    const getEmployeeEntitlement = (employee) => {
+                        if (!employee || !employee.seniorityDate) return 30;
+                        const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                        return yearsOfService >= 5 ? 35 : 30;
+                    };
+                
+                    const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
+                    const yearsOfService = calculateYearsOfService(this.state.verifiedEmployee.seniorityDate);
+                    
+                    // Get employee's bids
+                    const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
+                    const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+                    const remainingLeave = entitlement - totalBidDays;
+                
+                    content.innerHTML = `
+                        <div class="max-w-6xl mx-auto">
+                            <!-- Header with leave entitlement -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                                <h2 class="text-2xl font-bold mb-4">Leave Bidding for ${this.state.biddingYear}</h2>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                    <div class="bg-blue-50 p-4 rounded-lg">
+                                        <p class="text-2xl font-bold">${entitlement}</p>
+                                        <p class="text-sm text-gray-600">Total Leave Days</p>
+                                        <p class="text-xs text-gray-500">${yearsOfService.toFixed(1)} years of service</p>
+                                    </div>
+                                    <div class="bg-green-50 p-4 rounded-lg">
+                                        <p class="text-2xl font-bold">${userBids.length}/2</p>
+                                        <p class="text-sm text-gray-600">Bids Placed</p>
+                                    </div>
+                                    <div class="bg-yellow-50 p-4 rounded-lg">
+                                        <p class="text-2xl font-bold">${totalBidDays}</p>
+                                        <p class="text-sm text-gray-600">Days Used</p>
+                                    </div>
+                                    <div class="bg-purple-50 p-4 rounded-lg">
+                                        <p class="text-2xl font-bold">${remainingLeave}</p>
+                                        <p class="text-sm text-gray-600">Days Remaining</p>
+                                    </div>
+                                </div>
+                
+                                <!-- Slot types summary -->
+                                <div class="border-t pt-4">
+                                    <p class="font-semibold mb-2">Available Slot Types:</p>
+                                    <div class="flex gap-4">
+                                        ${this.state.slotTypes.map(slot => `
+                                            <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
+                                                <p class="font-bold">${slot.name}</p>
+                                                <p class="text-sm">${slot.days} consecutive days</p>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <!-- Left: Place New Bid -->
+                                <div class="bg-white rounded-xl shadow-xl p-6">
+                                    <h3 class="text-xl font-bold mb-4">Place New Bid</h3>
+                                    
+                                    ${this.state.isProcessed ? `
+                                        <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                                            <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    ${userBids.length >= 2 ? `
+                                        <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
+                                            <p class="font-semibold">❌ Maximum of 2 bids reached.</p>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    <!-- Month Selection -->
+                                    <div class="mb-4">
+                                        <label class="block font-semibold mb-2">Select Month:</label>
+                                        <select id="selectedMonth" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg" onchange="app.updateMonthText()">
+                                            ${this.state.months.map(month => `
+                                                <option value="${month}">${month} ${this.state.biddingYear}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                
+                                    <!-- Slot Selection -->
+                                    <div class="mb-6">
+                                        <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                        <div class="space-y-2">
+                                            ${this.state.slotTypes.map(slot => {
+                                                const hasBidForThisSlot = userBids.some(bid => bid.slotType === slot.id);
+                                                const isDisabled = hasBidForThisSlot || userBids.length >= 2 || this.state.isProcessed;
+                                                
+                                                return `
+                                                    <button
+                                                        data-slot="${slot.id}"
+                                                        data-hasbid="${hasBidForThisSlot}"
+                                                        onclick="${!isDisabled ? `app.setSelectedSlot('${slot.id}')` : ''}"
+                                                        class="slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all ${isDisabled ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}"
+                                                        ${isDisabled ? 'disabled' : ''}
+                                                    >
+                                                        ${slot.name} - ${slot.days} days
+                                                        ${hasBidForThisSlot ? '<span class="float-right">✓</span>' : ''}
+                                                    </button>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                
+                                    <!-- Date Selection -->
+                                    <div class="mb-6">
+                                        <label class="block font-semibold mb-2">Select dates within <span id="selectedMonthText">January ${this.state.biddingYear}</span>:</label>
+                                        
+                                        <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                                            <p class="font-semibold text-blue-800">
+                                                <span id="selectedSlotText">No slot selected</span> requires exactly 
+                                                <span id="selectedSlotDays">0</span> consecutive days
+                                            </p>
+                                        </div>
+                
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="block font-semibold mb-2">Start Date:</label>
+                                                <input
+                                                    type="date"
+                                                    id="startDate"
+                                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg"
+                                                    min="${this.state.biddingYear}-01-01"
+                                                    max="${this.state.biddingYear}-12-31"
+                                                    onchange="app.updateEndDate()"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="block font-semibold mb-2">End Date (Auto-calculated):</label>
+                                                <input
+                                                    type="date"
+                                                    id="endDate"
+                                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg bg-gray-50"
+                                                    readonly
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div id="dateInfo" class="hidden"></div>
+                                        
+                                        <p class="text-sm text-gray-600 mt-2">
+                                            End date is automatically calculated based on slot type
+                                        </p>
+                                    </div>
+                
+                                    <!-- Submit Button -->
+                                    <button
+                                        onclick="app.submitBid()"
+                                        class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:opacity-50"
+                                        ${this.state.isProcessed || userBids.length >= 2 ? 'disabled' : ''}
+                                    >
+                                        Submit Bid
+                                    </button>
+                                </div>
+                
+                                <!-- Right: My Current Bids -->
+                                <div class="bg-white rounded-xl shadow-xl p-6">
+                                    <h3 class="text-xl font-bold mb-4">My Current Bids</h3>
+                                    
+                                    ${userBids.length === 0 ? `
+                                        <div class="text-center py-8 text-gray-500">
+                                            <p>No bids placed yet</p>
+                                            <p class="text-sm mt-2">Place your first bid on the left</p>
+                                        </div>
+                                    ` : `
+                                        <div class="space-y-4">
+                                            ${userBids.map(bid => {
+                                                const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                                return `
+                                                    <div class="border border-gray-200 rounded p-4">
+                                                        <div class="flex justify-between items-start">
+                                                            <div>
+                                                                <p class="font-bold">${slot?.name || 'Slot'}</p>
+                                                                <p class="text-sm text-gray-600">${bid.startDate} to ${bid.endDate}</p>
+                                                                <p class="text-sm font-semibold">${bid.days} days</p>
+                                                            </div>
+                                                            <button
+                                                                onclick="app.removeBid('${bid.employeeId}', '${bid.slotType}', '${bid.startDate}')"
+                                                                class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                                                                ${this.state.isProcessed ? 'disabled' : ''}
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                `;
+                                            }).join('')}
+                                        </div>
+                                    `}
+                                    
+                                    <!-- Bid Summary -->
+                                    <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+                                        <p class="font-semibold mb-2">Bid Summary:</p>
+                                        <p class="text-sm">Bids placed: ${userBids.length}/2</p>
+                                        <p class="text-sm">Days used: ${totalBidDays}/${entitlement}</p>
+                                        <p class="text-sm">Remaining leave: ${remainingLeave} days</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                
+                    // Initialize selected slot if none selected
+                    if (!window.selectedSlot && this.state.slotTypes.length > 0) {
+                        window.selectedSlot = this.state.slotTypes[0].id;
+                    }
+                    
+                    // Update UI elements
+                    this.updateMonthText();
+                    this.updateSlotText();
+                    
+                    // Initialize slot buttons
+                    const buttons = document.querySelectorAll('.slot-btn');
+                    buttons.forEach(btn => {
+                        if (btn.dataset.slot === window.selectedSlot) {
+                            btn.className = btn.className.replace('bg-gray-100', 'bg-blue-500 text-white');
+                        }
+                    });
+                }
 
             renderConfigureSlotsView() {
                 const content = document.getElementById('contentArea');
@@ -1421,7 +1657,7 @@
                 }
             },
 
-                                    // ==================== BIDDING FUNCTIONS ====================
+            // ==================== BIDDING FUNCTIONS ====================
             setSelectedSlot(slotId) {
                 window.selectedSlot = slotId;
                 this.updateSlotText();
@@ -1447,29 +1683,6 @@
                 if (endDate) endDate.value = '';
                 if (dateInfo) dateInfo.classList.add('hidden');
             },
-
-            updateSlotText() {
-                const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                if (slot) {
-                    const slotText = document.getElementById('selectedSlotText');
-                    const slotDays = document.getElementById('selectedSlotDays');
-                    if (slotText) slotText.textContent = slot.name;
-                    if (slotDays) slotDays.textContent = slot.days;
-                }
-            },
-
-            updateMonthText() {
-                const monthSelect = document.getElementById('selectedMonth');
-                if (monthSelect) {
-                    const monthText = document.getElementById('selectedMonthText');
-                    if (monthText) monthText.textContent = monthSelect.value;
-                }
-            },
-
-            updateEndDate() {
-                const startDateInput = document.getElementById('startDate');
-                const endDateInput = document.getElementById('endDate');
-                const dateInfo = document.getElementById('dateInfo');
                 
                 if (!startDateInput || !startDateInput.value || !window.selectedSlot) {
                     if (endDateInput) endDateInput.value = '';
@@ -1614,14 +1827,7 @@
                 if (totalBidDays + days > entitlement) {
                     alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
                     return;
-                }
-
-                // Check for date overlaps
-                for (const bid of userBids) {
-                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
-                        const existingSlot = this.state.slotTypes.find(s => s.id === bid.slotType);
-                        alert(`Date overlap detected with your existing ${existingSlot?.name || 'slot'} bid (${bid.startDate} to ${bid.endDate})`);
-                        return;
+                    
                     }
                 }
 
@@ -1662,486 +1868,6 @@
                 }
             },
                
-            // ==================== BIDDING FUNCTIONS ====================
-            setSelectedSlot(slotId) {
-                window.selectedSlot = slotId;
-                this.updateSlotText();
-                
-                // Update button styles
-                const buttons = document.querySelectorAll('.slot-btn');
-                buttons.forEach(btn => {
-                    if (btn.dataset.slot === slotId) {
-                        btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-500 text-white';
-                    } else if (btn.dataset.hasbid === 'true' || this.state.isProcessed) {
-                        btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-200 text-gray-500 cursor-not-allowed';
-                    } else {
-                        btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800';
-                    }
-                });
-                
-                // Clear date inputs
-                const startDate = document.getElementById('startDate');
-                const endDate = document.getElementById('endDate');
-                const dateInfo = document.getElementById('dateInfo');
-                
-                if (startDate) startDate.value = '';
-                if (endDate) endDate.value = '';
-                if (dateInfo) dateInfo.classList.add('hidden');
-            },
-
-            updateSlotText() {
-                const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                if (slot) {
-                    const slotText = document.getElementById('selectedSlotText');
-                    const slotDays = document.getElementById('selectedSlotDays');
-                    if (slotText) slotText.textContent = slot.name;
-                    if (slotDays) slotDays.textContent = slot.days;
-                }
-            },
-
-            updateMonthText() {
-                const monthSelect = document.getElementById('selectedMonth');
-                if (monthSelect) {
-                    const monthText = document.getElementById('selectedMonthText');
-                    if (monthText) monthText.textContent = monthSelect.value;
-                }
-            },
-
-            updateEndDate() {
-                const startDateInput = document.getElementById('startDate');
-                const endDateInput = document.getElementById('endDate');
-                const dateInfo = document.getElementById('dateInfo');
-                
-                if (!startDateInput || !startDateInput.value || !window.selectedSlot) {
-                    if (endDateInput) endDateInput.value = '';
-                    if (dateInfo) dateInfo.classList.add('hidden');
-                    return;
-                }
-                
-                const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                if (!slot) return;
-                
-                const startDate = new Date(startDateInput.value);
-                const endDate = new Date(startDate);
-                endDate.setDate(endDate.getDate() + slot.days - 1);
-                
-                if (endDateInput) {
-                    endDateInput.value = endDate.toISOString().split('T')[0];
-                }
-                
-                const calculateDaysBetween = (start, end) => {
-                    const startD = new Date(start);
-                    const endD = new Date(end);
-                    const diffTime = Math.abs(endD - startD);
-                    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                };
-                
-                const days = calculateDaysBetween(startDateInput.value, endDateInput.value);
-                
-                if (dateInfo) {
-                    if (days === slot.days) {
-                        dateInfo.innerHTML = `
-                            <p class="font-semibold text-green-800">
-                                Selected: ${days} days ✓
-                            </p>
-                            <p class="text-sm mt-1 text-green-700">
-                                ${startDateInput.value} to ${endDateInput.value}
-                            </p>
-                        `;
-                        dateInfo.className = 'p-3 rounded mb-4 bg-green-50 border border-green-200';
-                    } else {
-                        dateInfo.innerHTML = `
-                            <p class="font-semibold text-red-800">
-                                Selected: ${days} days (Required: ${slot.days} days)
-                            </p>
-                            <p class="text-sm mt-1 text-red-700">
-                                ${startDateInput.value} to ${endDateInput.value}
-                            </p>
-                        `;
-                        dateInfo.className = 'p-3 rounded mb-4 bg-red-50 border border-red-200';
-                    }
-                    dateInfo.classList.remove('hidden');
-                }
-            },
-
-            checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
-                const start1 = new Date(startDate1);
-                const end1 = new Date(endDate1);
-                const start2 = new Date(startDate2);
-                const end2 = new Date(endDate2);
-                
-                return (start1 <= end2 && end1 >= start2);
-            },
-
-            submitBid() {
-                if (!this.state.verifiedEmployee) {
-                    alert('Please login first');
-                    return;
-                }
-
-                if (this.state.isProcessed) {
-                    alert('Bidding has been processed. No more bids allowed.');
-                    return;
-                }
-
-                const startDate = document.getElementById('startDate')?.value;
-                const endDate = document.getElementById('endDate')?.value;
-                const monthSelect = document.getElementById('selectedMonth');
-                const month = monthSelect ? monthSelect.value : this.state.months[0];
-
-                if (!startDate || !endDate) {
-                    alert('Please select both start and end dates');
-                    return;
-                }
-
-                const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                
-                const calculateDaysBetween = (start, end) => {
-                    const startD = new Date(start);
-                    const endD = new Date(end);
-                    const diffTime = Math.abs(endD - startD);
-                    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                };
-                
-                const days = calculateDaysBetween(startDate, endDate);
-
-                if (days !== slot.days) {
-                    alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.`);
-                    return;
-                }
-
-                const start = new Date(startDate);
-                const yearStart = new Date(this.state.biddingYear, 0, 1);
-                const yearEnd = new Date(this.state.biddingYear, 11, 31);
-
-                if (start < yearStart || start > yearEnd) {
-                    alert(`Start date must be within ${this.state.biddingYear}`);
-                    return;
-                }
-
-                const existingBid = this.state.bids.find(
-                    bid => bid.employeeId === this.state.verifiedEmployee.id && bid.slotType === window.selectedSlot
-                );
-                
-                if (existingBid) {
-                    alert(`You have already bid for ${slot.name}. You cannot bid for the same slot twice.`);
-                    return;
-                }
-
-                const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
-                
-                // Calculate entitlement
-                const calculateYearsOfService = (seniorityDate) => {
-                    const today = new Date();
-                    const joinDate = new Date(seniorityDate);
-                    const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
-                    return years;
-                };
-                
-                const getEmployeeEntitlement = (employee) => {
-                    if (!employee || !employee.seniorityDate) return 30;
-                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                    return yearsOfService >= 5 ? 35 : 30;
-                };
-                
-                const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
-                
-                if (userBids.length >= 2) {
-                    alert('You can only place 2 bids maximum.');
-                    return;
-                }
-
-                const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
-                if (totalBidDays + days > entitlement) {
-                    alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
-                    return;
-                }
-
-                // Check for date overlaps
-                for (const bid of userBids) {
-                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
-                        const existingSlot = this.state.slotTypes.find(s => s.id === bid.slotType);
-                        alert(`Date overlap detected with your existing ${existingSlot?.name || 'slot'} bid (${bid.startDate} to ${bid.endDate})`);
-                        return;
-                    }
-                }
-
-                const newBid = {
-                    employeeId: this.state.verifiedEmployee.id,
-                    employeeName: this.state.verifiedEmployee.name,
-                    seniorityDate: this.state.verifiedEmployee.seniorityDate,
-                    department: this.state.verifiedEmployee.department,
-                    slotType: window.selectedSlot,
-                    startDate,
-                    endDate,
-                    days,
-                    timestamp: new Date().toISOString()
-                };
-
-                this.state.bids.push(newBid);
-                this.saveState();
-                alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
-                
-                // Refresh view
-                this.renderEmployeeBiddingView();
-            },
-
-            removeBid(employeeId, slotType, startDate) {
-                if (this.state.isProcessed) {
-                    alert('Cannot remove bids after processing');
-                    return;
-                }
-                
-                if (confirm('Are you sure you want to remove this bid?')) {
-                    this.state.bids = this.state.bids.filter(bid => 
-                        !(bid.employeeId === employeeId && 
-                          bid.slotType === slotType && 
-                          bid.startDate === startDate)
-                    );
-                    this.saveState();
-                    this.renderEmployeeBiddingView();
-                }
-            },
-                // ==================== BIDDING FUNCTIONS ====================
-                setSelectedSlot(slotId) {
-                    window.selectedSlot = slotId;
-                    this.updateSlotText();
-                    
-                    // Update button styles
-                    const buttons = document.querySelectorAll('.slot-btn');
-                    buttons.forEach(btn => {
-                        if (btn.dataset.slot === slotId) {
-                            btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-500 text-white';
-                        } else if (btn.dataset.hasbid === 'true' || this.state.isProcessed) {
-                            btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-200 text-gray-500 cursor-not-allowed';
-                        } else {
-                            btn.className = 'slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800';
-                        }
-                    });
-                    
-                    // Clear date inputs
-                    const startDate = document.getElementById('startDate');
-                    const endDate = document.getElementById('endDate');
-                    const dateInfo = document.getElementById('dateInfo');
-                    
-                    if (startDate) startDate.value = '';
-                    if (endDate) endDate.value = '';
-                    if (dateInfo) dateInfo.classList.add('hidden');
-                },
-                
-                updateSlotText() {
-                    const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                    if (slot) {
-                        const slotText = document.getElementById('selectedSlotText');
-                        const slotDays = document.getElementById('selectedSlotDays');
-                        if (slotText) slotText.textContent = slot.name;
-                        if (slotDays) slotDays.textContent = slot.days;
-                    }
-                },
-                
-                updateMonthText() {
-                    const monthSelect = document.getElementById('selectedMonth');
-                    if (monthSelect) {
-                        const monthText = document.getElementById('selectedMonthText');
-                        if (monthText) monthText.textContent = monthSelect.value;
-                    }
-                },
-                
-                updateEndDate() {
-                    const startDateInput = document.getElementById('startDate');
-                    const endDateInput = document.getElementById('endDate');
-                    const dateInfo = document.getElementById('dateInfo');
-                    
-                    if (!startDateInput || !startDateInput.value || !window.selectedSlot) {
-                        if (endDateInput) endDateInput.value = '';
-                        if (dateInfo) dateInfo.classList.add('hidden');
-                        return;
-                    }
-                    
-                    const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                    if (!slot) return;
-                    
-                    const startDate = new Date(startDateInput.value);
-                    const endDate = new Date(startDate);
-                    endDate.setDate(endDate.getDate() + slot.days - 1);
-                    
-                    if (endDateInput) {
-                        endDateInput.value = endDate.toISOString().split('T')[0];
-                    }
-                    
-                    const calculateDaysBetween = (start, end) => {
-                        const startD = new Date(start);
-                        const endD = new Date(end);
-                        const diffTime = Math.abs(endD - startD);
-                        return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                    };
-                    
-                    const days = calculateDaysBetween(startDateInput.value, endDateInput.value);
-                    
-                    if (dateInfo) {
-                        if (days === slot.days) {
-                            dateInfo.innerHTML = `
-                                <p class="font-semibold text-green-800">
-                                    Selected: ${days} days ✓
-                                </p>
-                                <p class="text-sm mt-1 text-green-700">
-                                    ${startDateInput.value} to ${endDateInput.value}
-                                </p>
-                            `;
-                            dateInfo.className = 'p-3 rounded mb-4 bg-green-50 border border-green-200';
-                        } else {
-                            dateInfo.innerHTML = `
-                                <p class="font-semibold text-red-800">
-                                    Selected: ${days} days (Required: ${slot.days} days)
-                                </p>
-                                <p class="text-sm mt-1 text-red-700">
-                                    ${startDateInput.value} to ${endDateInput.value}
-                                </p>
-                            `;
-                            dateInfo.className = 'p-3 rounded mb-4 bg-red-50 border border-red-200';
-                        }
-                        dateInfo.classList.remove('hidden');
-                    }
-                },
-                
-                checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
-                    const start1 = new Date(startDate1);
-                    const end1 = new Date(endDate1);
-                    const start2 = new Date(startDate2);
-                    const end2 = new Date(endDate2);
-                    
-                    return (start1 <= end2 && end1 >= start2);
-                },
-                
-                submitBid() {
-                    if (!this.state.verifiedEmployee) {
-                        alert('Please login first');
-                        return;
-                    }
-                
-                    if (this.state.isProcessed) {
-                        alert('Bidding has been processed. No more bids allowed.');
-                        return;
-                    }
-                
-                    const startDate = document.getElementById('startDate')?.value;
-                    const endDate = document.getElementById('endDate')?.value;
-                    const monthSelect = document.getElementById('selectedMonth');
-                    const month = monthSelect ? monthSelect.value : this.state.months[0];
-                
-                    if (!startDate || !endDate) {
-                        alert('Please select both start and end dates');
-                        return;
-                    }
-                
-                    const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                    
-                    const calculateDaysBetween = (start, end) => {
-                        const startD = new Date(start);
-                        const endD = new Date(end);
-                        const diffTime = Math.abs(endD - startD);
-                        return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                    };
-                    
-                    const days = calculateDaysBetween(startDate, endDate);
-                
-                    if (days !== slot.days) {
-                        alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.`);
-                        return;
-                    }
-                
-                    const start = new Date(startDate);
-                    const yearStart = new Date(this.state.biddingYear, 0, 1);
-                    const yearEnd = new Date(this.state.biddingYear, 11, 31);
-                
-                    if (start < yearStart || start > yearEnd) {
-                        alert(`Start date must be within ${this.state.biddingYear}`);
-                        return;
-                    }
-                
-                    const existingBid = this.state.bids.find(
-                        bid => bid.employeeId === this.state.verifiedEmployee.id && bid.slotType === window.selectedSlot
-                    );
-                    
-                    if (existingBid) {
-                        alert(`You have already bid for ${slot.name}. You cannot bid for the same slot twice.`);
-                        return;
-                    }
-                
-                    const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
-                    
-                    // Calculate entitlement
-                    const calculateYearsOfService = (seniorityDate) => {
-                        const today = new Date();
-                        const joinDate = new Date(seniorityDate);
-                        const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
-                        return years;
-                    };
-                    
-                    const getEmployeeEntitlement = (employee) => {
-                        if (!employee || !employee.seniorityDate) return 30;
-                        const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                        return yearsOfService >= 5 ? 35 : 30;
-                    };
-                    
-                    const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
-                    
-                    if (userBids.length >= 2) {
-                        alert('You can only place 2 bids maximum.');
-                        return;
-                    }
-                
-                    const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
-                    if (totalBidDays + days > entitlement) {
-                        alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
-                        return;
-                    }
-                
-                    // Check for date overlaps
-                    for (const bid of userBids) {
-                        if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
-                            const existingSlot = this.state.slotTypes.find(s => s.id === bid.slotType);
-                            alert(`Date overlap detected with your existing ${existingSlot?.name || 'slot'} bid (${bid.startDate} to ${bid.endDate})`);
-                            return;
-                        }
-                    }
-                
-                    const newBid = {
-                        employeeId: this.state.verifiedEmployee.id,
-                        employeeName: this.state.verifiedEmployee.name,
-                        seniorityDate: this.state.verifiedEmployee.seniorityDate,
-                        department: this.state.verifiedEmployee.department,
-                        slotType: window.selectedSlot,
-                        startDate,
-                        endDate,
-                        days,
-                        timestamp: new Date().toISOString()
-                    };
-                
-                    this.state.bids.push(newBid);
-                    this.saveState();
-                    alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
-                    
-                    // Refresh view
-                    this.renderEmployeeBiddingView();
-                },
-                
-                removeBid(employeeId, slotType, startDate) {
-                    if (this.state.isProcessed) {
-                        alert('Cannot remove bids after processing');
-                        return;
-                    }
-                    
-                    if (confirm('Are you sure you want to remove this bid?')) {
-                        this.state.bids = this.state.bids.filter(bid => 
-                            !(bid.employeeId === employeeId && 
-                              bid.slotType === slotType && 
-                              bid.startDate === startDate)
-                        );
-                        this.saveState();
-                        this.renderEmployeeBiddingView();
-                    }
-                },
             loadAvailableSlots() {
                 const slotsContainer = document.getElementById('slotsContainer');
                 if (!slotsContainer) return;
