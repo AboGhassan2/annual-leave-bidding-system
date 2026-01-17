@@ -1548,7 +1548,7 @@
             },
 
             // ==================== OTHER FUNCTIONS ====================
-            async processBids() {
+            processBids() {
                 if (this.state.employees.length === 0) {
                     alert('No employees to process. Please upload data first.');
                     return;
@@ -1560,44 +1560,183 @@
                     return;
                 }
                 
-                // Simple processing logic for demo
-                this.state.results = this.state.employees.map((emp, idx) => {
-                    // Simple assignment logic
-                    const slotIndex = idx % 3;
-                    const slot = this.state.slotTypes[slotIndex];
-                    const monthIndex = Math.floor(idx / (this.state.employees.length / 12)) % 12;
-                    const month = this.state.months[monthIndex];
+                // Sort employees by seniority (oldest first)
+                const sortedEmployees = [...this.state.employees].sort((a, b) => {
+                    return new Date(a.seniorityDate) - new Date(b.seniorityDate);
+                });
+                
+                // Calculate entitlement for each employee
+                const calculateYearsOfService = (seniorityDate) => {
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+                
+                const getEmployeeEntitlement = (employee) => {
+                    if (!employee || !employee.seniorityDate) return 30;
+                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                    return yearsOfService >= 5 ? 35 : 30;
+                };
+                
+                // Track slot availability per month per department
+                const slotAvailability = {};
+                const slotAssignments = [];
+                
+                // Initialize slot availability from capacities
+                Object.keys(this.state.slotCapacities).forEach(key => {
+                    const [month, department, slot] = key.split('-');
+                    if (!slotAvailability[month]) slotAvailability[month] = {};
+                    if (!slotAvailability[month][department]) slotAvailability[month][department] = { A: 0, B: 0, C: 0 };
+                    slotAvailability[month][department][slot] = this.state.slotCapacities[key];
+                });
+                
+                // Helper function to assign slot to employee
+                const assignSlotToEmployee = (employee, month, slotType, slotNumber) => {
+                    const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                    const monthIndex = this.state.months.indexOf(month);
+                    const year = this.state.biddingYear;
                     
-                    const startDate = new Date(this.state.biddingYear, monthIndex, 1);
+                    // Calculate start date (1st of month for demo)
+                    let startDate = new Date(year, monthIndex, 1);
+                    
+                    // Adjust start date based on slot position
+                    if (slotNumber === 2) {
+                        if (slotType === 'A') startDate.setDate(16); // Slot A2 starts 16th
+                        if (slotType === 'B') startDate.setDate(16); // Slot B2 starts 16th
+                        if (slotType === 'C') startDate.setDate(11); // Slot C2 starts 11th (20 days)
+                    }
+                    
                     const endDate = new Date(startDate);
                     endDate.setDate(endDate.getDate() + slot.days - 1);
                     
                     return {
-                        employeeId: emp.id,
-                        employeeName: emp.name,
-                        department: emp.department || 'Unassigned',
-                        slotName: slot.name,
-                        slotType: slot.id,
+                        employeeId: employee.id,
+                        employeeName: employee.name,
+                        department: employee.department || 'Unassigned',
+                        slotName: `${slot.name}${slotNumber || ''}`,
+                        slotType: `slot${slotType}`,
+                        slotNumber: slotNumber || 1,
                         startDate: startDate.toISOString().split('T')[0],
                         endDate: endDate.toISOString().split('T')[0],
                         days: slot.days,
-                        type: idx % 2 === 0 ? 'Bid Awarded' : 'Auto-Assigned',
                         month: month,
-                        seniorityRank: idx + 1
+                        year: year,
+                        seniorityDate: employee.seniorityDate,
+                        yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1)
                     };
+                };
+                
+                // Process each employee by seniority
+                sortedEmployees.forEach((employee, index) => {
+                    const employeeBids = this.state.bids.filter(bid => bid.employeeId === employee.id);
+                    const entitlement = getEmployeeEntitlement(employee);
+                    const department = employee.department || 'Unassigned';
+                    
+                    // Track assigned slots for this employee
+                    const assignedSlots = [];
+                    let assignedDays = 0;
+                    
+                    // Phase 1: Try to assign based on employee's bids (by seniority)
+                    if (employeeBids.length > 0) {
+                        employeeBids.forEach(bid => {
+                            if (assignedSlots.length >= 2) return; // Already have 2 slots
+                            
+                            const month = this.state.months[new Date(bid.startDate).getMonth()];
+                            const slotType = bid.slotType.charAt(bid.slotType.length - 1); // 'A', 'B', or 'C'
+                            
+                            // Check if slot is available in employee's department
+                            if (slotAvailability[month] && 
+                                slotAvailability[month][department] && 
+                                slotAvailability[month][department][slotType] > 0) {
+                                
+                                // Assign slot
+                                const assignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
+                                assignedSlots.push(assignment);
+                                assignedDays += assignment.days;
+                                
+                                // Decrease availability
+                                slotAvailability[month][department][slotType]--;
+                            }
+                        });
+                    }
+                    
+                    // Phase 2: Fill remaining slots (if employee doesn't have 2 slots yet)
+                    while (assignedSlots.length < 2) {
+                        // Find available slot for this employee
+                        let slotAssigned = false;
+                        
+                        // Try each month
+                        for (const month of this.state.months) {
+                            if (!slotAvailability[month] || !slotAvailability[month][department]) continue;
+                            
+                            // Try each slot type (A, B, C)
+                            for (const slotType of ['A', 'B', 'C']) {
+                                if (slotAvailability[month][department][slotType] > 0) {
+                                    const potentialAssignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
+                                    
+                                    // Check if this would exceed entitlement
+                                    if (assignedDays + potentialAssignment.days <= entitlement) {
+                                        assignedSlots.push(potentialAssignment);
+                                        assignedDays += potentialAssignment.days;
+                                        slotAvailability[month][department][slotType]--;
+                                        slotAssigned = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (slotAssigned) break;
+                        }
+                        
+                        // If no slot found, assign default
+                        if (!slotAssigned && assignedSlots.length < 2) {
+                            const defaultMonth = this.state.months[assignedSlots.length % 12];
+                            const defaultSlotType = assignedSlots.length % 3 === 0 ? 'A' : assignedSlots.length % 3 === 1 ? 'B' : 'C';
+                            
+                            const defaultAssignment = assignSlotToEmployee(employee, defaultMonth, defaultSlotType, assignedSlots.length + 1);
+                            assignedSlots.push(defaultAssignment);
+                            assignedDays += defaultAssignment.days;
+                            
+                            // Create availability if doesn't exist
+                            if (!slotAvailability[defaultMonth]) slotAvailability[defaultMonth] = {};
+                            if (!slotAvailability[defaultMonth][department]) slotAvailability[defaultMonth][department] = { A: 0, B: 0, C: 0 };
+                            slotAvailability[defaultMonth][department][defaultSlotType] = Math.max(0, slotAvailability[defaultMonth][department][defaultSlotType] - 1);
+                        }
+                    }
+                    
+                    // Add all assignments to results
+                    assignedSlots.forEach((assignment, slotIndex) => {
+                        slotAssignments.push({
+                            ...assignment,
+                            seniorityRank: index + 1,
+                            type: employeeBids.length > slotIndex ? 'Bid Awarded' : 'Auto-Assigned',
+                            totalEmployeeSlots: 2,
+                            slotOrder: slotIndex + 1
+                        });
+                    });
                 });
                 
+                // Save results
+                this.state.results = slotAssignments;
                 this.state.isProcessed = true;
                 this.saveState();
                 
-                alert(`✅ Successfully processed ${this.state.results.length} employees!\n\n` +
-                      `• Bid Awards: ${this.state.results.filter(r => r.type === 'Bid Awarded').length}\n` +
-                      `• Auto-Assigned: ${this.state.results.filter(r => r.type === 'Auto-Assigned').length}\n\n` +
-                      `Go to "View Results" to see assignments.`);
+                // Calculate statistics
+                const totalSlots = slotAssignments.length;
+                const totalEmployees = sortedEmployees.length;
+                const bidAwarded = slotAssignments.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = slotAssignments.filter(r => r.type === 'Auto-Assigned').length;
+                
+                const message = `✅ Successfully processed ${totalEmployees} employees!\n\n` +
+                               `• Total slots assigned: ${totalSlots} (${totalEmployees} × 2)\n` +
+                               `• Bid Awards: ${bidAwarded} slots\n` +
+                               `• Auto-Assigned: ${autoAssigned} slots\n` +
+                               `• Each employee received exactly 2 slots\n` +
+                               `• Total leave days allocated: ${slotAssignments.reduce((sum, r) => sum + r.days, 0)}`;
+                
+                alert(message);
                 
                 this.renderAdminView();
             },
-
             exportResults() {
                 if (this.state.results.length === 0) {
                     alert('No results to export');
@@ -2028,10 +2167,23 @@
             renderResultsView() {
                 const content = document.getElementById('contentArea');
                 
+                // Group results by employee
+                const employeeResults = {};
+                this.state.results.forEach(result => {
+                    if (!employeeResults[result.employeeId]) {
+                        employeeResults[result.employeeId] = [];
+                    }
+                    employeeResults[result.employeeId].push(result);
+                });
+                
                 content.innerHTML = `
-                    <div class="max-w-6xl mx-auto">
+                    <div class="max-w-7xl mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-4">Results for ${this.state.biddingYear}</h2>
+                            <h2 class="text-2xl font-bold mb-6">Leave Assignments for ${this.state.biddingYear}</h2>
+                            <p class="text-gray-600 mb-6">
+                                Each employee receives exactly 2 slots. Senior employees (5+ years) get 35 days total,
+                                others get 30 days total.
+                            </p>
                             
                             ${this.state.results.length === 0 ? `
                                 <div class="text-center py-8">
@@ -2048,30 +2200,59 @@
                                                 <th class="p-3">Rank</th>
                                                 <th class="p-3">Employee</th>
                                                 <th class="p-3">Department</th>
-                                                <th class="p-3">Slot</th>
-                                                <th class="p-3">Month</th>
-                                                <th class="p-3">Dates</th>
-                                                <th class="p-3">Days</th>
-                                                <th class="p-3">Type</th>
+                                                <th class="p-3">Seniority</th>
+                                                <th class="p-3">Slot 1</th>
+                                                <th class="p-3">Slot 2</th>
+                                                <th class="p-3">Total Days</th>
+                                                <th class="p-3">Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            ${this.state.results.map(r => `
-                                                <tr class="border-b hover:bg-gray-50">
-                                                    <td class="p-3">#${r.seniorityRank}</td>
-                                                    <td class="p-3">${r.employeeName}<br><span class="text-xs text-gray-500">${r.employeeId}</span></td>
-                                                    <td class="p-3">${r.department}</td>
-                                                    <td class="p-3">${r.slotName}</td>
-                                                    <td class="p-3">${r.month}</td>
-                                                    <td class="p-3">${r.startDate} to ${r.endDate}</td>
-                                                    <td class="p-3">${r.days}</td>
-                                                    <td class="p-3">
-                                                        <span class="px-2 py-1 rounded text-xs ${r.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
-                                                            ${r.type}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            `).join('')}
+                                            ${Object.entries(employeeResults).map(([empId, slots]) => {
+                                                const employee = this.state.employees.find(e => e.id === empId);
+                                                const slot1 = slots.find(s => s.slotOrder === 1);
+                                                const slot2 = slots.find(s => s.slotOrder === 2);
+                                                const totalDays = slots.reduce((sum, s) => sum + s.days, 0);
+                                                const allAwarded = slots.every(s => s.type === 'Bid Awarded');
+                                                const anyAwarded = slots.some(s => s.type === 'Bid Awarded');
+                                                
+                                                return `
+                                                    <tr class="border-b hover:bg-gray-50">
+                                                        <td class="p-3">#${slot1?.seniorityRank || 'N/A'}</td>
+                                                        <td class="p-3">${employee?.name || 'Unknown'}<br>
+                                                            <span class="text-xs text-gray-500">${empId}</span>
+                                                        </td>
+                                                        <td class="p-3">${employee?.department || 'Unassigned'}</td>
+                                                        <td class="p-3">${slot1?.yearsOfService || 'N/A'} yrs</td>
+                                                        <td class="p-3">
+                                                            ${slot1?.slotName || 'N/A'}<br>
+                                                            <span class="text-xs text-gray-500">${slot1?.startDate || ''} to ${slot1?.endDate || ''}</span><br>
+                                                            <span class="text-xs ${slot1?.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600'}">
+                                                                ${slot1?.type || 'N/A'}
+                                                            </span>
+                                                        </td>
+                                                        <td class="p-3">
+                                                            ${slot2?.slotName || 'N/A'}<br>
+                                                            <span class="text-xs text-gray-500">${slot2?.startDate || ''} to ${slot2?.endDate || ''}</span><br>
+                                                            <span class="text-xs ${slot2?.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600'}">
+                                                                ${slot2?.type || 'N/A'}
+                                                            </span>
+                                                        </td>
+                                                        <td class="p-3 font-bold">${totalDays} days</td>
+                                                        <td class="p-3">
+                                                            <span class="px-2 py-1 rounded text-xs ${
+                                                                allAwarded ? 'bg-green-100 text-green-800' : 
+                                                                anyAwarded ? 'bg-yellow-100 text-yellow-800' : 
+                                                                'bg-blue-100 text-blue-800'
+                                                            }">
+                                                                ${allAwarded ? 'All Bids Awarded' : 
+                                                                  anyAwarded ? 'Partial Award' : 
+                                                                  'Auto-Assigned'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
                                         </tbody>
                                     </table>
                                 </div>
