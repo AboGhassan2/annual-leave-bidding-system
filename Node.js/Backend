@@ -1,0 +1,38 @@
+// Main endpoint for web app
+app.get('/api/system-data', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT get_leave_system_data() as data');
+        res.json(result.rows[0].data);
+    } catch (error) {
+        res.status(500).json({ 
+            system: 'Annual Leave Bidding System',
+            status: 'error',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+    const { employeeId, password } = req.body;
+    try {
+        const result = await pool.query(
+            'SELECT login_employee($1, $2) as result',
+            [employeeId, password]
+        );
+        res.json(result.rows[0].result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Sync endpoint
+app.post('/api/sync', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT sync_system_data() as result');
+        res.json(result.rows[0].result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
