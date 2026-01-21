@@ -693,54 +693,78 @@
                     `;
                 }
             },
-            } else {
-                const idInput = document.getElementById('loginId');
-                const passInput = document.getElementById('loginPassword');
-                
-                const id = idInput ? idInput.value : '';
-                const password = passInput ? passInput.value : '';
-                
-                if (!id || !password) {
-                    alert('⚠️ Please enter both ID and password');
-                    return;
-                }
-                
-                // Check if employees are loaded
-                if (this.state.employees.length === 0) {
-                    alert('⚠️ No employee data loaded. Please click "Sync with Database" first.');
-                    return;
-                }
-                
-                // Find employee in loaded data
-                const employee = this.state.employees.find(e => e.id === id);
-                
-                if (!employee) {
-                    alert('❌ Employee ID not found in loaded data');
-                    return;
-                }
-                
-                // Check password (simple check - password = ID by default)
-                const correctPassword = this.state.employeePasswords[employee.id] || employee.id;
-                
-                if (password === correctPassword) {
-                    this.state.currentUser = employee;
-                    this.state.userType = 'employee';
-                    this.state.verifiedEmployee = employee;
-                    this.state.activeView = 'employee';
+            async handleLogin() {
+                if (this.state.loginType === 'planner') {
+                    const input = document.getElementById('loginPassword');
+                    const password = input ? input.value : '';
                     
-                    // Update UI
-                    document.getElementById('userInfo').classList.remove('hidden');
-                    document.getElementById('loginView').classList.add('hidden');
-                    document.getElementById('employeeNav').classList.remove('hidden');
-                    
-                    document.getElementById('currentUserName').textContent = employee.name;
-                    document.getElementById('userTypeBadge').textContent = 'Employee';
-                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
-                    
-                    this.renderView();
-                    alert(`✅ Welcome, ${employee.name}!`);
+                    if (password === this.state.plannerPassword) {
+                        this.state.currentUser = { name: 'planner Admin' };
+                        this.state.userType = 'planner';
+                        this.state.activeView = 'upload';
+                        
+                        document.getElementById('userInfo').classList.remove('hidden');
+                        document.getElementById('loginView').classList.add('hidden');
+                        document.getElementById('plannerNav').classList.remove('hidden');
+                        
+                        document.getElementById('currentUserName').textContent = 'planner Admin';
+                        document.getElementById('userTypeBadge').textContent = 'planner';
+                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
+                        
+                        this.renderView();
+                        alert('✅ Welcome, Planner!');
+                    } else {
+                        alert('❌ Incorrect planner password. Try: Please check with your administrator');
+                    }
                 } else {
-                    alert('❌ Invalid password. Try using your Employee ID as password.');
+                    const idInput = document.getElementById('loginId');
+                    const passInput = document.getElementById('loginPassword');
+                    
+                    const id = idInput ? idInput.value : '';
+                    const password = passInput ? passInput.value : '';
+                    
+                    if (!id || !password) {
+                        alert('⚠️ Please enter both ID and password');
+                        return;
+                    }
+                    
+                    // Check if employees are loaded
+                    if (this.state.employees.length === 0) {
+                        alert('⚠️ No employee data loaded. Please click "Sync with Database" first.');
+                        return;
+                    }
+                    
+                    // Find employee in loaded data
+                    const employee = this.state.employees.find(e => e.id === id);
+                    
+                    if (!employee) {
+                        alert('❌ Employee ID not found in loaded data');
+                        return;
+                    }
+                    
+                    // Check password (simple check - password = ID by default)
+                    const correctPassword = this.state.employeePasswords[employee.id] || employee.id;
+                    
+                    if (password === correctPassword) {
+                        this.state.currentUser = employee;
+                        this.state.userType = 'employee';
+                        this.state.verifiedEmployee = employee;
+                        this.state.activeView = 'employee';
+                        
+                        // Update UI
+                        document.getElementById('userInfo').classList.remove('hidden');
+                        document.getElementById('loginView').classList.add('hidden');
+                        document.getElementById('employeeNav').classList.remove('hidden');
+                        
+                        document.getElementById('currentUserName').textContent = employee.name;
+                        document.getElementById('userTypeBadge').textContent = 'Employee';
+                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+                        
+                        this.renderView();
+                        alert(`✅ Welcome, ${employee.name}!`);
+                    } else {
+                        alert('❌ Invalid password. Try using your Employee ID as password.');
+                    }
                 }
             }
 
