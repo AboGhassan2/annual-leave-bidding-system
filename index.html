@@ -575,75 +575,73 @@
                                     <p class="text-sm font-semibold text-blue-800">📌 Default Password:</p>
                                     <p class="text-xs text-blue-700 mt-1">Your default password is the same as your Employee ID</p>
                                 </div>
+                                
+                                <!-- ADD THIS FORGOT PASSWORD LINK -->
+                                <div class="mt-2 text-right">
+                                    <button 
+                                        onclick="showForgotPassword()" 
+                                        class="text-sm text-blue-600 hover:text-blue-800 underline"
+                                        type="button"
+                                    >
+                                        Forgot Password?
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `;
                 }
-            },
 
-            handleLogin() {
-                if (this.state.loginType === 'planner') {
-                    const input = document.getElementById('loginPassword');
-                    const password = input ? input.value : '';
-                    
-                    if (password === this.state.plannerPassword) {
-                        this.state.currentUser = { name: 'planner Admin' };
-                        this.state.userType = 'planner';
-                        this.state.activeView = 'upload';
-                        
-                        document.getElementById('userInfo').classList.remove('hidden');
-                        document.getElementById('loginView').classList.add('hidden');
-                        document.getElementById('plannerNav').classList.remove('hidden');
-                        
-                        document.getElementById('currentUserName').textContent = 'planner Admin';
-                        document.getElementById('userTypeBadge').textContent = 'planner';
-                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
-                        
-                        this.renderView();
-                        alert('✅ Welcome, Planner!');
-                    } else {
-                        alert('❌ Incorrect planner password. Try: Please check with your administrator');
-                    }
-                } else {
-                    const idInput = document.getElementById('loginId');
-                    const passInput = document.getElementById('loginPassword');
-                    
-                    const id = idInput ? idInput.value : '';
-                    const password = passInput ? passInput.value : '';
-                    
-                    if (!id || !password) {
-                        alert('⚠️ Please enter both ID and password');
-                        return;
-                    }
-                    
+            async handleLogin() {
+                            } else {
+                const idInput = document.getElementById('loginId');
+                const passInput = document.getElementById('loginPassword');
+                
+                const id = idInput ? idInput.value : '';
+                const password = passInput ? passInput.value : '';
+                
+                if (!id || !password) {
+                    alert('⚠️ Please enter both ID and password');
+                    return;
+                }
+                
+                // Use database authentication
+                const loginResult = await login(id, password);
+                
+                if (loginResult.success) {
+                    // Find employee in local data for UI
                     const employee = this.state.employees.find(e => e.id === id);
                     if (!employee) {
-                        alert('❌ Employee ID not found. Please upload data first.');
-                        return;
+                        // If not in local data, create from database user
+                        this.state.currentUser = {
+                            id: loginResult.user.id,
+                            name: loginResult.user.name,
+                            department: loginResult.user.department || 'Unassigned',
+                            seniorityDate: loginResult.user.seniority_date || new Date().toISOString(),
+                            role: loginResult.user.role || '',
+                            email: loginResult.user.email || ''
+                        };
+                    } else {
+                        this.state.currentUser = employee;
                     }
                     
-                    const storedPass = this.state.employeePasswords[id] || id;
-                    if (password === storedPass) {
-                        this.state.currentUser = employee;
-                        this.state.userType = 'employee';
-                        this.state.verifiedEmployee = employee;
-                        this.state.activeView = 'employee';
-                        
-                        document.getElementById('userInfo').classList.remove('hidden');
-                        document.getElementById('loginView').classList.add('hidden');
-                        document.getElementById('employeeNav').classList.remove('hidden');
-                        
-                        document.getElementById('currentUserName').textContent = employee.name;
-                        document.getElementById('userTypeBadge').textContent = 'Employee';
-                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
-                        
-                        this.renderView();
-                        alert(`✅ Welcome, ${employee.name}!`);
-                    } else {
-                        alert(`❌ Incorrect password. Try: ${id}`);
-                    }
+                    this.state.userType = 'employee';
+                    this.state.verifiedEmployee = this.state.currentUser;
+                    this.state.activeView = 'employee';
+                    
+                    document.getElementById('userInfo').classList.remove('hidden');
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('employeeNav').classList.remove('hidden');
+                    
+                    document.getElementById('currentUserName').textContent = this.state.currentUser.name;
+                    document.getElementById('userTypeBadge').textContent = 'Employee';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+                    
+                    this.renderView();
+                    alert(`✅ Welcome, ${this.state.currentUser.name}!`);
+                } else {
+                    alert(`❌ ${loginResult.message || 'Login failed'}`);
                 }
-            },
+            }
 
             handleLogout() {
                 this.state.currentUser = null;
@@ -2518,16 +2516,20 @@
                             <h2 class="text-2xl font-bold mb-6">Change Password</h2>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block font-semibold mb-2">New Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">Current Password:</label>
+                                    <input type="password" id="currentPassword" class="w-full px-4 py-2 border rounded-lg">
                                 </div>
                                 <div>
-                                    <label class="block font-semibold mb-2">Confirm Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">New Password:</label>
+                                    <input type="password" id="newPassword" class="w-full px-4 py-2 border rounded-lg">
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                    <input type="password" id="confirmPassword" class="w-full px-4 py-2 border rounded-lg">
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
-                                <button onclick="app.setActiveView('employee')" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg">
+                                <button onclick="app.submitPasswordChange()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg">
                                     Save
                                 </button>
                                 <button onclick="app.setActiveView('employee')" class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg">
@@ -2537,7 +2539,7 @@
                         </div>
                     </div>
                 `;
-            },
+            }
 
             renderChangePlannerPasswordView() {
                 const content = document.getElementById('contentArea');
@@ -2567,7 +2569,50 @@
                     </div>
                 `;
             },
+            // ==================== PASSWORD RESET ====================
+            showForgotPassword() {
+                const email = prompt('Please enter your email address to reset password:');
+                if (email) {
+                    requestPasswordReset(email)
+                        .then(result => {
+                            alert(result.message || 'Password reset instructions sent to your email');
+                        })
+                        .catch(error => {
+                            alert('Error: ' + error.message);
+                        });
+                }
+            }
+            // ... all your other functions ...
 
+            // ==================== PASSWORD CHANGE ====================
+            async submitPasswordChange() {
+                const currentPassword = document.getElementById('currentPassword')?.value;
+                const newPassword = document.getElementById('newPassword')?.value;
+                const confirmPassword = document.getElementById('confirmPassword')?.value;
+                
+                if (!currentPassword || !newPassword || !confirmPassword) {
+                    alert('Please fill in all fields');
+                    return;
+                }
+                
+                if (newPassword !== confirmPassword) {
+                    alert('New passwords do not match');
+                    return;
+                }
+                
+                try {
+                    const result = await changePassword(currentPassword, newPassword, confirmPassword);
+                    if (result.success) {
+                        alert('✅ Password changed successfully!');
+                        this.setActiveView('employee');
+                    } else {
+                        alert(`❌ ${result.message}`);
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+            
             // ==================== INITIALIZATION ====================
             async init() {
                 console.log('App initializing...');
@@ -2604,6 +2649,62 @@
                 console.log('App ready');
             }
         };
+                // ==================== SUPABASE AUTHENTICATION FUNCTIONS ====================
+        
+        // Login function for your frontend
+        async function login(employeeId, password) {
+            try {
+                const { data, error } = await app.supabase.rpc('authenticate_user', {
+                    emp_id: employeeId,
+                    emp_password: password
+                });
+                
+                if (error) throw error;
+                
+                const result = JSON.parse(data);
+                if (result.success) {
+                    // Store user data in localStorage or state
+                    localStorage.setItem('user', JSON.stringify(result.user));
+                    localStorage.setItem('isLoggedIn', 'true');
+                    return { success: true, user: result.user };
+                } else {
+                    return { success: false, message: result.message };
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                return { success: false, message: 'Login failed' };
+            }
+        }
+        
+        // Change password function
+        async function changePassword(currentPassword, newPassword, confirmPassword) {
+            const user = JSON.parse(localStorage.getItem('user'));
+            
+            const { data, error } = await app.supabase.rpc('change_password', {
+                emp_id: user.id,
+                current_password: currentPassword,
+                new_password: newPassword,
+                confirm_password: confirmPassword
+            });
+            
+            if (error) throw error;
+            return JSON.parse(data);
+        }
+        
+        // Request password reset
+        async function requestPasswordReset(email) {
+            const { data, error } = await app.supabase.rpc('request_password_reset', {
+                emp_email: email
+            });
+            
+            if (error) throw error;
+            return JSON.parse(data);
+        }
+        
+        // ==================== INTEGRATE WITH EXISTING APP ====================
+        
+        // Update the existing handleLogin function to use database authentication
+        // Find the existing handleLogin function (around line 450) and REPLACE the employee login part
 
         // Initialize when page loads
         window.addEventListener('load', () => {
