@@ -1063,59 +1063,249 @@
                 
                 reader.readAsArrayBuffer(file);
             },
-    
-            // ==================== OTHER VIEW RENDERING FUNCTIONS ====================
-            // ... [All your other view rendering functions remain the same] ...
-            // Note: Due to character limit, I'm keeping them as-is since they seem correct
-    
-            // ==================== INITIALIZATION ====================
-            async init() {
-                console.log('App initializing...');
-                this.updateSystemStatus('Initializing...');
+            
+            renderAdminView() {
+                const content = document.getElementById('contentArea');
+                const allDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const depts = ['all', ...allDepts].sort();
                 
-                // Initialize Supabase
-                const supabaseReady = await this.initSupabase();
-                if (supabaseReady) {
-                    this.updateSystemStatus('✅ Connected to Supabase');
+                // Calculate employee entitlement
+                const calculateYearsOfService = (seniorityDate) => {
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+                
+                const getEmployeeEntitlement = (employee) => {
+                    if (!employee || !employee.seniorityDate) return 30;
+                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                    return yearsOfService >= 5 ? 35 : 30;
+                };
+                
+                // Get unique bidders
+                const bidders = [...new Set(this.state.bids.map(b => b.employeeId))].map(empId => {
+                    const employee = this.state.employees.find(e => e.id === empId);
+                    const employeeBids = this.state.bids.filter(b => b.employeeId === empId);
+                    const totalBidDays = employeeBids.reduce((sum, bid) => sum + bid.days, 0);
+                    const entitlement = employee ? getEmployeeEntitlement(employee) : 30;
                     
-                    // Load employees on startup
-                    setTimeout(async () => {
-                        const loaded = await this.loadEmployeesDirect();
-                        if (!loaded) {
-                            // Try loading from localStorage as fallback
-                            const localLoaded = this.loadFromLocalStorage();
-                            if (localLoaded) {
-                                this.updateSystemStatus(`✅ ${this.state.employees.length} employees from local storage`);
-                            } else {
-                                this.updateSystemStatus('⚠️ No data loaded');
-                            }
-                        }
-                    }, 100);
-                } else {
-                    // Fallback to localStorage
-                    const localLoaded = this.loadFromLocalStorage();
-                    if (localLoaded) {
-                        this.updateSystemStatus(`✅ ${this.state.employees.length} employees from local storage`);
-                    } else {
-                        this.updateSystemStatus('❌ No database connection & no local data');
-                    }
-                }
+                    return {
+                        id: empId,
+                        name: employee ? employee.name : 'Unknown',
+                        department: employee ? employee.department : 'Unassigned',
+                        seniorityDate: employee ? employee.seniorityDate : '',
+                        yearsOfService: employee ? calculateYearsOfService(employee.seniorityDate).toFixed(1) : '0',
+                        entitlement: entitlement,
+                        bids: employeeBids,
+                        totalBidDays: totalBidDays,
+                        remainingDays: entitlement - totalBidDays
+                    };
+                }).sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)); // Sort by seniority
                 
-                this.renderLoginForm();
+                // Calculate statistics
+                const totalEmployees = this.state.employees.length;
+                const biddersCount = bidders.length;
+                const nonBiddersCount = totalEmployees - biddersCount;
                 
-                // Add Enter key support for login
-                document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && this.state.activeView === 'login') {
-                        const loginForm = document.getElementById('loginForm');
-                        if (loginForm && document.activeElement.closest('#loginForm')) {
-                            this.handleLogin();
-                        }
-                    }
-                });
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <h2 class="text-2xl font-bold mb-6">Admin Panel</h2>
+                            
+                            <div class="mb-6 p-4 bg-blue-50 rounded-lg">
+                                <label class="block font-semibold mb-2">Set Bidding Deadline:</label>
+                                <input
+                                    type="datetime-local"
+                                    id="biddingDeadline"
+                                    value="${this.state.biddingDeadline}"
+                                    class="w-full px-4 py-2 border-2 border-blue-300 rounded-lg"
+                                    onchange="app.state.biddingDeadline = this.value; app.saveState()"
+                                />
+                            </div>
                 
-                console.log('App ready');
-            }
-        };
+                            <div class="mb-6 p-4 bg-purple-50 rounded-lg">
+                                <label class="block font-semibold mb-2">Filter by Department:</label>
+                                <select
+                                    id="adminDeptFilter"
+                                    class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                                    onchange="app.state.selectedDepartment = this.value; app.renderAdminView();"
+                                >
+                                    ${depts.map(dept => `
+                                        <option value="${dept}" ${dept === this.state.selectedDepartment ? 'selected' : ''}>
+                                            ${dept === 'all' ? 'All Departments' : dept}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${totalEmployees}</p>
+                                    <p class="text-sm text-gray-600">Total Employees</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${this.state.bids.length}</p>
+                                    <p class="text-sm text-gray-600">Total Bids</p>
+                                </div>
+                                <div class="bg-yellow-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${biddersCount}</p>
+                                    <p class="text-sm text-gray-600">Employees Who Bid</p>
+                                    <p class="text-xs text-gray-500">${nonBiddersCount} haven't bid</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
+                                    <p class="text-sm text-gray-600">Processed</p>
+                                </div>
+                            </div>
+                
+                            <!-- Bidders Details Section -->
+                            <div class="mb-6">
+                                <h3 class="text-xl font-bold mb-4">Bidders Details</h3>
+                                
+                                ${bidders.length === 0 ? `
+                                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 text-center">
+                                        <p class="text-yellow-700">No bids placed yet.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-gray-100">
+                                                <tr>
+                                                    <th class="p-3 text-left">#</th>
+                                                    <th class="p-3 text-left">Employee ID</th>
+                                                    <th class="p-3 text-left">Name</th>
+                                                    <th class="p-3 text-left">Department</th>
+                                                    <th class="p-3 text-left">Seniority (Years)</th>
+                                                    <th class="p-3 text-left">Entitlement</th>
+                                                    <th class="p-3 text-left">Bid Choices</th>
+                                                    <th class="p-3 text-left">Bid Days</th>
+                                                    <th class="p-3 text-left">Remaining Days</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${bidders.map((bidder, index) => {
+                                                    const filtered = this.state.selectedDepartment === 'all' || 
+                                                                   bidder.department === this.state.selectedDepartment;
+                                                    if (!filtered) return '';
+                                                    
+                                                    return `
+                                                        <tr class="border-b hover:bg-gray-50">
+                                                            <td class="p-3">${index + 1}</td>
+                                                            <td class="p-3 font-mono">${bidder.id}</td>
+                                                            <td class="p-3">${bidder.name}</td>
+                                                            <td class="p-3">
+                                                                <span class="px-2 py-1 text-xs rounded bg-gray-100">
+                                                                    ${bidder.department}
+                                                                </span>
+                                                            </td>
+                                                            <td class="p-3">${bidder.yearsOfService}</td>
+                                                            <td class="p-3">
+                                                                <span class="px-2 py-1 text-xs rounded ${
+                                                                    bidder.entitlement === 35 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                                                                }">
+                                                                    ${bidder.entitlement} days
+                                                                </span>
+                                                            </td>
+                                                            <td class="p-3">
+                                                                ${bidder.bids.map(bid => {
+                                                                    const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                                                    return `
+                                                                        <div class="mb-1">
+                                                                            <span class="px-2 py-1 text-xs rounded ${
+                                                                                slot?.color === 'green' ? 'bg-green-100 text-green-800' :
+                                                                                slot?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                                                                                'bg-purple-100 text-purple-800'
+                                                                            }">
+                                                                                ${slot?.name || 'Slot'}: ${bid.startDate} to ${bid.endDate}
+                                                                            </span>
+                                                                        </div>
+                                                                    `;
+                                                                }).join('')}
+                                                                ${bidder.bids.length === 0 ? '<span class="text-gray-400 text-xs">No bids</span>' : ''}
+                                                            </td>
+                                                            <td class="p-3 font-semibold">${bidder.totalBidDays}</td>
+                                                            <td class="p-3">
+                                                                <span class="px-2 py-1 text-xs rounded ${
+                                                                    bidder.remainingDays > 0 ? 'bg-green-100 text-green-800' : 
+                                                                    bidder.remainingDays === 0 ? 'bg-yellow-100 text-yellow-800' : 
+                                                                    'bg-red-100 text-red-800'
+                                                                }">
+                                                                    ${bidder.remainingDays} days
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    `;
+                                                }).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <!-- Summary -->
+                                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div class="bg-gray-50 p-3 rounded">
+                                            <p class="text-sm font-semibold">Bidding Summary:</p>
+                                            <p class="text-xs mt-1">
+                                                • ${bidders.length} employees placed bids<br>
+                                                • ${this.state.bids.length} total bids submitted<br>
+                                                • Average bids per employee: ${(this.state.bids.length / Math.max(bidders.length, 1)).toFixed(1)}
+                                            </p>
+                                        </div>
+                                        <div class="bg-blue-50 p-3 rounded">
+                                            <p class="text-sm font-semibold">Entitlement Summary:</p>
+                                            <p class="text-xs mt-1">
+                                                • 35-day employees: ${bidders.filter(b => b.entitlement === 35).length}<br>
+                                                • 30-day employees: ${bidders.filter(b => b.entitlement === 30).length}<br>
+                                                • Total entitlement days: ${bidders.reduce((sum, b) => sum + b.entitlement, 0)}
+                                            </p>
+                                        </div>
+                                        <div class="bg-green-50 p-3 rounded">
+                                            <p class="text-sm font-semibold">Bid Days Summary:</p>
+                                            <p class="text-xs mt-1">
+                                                • Total bid days: ${bidders.reduce((sum, b) => sum + b.totalBidDays, 0)}<br>
+                                                • Days remaining: ${bidders.reduce((sum, b) => sum + b.remainingDays, 0)}<br>
+                                                • Utilization: ${((bidders.reduce((sum, b) => sum + b.totalBidDays, 0) / 
+                                                                 bidders.reduce((sum, b) => sum + b.entitlement, 0)) * 100 || 0).toFixed(1)}%
+                                            </p>
+                                        </div>
+                                    </div>
+                                `}
+                            </div>
+                
+                            <!-- Action Buttons -->
+                            <div class="space-y-4 mb-6">
+                                <button
+                                    onclick="app.processBids()"
+                                    ${this.state.isProcessed || this.state.employees.length === 0 ? 'disabled' : ''}
+                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold ${this.state.isProcessed ? 'opacity-50' : ''}"
+                                >
+                                    ${this.state.isProcessed ? '✅ Bids Already Processed' : '🚀 Process All Bids'}
+                                </button>
+                                
+                                ${this.state.isProcessed ? `
+                                    <button onclick="app.exportResults()" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg font-semibold">
+                                        📊 Export Results to Excel
+                                    </button>
+                                ` : ''}
+                                
+                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
+                                    🔄 Reset System
+                                </button>
+                            </div>
+                            
+                            <div class="bg-gray-50 p-4 rounded-lg">
+                                <h3 class="font-bold mb-2">System Information</h3>
+                                <div class="text-sm text-gray-600 space-y-1">
+                                    <p>• Departments: ${allDepts.length}</p>
+                                    <p>• Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
+                                    <p>• Bidding year: ${this.state.biddingYear}</p>
+                                    <p>• Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
+                                    <p>• Bidders/Total: ${biddersCount}/${totalEmployees} (${((biddersCount/totalEmployees)*100 || 0).toFixed(1)}%)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
     
         // ==================== SUPABASE AUTHENTICATION FUNCTIONS ====================
         
