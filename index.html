@@ -424,34 +424,46 @@
                     return;
                 }
 
-                if (!confirm('Save all data to Supabase database?')) return;
+                if (!confirm(`Save all data to Supabase database?\n\n• ${this.state.employees.length} employees\n• ${this.state.bids.length} bids\n• System configuration`)) return;
+
+                // Helper: split array into chunks
+                const chunk = (arr, size) => {
+                    const chunks = [];
+                    for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+                    return chunks;
+                };
 
                 try {
-                    this.updateSystemStatus('Saving to Supabase...');
-                    
-                    // Save employees
-                    const employeePromises = this.state.employees.map(async (emp) => {
+                    // ── 1. Save employees in batches of 500 ──
+                    const empTotal = this.state.employees.length;
+                    const empChunks = chunk(this.state.employees, 500);
+                    this.updateSystemStatus(`Saving employees (0/${empTotal})...`);
+
+                    for (let i = 0; i < empChunks.length; i++) {
+                        const batch = empChunks[i].map(emp => ({
+                            id: emp.id,
+                            name: emp.name,
+                            seniority_date: emp.seniorityDate,
+                            role: emp.role || '',
+                            department: emp.department || '',
+                            gender: emp.gender || '',
+                            nationality: emp.nationality || '',
+                            email: emp.email || '',
+                            updated_at: new Date().toISOString()
+                        }));
+
                         const { error } = await this.supabase
                             .from('employees')
-                            .upsert({
-                                id: emp.id,
-                                name: emp.name,
-                                seniority_date: emp.seniorityDate,
-                                role: emp.role,
-                                department: emp.department,
-                                gender: emp.gender,
-                                nationality: emp.nationality,
-                                email: emp.email,
-                                updated_at: new Date().toISOString()
-                            }, { onConflict: 'id' });
-                        
-                        if (error) throw error;
-                        return true;
-                    });
-                    
-                    await Promise.all(employeePromises);
-                    
-                    // Save system config
+                            .upsert(batch, { onConflict: 'id' });
+
+                        if (error) throw new Error(`Employee batch ${i + 1} failed: ${error.message}`);
+
+                        const saved = Math.min((i + 1) * 500, empTotal);
+                        this.updateSystemStatus(`Saving employees (${saved}/${empTotal})...`);
+                    }
+
+                    // ── 2. Save system config ──
+                    this.updateSystemStatus('Saving system config...');
                     const { error: configError } = await this.supabase
                         .from('system_config')
                         .upsert({
@@ -464,38 +476,47 @@
                             results: this.state.results,
                             last_updated: new Date().toISOString()
                         }, { onConflict: 'id' });
-                    
-                    if (configError) console.warn('Config save warning:', configError);
-                    
-                    // Save bids
+
+                    if (configError) console.warn('Config save warning:', configError.message);
+
+                    // ── 3. Save bids in batches of 500 ──
                     if (this.state.bids.length > 0) {
-                        const bidPromises = this.state.bids.map(async (bid) => {
+                        const bidTotal = this.state.bids.length;
+                        const bidChunks = chunk(this.state.bids, 500);
+                        this.updateSystemStatus(`Saving bids (0/${bidTotal})...`);
+
+                        for (let i = 0; i < bidChunks.length; i++) {
+                            const batch = bidChunks[i].map(bid => ({
+                                employee_id: bid.employeeId,
+                                employee_name: bid.employeeName || '',
+                                department: bid.department || '',
+                                start_date: bid.startDate,
+                                end_date: bid.endDate,
+                                days_requested: bid.days,
+                                status: 'pending',
+                                slot_type: bid.slotType,
+                                created_at: bid.timestamp || new Date().toISOString()
+                            }));
+
                             const { error } = await this.supabase
                                 .from('leave_requests')
-                                .upsert({
-                                    employee_id: bid.employeeId,
-                                    start_date: bid.startDate,
-                                    end_date: bid.endDate,
-                                    days_requested: bid.days,
-                                    status: 'pending',
-                                    slot_type: bid.slotType,
-                                    created_at: new Date().toISOString()
-                                }, { onConflict: 'employee_id,slot_type,start_date' });
-                            
-                            if (error) throw error;
-                            return true;
-                        });
-                        
-                        await Promise.all(bidPromises);
+                                .upsert(batch, { onConflict: 'employee_id,slot_type,start_date' });
+
+                            if (error) throw new Error(`Bid batch ${i + 1} failed: ${error.message}`);
+
+                            const saved = Math.min((i + 1) * 500, bidTotal);
+                            this.updateSystemStatus(`Saving bids (${saved}/${bidTotal})...`);
+                        }
                     }
-                    
-                    this.updateSystemStatus('✅ All data saved to Supabase!');
-                    setTimeout(() => this.updateSystemStatus('Ready'), 3000);
-                    
+
+                    this.updateSystemStatus(`✅ Saved: ${empTotal} employees, ${this.state.bids.length} bids`);
+                    alert(`✅ All data saved to Supabase!\n\n• ${empTotal} employees\n• ${this.state.bids.length} bids\n• System configuration`);
+                    setTimeout(() => this.updateSystemStatus('Ready'), 4000);
+
                 } catch (error) {
                     console.error('❌ Error saving to Supabase:', error);
-                    this.updateSystemStatus('❌ Error saving to database');
-                    alert('Error: ' + error.message);
+                    this.updateSystemStatus('❌ Save failed — check console');
+                    alert(`❌ Save failed:\n${error.message}\n\nCheck browser console (F12) for details.`);
                 }
             },
 
