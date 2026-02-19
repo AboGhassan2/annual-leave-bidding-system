@@ -367,6 +367,26 @@
                         this.state.results = config.results || [];
                         console.log('✅ Loaded system config from Supabase');
                     }
+
+                    // Load Golden Command users from dedicated table
+                    const { data: gcUsers, error: gcError } = await this.supabase
+                        .from('golden_command_users')
+                        .select('*')
+                        .order('created_at', { ascending: true });
+
+                    if (gcError) {
+                        console.warn('⚠️ Could not load GC users:', gcError.message);
+                    } else if (gcUsers && gcUsers.length > 0) {
+                        this.state.goldenCommandUsers = gcUsers.map(u => ({
+                            id: u.id,
+                            name: u.name,
+                            password: u.password
+                        }));
+                        console.log(`✅ Loaded ${gcUsers.length} Golden Command users from dedicated table`);
+                    } else {
+                        // Table exists but is empty — keep whatever is in localStorage
+                        console.log('ℹ️ No GC users found in dedicated table');
+                    }
                     
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
@@ -2198,7 +2218,8 @@
                 });
                 
                 this.saveState();
-                alert(`✅ Golden Command user "${name}" (ID: ${id}) added!`);
+                this.saveGCUsersToSupabase();
+                alert(`✅ Golden Command user "${name}" (ID: ${id}) added and saved to database!`);
                 this.renderAdminView();
             },
 
@@ -2210,7 +2231,56 @@
                 if (confirm(`Remove Golden Command user "${user.name}" (${user.id})?`)) {
                     this.state.goldenCommandUsers.splice(index, 1);
                     this.saveState();
+                    this.saveGCUsersToSupabase();
                     this.renderAdminView();
+                }
+            },
+
+            async saveGCUsersToSupabase() {
+                // Syncs the full golden_command_users table with current state:
+                // 1. Upsert every user in state (add new, update existing)
+                // 2. Delete any rows in the table that are no longer in state
+                if (!this.supabase) return;
+                try {
+                    const currentUsers = this.state.goldenCommandUsers || [];
+
+                    // Step 1: Upsert all current users
+                    if (currentUsers.length > 0) {
+                        const { error: upsertError } = await this.supabase
+                            .from('golden_command_users')
+                            .upsert(
+                                currentUsers.map(u => ({
+                                    id: u.id,
+                                    name: u.name,
+                                    password: u.password,
+                                    updated_at: new Date().toISOString()
+                                })),
+                                { onConflict: 'id' }
+                            );
+                        if (upsertError) throw upsertError;
+                    }
+
+                    // Step 2: Delete rows no longer in state
+                    // Fetch all IDs currently in the table
+                    const { data: tableRows, error: fetchError } = await this.supabase
+                        .from('golden_command_users')
+                        .select('id');
+                    if (fetchError) throw fetchError;
+
+                    const currentIds = currentUsers.map(u => u.id);
+                    const toDelete = (tableRows || []).map(r => r.id).filter(id => !currentIds.includes(id));
+
+                    if (toDelete.length > 0) {
+                        const { error: deleteError } = await this.supabase
+                            .from('golden_command_users')
+                            .delete()
+                            .in('id', toDelete);
+                        if (deleteError) throw deleteError;
+                    }
+
+                    console.log(`✅ GC users synced to dedicated table (${currentUsers.length} users)`);
+                } catch (e) {
+                    console.warn('⚠️ GC users sync failed:', e.message);
                 }
             },
 
