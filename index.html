@@ -2250,44 +2250,93 @@
                 // Track slot availability per month per department
                 const slotAvailability = {};
                 const slotAssignments = [];
-                
+
+                // Build a lookup: slotDates[dept][month][slotId] = { start, end }
+                // so assignSlotToEmployee can use the real configured dates
+                const slotDates = {};
+
                 // Initialize slot availability from capacities
+                // New key format: cal-{dept}-{month}-{slotId}-{field}
+                // e.g. cal-L3-DEP-DC-January-SA-capacity  (dept may contain dashes!)
+                // We identify field as last segment, slotId as second-last, month as third-last,
+                // and dept as everything between "cal" and month.
+                const months = this.state.months; // ['January','February',...]
                 Object.keys(this.state.slotCapacities).forEach(key => {
-                    const [month, department, slot] = key.split('-');
-                    if (!slotAvailability[month]) slotAvailability[month] = {};
-                    if (!slotAvailability[month][department]) slotAvailability[month][department] = { A: 0, B: 0, C: 0 };
-                    slotAvailability[month][department][slot] = this.state.slotCapacities[key];
+                    if (!key.startsWith('cal-')) return;
+                    const withoutPrefix = key.slice(4); // remove leading "cal-"
+                    // Last segment is field (start / end / capacity)
+                    const lastDash = withoutPrefix.lastIndexOf('-');
+                    const field = withoutPrefix.slice(lastDash + 1);
+                    const withoutField = withoutPrefix.slice(0, lastDash);
+                    // Second-last segment is slotId (SA / SB / SC)
+                    const slotIdDash = withoutField.lastIndexOf('-');
+                    const slotId = withoutField.slice(slotIdDash + 1); // e.g. "SA"
+                    const withoutSlot = withoutField.slice(0, slotIdDash);
+                    // Third-last segment is the month name
+                    const monthDash = withoutSlot.lastIndexOf('-');
+                    const month = withoutSlot.slice(monthDash + 1);
+                    const dept = withoutSlot.slice(0, monthDash);
+
+                    if (!months.includes(month)) return; // skip malformed keys
+                    // Map SA→A, SB→B, SC→C for the availability object
+                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : null;
+                    if (!slotLetter) return;
+
+                    const value = this.state.slotCapacities[key];
+
+                    if (field === 'capacity') {
+                        const cap = parseInt(value) || 0;
+                        if (!slotAvailability[month]) slotAvailability[month] = {};
+                        if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0 };
+                        slotAvailability[month][dept][slotLetter] = cap;
+                    } else if (field === 'start' || field === 'end') {
+                        if (!slotDates[dept]) slotDates[dept] = {};
+                        if (!slotDates[dept][month]) slotDates[dept][month] = {};
+                        if (!slotDates[dept][month][slotLetter]) slotDates[dept][month][slotLetter] = {};
+                        slotDates[dept][month][slotLetter][field] = value;
+                    }
                 });
                 
-                // Helper function to assign slot to employee
+                // Helper function to assign slot to employee using real configured dates
                 const assignSlotToEmployee = (employee, month, slotType, slotNumber) => {
                     const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
-                    const monthIndex = this.state.months.indexOf(month);
+                    const dept = employee.department || 'Unassigned';
                     const year = this.state.biddingYear;
-                    
-                    // Calculate start date (1st of month for demo)
-                    let startDate = new Date(year, monthIndex, 1);
-                    
-                    // Adjust start date based on slot position
-                    if (slotNumber === 2) {
-                        if (slotType === 'A') startDate.setDate(16); // Slot A2 starts 16th
-                        if (slotType === 'B') startDate.setDate(16); // Slot B2 starts 16th
-                        if (slotType === 'C') startDate.setDate(11); // Slot C2 starts 11th (20 days)
+
+                    // Use real configured dates if available
+                    const configuredDates = slotDates[dept]?.[month]?.[slotType];
+                    let startDateStr, endDateStr;
+
+                    if (configuredDates?.start && configuredDates?.end) {
+                        startDateStr = configuredDates.start;
+                        endDateStr = configuredDates.end;
+                    } else {
+                        // Fallback: calculate from month index
+                        const monthIndex = this.state.months.indexOf(month);
+                        let startDate = new Date(year, monthIndex, 1);
+                        if (slotNumber === 2) {
+                            if (slotType === 'A') startDate.setDate(16);
+                            if (slotType === 'B') startDate.setDate(16);
+                            if (slotType === 'C') startDate.setDate(11);
+                        }
+                        const endDate = new Date(startDate);
+                        endDate.setDate(endDate.getDate() + (slot ? slot.days : 15) - 1);
+                        startDateStr = startDate.toISOString().split('T')[0];
+                        endDateStr = endDate.toISOString().split('T')[0];
                     }
-                    
-                    const endDate = new Date(startDate);
-                    endDate.setDate(endDate.getDate() + slot.days - 1);
-                    
+
+                    const days = slot ? slot.days : Math.ceil((new Date(endDateStr) - new Date(startDateStr)) / (1000 * 60 * 60 * 24)) + 1;
+
                     return {
                         employeeId: employee.id,
                         employeeName: employee.name,
-                        department: employee.department || 'Unassigned',
-                        slotName: `${slot.name}${slotNumber || ''}`,
+                        department: dept,
+                        slotName: `${slot ? slot.name : slotType}`,
                         slotType: `slot${slotType}`,
                         slotNumber: slotNumber || 1,
-                        startDate: startDate.toISOString().split('T')[0],
-                        endDate: endDate.toISOString().split('T')[0],
-                        days: slot.days,
+                        startDate: startDateStr,
+                        endDate: endDateStr,
+                        days: days,
                         month: month,
                         year: year,
                         seniorityDate: employee.seniorityDate,
@@ -2808,90 +2857,120 @@
             loadAvailableSlots() {
                 const slotsContainer = document.getElementById('slotsContainer');
                 if (!slotsContainer) return;
-                
-                slotsContainer.innerHTML = '<p class="text-gray-600">Loading available slots...</p>';
-                
-                // Simulate loading with timeout
+
+                slotsContainer.innerHTML = '<p class="text-gray-500 text-sm animate-pulse">Loading available slots...</p>';
+
                 setTimeout(() => {
-                    // Get filter values
-                    const includeWeekends = document.getElementById('filterWeekends')?.checked || true;
-                    const includeHolidays = document.getElementById('filterHolidays')?.checked || true;
-                    const departmentPriority = document.getElementById('departmentPriority')?.value || 'all';
-                    const minDuration = parseInt(document.getElementById('minDuration')?.value || '3');
-                    
-                    // Sample slot data (in real app, this would come from your database)
-                    const sampleSlots = [
-                        { id: 1, name: 'Summer Break', month: 'July', duration: 15, type: 'Slot A', startDate: '2027-07-01', endDate: '2027-07-15', department: 'L3 SAMB' },
-                        { id: 2, name: 'Winter Holidays', month: 'December', duration: 20, type: 'Slot C', startDate: '2027-12-15', endDate: '2028-01-03', department: 'L3 SAMB' },
-                        { id: 3, name: 'Spring Break', month: 'April', duration: 15, type: 'Slot B', startDate: '2027-04-10', endDate: '2027-04-24', department: 'L4/6-SA' },
-                        { id: 4, name: 'Autumn Leave', month: 'October', duration: 10, type: 'Slot A', startDate: '2027-10-01', endDate: '2027-10-10', department: 'L5 SAMB' },
-                        { id: 5, name: 'New Year Break', month: 'January', duration: 7, type: 'Slot B', startDate: '2027-01-03', endDate: '2027-01-09', department: 'L3 SAMB' },
-                    ];
-                    
-                    // Apply filters
-                    let filteredSlots = sampleSlots.filter(slot => {
-                        // Filter by minimum duration
-                        if (slot.duration < minDuration) return false;
-                        
-                        // Filter by department priority
-                        if (departmentPriority === 'same' && slot.department !== this.state.verifiedEmployee?.department) {
-                            return false;
-                        }
-                        
-                        // Note: Weekend and holiday filtering would be implemented in real app
-                        
-                        return true;
+                    const employee = this.state.verifiedEmployee;
+                    const dept = employee?.department || '';
+                    const months = this.state.months;
+                    const caps = this.state.slotCapacities;
+
+                    // Parse all real configured slots from slotCapacities
+                    // Key format: cal-{dept}-{month}-{slotId}-{field}
+                    const slotMap = {}; // key: "dept||month||slotLetter" → { start, end, capacity, dept, month, slotLetter }
+
+                    Object.keys(caps).forEach(key => {
+                        if (!key.startsWith('cal-')) return;
+                        const withoutPrefix = key.slice(4);
+                        const lastDash = withoutPrefix.lastIndexOf('-');
+                        const field = withoutPrefix.slice(lastDash + 1);
+                        const withoutField = withoutPrefix.slice(0, lastDash);
+                        const slotIdDash = withoutField.lastIndexOf('-');
+                        const slotId = withoutField.slice(slotIdDash + 1);
+                        const withoutSlot = withoutField.slice(0, slotIdDash);
+                        const monthDash = withoutSlot.lastIndexOf('-');
+                        const month = withoutSlot.slice(monthDash + 1);
+                        const deptKey = withoutSlot.slice(0, monthDash);
+
+                        if (!months.includes(month)) return;
+                        const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : null;
+                        if (!slotLetter) return;
+
+                        const mapKey = `${deptKey}||${month}||${slotLetter}`;
+                        if (!slotMap[mapKey]) slotMap[mapKey] = { dept: deptKey, month, slotLetter, start: '', end: '', capacity: 0 };
+
+                        if (field === 'start') slotMap[mapKey].start = caps[key];
+                        if (field === 'end') slotMap[mapKey].end = caps[key];
+                        if (field === 'capacity') slotMap[mapKey].capacity = parseInt(caps[key]) || 0;
                     });
-                    
-                    if (filteredSlots.length === 0) {
-                        slotsContainer.innerHTML = '<p class="text-gray-600">No slots available with current filters. Try adjusting your filters.</p>';
+
+                    // Convert to array and filter: only slots with dates + capacity > 0
+                    let allSlots = Object.values(slotMap).filter(s => s.start && s.end && s.capacity > 0);
+
+                    if (allSlots.length === 0) {
+                        slotsContainer.innerHTML = `
+                            <div class="text-center py-10 text-gray-400">
+                                <p class="text-4xl mb-3">📭</p>
+                                <p class="font-semibold text-gray-600">No slots configured yet</p>
+                                <p class="text-sm mt-1">The planner needs to configure slots with dates and capacity in <strong>Configure Slots</strong> first.</p>
+                            </div>`;
                         return;
                     }
-                    
-                    // Display slots
-                    let slotsHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
-                    
-                    filteredSlots.forEach(slot => {
-                        const isMyDept = slot.department === this.state.verifiedEmployee?.department;
-                        slotsHTML += `
-                            <div class="border border-gray-300 rounded p-4 hover:border-blue-500 hover:bg-blue-50 transition">
+
+                    // Sort slots: employee's own department first, then by month order
+                    allSlots.sort((a, b) => {
+                        const aIsMyDept = a.dept === dept ? 0 : 1;
+                        const bIsMyDept = b.dept === dept ? 0 : 1;
+                        if (aIsMyDept !== bIsMyDept) return aIsMyDept - bIsMyDept;
+                        return months.indexOf(a.month) - months.indexOf(b.month);
+                    });
+
+                    // Count how many bids have already been placed per slot (dept+month+slot)
+                    const bidCounts = {};
+                    this.state.bids.forEach(bid => {
+                        const bDept = bid.department || '';
+                        const bMonth = bid.startDate ? months[new Date(bid.startDate).getMonth()] : '';
+                        const bSlotLetter = bid.slotType === 'slotA' ? 'A' : bid.slotType === 'slotB' ? 'B' : bid.slotType === 'slotC' ? 'C' : '';
+                        if (bDept && bMonth && bSlotLetter) {
+                            const k = `${bDept}||${bMonth}||${bSlotLetter}`;
+                            bidCounts[k] = (bidCounts[k] || 0) + 1;
+                        }
+                    });
+
+                    const colorMap = { A: { bg: 'bg-green-50', border: 'border-green-300', badge: 'bg-green-100 text-green-800', label: 'Slot A' }, B: { bg: 'bg-blue-50', border: 'border-blue-300', badge: 'bg-blue-100 text-blue-800', label: 'Slot B' }, C: { bg: 'bg-purple-50', border: 'border-purple-300', badge: 'bg-purple-100 text-purple-800', label: 'Slot C' } };
+
+                    let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+                    allSlots.forEach(slot => {
+                        const isMyDept = slot.dept === dept;
+                        const mapKey = `${slot.dept}||${slot.month}||${slot.slotLetter}`;
+                        const taken = bidCounts[mapKey] || 0;
+                        const remaining = Math.max(0, slot.capacity - taken);
+                        const isFull = remaining === 0;
+                        const c = colorMap[slot.slotLetter] || colorMap['A'];
+                        const slotTypeDef = this.state.slotTypes.find(s => s.id === `slot${slot.slotLetter}`);
+                        const days = slotTypeDef ? slotTypeDef.days : '?';
+
+                        html += `
+                            <div class="border-2 ${isFull ? 'border-gray-200 bg-gray-50 opacity-60' : (isMyDept ? 'border-yellow-400 ' + c.bg : c.border + ' ' + c.bg)} rounded-lg p-4 transition hover:shadow-md">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
-                                        <h5 class="font-semibold text-lg">${slot.name}</h5>
-                                        <div class="flex items-center gap-2 mt-1">
-                                            <span class="px-2 py-1 text-xs rounded ${isMyDept ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-                                                ${slot.department}
-                                            </span>
-                                            <span class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                                                ${slot.type}
-                                            </span>
+                                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                                            <span class="px-2 py-0.5 rounded text-xs font-bold ${c.badge}">${c.label}</span>
+                                            ${isMyDept ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-800">⭐ Your Dept</span>' : ''}
+                                            ${isFull ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">Full</span>' : ''}
                                         </div>
+                                        <p class="font-semibold text-gray-800 text-sm">${slot.dept}</p>
+                                        <p class="text-xs text-gray-500">${slot.month} ${this.state.biddingYear}</p>
                                     </div>
                                     <div class="text-right">
-                                        <span class="text-sm font-semibold">${slot.duration} days</span>
-                                        <p class="text-xs text-gray-500">${slot.month}</p>
+                                        <p class="text-lg font-bold text-gray-800">${days} <span class="text-xs font-normal text-gray-500">days</span></p>
+                                        <p class="text-xs ${isFull ? 'text-red-600' : 'text-green-600'} font-semibold">${remaining}/${slot.capacity} spots left</p>
                                     </div>
                                 </div>
-                                <p class="text-sm text-gray-600 mb-3">${slot.startDate} to ${slot.endDate}</p>
+                                <p class="text-xs text-gray-600 mb-3 font-mono">${slot.start} → ${slot.end}</p>
                                 <div class="flex items-center justify-between">
-                                    <label class="flex items-center">
-                                        <input type="checkbox" class="slot-checkbox mr-2" value="${slot.id}">
-                                        <span class="text-sm">Select to bid</span>
+                                    <label class="flex items-center gap-2 cursor-pointer ${isFull ? 'opacity-40 cursor-not-allowed' : ''}">
+                                        <input type="checkbox" class="slot-checkbox w-4 h-4" value="${mapKey}" ${isFull ? 'disabled' : ''}>
+                                        <span class="text-sm text-gray-700">Select to bid</span>
                                     </label>
-                                    <button 
-                                        onclick="app.previewSlot(${slot.id})"
-                                        class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                    >
-                                        Preview
-                                    </button>
+                                    <span class="text-xs text-gray-400">${slot.start}</span>
                                 </div>
-                            </div>
-                        `;
+                            </div>`;
                     });
-                    
-                    slotsHTML += '</div>';
-                    slotsContainer.innerHTML = slotsHTML;
-                }, 500);
+                    html += '</div>';
+                    slotsContainer.innerHTML = html;
+                }, 300);
             },
 
             previewSlot(slotId) {
