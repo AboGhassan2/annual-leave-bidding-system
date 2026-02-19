@@ -73,6 +73,12 @@
                         >
                             Planner
                         </button>
+                        <button
+                            onclick="app.setLoginType('goldencommand')"
+                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500"
+                        >
+                            ⭐ Golden Command
+                        </button>
                     </div>
                 </div>
 
@@ -153,6 +159,19 @@
             </button>
         </div>
 
+        <!-- Golden Command Navigation -->
+        <div id="goldenCommandNav" class="hidden flex justify-center space-x-4 mb-6">
+            <button onclick="app.setActiveView('goldenCommand')" class="px-4 py-2 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500 border border-yellow-500">
+                ⭐ Place GC Bids
+            </button>
+            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+                📋 My Results
+            </button>
+            <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+                🔑 Change Password
+            </button>
+        </div>
+
         <!-- Main Content Area -->
         <div id="contentArea"></div>
     </div>
@@ -185,20 +204,26 @@
                 currentUser: null,
                 userType: null,
                 plannerPassword: 'admin123',
+                goldenCommandPassword: 'gc123',
+                goldenCommandUsers: [
+                    { id: 'GC001', name: 'Golden Command 1', password: 'GC001' },
+                    { id: 'GC002', name: 'Golden Command 2', password: 'GC002' }
+                ],
                 results: [],
                 selectedDepartment: 'all',
                 slotCapacities: {},
                 
-                // Complete departments list
+                // Complete departments list (only L3, L46, L5 prefixes)
                 departments: [
-                    'L4/6-SA', 'L4/6-DEP-DM', 'L4/6-DEP-EFC', 'L3-DEP-DC', 'L3-DEP-TC',
-                    'L5-LSS/SS', 'L5-DEP-DC', 'L3465-DEP-TCC', 'L3-DEP-DM', 'L5-DEP-DM',
-                    'L46-DEP-TC', 'L3-DEP- LTSS/TSS', 'L5-DEP-GSM', 'L5-DEP-SC', 'L5-DEP- LTSS/TSS',
-                    'L3-DEP-EFC', 'L3-DEP-GSM', 'L46-TA-T', 'L46-DEP- LTSS/TSS', 'L3-TA-T',
-                    'L3-DS', 'L5-DEP-TC', 'L3-P&R', 'L5-DEP-EFC', 'L46-DEP-DC',
-                    'L3-LSS/SS', 'L3-DEP-SC', 'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC',
-                    'L46 SAMB', 'L5 SA', 'L3-SA', 'L3 SAMB', 'L5 - TA-T',
-                    'L46-P&R', 'L5 SAMB', 'L46-AOCC'
+                    'L3-DEP-DC', 'L3-DEP-TC', 'L3-DEP-DM', 'L3-DEP- LTSS/TSS',
+                    'L3-DEP-EFC', 'L3-DEP-GSM', 'L3-TA-T', 'L3-DS', 'L3-P&R',
+                    'L3-LSS/SS', 'L3-DEP-SC', 'L3-SA', 'L3 SAMB',
+                    'L46-DEP-TC', 'L46-DEP- LTSS/TSS', 'L46-TA-T', 'L46-DEP-DC',
+                    'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC', 'L46 SAMB',
+                    'L46-P&R', 'L46-AOCC',
+                    'L5-LSS/SS', 'L5-DEP-DC', 'L5-DEP-DM', 'L5-DEP-GSM', 'L5-DEP-SC',
+                    'L5-DEP- LTSS/TSS', 'L5-DEP-TC', 'L5-DEP-EFC', 'L5 SA', 'L5 SAMB',
+                    'L5 - TA-T'
                 ],
                 
                 slotTypes: [
@@ -472,6 +497,7 @@
                     localStorage.setItem('plannerPassword', this.state.plannerPassword);
                     localStorage.setItem('results', JSON.stringify(this.state.results));
                     localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
+                    localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
                 } catch (e) {
                     console.error('Error saving state:', e);
                 }
@@ -490,6 +516,7 @@
                         this.state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
                         this.state.results = JSON.parse(localStorage.getItem('results') || '[]');
                         this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
+                        this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
                         return true;
                     }
                 } catch (e) {
@@ -529,17 +556,47 @@
                 if (this.state.loginType === 'planner') {
                     form.innerHTML = `
                         <div>
-                            <label class="block font-semibold mb-2">planner Password:</label>
+                            <label class="block font-semibold mb-2">Planner Password:</label>
                             <input
                                 type="password"
                                 id="loginPassword"
                                 class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
                                 placeholder="Enter planner password"
                             />
-                            <div class="mt-2 p-3 bg-purple-50 border border-purple-200 rounded">
-                                <p class="text-sm font-semibold text-purple-800">🔑 HR - Resource Planning "Planner Page" : </p>
-                                <p class="text-xs text-purple-700 mt-1"> Powered by Ameen  </p>
+                        </div>
+                    `;
+                } else if (this.state.loginType === 'goldencommand') {
+                    const gcUsers = this.state.goldenCommandUsers || [];
+                    const hasGCUsers = gcUsers.length > 0;
+                    form.innerHTML = `
+                        <div class="space-y-4">
+                            ${!hasGCUsers ? `
+                                <div class="bg-yellow-50 border border-yellow-300 rounded p-4 mb-4">
+                                    <span class="text-sm text-yellow-800">No Golden Command users configured. Ask the planner to add GC users in Admin Panel.</span>
+                                </div>
+                            ` : ''}
+                            <div>
+                                <label class="block font-semibold mb-2">Golden Command ID:</label>
+                                <input
+                                    type="text"
+                                    id="gcLoginId"
+                                    class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg focus:border-yellow-600 focus:outline-none"
+                                    placeholder="Enter your GC ID"
+                                    ${!hasGCUsers ? 'disabled' : ''}
+                                />
                             </div>
+                            <div>
+                                <label class="block font-semibold mb-2">Password:</label>
+                                <input
+                                    type="password"
+                                    id="loginPassword"
+                                    class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg focus:border-yellow-600 focus:outline-none"
+                                    placeholder="Enter your password"
+                                    ${!hasGCUsers ? 'disabled' : ''}
+                                />
+                                <div class="mt-2"></div>
+                            </div>
+                        </div>
                         </div>
                     `;
                 } else {
@@ -571,10 +628,7 @@
                                     placeholder="Enter your password"
                                     ${!hasData ? 'disabled' : ''}
                                 />
-                                <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                                    <p class="text-sm font-semibold text-blue-800">📌 Default Password:</p>
-                                    <p class="text-xs text-blue-700 mt-1">Your default password is the same as your Employee ID</p>
-                                </div>
+                                <div class="mt-2"></div>
                             </div>
                         </div>
                     `;
@@ -587,7 +641,7 @@
                     const password = input ? input.value : '';
                     
                     if (password === this.state.plannerPassword) {
-                        this.state.currentUser = { name: 'planner Admin' };
+                        this.state.currentUser = { name: 'Planner Admin' };
                         this.state.userType = 'planner';
                         this.state.activeView = 'upload';
                         
@@ -595,15 +649,55 @@
                         document.getElementById('loginView').classList.add('hidden');
                         document.getElementById('plannerNav').classList.remove('hidden');
                         
-                        document.getElementById('currentUserName').textContent = 'planner Admin';
-                        document.getElementById('userTypeBadge').textContent = 'planner';
+                        document.getElementById('currentUserName').textContent = 'Planner Admin';
+                        document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
                         
                         this.renderView();
                         alert('✅ Welcome, Planner!');
                     } else {
-                        alert('❌ Incorrect planner password. Try: Please check with your administrator');
+                        alert('❌ Incorrect planner password.');
                     }
+                } else if (this.state.loginType === 'goldencommand') {
+                    const gcIdInput = document.getElementById('gcLoginId');
+                    const passInput = document.getElementById('loginPassword');
+                    const gcId = gcIdInput ? gcIdInput.value.trim() : '';
+                    const password = passInput ? passInput.value : '';
+                    
+                    if (!gcId || !password) {
+                        alert('⚠️ Please enter both GC ID and password');
+                        return;
+                    }
+                    
+                    const gcUsers = this.state.goldenCommandUsers || [];
+                    const gcUser = gcUsers.find(u => u.id === gcId);
+                    
+                    if (!gcUser) {
+                        alert('❌ Golden Command ID not found. Please contact the planner.');
+                        return;
+                    }
+                    
+                    const storedPass = gcUser.password || gcUser.id;
+                    if (password !== storedPass) {
+                        alert(`❌ Incorrect password.`);
+                        return;
+                    }
+                    
+                    this.state.currentUser = gcUser;
+                    this.state.userType = 'goldencommand';
+                    this.state.verifiedEmployee = { id: gcUser.id, name: gcUser.name, department: 'Golden Command', seniorityDate: '2000-01-01' };
+                    this.state.activeView = 'goldenCommand';
+                    
+                    document.getElementById('userInfo').classList.remove('hidden');
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('goldenCommandNav').classList.remove('hidden');
+                    
+                    document.getElementById('currentUserName').textContent = gcUser.name;
+                    document.getElementById('userTypeBadge').textContent = '⭐ Golden Command';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800';
+                    
+                    this.renderView();
+                    alert(`✅ Welcome, ${gcUser.name}!`);
                 } else {
                     const idInput = document.getElementById('loginId');
                     const passInput = document.getElementById('loginPassword');
@@ -640,7 +734,7 @@
                         this.renderView();
                         alert(`✅ Welcome, ${employee.name}!`);
                     } else {
-                        alert(`❌ Incorrect password. Try: ${id}`);
+                        alert(`❌ Incorrect password.`);
                     }
                 }
             },
@@ -654,6 +748,7 @@
                 document.getElementById('userInfo').classList.add('hidden');
                 document.getElementById('plannerNav').classList.add('hidden');
                 document.getElementById('employeeNav').classList.add('hidden');
+                document.getElementById('goldenCommandNav').classList.add('hidden');
                 document.getElementById('loginView').classList.remove('hidden');
                 
                 this.renderLoginForm();
@@ -695,6 +790,9 @@
                         break;
                     case 'changePlannerPassword':
                         this.renderChangePlannerPasswordView();
+                        break;
+                    case 'goldenCommand':
+                        this.renderGoldenCommandBiddingView();
                         break;
                 }
                 
@@ -1160,20 +1258,442 @@
                 });
             },
 
+            renderGoldenCommandBiddingView() {
+                const content = document.getElementById('contentArea');
+                const gcUser = this.state.verifiedEmployee;
+                if (!gcUser) { content.innerHTML = '<p class="text-center">Please login first.</p>'; return; }
+
+                // Filter bids for THIS specific GC user
+                const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
+                const totalBidDays = gcBids.reduce((sum, bid) => sum + bid.days, 0);
+                const entitlement = 35; // Golden Command always gets 35 days
+            
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <!-- Header with GC styling -->
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-yellow-400">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="text-3xl">⭐</span>
+                                <h2 class="text-2xl font-bold">Golden Command — ${gcUser.name} — Leave Bidding ${this.state.biddingYear}</h2>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                                    <p class="text-2xl font-bold text-yellow-800">${entitlement}</p>
+                                    <p class="text-sm text-gray-600">Total Leave Days</p>
+                                    <p class="text-xs text-yellow-600">Golden Command Entitlement</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${gcBids.length} <span class="text-sm font-normal text-gray-500">unlimited</span></p>
+                                    <p class="text-sm text-gray-600">Bids Placed</p>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${totalBidDays}</p>
+                                    <p class="text-sm text-gray-600">Days Bid</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-purple-700">∞</p>
+                                    <p class="text-sm text-gray-600">GC Privilege — No Limit</p>
+                                </div>
+                            </div>
+            
+                            <!-- Slot types summary -->
+                            <div class="border-t pt-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <p class="font-semibold">Available Slot Types:</p>
+                                    <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-semibold">⭐ GC: Unlimited selections, free date range</span>
+                                </div>
+                                <div class="flex gap-4">
+                                    ${this.state.slotTypes.map(slot => `
+                                        <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
+                                            <p class="font-bold">${slot.name}</p>
+                                            <p class="text-sm">${slot.days} consecutive days</p>
+                                        </div>
+                                    `).join('')}
+                                    <div class="flex-1 p-3 rounded-lg border border-yellow-400 bg-yellow-50">
+                                        <p class="font-bold text-yellow-800">⭐ Custom</p>
+                                        <p class="text-sm text-yellow-700">Any date range — free choice</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+            
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Left: Place New Bid -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-yellow-400">
+                                <h3 class="text-xl font-bold mb-4">⭐ Place New GC Bid</h3>
+                                
+                                ${this.state.isProcessed ? `
+                                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                                        <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                    </div>
+                                ` : ''}
+
+                                <!-- Slot Type Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                    <div class="space-y-2">
+                                        ${this.state.slotTypes.map(slot => {
+                                            const colorMap = { green: 'border-green-300 bg-green-50 hover:bg-green-100 text-green-900', blue: 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900', purple: 'border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-900' };
+                                            const activeMap = { green: 'bg-green-500 text-white border-green-600', blue: 'bg-blue-500 text-white border-blue-600', purple: 'bg-purple-500 text-white border-purple-600' };
+                                            const isActive = window.gcSelectedSlot === slot.id;
+                                            return `
+                                                <button
+                                                    data-slot="${slot.id}"
+                                                    onclick="app.setGCSelectedSlot('${slot.id}')"
+                                                    class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessed ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (isActive ? (activeMap[slot.color] || 'bg-yellow-400 text-yellow-900 border-yellow-500') : (colorMap[slot.color] || 'bg-yellow-50 hover:bg-yellow-100 text-gray-800 border-yellow-300'))}"
+                                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                                >
+                                                    ${slot.name} — ${slot.days} consecutive days
+                                                    ${isActive ? '<span class="float-right">✓ Selected</span>' : ''}
+                                                </button>
+                                            `;
+                                        }).join('')}
+                                        <!-- Custom / Free Choice option -->
+                                        <button
+                                            data-slot="gcCustom"
+                                            onclick="app.setGCSelectedSlot('gcCustom')"
+                                            class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessed ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (window.gcSelectedSlot === 'gcCustom' ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : 'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-400')}"
+                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                        >
+                                            ⭐ Custom — Choose any start &amp; end date freely
+                                            ${window.gcSelectedSlot === 'gcCustom' ? '<span class="float-right">✓ Selected</span>' : ''}
+                                        </button>
+                                    </div>
+                                </div>
+            
+                                <!-- Date Selection -->
+                                <div class="mb-6">
+                                    <div class="mb-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                                        <p class="font-semibold text-yellow-800 text-sm" id="gcSlotInfoText">
+                                            ${window.gcSelectedSlot === 'gcCustom' ? '⭐ Custom: Pick any start and end date' : (this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot) ? `${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).name} — end date auto-calculated (${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).days} days)` : 'Select a slot type above')}
+                                        </p>
+                                    </div>
+            
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block font-semibold mb-2">Start Date:</label>
+                                            <input
+                                                type="date"
+                                                id="gcStartDate"
+                                                class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+                                                min="${this.state.biddingYear}-01-01"
+                                                max="${this.state.biddingYear}-12-31"
+                                                onchange="app.updateGCEndDate()"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="block font-semibold mb-2">End Date:</label>
+                                            <input
+                                                type="date"
+                                                id="gcEndDate"
+                                                class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+                                                min="${this.state.biddingYear}-01-01"
+                                                max="${this.state.biddingYear}-12-31"
+                                                onchange="app.updateGCDateInfo()"
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="gcDateInfo" class="hidden mt-2"></div>
+                                </div>
+            
+                                <!-- Submit Button -->
+                                <button
+                                    onclick="app.submitGCBid()"
+                                    class="w-full px-6 py-3 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 transition-colors shadow-sm"
+                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                >
+                                    ⭐ Submit Golden Command Bid
+                                </button>
+                            </div>
+            
+                            <!-- Right: My Current Bids -->
+                            <div class="bg-white rounded-xl shadow-xl p-6">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold">⭐ My GC Bids</h3>
+                                    <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">${gcBids.length} bid${gcBids.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                
+                                ${gcBids.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-500">
+                                        <p class="text-4xl mb-2">⭐</p>
+                                        <p class="font-semibold">No bids placed yet</p>
+                                        <p class="text-sm mt-2">Use the form on the left — no limit on bids</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                                        ${gcBids.map((bid, i) => {
+                                            const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                            const slotLabel = bid.slotType === 'gcCustom' ? '⭐ Custom' : (slot?.name || bid.slotType);
+                                            const colorBadge = bid.slotType === 'gcCustom' ? 'bg-yellow-100 text-yellow-800' : (bid.slotType === 'slotA' ? 'bg-green-100 text-green-800' : bid.slotType === 'slotB' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800');
+                                            return `
+                                                <div class="border border-yellow-200 rounded-lg p-3 bg-yellow-50">
+                                                    <div class="flex justify-between items-start">
+                                                        <div>
+                                                            <div class="flex items-center gap-2 mb-1">
+                                                                <span class="text-xs font-bold text-gray-500">#${i+1}</span>
+                                                                <span class="px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}">${slotLabel}</span>
+                                                            </div>
+                                                            <p class="text-sm text-gray-700 font-semibold">${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-xs text-gray-500 mt-0.5">${bid.days} day${bid.days !== 1 ? 's' : ''}</p>
+                                                        </div>
+                                                        <button
+                                                            onclick="app.removeGCBid('${bid.slotType}', '${bid.startDate}')"
+                                                            class="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                                        >
+                                                            ✕ Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                `}
+                                
+                                <!-- Bid Summary -->
+                                <div class="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                                    <p class="font-semibold mb-2 text-yellow-800">GC Bid Summary:</p>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        <p class="text-gray-600">Total bids:</p><p class="font-semibold">${gcBids.length} <span class="text-yellow-600 text-xs">(unlimited)</span></p>
+                                        <p class="text-gray-600">Total days bid:</p><p class="font-semibold">${totalBidDays} days</p>
+                                        <p class="text-gray-600">Leave entitlement:</p><p class="font-semibold">${entitlement} days</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            
+                // Initialize GC slot state — default to Custom (free selection)
+                if (!window.gcSelectedSlot) {
+                    window.gcSelectedSlot = 'gcCustom';
+                }
+            },
+
+            setGCSelectedSlot(slotId) {
+                window.gcSelectedSlot = slotId;
+                
+                // Update button styles
+                const buttons = document.querySelectorAll('.gc-slot-btn');
+                buttons.forEach(btn => {
+                    const isSelected = btn.dataset.slot === slotId;
+                    if (this.state.isProcessed) {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-gray-200 text-gray-500 cursor-not-allowed';
+                    } else if (isSelected) {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-yellow-400 text-yellow-900 border-yellow-500';
+                    } else {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-300';
+                    }
+                });
+
+                // Update info text
+                const infoEl = document.getElementById('gcSlotInfoText');
+                if (infoEl) {
+                    if (slotId === 'gcCustom') {
+                        infoEl.textContent = '⭐ Custom: Pick any start and end date freely';
+                    } else {
+                        const slot = this.state.slotTypes.find(s => s.id === slotId);
+                        infoEl.textContent = slot
+                            ? `${slot.name} — end date auto-calculated (${slot.days} days)`
+                            : 'Select a slot type above';
+                    }
+                }
+
+                // Clear date inputs when switching slots
+                const startDate = document.getElementById('gcStartDate');
+                const endDate = document.getElementById('gcEndDate');
+                const dateInfo = document.getElementById('gcDateInfo');
+                if (startDate) startDate.value = '';
+                if (endDate) {
+                    endDate.value = '';
+                    // Custom slot: end date is freely editable; others: readonly
+                    endDate.readOnly = slotId !== 'gcCustom';
+                    endDate.className = `w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none ${slotId !== 'gcCustom' ? 'bg-gray-50' : ''}`;
+                }
+                if (dateInfo) dateInfo.classList.add('hidden');
+            },
+
+            updateGCSlotText() {
+                const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                if (slot) {
+                    const slotText = document.getElementById('gcSelectedSlotText');
+                    const slotDays = document.getElementById('gcSelectedSlotDays');
+                    if (slotText) slotText.textContent = slot.name;
+                    if (slotDays) slotDays.textContent = slot.days;
+                }
+            },
+
+            updateGCMonthText() {
+                const monthSelect = document.getElementById('gcSelectedMonth');
+                if (monthSelect) {
+                    const monthText = document.getElementById('gcSelectedMonthText');
+                    if (monthText) monthText.textContent = monthSelect.value + ' ' + this.state.biddingYear;
+                }
+            },
+
+            updateGCEndDate() {
+                const startDateInput = document.getElementById('gcStartDate');
+                const endDateInput = document.getElementById('gcEndDate');
+                
+                if (!startDateInput || !startDateInput.value) {
+                    if (endDateInput) endDateInput.value = '';
+                    return;
+                }
+
+                if (window.gcSelectedSlot === 'gcCustom') {
+                    // Custom: end date is free — just update info if both dates set
+                    this.updateGCDateInfo();
+                    return;
+                }
+
+                if (!window.gcSelectedSlot) return;
+                
+                const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                if (!slot) return;
+                
+                const startDate = new Date(startDateInput.value);
+                const endDate = new Date(startDate);
+                endDate.setDate(endDate.getDate() + slot.days - 1);
+                
+                if (endDateInput) {
+                    endDateInput.value = endDate.toISOString().split('T')[0];
+                }
+                
+                this.updateGCDateInfo();
+            },
+
+            updateGCDateInfo() {
+                const startDateInput = document.getElementById('gcStartDate');
+                const endDateInput = document.getElementById('gcEndDate');
+                const dateInfo = document.getElementById('gcDateInfo');
+
+                if (!startDateInput?.value || !endDateInput?.value || !dateInfo) return;
+
+                const days = Math.ceil(Math.abs(new Date(endDateInput.value) - new Date(startDateInput.value)) / (1000 * 60 * 60 * 24)) + 1;
+
+                let validMsg = '';
+                if (window.gcSelectedSlot === 'gcCustom') {
+                    validMsg = `<p class="font-semibold text-yellow-800">⭐ Custom selection: ${days} day${days !== 1 ? 's' : ''} ✓</p>`;
+                    dateInfo.className = 'p-3 rounded mb-2 bg-yellow-50 border border-yellow-300';
+                } else {
+                    const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                    const ok = slot && days === slot.days;
+                    validMsg = `<p class="font-semibold ${ok ? 'text-green-800' : 'text-red-800'}">${days} day${days !== 1 ? 's' : ''} selected ${ok ? '✓' : `(${slot?.name} requires exactly ${slot?.days} days)`}</p>`;
+                    dateInfo.className = `p-3 rounded mb-2 ${ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
+                }
+                dateInfo.innerHTML = validMsg + `<p class="text-sm text-gray-600 mt-1">${startDateInput.value} → ${endDateInput.value}</p>`;
+                dateInfo.classList.remove('hidden');
+            },
+
+            submitGCBid() {
+                if (this.state.isProcessed) {
+                    alert('Bidding has been processed. No more bids allowed.');
+                    return;
+                }
+
+                const gcUser = this.state.verifiedEmployee;
+                if (!gcUser) { alert('Please login first.'); return; }
+
+                if (!window.gcSelectedSlot) {
+                    alert('Please select a slot type first.');
+                    return;
+                }
+
+                const startDate = document.getElementById('gcStartDate')?.value;
+                const endDate = document.getElementById('gcEndDate')?.value;
+
+                if (!startDate) {
+                    alert('Please select a start date.');
+                    return;
+                }
+                if (!endDate) {
+                    alert('Please select an end date.');
+                    return;
+                }
+
+                const days = Math.ceil(Math.abs(new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (days < 1) {
+                    alert('End date must be on or after start date.');
+                    return;
+                }
+
+                // For fixed slot types, validate exact day count
+                if (window.gcSelectedSlot !== 'gcCustom') {
+                    const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                    if (slot && days !== slot.days) {
+                        alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.\n\nTo choose a free date range, select the "⭐ Custom" option instead.`);
+                        return;
+                    }
+                }
+
+                // Check date overlap with existing GC bids
+                const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
+                for (const bid of gcBids) {
+                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                        alert(`Date overlap with an existing bid (${bid.startDate} → ${bid.endDate}). Please choose non-overlapping dates.`);
+                        return;
+                    }
+                }
+
+                const slotLabel = window.gcSelectedSlot === 'gcCustom'
+                    ? 'Custom'
+                    : (this.state.slotTypes.find(s => s.id === window.gcSelectedSlot)?.name || window.gcSelectedSlot);
+
+                const newBid = {
+                    employeeId: gcUser.id,
+                    employeeName: gcUser.name,
+                    seniorityDate: gcUser.seniorityDate || '2000-01-01',
+                    department: 'Golden Command',
+                    slotType: window.gcSelectedSlot,
+                    startDate,
+                    endDate,
+                    days,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.state.bids.push(newBid);
+                this.saveState();
+                alert(`⭐ GC Bid placed!\n${slotLabel} — ${startDate} → ${endDate} (${days} day${days !== 1 ? 's' : ''})`);
+                this.renderGoldenCommandBiddingView();
+            },
+
+            removeGCBid(slotType, startDate) {
+                if (this.state.isProcessed) {
+                    alert('Cannot remove bids after processing.');
+                    return;
+                }
+                const gcUser = this.state.verifiedEmployee;
+                if (confirm('Remove this Golden Command bid?')) {
+                    // Remove the first matching bid (slotType + startDate)
+                    const idx = this.state.bids.findIndex(bid =>
+                        bid.employeeId === gcUser.id && bid.slotType === slotType && bid.startDate === startDate
+                    );
+                    if (idx !== -1) this.state.bids.splice(idx, 1);
+                    this.saveState();
+                    this.renderGoldenCommandBiddingView();
+                }
+            },
+
             renderConfigureSlotsView() {
                 const content = document.getElementById('contentArea');
                 
                 // Get all unique departments from employees AND the predefined list
+                // Filter: only L3, L46, L5 prefixes
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
-                const allDepartments = ['all', ...new Set([...this.state.departments, ...employeeDepts])].sort();
+                const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
+                const filteredDepts = allRawDepartments.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const allDepartments = ['all', ...filteredDepts];
                 
                 content.innerHTML = `
                     <div class="max-w-7xl mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-4">Configure Slot Capacities for ${this.state.biddingYear}</h2>
+                            <h2 class="text-2xl font-bold mb-4">📅 Configure Bid Slot Calendar for ${this.state.biddingYear}</h2>
                             <p class="text-gray-600 mb-6">
-                                Set how many employees can take leave in each month per department.
-                                Each month has 3 slots: A (15 days), B (15 days), C (20 days)
+                                Define specific calendar date ranges for each bid slot per department per month (Jan–Dec). 
+                                Each department has Slot A, Slot B, and Slot C for each of the 12 months, with individual capacity limits.
                             </p>
                             
                             <div class="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
@@ -1185,14 +1705,13 @@
                                 >
                                     ${allDepartments.map(dept => `
                                         <option value="${dept}">
-                                            ${dept === 'all' ? 'All Departments' : dept}
+                                            ${dept === 'all' ? 'All Departments (L3 / L46 / L5)' : dept}
                                         </option>
                                     `).join('')}
                                 </select>
                             </div>
             
                             <div id="configArea">
-                                <!-- Configuration will be loaded here based on filter -->
                                 ${this.renderDeptConfig('all')}
                             </div>
                         </div>
@@ -1211,7 +1730,8 @@
             
             renderDeptConfig(filter) {
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
-                const allDepartments = [...new Set([...this.state.departments, ...employeeDepts])].sort();
+                const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
+                const allDepartments = allRawDepartments.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
                 
                 let departmentsToConfigure = [];
                 
@@ -1235,113 +1755,102 @@
                 if (filter === 'all') {
                     html += `
                         <div class="mb-6 p-4 bg-green-50 border border-green-300 rounded">
-                            <h3 class="text-xl font-semibold text-green-800 mb-2">Configuring for all departments</h3>
-                            <p class="text-green-700">Setting slot capacities for all ${departmentsToConfigure.length} departments across all months.</p>
+                            <h3 class="text-xl font-semibold text-green-800 mb-2">📅 Calendar Slot Configuration — All Departments</h3>
+                            <p class="text-green-700">Configure specific date ranges for each bid slot period across ${departmentsToConfigure.length} departments.</p>
                         </div>
                     `;
                 } else {
                     html += `
                         <div class="mb-6 p-4 bg-blue-50 border border-blue-300 rounded">
-                            <h3 class="text-xl font-semibold text-blue-800 mb-2">Configuring for ${filter} only</h3>
-                            <p class="text-blue-700">Setting slot capacities for this department across all months.</p>
+                            <h3 class="text-xl font-semibold text-blue-800 mb-2">📅 Calendar Slot Configuration — ${filter}</h3>
+                            <p class="text-blue-700">Configure specific date ranges for each bid slot period for this department.</p>
                         </div>
                     `;
                 }
                 
-                // For ALL months
                 html += `<div class="space-y-8">`;
                 
-                this.state.months.forEach(month => {
+                departmentsToConfigure.forEach(dept => {
+                    const hasEmployees = employeeDepts.includes(dept);
+                    const employeeCount = this.state.employees.filter(e => (e.department || 'Unassigned') === dept).length;
+                    
+                    // Calendar slots: Slot A, Slot B, Slot C (date range based)
+                    const periods = [
+                        { id: 'SA', label: 'Slot A', colorClass: 'green', borderColor: 'border-green-400', bgColor: 'bg-green-50' },
+                        { id: 'SB', label: 'Slot B', colorClass: 'blue', borderColor: 'border-blue-400', bgColor: 'bg-blue-50' },
+                        { id: 'SC', label: 'Slot C', colorClass: 'purple', borderColor: 'border-purple-400', bgColor: 'bg-purple-50' }
+                    ];
+                    
                     html += `
                         <div class="border rounded-lg overflow-hidden">
-                            <div class="bg-gray-100 p-4 border-b">
-                                <h3 class="text-xl font-bold">${month} ${this.state.biddingYear}</h3>
+                            <div class="bg-gray-100 p-4 border-b flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-xl font-bold">${dept}</h3>
+                                    <div class="flex gap-2 mt-1">
+                                        ${hasEmployees ? 
+                                            `<span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">${employeeCount} employees</span>` : 
+                                            `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">No employees</span>`
+                                        }
+                                    </div>
+                                </div>
+                                <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
                             </div>
-                            <div class="p-4">
-                                ${departmentsToConfigure.map(dept => {
-                                    const hasEmployees = employeeDepts.includes(dept);
-                                    const isPredefined = this.state.departments.includes(dept);
-                                    const employeeCount = this.state.employees.filter(e => (e.department || 'Unassigned') === dept).length;
-                                    
-                                    return `
-                                        <div class="mb-6 ${dept !== departmentsToConfigure[departmentsToConfigure.length - 1] ? 'border-b pb-6' : ''}">
-                                            <div class="flex justify-between items-center mb-3">
-                                                <div>
-                                                    <h4 class="font-bold text-lg">${dept}</h4>
-                                                    <div class="flex gap-2 mt-1">
-                                                        ${hasEmployees ? 
-                                                            `<span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">${employeeCount} employees</span>` : 
-                                                            `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">No employees</span>`
-                                                        }
-                                                        ${isPredefined ? 
-                                                            `<span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">Predefined</span>` : 
-                                                            `<span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded">From Excel</span>`
-                                                        }
-                                                    </div>
-                                                </div>
-                                                <div class="text-sm text-gray-500">
-                                                    Slots for ${month}
-                                                </div>
-                                            </div>
-                                            
-                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                <div class="bg-green-50 border border-green-300 rounded p-3">
-                                                    <div class="flex items-center justify-between mb-2">
-                                                        <span class="font-semibold text-green-800">Slot A (15 days)</span>
-                                                    </div>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="100"
-                                                        data-month="${month}"
-                                                        data-dept="${dept}"
-                                                        data-slot="A"
-                                                        class="slot-input w-full px-3 py-2 border-2 border-green-400 rounded-lg text-center text-lg"
-                                                        placeholder="5"
-                                                        value="${this.state.slotCapacities[`${month}-${dept}-A`] || 5}"
-                                                    />
-                                                    <p class="text-xs text-gray-500 mt-1">Employees per month</p>
-                                                </div>
-                                                
-                                                <div class="bg-blue-50 border border-blue-300 rounded p-3">
-                                                    <div class="flex items-center justify-between mb-2">
-                                                        <span class="font-semibold text-blue-800">Slot B (15 days)</span>
-                                                    </div>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="100"
-                                                        data-month="${month}"
-                                                        data-dept="${dept}"
-                                                        data-slot="B"
-                                                        class="slot-input w-full px-3 py-2 border-2 border-blue-400 rounded-lg text-center text-lg"
-                                                        placeholder="5"
-                                                        value="${this.state.slotCapacities[`${month}-${dept}-B`] || 5}"
-                                                    />
-                                                    <p class="text-xs text-gray-500 mt-1">Employees per month</p>
-                                                </div>
-                                                
-                                                <div class="bg-purple-50 border border-purple-300 rounded p-3">
-                                                    <div class="flex items-center justify-between mb-2">
-                                                        <span class="font-semibold text-purple-800">Slot C (20 days)</span>
-                                                    </div>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="100"
-                                                        data-month="${month}"
-                                                        data-dept="${dept}"
-                                                        data-slot="C"
-                                                        class="slot-input w-full px-3 py-2 border-2 border-purple-400 rounded-lg text-center text-lg"
-                                                        placeholder="5"
-                                                        value="${this.state.slotCapacities[`${month}-${dept}-C`] || 5}"
-                                                    />
-                                                    <p class="text-xs text-gray-500 mt-1">Employees per month</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    `;
-                                }).join('')}
+                            <div class="p-4 overflow-x-auto">
+                                <table class="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50">
+                                            <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Month</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${this.state.months.map(month => {
+                                            return `
+                                                <tr class="hover:bg-gray-50">
+                                                    <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
+                                                    ${['SA','SB','SC'].map((slotId, si) => {
+                                                        const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500'];
+                                                        const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50'];
+                                                        return `
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                                <input type="date"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
+                                                                    class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                    min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
+                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`] || ''}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                                <input type="date"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
+                                                                    class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                    min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
+                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`] || ''}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                                <input type="number" min="0" max="200"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
+                                                                    class="cal-slot-input slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
+                                                                    placeholder="0"
+                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] || ''}"
+                                                                />
+                                                            </td>
+                                                        `;
+                                                    }).join('')}
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     `;
@@ -1352,21 +1861,18 @@
                 html += `
                     <div class="mt-8">
                         <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
-                            <p class="font-semibold text-yellow-800 mb-2">📋 Summary of what you're configuring:</p>
+                            <p class="font-semibold text-yellow-800 mb-2">📋 Calendar Configuration Summary:</p>
                             <p class="text-sm text-yellow-700">
                                 • Departments: ${departmentsToConfigure.length} department${departmentsToConfigure.length === 1 ? '' : 's'}<br>
-                                • Months: All 12 months (${this.state.months.join(', ')})<br>
-                                • Slots per department per month: 3 (A, B, C)<br>
-                                • Total configurations: ${departmentsToConfigure.length * 12 * 3} slot positions
+                                • Bid slots per department: 3 (Slot A, Slot B, Slot C) × 12 months<br>
+                                • Each slot: custom start date, end date, and max capacity<br>
+                                • Total configurations: ${departmentsToConfigure.length * 3} bid slots × 12 months
                             </p>
                         </div>
                         
                         <div class="flex gap-3">
                             <button onclick="app.saveSlotConfiguration()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600">
                                 💾 Save All Slot Configurations
-                            </button>
-                            <button onclick="app.copyToAllMonths()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">
-                                📋 Copy January to All Months
                             </button>
                             <button onclick="app.setActiveView('upload')" class="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600">
                                 ← Back
@@ -1396,7 +1902,7 @@
                 departmentsToCopy.forEach(dept => {
                     ['A', 'B', 'C'].forEach(slot => {
                         const key = `January-${dept}-${slot}`;
-                        januaryValues[`${dept}-${slot}`] = this.state.slotCapacities[key] || 5;
+                        januaryValues[`${dept}-${slot}`] = this.state.slotCapacities[key] || 1;
                     });
                 });
                 
@@ -1424,32 +1930,29 @@
             },
             
             saveSlotConfiguration() {
-                const inputs = document.querySelectorAll('.slot-input');
+                // Save calendar-based slot inputs (new format: cal-dept-month-slotId-field)
+                const calInputs = document.querySelectorAll('.cal-slot-input');
                 let savedCount = 0;
                 
-                inputs.forEach(input => {
-                    const month = input.dataset.month;
+                calInputs.forEach(input => {
                     const dept = input.dataset.dept;
+                    const month = input.dataset.month;
                     const slot = input.dataset.slot;
-                    const value = parseInt(input.value) || 5;
+                    const field = input.dataset.field;
+                    const value = field === 'capacity' ? (parseInt(input.value) || 0) : input.value;
                     
-                    const key = `${month}-${dept}-${slot}`;
-                    this.state.slotCapacities[key] = value;
-                    savedCount++;
+                    if (dept && slot && field) {
+                        const key = month 
+                            ? `cal-${dept}-${month}-${slot}-${field}` 
+                            : `cal-${dept}-${slot}-${field}`;
+                        this.state.slotCapacities[key] = value;
+                        savedCount++;
+                    }
                 });
                 
                 this.saveState();
                 
-                // Calculate totals
-                const uniqueDepts = [...new Set(Object.keys(this.state.slotCapacities).map(k => k.split('-')[1]))];
-                const uniqueMonths = [...new Set(Object.keys(this.state.slotCapacities).map(k => k.split('-')[0]))];
-                const totalSlots = Object.keys(this.state.slotCapacities).length;
-                
-                alert(`✅ Slot capacities saved!\n\n` +
-                      `• Configured for: ${uniqueDepts.length} department(s)\n` +
-                      `• Months configured: ${uniqueMonths.length}\n` +
-                      `• Total slot positions saved: ${totalSlots}\n\n` +
-                      `Each department has 3 slots (A, B, C) for each month throughout the year.`);
+                alert(`✅ Slot configurations saved!\n\n• ${savedCount} fields saved.\n• Each department now has Slot A, B, C configured per month (Jan–Dec).`);
                 
                 this.setActiveView('admin');
             },
@@ -1459,46 +1962,8 @@
                 const allDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
                 const depts = ['all', ...allDepts].sort();
                 
-                // Calculate employee entitlement
-                const calculateYearsOfService = (seniorityDate) => {
-                    const today = new Date();
-                    const joinDate = new Date(seniorityDate);
-                    return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
-                };
-                
-                const getEmployeeEntitlement = (employee) => {
-                    if (!employee || !employee.seniorityDate) return 30;
-                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                    return yearsOfService >= 5 ? 35 : 30;
-                };
-                
-                // Get unique bidders
-                const bidders = [...new Set(this.state.bids.map(b => b.employeeId))].map(empId => {
-                    const employee = this.state.employees.find(e => e.id === empId);
-                    const employeeBids = this.state.bids.filter(b => b.employeeId === empId);
-                    const totalBidDays = employeeBids.reduce((sum, bid) => sum + bid.days, 0);
-                    const entitlement = employee ? getEmployeeEntitlement(employee) : 30;
-                    
-                    return {
-                        id: empId,
-                        name: employee ? employee.name : 'Unknown',
-                        department: employee ? employee.department : 'Unassigned',
-                        seniorityDate: employee ? employee.seniorityDate : '',
-                        yearsOfService: employee ? calculateYearsOfService(employee.seniorityDate).toFixed(1) : '0',
-                        entitlement: entitlement,
-                        bids: employeeBids,
-                        totalBidDays: totalBidDays,
-                        remainingDays: entitlement - totalBidDays
-                    };
-                }).sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate)); // Sort by seniority
-                
-                // Calculate statistics
-                const totalEmployees = this.state.employees.length;
-                const biddersCount = bidders.length;
-                const nonBiddersCount = totalEmployees - biddersCount;
-                
                 content.innerHTML = `
-                    <div class="max-w-7xl mx-auto">
+                    <div class="max-w-6xl mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-6">
                             <h2 class="text-2xl font-bold mb-6">Admin Panel</h2>
                             
@@ -1512,13 +1977,13 @@
                                     onchange="app.state.biddingDeadline = this.value; app.saveState()"
                                 />
                             </div>
-            
+
                             <div class="mb-6 p-4 bg-purple-50 rounded-lg">
                                 <label class="block font-semibold mb-2">Filter by Department:</label>
                                 <select
                                     id="adminDeptFilter"
                                     class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
-                                    onchange="app.state.selectedDepartment = this.value; app.renderAdminView();"
+                                    onchange="app.state.selectedDepartment = this.value;"
                                 >
                                     ${depts.map(dept => `
                                         <option value="${dept}" ${dept === this.state.selectedDepartment ? 'selected' : ''}>
@@ -1527,10 +1992,10 @@
                                     `).join('')}
                                 </select>
                             </div>
-            
+
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-blue-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${totalEmployees}</p>
+                                    <p class="text-2xl font-bold">${this.state.employees.length}</p>
                                     <p class="text-sm text-gray-600">Total Employees</p>
                                 </div>
                                 <div class="bg-green-50 p-4 rounded-lg">
@@ -1538,130 +2003,15 @@
                                     <p class="text-sm text-gray-600">Total Bids</p>
                                 </div>
                                 <div class="bg-yellow-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${biddersCount}</p>
+                                    <p class="text-2xl font-bold">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
                                     <p class="text-sm text-gray-600">Employees Who Bid</p>
-                                    <p class="text-xs text-gray-500">${nonBiddersCount} haven't bid</p>
                                 </div>
                                 <div class="bg-purple-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
                                     <p class="text-sm text-gray-600">Processed</p>
                                 </div>
                             </div>
-            
-                            <!-- Bidders Details Section -->
-                            <div class="mb-6">
-                                <h3 class="text-xl font-bold mb-4">Bidders Details</h3>
-                                
-                                ${bidders.length === 0 ? `
-                                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 text-center">
-                                        <p class="text-yellow-700">No bids placed yet.</p>
-                                    </div>
-                                ` : `
-                                    <div class="overflow-x-auto">
-                                        <table class="w-full text-sm">
-                                            <thead class="bg-gray-100">
-                                                <tr>
-                                                    <th class="p-3 text-left">#</th>
-                                                    <th class="p-3 text-left">Employee ID</th>
-                                                    <th class="p-3 text-left">Name</th>
-                                                    <th class="p-3 text-left">Department</th>
-                                                    <th class="p-3 text-left">Seniority (Years)</th>
-                                                    <th class="p-3 text-left">Entitlement</th>
-                                                    <th class="p-3 text-left">Bid Choices</th>
-                                                    <th class="p-3 text-left">Bid Days</th>
-                                                    <th class="p-3 text-left">Remaining Days</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${bidders.map((bidder, index) => {
-                                                    const filtered = this.state.selectedDepartment === 'all' || 
-                                                                   bidder.department === this.state.selectedDepartment;
-                                                    if (!filtered) return '';
-                                                    
-                                                    return `
-                                                        <tr class="border-b hover:bg-gray-50">
-                                                            <td class="p-3">${index + 1}</td>
-                                                            <td class="p-3 font-mono">${bidder.id}</td>
-                                                            <td class="p-3">${bidder.name}</td>
-                                                            <td class="p-3">
-                                                                <span class="px-2 py-1 text-xs rounded bg-gray-100">
-                                                                    ${bidder.department}
-                                                                </span>
-                                                            </td>
-                                                            <td class="p-3">${bidder.yearsOfService}</td>
-                                                            <td class="p-3">
-                                                                <span class="px-2 py-1 text-xs rounded ${
-                                                                    bidder.entitlement === 35 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                                                                }">
-                                                                    ${bidder.entitlement} days
-                                                                </span>
-                                                            </td>
-                                                            <td class="p-3">
-                                                                ${bidder.bids.map(bid => {
-                                                                    const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
-                                                                    return `
-                                                                        <div class="mb-1">
-                                                                            <span class="px-2 py-1 text-xs rounded ${
-                                                                                slot?.color === 'green' ? 'bg-green-100 text-green-800' :
-                                                                                slot?.color === 'blue' ? 'bg-blue-100 text-blue-800' :
-                                                                                'bg-purple-100 text-purple-800'
-                                                                            }">
-                                                                                ${slot?.name || 'Slot'}: ${bid.startDate} to ${bid.endDate}
-                                                                            </span>
-                                                                        </div>
-                                                                    `;
-                                                                }).join('')}
-                                                                ${bidder.bids.length === 0 ? '<span class="text-gray-400 text-xs">No bids</span>' : ''}
-                                                            </td>
-                                                            <td class="p-3 font-semibold">${bidder.totalBidDays}</td>
-                                                            <td class="p-3">
-                                                                <span class="px-2 py-1 text-xs rounded ${
-                                                                    bidder.remainingDays > 0 ? 'bg-green-100 text-green-800' : 
-                                                                    bidder.remainingDays === 0 ? 'bg-yellow-100 text-yellow-800' : 
-                                                                    'bg-red-100 text-red-800'
-                                                                }">
-                                                                    ${bidder.remainingDays} days
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    `;
-                                                }).join('')}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    
-                                    <!-- Summary -->
-                                    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div class="bg-gray-50 p-3 rounded">
-                                            <p class="text-sm font-semibold">Bidding Summary:</p>
-                                            <p class="text-xs mt-1">
-                                                • ${bidders.length} employees placed bids<br>
-                                                • ${this.state.bids.length} total bids submitted<br>
-                                                • Average bids per employee: ${(this.state.bids.length / Math.max(bidders.length, 1)).toFixed(1)}
-                                            </p>
-                                        </div>
-                                        <div class="bg-blue-50 p-3 rounded">
-                                            <p class="text-sm font-semibold">Entitlement Summary:</p>
-                                            <p class="text-xs mt-1">
-                                                • 35-day employees: ${bidders.filter(b => b.entitlement === 35).length}<br>
-                                                • 30-day employees: ${bidders.filter(b => b.entitlement === 30).length}<br>
-                                                • Total entitlement days: ${bidders.reduce((sum, b) => sum + b.entitlement, 0)}
-                                            </p>
-                                        </div>
-                                        <div class="bg-green-50 p-3 rounded">
-                                            <p class="text-sm font-semibold">Bid Days Summary:</p>
-                                            <p class="text-xs mt-1">
-                                                • Total bid days: ${bidders.reduce((sum, b) => sum + b.totalBidDays, 0)}<br>
-                                                • Days remaining: ${bidders.reduce((sum, b) => sum + b.remainingDays, 0)}<br>
-                                                • Utilization: ${((bidders.reduce((sum, b) => sum + b.totalBidDays, 0) / 
-                                                                 bidders.reduce((sum, b) => sum + b.entitlement, 0)) * 100 || 0).toFixed(1)}%
-                                            </p>
-                                        </div>
-                                    </div>
-                                `}
-                            </div>
-            
-                            <!-- Action Buttons -->
+
                             <div class="space-y-4 mb-6">
                                 <button
                                     onclick="app.processBids()"
@@ -1689,13 +2039,182 @@
                                     <p>• Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
                                     <p>• Bidding year: ${this.state.biddingYear}</p>
                                     <p>• Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
-                                    <p>• Bidders/Total: ${biddersCount}/${totalEmployees} (${((biddersCount/totalEmployees)*100 || 0).toFixed(1)}%)</p>
+                                </div>
+                            </div>
+
+                            <!-- Golden Command User Management -->
+                            <div class="mt-6 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
+                                <h3 class="font-bold text-yellow-800 text-lg mb-3">⭐ Golden Command Users</h3>
+                                <p class="text-sm text-yellow-700 mb-4">Add or remove Golden Command users. Their default password is their GC ID.</p>
+                                
+                                <!-- Existing GC Users -->
+                                <div class="space-y-2 mb-4">
+                                    ${(this.state.goldenCommandUsers || []).map((u, i) => `
+                                        <div class="flex items-center justify-between bg-white border border-yellow-200 rounded p-3">
+                                            <div>
+                                                <span class="font-semibold text-yellow-900">⭐ ${u.name}</span>
+                                                <span class="ml-3 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-mono">ID: ${u.id}</span>
+                                                <span class="ml-2 text-xs text-gray-500">Password: ${u.password || u.id}</span>
+                                            </div>
+                                            <button onclick="app.removeGCUser(${i})" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
+                                                Remove
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                    ${(this.state.goldenCommandUsers || []).length === 0 ? `
+                                        <p class="text-sm text-yellow-600 italic">No Golden Command users yet.</p>
+                                    ` : ''}
+                                </div>
+                                
+                                <!-- Add New GC User -->
+                                <div class="bg-white border border-yellow-300 rounded p-4">
+                                    <p class="font-semibold text-yellow-800 mb-3">Add New GC User:</p>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1">GC ID (username)</label>
+                                            <input type="text" id="newGCId" placeholder="e.g. GC001" 
+                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1">Full Name</label>
+                                            <input type="text" id="newGCName" placeholder="e.g. John Smith" 
+                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1">Password (optional)</label>
+                                            <input type="text" id="newGCPassword" placeholder="Leave blank = same as ID" 
+                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                        </div>
+                                    </div>
+                                    <button onclick="app.addGCUser()" class="mt-3 px-5 py-2 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 text-sm">
+                                        ⭐ Add Golden Command User
+                                    </button>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Staff Bids Details Section -->
+                        <div class="mt-6 bg-white border-2 border-indigo-200 rounded-xl overflow-hidden">
+                            <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-200 flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-xl font-bold text-indigo-900">📋 Staff Bid Details</h3>
+                                    <p class="text-sm text-indigo-600 mt-1">All bids submitted by staff, sorted by seniority</p>
+                                </div>
+                                <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
+                                    ${this.state.bids.length} bids from ${new Set(this.state.bids.map(b => b.employeeId)).size} staff
+                                </span>
+                            </div>
+                            <div class="p-4">
+                                ${this.state.bids.length === 0 ? `
+                                    <div class="text-center py-10 text-gray-400">
+                                        <p class="text-4xl mb-3">📭</p>
+                                        <p class="font-semibold">No bids submitted yet</p>
+                                        <p class="text-sm mt-1">Bids will appear here once staff members place them</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-gray-100 text-left">
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Employee ID</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Start Date</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Days</th>
+                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Submitted</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${(() => {
+                                                    // Sort bids: by employee seniority then by slot
+                                                    const sortedBids = [...this.state.bids].sort((a, b) => {
+                                                        const empA = this.state.employees.find(e => e.id === a.employeeId);
+                                                        const empB = this.state.employees.find(e => e.id === b.employeeId);
+                                                        const dateA = empA ? new Date(empA.seniorityDate) : new Date();
+                                                        const dateB = empB ? new Date(empB.seniorityDate) : new Date();
+                                                        return dateA - dateB;
+                                                    });
+                                                    return sortedBids.map((bid, idx) => {
+                                                        const emp = this.state.employees.find(e => e.id === bid.employeeId);
+                                                        const slotColorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
+                                                        const slotColor = slotColorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
+                                                        const slotDisplay = this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType;
+                                                        const submittedDate = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
+                                                        const rowBg = idx % 2 === 0 ? '' : 'bg-gray-50';
+                                                        return `
+                                                            <tr class="${rowBg} hover:bg-indigo-50 transition-colors">
+                                                                <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${bid.employeeId}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${bid.employeeName || (emp?.name || 'Unknown')}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.department || (emp?.department || 'Unassigned')}</td>
+                                                                <td class="border border-gray-200 px-3 py-2">
+                                                                    <span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${slotDisplay}</span>
+                                                                </td>
+                                                                <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.startDate || '—'}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${bid.days || '—'}</td>
+                                                                <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${submittedDate}</td>
+                                                            </tr>
+                                                        `;
+                                                    }).join('');
+                                                })()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
                     </div>
+                </div>
                 `;
             },
+
+            addGCUser() {
+                const id = document.getElementById('newGCId')?.value?.trim();
+                const name = document.getElementById('newGCName')?.value?.trim();
+                const password = document.getElementById('newGCPassword')?.value?.trim();
+                
+                if (!id || !name) {
+                    alert('Please enter both a GC ID and a name.');
+                    return;
+                }
+                
+                const existing = (this.state.goldenCommandUsers || []).find(u => u.id === id);
+                if (existing) {
+                    alert(`GC ID "${id}" already exists.`);
+                    return;
+                }
+                
+                if (!this.state.goldenCommandUsers) this.state.goldenCommandUsers = [];
+                
+                this.state.goldenCommandUsers.push({
+                    id: id,
+                    name: name,
+                    password: password || id
+                });
+                
+                this.saveState();
+                alert(`✅ Golden Command user "${name}" (ID: ${id}) added!`);
+                this.renderAdminView();
+            },
+
+            removeGCUser(index) {
+                const users = this.state.goldenCommandUsers || [];
+                if (index < 0 || index >= users.length) return;
+                
+                const user = users[index];
+                if (confirm(`Remove Golden Command user "${user.name}" (${user.id})?`)) {
+                    this.state.goldenCommandUsers.splice(index, 1);
+                    this.saveState();
+                    this.renderAdminView();
+                }
+            },
+
+            // ==================== OTHER FUNCTIONS ====================
 
             // ==================== OTHER FUNCTIONS ====================
             async processBids() {
@@ -2286,309 +2805,95 @@
                 }
             },
                
-            async loadAvailableSlots() {
+            loadAvailableSlots() {
                 const slotsContainer = document.getElementById('slotsContainer');
                 if (!slotsContainer) return;
                 
                 slotsContainer.innerHTML = '<p class="text-gray-600">Loading available slots...</p>';
                 
-                try {
-                    // Get filter values from UI
+                // Simulate loading with timeout
+                setTimeout(() => {
+                    // Get filter values
                     const includeWeekends = document.getElementById('filterWeekends')?.checked || true;
                     const includeHolidays = document.getElementById('filterHolidays')?.checked || true;
                     const departmentPriority = document.getElementById('departmentPriority')?.value || 'all';
                     const minDuration = parseInt(document.getElementById('minDuration')?.value || '3');
                     
-                    // Build query based on filters
-                    let query = this.supabase
-                        .from('available_slots')
-                        .select('*')
-                        .eq('year', this.state.biddingYear)
-                        .eq('is_active', true)
-                        .gte('duration_days', minDuration);
+                    // Sample slot data (in real app, this would come from your database)
+                    const sampleSlots = [
+                        { id: 1, name: 'Summer Break', month: 'July', duration: 15, type: 'Slot A', startDate: '2027-07-01', endDate: '2027-07-15', department: 'L3 SAMB' },
+                        { id: 2, name: 'Winter Holidays', month: 'December', duration: 20, type: 'Slot C', startDate: '2027-12-15', endDate: '2028-01-03', department: 'L3 SAMB' },
+                        { id: 3, name: 'Spring Break', month: 'April', duration: 15, type: 'Slot B', startDate: '2027-04-10', endDate: '2027-04-24', department: 'L4/6-SA' },
+                        { id: 4, name: 'Autumn Leave', month: 'October', duration: 10, type: 'Slot A', startDate: '2027-10-01', endDate: '2027-10-10', department: 'L5 SAMB' },
+                        { id: 5, name: 'New Year Break', month: 'January', duration: 7, type: 'Slot B', startDate: '2027-01-03', endDate: '2027-01-09', department: 'L3 SAMB' },
+                    ];
                     
-                    // Apply department filter
-                    if (departmentPriority === 'same' && this.state.verifiedEmployee?.department) {
-                        query = query.eq('department_code', this.state.verifiedEmployee.department);
-                    } else if (departmentPriority === 'available') {
-                        query = query.gt('max_capacity', 'current_usage');
-                    }
+                    // Apply filters
+                    let filteredSlots = sampleSlots.filter(slot => {
+                        // Filter by minimum duration
+                        if (slot.duration < minDuration) return false;
+                        
+                        // Filter by department priority
+                        if (departmentPriority === 'same' && slot.department !== this.state.verifiedEmployee?.department) {
+                            return false;
+                        }
+                        
+                        // Note: Weekend and holiday filtering would be implemented in real app
+                        
+                        return true;
+                    });
                     
-                    // Apply weekend/holiday filters
-                    if (!includeWeekends) {
-                        query = query.eq('includes_weekends', false);
-                    }
-                    
-                    if (!includeHolidays) {
-                        query = query.eq('includes_holidays', false);
-                    }
-                    
-                    // Execute query
-                    const { data: slots, error } = await query;
-                    
-                    if (error) {
-                        console.error('Error loading slots:', error);
-                        slotsContainer.innerHTML = `
-                            <div class="bg-red-50 border border-red-200 rounded p-4">
-                                <p class="text-red-800">Error loading slots. Please try again.</p>
-                            </div>
-                        `;
+                    if (filteredSlots.length === 0) {
+                        slotsContainer.innerHTML = '<p class="text-gray-600">No slots available with current filters. Try adjusting your filters.</p>';
                         return;
                     }
                     
-                    if (!slots || slots.length === 0) {
-                        slotsContainer.innerHTML = `
-                            <div class="bg-yellow-50 border border-yellow-200 rounded p-4">
-                                <p class="text-yellow-800">No available slots found with current filters.</p>
-                                <button onclick="app.resetSlotFilters()" class="mt-2 px-3 py-1 text-sm bg-yellow-500 text-white rounded">
-                                    Reset Filters
-                                </button>
-                            </div>
-                        `;
-                        return;
-                    }
-                    
-                    // Display real slots from database
+                    // Display slots
                     let slotsHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
                     
-                    slots.forEach(slot => {
-                        const isMyDept = slot.department_code === this.state.verifiedEmployee?.department;
-                        const availability = slot.max_capacity - slot.current_usage;
-                        const isAvailable = availability > 0;
-                        
+                    filteredSlots.forEach(slot => {
+                        const isMyDept = slot.department === this.state.verifiedEmployee?.department;
                         slotsHTML += `
-                            <div class="border border-gray-300 rounded p-4 hover:border-blue-500 hover:bg-blue-50 transition ${!isAvailable ? 'opacity-60' : ''}">
+                            <div class="border border-gray-300 rounded p-4 hover:border-blue-500 hover:bg-blue-50 transition">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
-                                        <h5 class="font-semibold text-lg">${slot.slot_name}</h5>
+                                        <h5 class="font-semibold text-lg">${slot.name}</h5>
                                         <div class="flex items-center gap-2 mt-1">
-                                            ${slot.department_code ? `
-                                                <span class="px-2 py-1 text-xs rounded ${isMyDept ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
-                                                    ${slot.department_code}
-                                                </span>
-                                            ` : ''}
-                                            <span class="px-2 py-1 text-xs rounded ${
-                                                slot.slot_type === 'A' ? 'bg-green-100 text-green-800' :
-                                                slot.slot_type === 'B' ? 'bg-blue-100 text-blue-800' :
-                                                'bg-purple-100 text-purple-800'
-                                            }">
-                                                Slot ${slot.slot_type} (${slot.duration_days} days)
+                                            <span class="px-2 py-1 text-xs rounded ${isMyDept ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                                                ${slot.department}
+                                            </span>
+                                            <span class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                                                ${slot.type}
                                             </span>
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        <span class="text-sm font-semibold ${isAvailable ? 'text-green-600' : 'text-red-600'}">
-                                            ${availability} available
-                                        </span>
-                                        <p class="text-xs text-gray-500">${slot.month} ${slot.year}</p>
+                                        <span class="text-sm font-semibold">${slot.duration} days</span>
+                                        <p class="text-xs text-gray-500">${slot.month}</p>
                                     </div>
                                 </div>
-                                <p class="text-sm text-gray-600 mb-3">${slot.start_date} to ${slot.end_date}</p>
-                                
+                                <p class="text-sm text-gray-600 mb-3">${slot.startDate} to ${slot.endDate}</p>
                                 <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="text-xs text-gray-500">
-                                            Capacity: ${slot.current_usage}/${slot.max_capacity}
-                                        </span>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button 
-                                            onclick="app.previewSlot('${slot.id}')"
-                                            class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                                        >
-                                            Details
-                                        </button>
-                                        ${isAvailable ? `
-                                            <button 
-                                                onclick="app.selectSlotForBid('${slot.id}')"
-                                                class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                                            >
-                                                Select
-                                            </button>
-                                        ` : `
-                                            <span class="px-3 py-1 text-sm bg-red-100 text-red-800 rounded">
-                                                Full
-                                            </span>
-                                        `}
-                                    </div>
+                                    <label class="flex items-center">
+                                        <input type="checkbox" class="slot-checkbox mr-2" value="${slot.id}">
+                                        <span class="text-sm">Select to bid</span>
+                                    </label>
+                                    <button 
+                                        onclick="app.previewSlot(${slot.id})"
+                                        class="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                                    >
+                                        Preview
+                                    </button>
                                 </div>
                             </div>
                         `;
                     });
                     
                     slotsHTML += '</div>';
-                    
-                    // Add summary
-                    slotsHTML += `
-                        <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                            <p class="text-sm">
-                                Found <strong>${slots.length}</strong> available slot(s)
-                                ${departmentPriority === 'same' ? 'in your department' : 
-                                  departmentPriority === 'available' ? 'with available capacity' : ''}
-                            </p>
-                        </div>
-                    `;
-                    
                     slotsContainer.innerHTML = slotsHTML;
-                    
-                } catch (error) {
-                    console.error('Error in loadAvailableSlots:', error);
-                    slotsContainer.innerHTML = `
-                        <div class="bg-red-50 border border-red-200 rounded p-4">
-                            <p class="text-red-800">An error occurred while loading slots.</p>
-                        </div>
-                    `;
-                }
+                }, 500);
             },
-            
-            // Add helper functions
-            resetSlotFilters() {
-                const weekendsCheck = document.getElementById('filterWeekends');
-                const holidaysCheck = document.getElementById('filterHolidays');
-                const deptSelect = document.getElementById('departmentPriority');
-                const durationInput = document.getElementById('minDuration');
-                
-                if (weekendsCheck) weekendsCheck.checked = true;
-                if (holidaysCheck) holidaysCheck.checked = true;
-                if (deptSelect) deptSelect.value = 'all';
-                if (durationInput) durationInput.value = '3';
-                
-                this.loadAvailableSlots();
-            },
-            
-            async previewSlot(slotId) {
-                try {
-                    const { data: slot, error } = await this.supabase
-                        .from('available_slots')
-                        .select('*')
-                        .eq('id', slotId)
-                        .single();
-                    
-                    if (error) throw error;
-                    
-                    // Show slot details in a modal
-                    const modalHTML = `
-                        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                                <h3 class="text-xl font-bold mb-4">${slot.slot_name}</h3>
-                                <div class="space-y-3">
-                                    <p><strong>Type:</strong> Slot ${slot.slot_type}</p>
-                                    <p><strong>Duration:</strong> ${slot.duration_days} days</p>
-                                    <p><strong>Dates:</strong> ${slot.start_date} to ${slot.end_date}</p>
-                                    <p><strong>Department:</strong> ${slot.department_code || 'All Departments'}</p>
-                                    <p><strong>Availability:</strong> ${slot.max_capacity - slot.current_usage} of ${slot.max_capacity}</p>
-                                    <p><strong>Includes Weekends:</strong> ${slot.includes_weekends ? 'Yes' : 'No'}</p>
-                                    <p><strong>Includes Holidays:</strong> ${slot.includes_holidays ? 'Yes' : 'No'}</p>
-                                </div>
-                                <div class="mt-6 flex justify-end gap-3">
-                                    <button onclick="this.closest('.fixed').remove()" class="px-4 py-2 bg-gray-300 text-gray-800 rounded">
-                                        Close
-                                    </button>
-                                    ${(slot.max_capacity - slot.current_usage) > 0 ? `
-                                        <button onclick="app.selectSlotForBid('${slot.id}')" class="px-4 py-2 bg-blue-500 text-white rounded">
-                                            Select for Bid
-                                        </button>
-                                    ` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    
-                    const modal = document.createElement('div');
-                    modal.innerHTML = modalHTML;
-                    document.body.appendChild(modal);
-                    
-                } catch (error) {
-                    console.error('Error previewing slot:', error);
-                    alert('Error loading slot details');
-                }
-            },
-            
-            async selectSlotForBid(slotId) {
-                if (!this.state.verifiedEmployee) {
-                    alert('Please login first');
-                    return;
-                }
-                
-                try {
-                    // Get slot details
-                    const { data: slot, error } = await this.supabase
-                        .from('available_slots')
-                        .select('*')
-                        .eq('id', slotId)
-                        .single();
-                    
-                    if (error) throw error;
-                    
-                    // Check if slot is still available
-                    if (slot.current_usage >= slot.max_capacity) {
-                        alert('This slot is no longer available');
-                        this.loadAvailableSlots();
-                        return;
-                    }
-                    
-                    // Check employee eligibility
-                    const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
-                    if (userBids.length >= 2) {
-                        alert('Maximum of 2 bids reached');
-                        return;
-                    }
-                    
-                    // Check for date conflicts
-                    const hasConflict = userBids.some(bid => {
-                        return this.checkDateOverlap(
-                            slot.start_date, slot.end_date,
-                            bid.startDate, bid.endDate
-                        );
-                    });
-                    
-                    if (hasConflict) {
-                        alert('Date conflict with existing bid');
-                        return;
-                    }
-                    
-                    // Create bid
-                    const newBid = {
-                        employeeId: this.state.verifiedEmployee.id,
-                        employeeName: this.state.verifiedEmployee.name,
-                        slotType: `slot${slot.slot_type}`,
-                        startDate: slot.start_date,
-                        endDate: slot.end_date,
-                        days: slot.duration_days,
-                        timestamp: new Date().toISOString(),
-                        slotId: slotId
-                    };
-                    
-                    // Add to local state
-                    this.state.bids.push(newBid);
-                    this.saveState();
-                    
-                    // Update slot usage in Supabase
-                    const { error: updateError } = await this.supabase
-                        .from('available_slots')
-                        .update({ current_usage: slot.current_usage + 1 })
-                        .eq('id', slotId);
-                    
-                    if (updateError) {
-                        console.error('Error updating slot usage:', updateError);
-                        // Rollback local state
-                        this.state.bids = this.state.bids.filter(b => b.slotId !== slotId);
-                        this.saveState();
-                        alert('Error reserving slot. Please try again.');
-                        return;
-                    }
-                    
-                    alert(`✅ Slot "${slot.slot_name}" selected for bidding!`);
-                    
-                    // Refresh views
-                    this.loadAvailableSlots();
-                    this.renderEmployeeBiddingView();
-                    
-                } catch (error) {
-                    console.error('Error selecting slot:', error);
-                    alert('Error selecting slot');
-                }
-            },
+
             previewSlot(slotId) {
                 alert(`Previewing slot #${slotId}. In a real application, this would show detailed information about the selected slot.`);
             },
