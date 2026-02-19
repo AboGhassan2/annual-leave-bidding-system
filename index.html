@@ -343,20 +343,33 @@
                         console.log(`✅ Loaded ${this.state.employees.length} employees from Supabase (with pagination)`);
                     }
                     
-                    if (allBids && allBids.length > 0) {
-                        this.state.bids = allBids.map(bid => ({
-                            employeeId: bid.employee_id,
-                            employeeName: this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
-                            seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
-                            department: this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
-                            slotType: bid.slot_type || 'slotA',
-                            startDate: bid.start_date,
-                            endDate: bid.end_date,
-                            days: bid.days_requested,
-                            timestamp: bid.created_at
-                        }));
-                        console.log(`✅ Loaded ${this.state.bids.length} bids from Supabase (with pagination)`);
+                    // Load bids — Supabase is source of truth
+                    // Map Supabase rows to app bid format
+                    const supabaseBids = (allBids || []).map(bid => ({
+                        employeeId: bid.employee_id,
+                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
+                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
+                        slotType: bid.slot_type || 'slotA',
+                        startDate: bid.start_date,
+                        endDate: bid.end_date,
+                        days: bid.days_requested,
+                        timestamp: bid.created_at
+                    }));
+
+                    // Also grab any locally-stored bids not yet in Supabase (safety net)
+                    const localBids = JSON.parse(localStorage.getItem('bids') || '[]');
+                    const supabaseKeys = new Set(supabaseBids.map(b => `${b.employeeId}|${b.slotType}|${b.startDate}`));
+                    const localOnly = localBids.filter(b => !supabaseKeys.has(`${b.employeeId}|${b.slotType}|${b.startDate}`));
+
+                    // Push any local-only bids up to Supabase now
+                    if (localOnly.length > 0) {
+                        console.log(`ℹ️ Found ${localOnly.length} local bid(s) not yet in Supabase — pushing now...`);
+                        localOnly.forEach(bid => this.saveBidToSupabase(bid));
                     }
+
+                    this.state.bids = [...supabaseBids, ...localOnly];
+                    console.log(`✅ Loaded ${supabaseBids.length} bids from Supabase + ${localOnly.length} local-only bid(s)`);
                     
                     if (config) {
                         this.state.biddingDeadline = config.bidding_deadline || '';
@@ -1676,6 +1689,12 @@
 
                 this.state.bids.push(newBid);
                 this.saveState();
+
+                // Save bid immediately to Supabase so it survives refresh
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (saved) console.log('✅ GC Bid saved to Supabase');
+                });
+
                 alert(`⭐ GC Bid placed!\n${slotLabel} — ${startDate} → ${endDate} (${days} day${days !== 1 ? 's' : ''})`);
                 this.renderGoldenCommandBiddingView();
             },
@@ -1693,6 +1712,21 @@
                     );
                     if (idx !== -1) this.state.bids.splice(idx, 1);
                     this.saveState();
+
+                    // Delete from Supabase immediately
+                    if (this.supabase) {
+                        this.supabase
+                            .from('leave_requests')
+                            .delete()
+                            .eq('employee_id', gcUser.id)
+                            .eq('slot_type', slotType)
+                            .eq('start_date', startDate)
+                            .then(({ error }) => {
+                                if (error) console.warn('⚠️ Could not delete GC bid from Supabase:', error.message);
+                                else console.log('✅ GC Bid deleted from Supabase');
+                            });
+                    }
+
                     this.renderGoldenCommandBiddingView();
                 }
             },
@@ -2901,10 +2935,47 @@
 
                 this.state.bids.push(newBid);
                 this.saveState();
+
+                // Save bid immediately to Supabase so it survives refresh
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (saved) {
+                        console.log('✅ Bid saved to Supabase');
+                    } else {
+                        console.warn('⚠️ Bid saved locally only — Supabase unavailable');
+                    }
+                });
+
                 alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
                 
                 // Refresh view
                 this.renderEmployeeBiddingView();
+            },
+
+            async saveBidToSupabase(bid) {
+                if (!this.supabase) return false;
+                try {
+                    const { error } = await this.supabase
+                        .from('leave_requests')
+                        .upsert({
+                            employee_id: bid.employeeId,
+                            start_date: bid.startDate,
+                            end_date: bid.endDate,
+                            days_requested: bid.days,
+                            status: 'pending',
+                            slot_type: bid.slotType,
+                            department: bid.department || '',
+                            employee_name: bid.employeeName || '',
+                            created_at: bid.timestamp || new Date().toISOString()
+                        }, { onConflict: 'employee_id,slot_type,start_date' });
+                    if (error) {
+                        console.error('❌ Supabase bid save error:', error.message);
+                        return false;
+                    }
+                    return true;
+                } catch (e) {
+                    console.error('❌ Supabase bid save exception:', e.message);
+                    return false;
+                }
             },
 
             removeBid(employeeId, slotType, startDate) {
@@ -2920,6 +2991,21 @@
                           bid.startDate === startDate)
                     );
                     this.saveState();
+
+                    // Delete from Supabase immediately
+                    if (this.supabase) {
+                        this.supabase
+                            .from('leave_requests')
+                            .delete()
+                            .eq('employee_id', employeeId)
+                            .eq('slot_type', slotType)
+                            .eq('start_date', startDate)
+                            .then(({ error }) => {
+                                if (error) console.warn('⚠️ Could not delete bid from Supabase:', error.message);
+                                else console.log('✅ Bid deleted from Supabase');
+                            });
+                    }
+
                     this.renderEmployeeBiddingView();
                 }
             },
