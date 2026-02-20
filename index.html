@@ -3394,6 +3394,274 @@
                 `;
             },
 
+            // Add this at the beginning of your app object (after state initialization)
+            refreshInterval: null,
+            
+            // Add this function to start auto-refreshing bids for admin panel
+            startAutoRefresh() {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                }
+                
+                // Refresh every 10 seconds when in admin view
+                this.refreshInterval = setInterval(async () => {
+                    if (this.state.userType === 'planner' && this.state.activeView === 'admin' && this.supabase) {
+                        console.log('🔄 Auto-refreshing bids from database...');
+                        await this.refreshBidsFromSupabase();
+                    }
+                }, 10000); // 10 seconds
+            },
+            
+            // Add this to stop auto-refresh
+            stopAutoRefresh() {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                    this.refreshInterval = null;
+                }
+            },
+            
+            // REPLACE your existing saveBidToSupabase with this improved version
+            async saveBidToSupabase(bid) {
+                if (!this.supabase) return false;
+                try {
+                    // First check if this bid already exists
+                    const { data: existing } = await this.supabase
+                        .from('leave_requests')
+                        .select('id')
+                        .eq('employee_id', bid.employeeId)
+                        .eq('slot_type', bid.slotType)
+                        .eq('start_date', bid.startDate)
+                        .maybeSingle();
+                    
+                    // Use insert if no existing bid, otherwise update
+                    const { error } = existing 
+                        ? await this.supabase
+                            .from('leave_requests')
+                            .update({
+                                end_date: bid.endDate,
+                                days_requested: bid.days,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', existing.id)
+                        : await this.supabase
+                            .from('leave_requests')
+                            .insert({
+                                employee_id: bid.employeeId,
+                                employee_name: bid.employeeName || '',
+                                department: bid.department || '',
+                                start_date: bid.startDate,
+                                end_date: bid.endDate,
+                                days_requested: bid.days,
+                                status: 'pending',
+                                slot_type: bid.slotType,
+                                created_at: bid.timestamp || new Date().toISOString()
+                            });
+                    
+                    if (error) {
+                        console.error('❌ Supabase bid save error:', error.message);
+                        return false;
+                    }
+                    
+                    console.log('✅ Bid saved to Supabase successfully');
+                    return true;
+                } catch (e) {
+                    console.error('❌ Supabase bid save exception:', e.message);
+                    return false;
+                }
+            },
+            
+            // REPLACE your existing refreshBidsFromSupabase with this fixed version
+            async refreshBidsFromSupabase() {
+                if (!this.supabase) {
+                    alert('⚠️ Not connected to database.');
+                    return;
+                }
+                
+                this.updateSystemStatus('Refreshing bids...');
+                try {
+                    let allBids = [];
+                    let from = 0;
+                    const batchSize = 1000;
+                    let hasMore = true;
+                    
+                    // Show loading indicator in admin panel
+                    const contentArea = document.getElementById('contentArea');
+                    if (contentArea && this.state.activeView === 'admin') {
+                        // Store current HTML to restore after refresh
+                        const currentHTML = contentArea.innerHTML;
+                        contentArea.innerHTML = `
+                            <div class="max-w-6xl mx-auto">
+                                <div class="bg-white rounded-xl shadow-xl p-6">
+                                    <div class="text-center py-8">
+                                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                                        <p class="text-gray-600">Refreshing bids from database...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    while (hasMore) {
+                        const { data: bidsBatch, error } = await this.supabase
+                            .from('leave_requests')
+                            .select('*')
+                            .order('created_at', { ascending: false })
+                            .range(from, from + batchSize - 1);
+                        
+                        if (error) {
+                            console.error('Error fetching bids:', error);
+                            hasMore = false;
+                            break;
+                        }
+                        
+                        if (bidsBatch && bidsBatch.length > 0) {
+                            allBids = [...allBids, ...bidsBatch];
+                            hasMore = bidsBatch.length === batchSize;
+                            from += batchSize;
+                        } else {
+                            hasMore = false;
+                        }
+                    }
+                    
+                    // Transform bids to app format
+                    const transformedBids = allBids.map(bid => ({
+                        employeeId: bid.employee_id,
+                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
+                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
+                        slotType: bid.slot_type || 'slotA',
+                        startDate: bid.start_date,
+                        endDate: bid.end_date,
+                        days: bid.days_requested,
+                        timestamp: bid.created_at
+                    }));
+                    
+                    this.state.bids = transformedBids;
+                    this.saveState();
+                    
+                    // Update status message with count
+                    const bidCount = transformedBids.length;
+                    const uniqueEmployees = new Set(transformedBids.map(b => b.employeeId)).size;
+                    this.updateSystemStatus(`✅ ${bidCount} bids from ${uniqueEmployees} employees loaded`);
+                    
+                    // Show success message
+                    if (bidCount > 0) {
+                        console.log(`✅ Refreshed ${bidCount} bids (${uniqueEmployees} employees)`);
+                        
+                        // Show brief notification
+                        const notification = document.createElement('div');
+                        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-bounce';
+                        notification.textContent = `🔄 ${bidCount} bids loaded`;
+                        document.body.appendChild(notification);
+                        setTimeout(() => notification.remove(), 3000);
+                    }
+                    
+                    // Re-render admin view if currently on it
+                    if (this.state.activeView === 'admin') {
+                        this.renderAdminView();
+                    }
+                    
+                } catch (e) {
+                    console.error('Refresh bids error:', e);
+                    this.updateSystemStatus('⚠️ Refresh failed');
+                    // Re-render admin view even on error to restore UI
+                    if (this.state.activeView === 'admin') {
+                        this.renderAdminView();
+                    }
+                }
+            },
+            
+            // MODIFY your setActiveView function to handle auto-refresh
+            setActiveView(view) {
+                console.log('Setting view to:', view);
+                this.state.activeView = view;
+                
+                // Stop auto-refresh when leaving admin view
+                if (view !== 'admin') {
+                    this.stopAutoRefresh();
+                }
+                
+                // Auto-refresh bids from Supabase when planner opens Admin Panel
+                if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
+                    this.refreshBidsFromSupabase();
+                    this.startAutoRefresh(); // Start auto-refresh
+                } else {
+                    this.renderView();
+                }
+            },
+            
+            // MODIFY your handleLogout function to stop auto-refresh
+            handleLogout() {
+                this.stopAutoRefresh(); // Stop any auto-refresh
+                
+                this.state.currentUser = null;
+                this.state.userType = null;
+                this.state.verifiedEmployee = null;
+                this.state.activeView = 'login';
+                
+                document.getElementById('userInfo').classList.add('hidden');
+                document.getElementById('plannerNav').classList.add('hidden');
+                document.getElementById('employeeNav').classList.add('hidden');
+                document.getElementById('goldenCommandNav').classList.add('hidden');
+                document.getElementById('loginView').classList.remove('hidden');
+                
+                this.renderLoginForm();
+            },
+            
+            // MODIFY your renderAdminView function to add a manual refresh button and live counter
+            // Find the section in renderAdminView where you have the stats grid and add this after it:
+            // Add this code after the stats grid in renderAdminView
+            
+            // Find this section in renderAdminView:
+            `
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <p class="text-2xl font-bold">${this.state.employees.length}</p>
+                    <p class="text-sm text-gray-600">Total Employees</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <p class="text-2xl font-bold" id="liveBidCounter">${this.state.bids.length}</p>
+                    <p class="text-sm text-gray-600">Total Bids</p>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <p class="text-2xl font-bold">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
+                    <p class="text-sm text-gray-600">Employees Who Bid</p>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
+                    <p class="text-sm text-gray-600">Processed</p>
+                </div>
+            </div>
+            
+            <!-- Add Live Refresh Controls -->
+            <div class="mb-6 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg flex justify-between items-center">
+                <div>
+                    <p class="font-semibold text-indigo-800">🔄 Live Bid Updates</p>
+                    <p class="text-xs text-indigo-600 mt-1">Auto-refreshing every 10 seconds</p>
+                </div>
+                <div class="flex gap-3">
+                    <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold" id="lastRefreshTime">
+                        Last: ${new Date().toLocaleTimeString()}
+                    </span>
+                    <button onclick="app.refreshBidsFromSupabase()" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-semibold">
+                        🔄 Refresh Now
+                    </button>
+                </div>
+            </div>
+            `
+            
+            // Also add this function to periodically update the last refresh time
+            updateLastRefreshTime() {
+                const refreshEl = document.getElementById('lastRefreshTime');
+                if (refreshEl) {
+                    refreshEl.textContent = `Last: ${new Date().toLocaleTimeString()}`;
+                }
+                const counterEl = document.getElementById('liveBidCounter');
+                if (counterEl) {
+                    counterEl.textContent = this.state.bids.length;
+                }
+            }
+
             // ==================== INITIALIZATION ====================
             async init() {
                 console.log('App initializing...');
