@@ -810,10 +810,12 @@
 
             setActiveView(view) {
                 console.log('Setting view to:', view);
+                // Stop any existing admin polling when navigating away
+                if (view !== 'admin') this.stopAdminPolling();
                 this.state.activeView = view;
                 // Auto-refresh bids from Supabase when planner opens Admin Panel
                 if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
-                    this.refreshBidsFromSupabase();
+                    this.refreshBidsFromSupabase(false).then(() => this.startAdminPolling());
                 } else {
                     this.renderView();
                 }
@@ -2037,27 +2039,31 @@
                 this.setActiveView('admin');
             },
 
-            async refreshBidsFromSupabase() {
+            async refreshBidsFromSupabase(silent = false) {
                 if (!this.supabase) {
-                    alert('⚠️ Not connected to database.');
-                    return;
+                    if (!silent) alert('⚠️ Not connected to database.');
+                    return false;
                 }
-                this.updateSystemStatus('Refreshing bids...');
+                if (!silent) this.updateSystemStatus('Refreshing bids...');
                 try {
                     let allBids = [];
                     let from = 0;
                     const batchSize = 1000;
-                    let hasMore = true;
-                    while (hasMore) {
-                        const { data: bidsBatch, error } = await this.supabase
+
+                    while (true) {
+                        const { data: batch, error } = await this.supabase
                             .from('leave_requests')
                             .select('*')
                             .range(from, from + batchSize - 1);
-                        if (error || !bidsBatch || bidsBatch.length === 0) { hasMore = false; break; }
-                        allBids = [...allBids, ...bidsBatch];
-                        hasMore = bidsBatch.length === batchSize;
+                        if (error) { console.error('❌ Bids fetch error:', error.message); break; }
+                        if (!batch || batch.length === 0) break;
+                        allBids = [...allBids, ...batch];
+                        if (batch.length < batchSize) break;
                         from += batchSize;
                     }
+
+                    console.log(`✅ Fetched ${allBids.length} bids from Supabase`);
+
                     this.state.bids = allBids.map(bid => ({
                         employeeId: bid.employee_id,
                         employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
@@ -2069,13 +2075,114 @@
                         days: bid.days_requested,
                         timestamp: bid.created_at
                     }));
+
                     this.saveState();
-                    this.updateSystemStatus(`✅ ${this.state.bids.length} bids loaded`);
-                    this.renderAdminView();
+                    this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
+
+                    if (silent) {
+                        // Silent auto-poll: update only the live elements without full re-render
+                        this._liveUpdateAdminPanel();
+                    } else {
+                        this.renderAdminView();
+                    }
+                    return true;
                 } catch (e) {
                     console.error('Refresh bids error:', e);
                     this.updateSystemStatus('⚠️ Refresh failed');
-                    alert('Failed to refresh bids: ' + e.message);
+                    if (!silent) alert('Failed to refresh bids: ' + e.message);
+                    return false;
+                }
+            },
+
+            _liveUpdateAdminPanel() {
+                // Update stats badges
+                const bidCountEl = document.getElementById('adminBidCount');
+                if (bidCountEl) bidCountEl.textContent = this.state.bids.length;
+                const bidCount2El = document.getElementById('adminBidCount2');
+                if (bidCount2El) bidCount2El.textContent = this.state.bids.length;
+                const uniqueBiddersEl = document.getElementById('adminUniqueBidders');
+                if (uniqueBiddersEl) uniqueBiddersEl.textContent = new Set(this.state.bids.map(b => b.employeeId)).size;
+                const uniqueBidders2El = document.getElementById('adminUniqueBidders2');
+                if (uniqueBidders2El) uniqueBidders2El.textContent = new Set(this.state.bids.map(b => b.employeeId)).size;
+                const lastRefreshEl = document.getElementById('adminLastRefresh');
+                if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
+                // Re-render bids table
+                const tableContainer = document.getElementById('adminBidsTableContainer');
+                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML();
+            },
+
+            _renderBidsTableHTML() {
+                if (this.state.bids.length === 0) {
+                    return `
+                        <div class="text-center py-10 text-gray-400">
+                            <p class="text-4xl mb-3">📭</p>
+                            <p class="font-semibold">No bids submitted yet</p>
+                            <p class="text-sm mt-1">Auto-refreshing every 15 seconds. Bids appear here as soon as employees submit them.</p>
+                        </div>`;
+                }
+                const sortedBids = [...this.state.bids].sort((a, b) => {
+                    const dA = new Date(this.state.employees.find(e => e.id === a.employeeId)?.seniorityDate || 0);
+                    const dB = new Date(this.state.employees.find(e => e.id === b.employeeId)?.seniorityDate || 0);
+                    return dA - dB;
+                });
+                const colorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
+                return `
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100 text-left">
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Employee ID</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Start Date</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Days</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Submitted</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sortedBids.map((bid, idx) => {
+                                    const emp = this.state.employees.find(e => e.id === bid.employeeId);
+                                    const slotColor = colorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
+                                    const slotDisplay = this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType;
+                                    const submitted = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
+                                    return `
+                                        <tr class="${idx % 2 === 0 ? '' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors">
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                            <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${bid.employeeId}</td>
+                                            <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${bid.employeeName || emp?.name || 'Unknown'}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.department || emp?.department || 'Unassigned'}</td>
+                                            <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${slotDisplay}</span></td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.startDate || '—'}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${bid.days || '—'}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${submitted}</td>
+                                        </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            },
+
+            startAdminPolling() {
+                this.stopAdminPolling(); // clear any existing timer
+                console.log('🔄 Starting admin bid auto-poll (15s interval)');
+                this._adminPollTimer = setInterval(async () => {
+                    if (this.state.activeView === 'admin' && this.state.userType === 'planner') {
+                        await this.refreshBidsFromSupabase(true); // silent poll
+                    } else {
+                        this.stopAdminPolling(); // stop if planner left admin view
+                    }
+                }, 15000);
+            },
+
+            stopAdminPolling() {
+                if (this._adminPollTimer) {
+                    clearInterval(this._adminPollTimer);
+                    this._adminPollTimer = null;
+                    console.log('⏹ Admin poll stopped');
                 }
             },
 
@@ -2087,7 +2194,13 @@
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-6">Admin Panel</h2>
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-2xl font-bold">Admin Panel</h2>
+                                <div class="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg text-sm text-green-700">
+                                    <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                    Live &mdash; auto-refreshes every 15s &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>
+                                </div>
+                            </div>
                             
                             <div class="mb-6 p-4 bg-blue-50 rounded-lg">
                                 <label class="block font-semibold mb-2">Set Bidding Deadline:</label>
@@ -2121,11 +2234,11 @@
                                     <p class="text-sm text-gray-600">Total Employees</p>
                                 </div>
                                 <div class="bg-green-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${this.state.bids.length}</p>
+                                    <p class="text-2xl font-bold" id="adminBidCount">${this.state.bids.length}</p>
                                     <p class="text-sm text-gray-600">Total Bids</p>
                                 </div>
                                 <div class="bg-yellow-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
+                                    <p class="text-2xl font-bold" id="adminUniqueBidders">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
                                     <p class="text-sm text-gray-600">Employees Who Bid</p>
                                 </div>
                                 <div class="bg-purple-50 p-4 rounded-lg">
@@ -2149,8 +2262,8 @@
                                     </button>
                                 ` : ''}
                                 
-                                <button onclick="app.refreshBidsFromSupabase()" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
-                                    🔄 Refresh Bids from Database
+                                <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
+                                    🔄 Refresh Bids Now
                                 </button>
                                 
                                 <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
@@ -2161,10 +2274,10 @@
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <h3 class="font-bold mb-2">System Information</h3>
                                 <div class="text-sm text-gray-600 space-y-1">
-                                    <p>• Departments: ${allDepts.length}</p>
-                                    <p>• Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
-                                    <p>• Bidding year: ${this.state.biddingYear}</p>
-                                    <p>• Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
+                                    <p>&bull; Departments: ${allDepts.length}</p>
+                                    <p>&bull; Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
+                                    <p>&bull; Bidding year: ${this.state.biddingYear}</p>
+                                    <p>&bull; Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
                                 </div>
                             </div>
 
@@ -2172,8 +2285,6 @@
                             <div class="mt-6 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
                                 <h3 class="font-bold text-yellow-800 text-lg mb-3">⭐ Golden Command Users</h3>
                                 <p class="text-sm text-yellow-700 mb-4">Add or remove Golden Command users. Their default password is their GC ID.</p>
-                                
-                                <!-- Existing GC Users -->
                                 <div class="space-y-2 mb-4">
                                     ${(this.state.goldenCommandUsers || []).map((u, i) => `
                                         <div class="flex items-center justify-between bg-white border border-yellow-200 rounded p-3">
@@ -2182,34 +2293,25 @@
                                                 <span class="ml-3 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-mono">ID: ${u.id}</span>
                                                 <span class="ml-2 text-xs text-gray-500">Password: ${u.password || u.id}</span>
                                             </div>
-                                            <button onclick="app.removeGCUser(${i})" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
-                                                Remove
-                                            </button>
+                                            <button onclick="app.removeGCUser(${i})" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">Remove</button>
                                         </div>
                                     `).join('')}
-                                    ${(this.state.goldenCommandUsers || []).length === 0 ? `
-                                        <p class="text-sm text-yellow-600 italic">No Golden Command users yet.</p>
-                                    ` : ''}
+                                    ${(this.state.goldenCommandUsers || []).length === 0 ? `<p class="text-sm text-yellow-600 italic">No Golden Command users yet.</p>` : ''}
                                 </div>
-                                
-                                <!-- Add New GC User -->
                                 <div class="bg-white border border-yellow-300 rounded p-4">
                                     <p class="font-semibold text-yellow-800 mb-3">Add New GC User:</p>
                                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                                         <div>
                                             <label class="block text-xs font-semibold text-gray-600 mb-1">GC ID (username)</label>
-                                            <input type="text" id="newGCId" placeholder="e.g. GC001" 
-                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                            <input type="text" id="newGCId" placeholder="e.g. GC001" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
                                         </div>
                                         <div>
                                             <label class="block text-xs font-semibold text-gray-600 mb-1">Full Name</label>
-                                            <input type="text" id="newGCName" placeholder="e.g. John Smith" 
-                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                            <input type="text" id="newGCName" placeholder="e.g. John Smith" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
                                         </div>
                                         <div>
                                             <label class="block text-xs font-semibold text-gray-600 mb-1">Password (optional)</label>
-                                            <input type="text" id="newGCPassword" placeholder="Leave blank = same as ID" 
-                                                class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                            <input type="text" id="newGCPassword" placeholder="Leave blank = same as ID" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
                                         </div>
                                     </div>
                                     <button onclick="app.addGCUser()" class="mt-3 px-5 py-2 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 text-sm">
@@ -2224,78 +2326,18 @@
                             <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-200 flex justify-between items-center">
                                 <div>
                                     <h3 class="text-xl font-bold text-indigo-900">📋 Staff Bid Details</h3>
-                                    <p class="text-sm text-indigo-600 mt-1">All bids submitted by staff, sorted by seniority</p>
+                                    <p class="text-sm text-indigo-600 mt-1">All bids from staff, sorted by seniority. Updates automatically every 15 seconds.</p>
                                 </div>
                                 <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
-                                    ${this.state.bids.length} bids from ${new Set(this.state.bids.map(b => b.employeeId)).size} staff
+                                    <span id="adminBidCount2">${this.state.bids.length}</span> bids from <span id="adminUniqueBidders2">${new Set(this.state.bids.map(b => b.employeeId)).size}</span> staff
                                 </span>
                             </div>
-                            <div class="p-4">
-                                ${this.state.bids.length === 0 ? `
-                                    <div class="text-center py-10 text-gray-400">
-                                        <p class="text-4xl mb-3">📭</p>
-                                        <p class="font-semibold">No bids submitted yet</p>
-                                        <p class="text-sm mt-1">Bids will appear here once staff members place them</p>
-                                    </div>
-                                ` : `
-                                    <div class="overflow-x-auto">
-                                        <table class="w-full text-sm border-collapse">
-                                            <thead>
-                                                <tr class="bg-gray-100 text-left">
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Employee ID</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Start Date</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Days</th>
-                                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Submitted</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${(() => {
-                                                    // Sort bids: by employee seniority then by slot
-                                                    const sortedBids = [...this.state.bids].sort((a, b) => {
-                                                        const empA = this.state.employees.find(e => e.id === a.employeeId);
-                                                        const empB = this.state.employees.find(e => e.id === b.employeeId);
-                                                        const dateA = empA ? new Date(empA.seniorityDate) : new Date();
-                                                        const dateB = empB ? new Date(empB.seniorityDate) : new Date();
-                                                        return dateA - dateB;
-                                                    });
-                                                    return sortedBids.map((bid, idx) => {
-                                                        const emp = this.state.employees.find(e => e.id === bid.employeeId);
-                                                        const slotColorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
-                                                        const slotColor = slotColorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
-                                                        const slotDisplay = this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType;
-                                                        const submittedDate = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
-                                                        const rowBg = idx % 2 === 0 ? '' : 'bg-gray-50';
-                                                        return `
-                                                            <tr class="${rowBg} hover:bg-indigo-50 transition-colors">
-                                                                <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${bid.employeeId}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${bid.employeeName || (emp?.name || 'Unknown')}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.department || (emp?.department || 'Unassigned')}</td>
-                                                                <td class="border border-gray-200 px-3 py-2">
-                                                                    <span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${slotDisplay}</span>
-                                                                </td>
-                                                                <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.startDate || '—'}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${bid.days || '—'}</td>
-                                                                <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${submittedDate}</td>
-                                                            </tr>
-                                                        `;
-                                                    }).join('');
-                                                })()}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                `}
+                            <div class="p-4" id="adminBidsTableContainer">
+                                ${this._renderBidsTableHTML()}
                             </div>
                         </div>
 
                     </div>
-                </div>
                 `;
             },
 
@@ -3026,23 +3068,46 @@
             async saveBidToSupabase(bid) {
                 if (!this.supabase) return false;
                 try {
-                    const { error } = await this.supabase
+                    const row = {
+                        employee_id: bid.employeeId,
+                        start_date: bid.startDate,
+                        end_date: bid.endDate,
+                        days_requested: bid.days,
+                        status: 'pending',
+                        slot_type: bid.slotType,
+                        department: bid.department || '',
+                        employee_name: bid.employeeName || '',
+                        created_at: bid.timestamp || new Date().toISOString()
+                    };
+
+                    // First try upsert (works if unique constraint exists)
+                    const { error: upsertError } = await this.supabase
                         .from('leave_requests')
-                        .upsert({
-                            employee_id: bid.employeeId,
-                            start_date: bid.startDate,
-                            end_date: bid.endDate,
-                            days_requested: bid.days,
-                            status: 'pending',
-                            slot_type: bid.slotType,
-                            department: bid.department || '',
-                            employee_name: bid.employeeName || '',
-                            created_at: bid.timestamp || new Date().toISOString()
-                        }, { onConflict: 'employee_id,slot_type,start_date' });
-                    if (error) {
-                        console.error('❌ Supabase bid save error:', error.message);
+                        .upsert(row, { onConflict: 'employee_id,slot_type,start_date' });
+
+                    if (!upsertError) {
+                        console.log('✅ Bid saved to Supabase (upsert)');
+                        return true;
+                    }
+
+                    // If upsert fails (e.g. no unique constraint), try delete-then-insert
+                    console.warn('⚠️ Upsert failed, trying delete+insert:', upsertError.message);
+                    await this.supabase
+                        .from('leave_requests')
+                        .delete()
+                        .eq('employee_id', bid.employeeId)
+                        .eq('slot_type', bid.slotType)
+                        .eq('start_date', bid.startDate);
+
+                    const { error: insertError } = await this.supabase
+                        .from('leave_requests')
+                        .insert(row);
+
+                    if (insertError) {
+                        console.error('❌ Supabase bid insert error:', insertError.message);
                         return false;
                     }
+                    console.log('✅ Bid saved to Supabase (delete+insert)');
                     return true;
                 } catch (e) {
                     console.error('❌ Supabase bid save exception:', e.message);
@@ -3393,274 +3458,6 @@
                     </div>
                 `;
             },
-
-            // Add this at the beginning of your app object (after state initialization)
-            refreshInterval: null,
-            
-            // Add this function to start auto-refreshing bids for admin panel
-            startAutoRefresh() {
-                if (this.refreshInterval) {
-                    clearInterval(this.refreshInterval);
-                }
-                
-                // Refresh every 10 seconds when in admin view
-                this.refreshInterval = setInterval(async () => {
-                    if (this.state.userType === 'planner' && this.state.activeView === 'admin' && this.supabase) {
-                        console.log('🔄 Auto-refreshing bids from database...');
-                        await this.refreshBidsFromSupabase();
-                    }
-                }, 10000); // 10 seconds
-            },
-            
-            // Add this to stop auto-refresh
-            stopAutoRefresh() {
-                if (this.refreshInterval) {
-                    clearInterval(this.refreshInterval);
-                    this.refreshInterval = null;
-                }
-            },
-            
-            // REPLACE your existing saveBidToSupabase with this improved version
-            async saveBidToSupabase(bid) {
-                if (!this.supabase) return false;
-                try {
-                    // First check if this bid already exists
-                    const { data: existing } = await this.supabase
-                        .from('leave_requests')
-                        .select('id')
-                        .eq('employee_id', bid.employeeId)
-                        .eq('slot_type', bid.slotType)
-                        .eq('start_date', bid.startDate)
-                        .maybeSingle();
-                    
-                    // Use insert if no existing bid, otherwise update
-                    const { error } = existing 
-                        ? await this.supabase
-                            .from('leave_requests')
-                            .update({
-                                end_date: bid.endDate,
-                                days_requested: bid.days,
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq('id', existing.id)
-                        : await this.supabase
-                            .from('leave_requests')
-                            .insert({
-                                employee_id: bid.employeeId,
-                                employee_name: bid.employeeName || '',
-                                department: bid.department || '',
-                                start_date: bid.startDate,
-                                end_date: bid.endDate,
-                                days_requested: bid.days,
-                                status: 'pending',
-                                slot_type: bid.slotType,
-                                created_at: bid.timestamp || new Date().toISOString()
-                            });
-                    
-                    if (error) {
-                        console.error('❌ Supabase bid save error:', error.message);
-                        return false;
-                    }
-                    
-                    console.log('✅ Bid saved to Supabase successfully');
-                    return true;
-                } catch (e) {
-                    console.error('❌ Supabase bid save exception:', e.message);
-                    return false;
-                }
-            },
-            
-            // REPLACE your existing refreshBidsFromSupabase with this fixed version
-            async refreshBidsFromSupabase() {
-                if (!this.supabase) {
-                    alert('⚠️ Not connected to database.');
-                    return;
-                }
-                
-                this.updateSystemStatus('Refreshing bids...');
-                try {
-                    let allBids = [];
-                    let from = 0;
-                    const batchSize = 1000;
-                    let hasMore = true;
-                    
-                    // Show loading indicator in admin panel
-                    const contentArea = document.getElementById('contentArea');
-                    if (contentArea && this.state.activeView === 'admin') {
-                        // Store current HTML to restore after refresh
-                        const currentHTML = contentArea.innerHTML;
-                        contentArea.innerHTML = `
-                            <div class="max-w-6xl mx-auto">
-                                <div class="bg-white rounded-xl shadow-xl p-6">
-                                    <div class="text-center py-8">
-                                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                                        <p class="text-gray-600">Refreshing bids from database...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    while (hasMore) {
-                        const { data: bidsBatch, error } = await this.supabase
-                            .from('leave_requests')
-                            .select('*')
-                            .order('created_at', { ascending: false })
-                            .range(from, from + batchSize - 1);
-                        
-                        if (error) {
-                            console.error('Error fetching bids:', error);
-                            hasMore = false;
-                            break;
-                        }
-                        
-                        if (bidsBatch && bidsBatch.length > 0) {
-                            allBids = [...allBids, ...bidsBatch];
-                            hasMore = bidsBatch.length === batchSize;
-                            from += batchSize;
-                        } else {
-                            hasMore = false;
-                        }
-                    }
-                    
-                    // Transform bids to app format
-                    const transformedBids = allBids.map(bid => ({
-                        employeeId: bid.employee_id,
-                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
-                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
-                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
-                        slotType: bid.slot_type || 'slotA',
-                        startDate: bid.start_date,
-                        endDate: bid.end_date,
-                        days: bid.days_requested,
-                        timestamp: bid.created_at
-                    }));
-                    
-                    this.state.bids = transformedBids;
-                    this.saveState();
-                    
-                    // Update status message with count
-                    const bidCount = transformedBids.length;
-                    const uniqueEmployees = new Set(transformedBids.map(b => b.employeeId)).size;
-                    this.updateSystemStatus(`✅ ${bidCount} bids from ${uniqueEmployees} employees loaded`);
-                    
-                    // Show success message
-                    if (bidCount > 0) {
-                        console.log(`✅ Refreshed ${bidCount} bids (${uniqueEmployees} employees)`);
-                        
-                        // Show brief notification
-                        const notification = document.createElement('div');
-                        notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-bounce';
-                        notification.textContent = `🔄 ${bidCount} bids loaded`;
-                        document.body.appendChild(notification);
-                        setTimeout(() => notification.remove(), 3000);
-                    }
-                    
-                    // Re-render admin view if currently on it
-                    if (this.state.activeView === 'admin') {
-                        this.renderAdminView();
-                    }
-                    
-                } catch (e) {
-                    console.error('Refresh bids error:', e);
-                    this.updateSystemStatus('⚠️ Refresh failed');
-                    // Re-render admin view even on error to restore UI
-                    if (this.state.activeView === 'admin') {
-                        this.renderAdminView();
-                    }
-                }
-            },
-            
-            // MODIFY your setActiveView function to handle auto-refresh
-            setActiveView(view) {
-                console.log('Setting view to:', view);
-                this.state.activeView = view;
-                
-                // Stop auto-refresh when leaving admin view
-                if (view !== 'admin') {
-                    this.stopAutoRefresh();
-                }
-                
-                // Auto-refresh bids from Supabase when planner opens Admin Panel
-                if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
-                    this.refreshBidsFromSupabase();
-                    this.startAutoRefresh(); // Start auto-refresh
-                } else {
-                    this.renderView();
-                }
-            },
-            
-            // MODIFY your handleLogout function to stop auto-refresh
-            handleLogout() {
-                this.stopAutoRefresh(); // Stop any auto-refresh
-                
-                this.state.currentUser = null;
-                this.state.userType = null;
-                this.state.verifiedEmployee = null;
-                this.state.activeView = 'login';
-                
-                document.getElementById('userInfo').classList.add('hidden');
-                document.getElementById('plannerNav').classList.add('hidden');
-                document.getElementById('employeeNav').classList.add('hidden');
-                document.getElementById('goldenCommandNav').classList.add('hidden');
-                document.getElementById('loginView').classList.remove('hidden');
-                
-                this.renderLoginForm();
-            },
-            
-            // MODIFY your renderAdminView function to add a manual refresh button and live counter
-            // Find the section in renderAdminView where you have the stats grid and add this after it:
-            // Add this code after the stats grid in renderAdminView
-            
-            // Find this section in renderAdminView:
-            `
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-blue-50 p-4 rounded-lg">
-                    <p class="text-2xl font-bold">${this.state.employees.length}</p>
-                    <p class="text-sm text-gray-600">Total Employees</p>
-                </div>
-                <div class="bg-green-50 p-4 rounded-lg">
-                    <p class="text-2xl font-bold" id="liveBidCounter">${this.state.bids.length}</p>
-                    <p class="text-sm text-gray-600">Total Bids</p>
-                </div>
-                <div class="bg-yellow-50 p-4 rounded-lg">
-                    <p class="text-2xl font-bold">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
-                    <p class="text-sm text-gray-600">Employees Who Bid</p>
-                </div>
-                <div class="bg-purple-50 p-4 rounded-lg">
-                    <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
-                    <p class="text-sm text-gray-600">Processed</p>
-                </div>
-            </div>
-            
-            <!-- Add Live Refresh Controls -->
-            <div class="mb-6 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-lg flex justify-between items-center">
-                <div>
-                    <p class="font-semibold text-indigo-800">🔄 Live Bid Updates</p>
-                    <p class="text-xs text-indigo-600 mt-1">Auto-refreshing every 10 seconds</p>
-                </div>
-                <div class="flex gap-3">
-                    <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold" id="lastRefreshTime">
-                        Last: ${new Date().toLocaleTimeString()}
-                    </span>
-                    <button onclick="app.refreshBidsFromSupabase()" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 text-sm font-semibold">
-                        🔄 Refresh Now
-                    </button>
-                </div>
-            </div>
-            `
-            
-            // Also add this function to periodically update the last refresh time
-            updateLastRefreshTime() {
-                const refreshEl = document.getElementById('lastRefreshTime');
-                if (refreshEl) {
-                    refreshEl.textContent = `Last: ${new Date().toLocaleTimeString()}`;
-                }
-                const counterEl = document.getElementById('liveBidCounter');
-                if (counterEl) {
-                    counterEl.textContent = this.state.bids.length;
-                }
-            }
 
             // ==================== INITIALIZATION ====================
             async init() {
