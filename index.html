@@ -2162,6 +2162,11 @@
                 });
                 const colorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
                 return `
+                    <div class="mb-3 flex justify-end">
+                        <button onclick="app.deleteAllBids()" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
+                            🗑️ Delete All Bids
+                        </button>
+                    </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm border-collapse">
                             <thead>
@@ -2175,6 +2180,7 @@
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Days</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Submitted</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700 text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2183,6 +2189,9 @@
                                     const slotColor = colorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
                                     const slotDisplay = this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType;
                                     const submitted = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
+                                    const safeId = encodeURIComponent(bid.employeeId);
+                                    const safeSlot = encodeURIComponent(bid.slotType);
+                                    const safeStart = encodeURIComponent(bid.startDate);
                                     return `
                                         <tr class="${idx % 2 === 0 ? '' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors">
                                             <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
@@ -2194,11 +2203,65 @@
                                             <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
                                             <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${bid.days || '—'}</td>
                                             <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${submitted}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-center">
+                                                <button onclick="app.adminDeleteBid('${safeId}','${safeSlot}','${safeStart}')"
+                                                    class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold hover:bg-red-200">
+                                                    🗑️ Delete
+                                                </button>
+                                            </td>
                                         </tr>`;
                                 }).join('')}
                             </tbody>
                         </table>
                     </div>`;
+            },
+
+            async adminDeleteBid(encodedId, encodedSlot, encodedStart) {
+                const employeeId = decodeURIComponent(encodedId);
+                const slotType   = decodeURIComponent(encodedSlot);
+                const startDate  = decodeURIComponent(encodedStart);
+                const bid = this.state.bids.find(b => b.employeeId === employeeId && b.slotType === slotType && b.startDate === startDate);
+                const name = bid?.employeeName || employeeId;
+                if (!confirm(`Delete bid for ${name} (${slotType}, ${startDate})?\n\nThis cannot be undone.`)) return;
+
+                // Remove from state
+                this.state.bids = this.state.bids.filter(b =>
+                    !(b.employeeId === employeeId && b.slotType === slotType && b.startDate === startDate)
+                );
+                this.saveState();
+
+                // Delete from Supabase
+                if (this.supabase) {
+                    const { error } = await this.supabase
+                        .from('leave_requests')
+                        .delete()
+                        .eq('employee_id', employeeId)
+                        .eq('slot_type', slotType)
+                        .eq('start_date', startDate);
+                    if (error) console.warn('⚠️ Supabase delete error:', error.message);
+                    else console.log('✅ Bid deleted from Supabase');
+                }
+
+                this._liveUpdateAdminPanel();
+            },
+
+            async deleteAllBids() {
+                if (!confirm(`⚠️ Delete ALL ${this.state.bids.length} bids?\n\nThis will permanently remove every bid from the database and cannot be undone.`)) return;
+
+                this.state.bids = [];
+                this.saveState();
+
+                if (this.supabase) {
+                    const { error } = await this.supabase
+                        .from('leave_requests')
+                        .delete()
+                        .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
+                    if (error) console.warn('⚠️ Supabase delete all error:', error.message);
+                    else console.log('✅ All bids deleted from Supabase');
+                }
+
+                this._liveUpdateAdminPanel();
+                alert('✅ All bids have been deleted.');
             },
 
             startAdminPolling() {
@@ -2597,141 +2660,79 @@
                     };
                 };
                 
-                // NEW: Function to find best slot combination for 35-day employees
-                const findBestSlotsFor35Days = (employee, department, assignedDays, assignedSlots) => {
-                    const slotCombinations = [
-                        { slot1: 'C', slot2: 'A' }, // 20 + 15 = 35
-                        { slot1: 'C', slot2: 'B' }, // 20 + 15 = 35
-                        { slot1: 'A', slot2: 'C' }, // 15 + 20 = 35
-                        { slot1: 'B', slot2: 'C' }  // 15 + 20 = 35
-                    ];
-                    
-                    // Try each combination
-                    for (const combo of slotCombinations) {
-                        // Try to find available months for both slots
-                        for (const month1 of this.state.months) {
-                            if (!slotAvailability[month1] || !slotAvailability[month1][department]) continue;
-                            if (slotAvailability[month1][department][combo.slot1] <= 0) continue;
-                            
-                            for (const month2 of this.state.months) {
-                                if (month1 === month2) continue; // Different months for different slots
-                                if (!slotAvailability[month2] || !slotAvailability[month2][department]) continue;
-                                if (slotAvailability[month2][department][combo.slot2] <= 0) continue;
-                                
-                                // Check if these slots would exceed capacity when combined with existing assignments
-                                const daysNeeded = (combo.slot1 === 'C' ? 20 : 15) + (combo.slot2 === 'C' ? 20 : 15);
-                                if (assignedDays + daysNeeded <= 35) {
-                                    return {
-                                        month1, slot1: combo.slot1,
-                                        month2, slot2: combo.slot2
-                                    };
-                                }
-                            }
-                        }
-                    }
-                    
-                    return null;
-                };
-                
-                // Process each employee by seniority
+                // Process each employee by seniority (most senior first)
                 sortedEmployees.forEach((employee, index) => {
                     const employeeBids = this.state.bids.filter(bid => bid.employeeId === employee.id);
-                    const entitlement = getEmployeeEntitlement(employee);
-                    const department = employee.department || 'Unassigned';
-                    
-                    // Track assigned slots for this employee
+                    const entitlement  = getEmployeeEntitlement(employee);
+                    const department   = employee.department || 'Unassigned';
+
                     const assignedSlots = [];
-                    let assignedDays = 0;
-                    
-                    // Phase 1: Try to assign based on employee's bids (by seniority)
-                    // Sort employee's bids by seniority preference (they're already sorted by overall seniority)
-                    if (employeeBids.length > 0) {
-                        // Process bids in the order they were placed (or sort by slot preference)
-                        employeeBids.forEach(bid => {
-                            if (assignedSlots.length >= 2) return; // Already have 2 slots
-                            
-                            const month = this.state.months[new Date(bid.startDate).getMonth()];
-                            const slotType = bid.slotType.charAt(bid.slotType.length - 1); // 'A', 'B', or 'C'
-                            
-                            // Check if slot is available in employee's department
-                            if (slotAvailability[month] && 
-                                slotAvailability[month][department] && 
-                                slotAvailability[month][department][slotType] > 0) {
-                                
-                                // NEW: Check for conflicts with other employees (same department, same slot)
-                                // Seniority already handled by processing order
-                                
-                                // Assign slot
-                                const assignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
-                                assignedSlots.push(assignment);
-                                assignedDays += assignment.days;
-                                
-                                // Decrease availability
-                                slotAvailability[month][department][slotType]--;
-                            }
-                        });
-                    }
-                    
-                    // Phase 2: Fill remaining slots (if employee doesn't have 2 slots yet)
-                    while (assignedSlots.length < 2) {
-                        // NEW: For 35-day employees, try to assign Slot C + another slot
-                        if (entitlement === 35 && assignedDays < 35) {
-                            const bestCombo = findBestSlotsFor35Days(employee, department, assignedDays, assignedSlots);
-                            
-                            if (bestCombo) {
-                                // Assign first slot from combo
-                                if (assignedSlots.length === 0) {
-                                    const assignment1 = assignSlotToEmployee(employee, bestCombo.month1, bestCombo.slot1, 1);
-                                    assignedSlots.push(assignment1);
-                                    assignedDays += assignment1.days;
-                                    slotAvailability[bestCombo.month1][department][bestCombo.slot1]--;
-                                }
-                                
-                                // Assign second slot from combo
-                                if (assignedSlots.length === 1) {
-                                    const assignment2 = assignSlotToEmployee(employee, bestCombo.month2, bestCombo.slot2, 2);
-                                    assignedSlots.push(assignment2);
-                                    assignedDays += assignment2.days;
-                                    slotAvailability[bestCombo.month2][department][bestCombo.slot2]--;
-                                }
-                                
-                                continue; // Skip to next employee
-                            }
+                    let assignedDays    = 0;
+
+                    // ── PHASE 1: Award the employee's own bid choices in order ──
+                    // Bids are sorted by submission timestamp so bid 1 = first choice, bid 2 = second choice
+                    const sortedBids = [...employeeBids].sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+
+                    for (const bid of sortedBids) {
+                        if (assignedSlots.length >= 2) break;
+
+                        const month    = this.state.months[new Date(bid.startDate).getMonth()];
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1); // 'A', 'B', or 'C'
+
+                        const available =
+                            slotAvailability[month] &&
+                            slotAvailability[month][department] &&
+                            slotAvailability[month][department][slotType] > 0;
+
+                        if (available) {
+                            const assignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
+                            assignment.type  = 'Bid Awarded';
+                            assignment.bidChoice = assignedSlots.length + 1; // 1st or 2nd choice
+                            assignedSlots.push(assignment);
+                            assignedDays += assignment.days;
+                            slotAvailability[month][department][slotType]--;
                         }
-                        
-                        // Regular assignment logic for 30-day employees or if no 35-day combo found
-                        // Find available slot for this employee
+                        // If slot is full: seniority already handled by processing order —
+                        // we simply skip this bid and try the next bid (choice 2) below
+                    }
+
+                    // ── PHASE 2: If employee still needs slots, try remaining bid choices ──
+                    // (e.g. choice 1 was full → try choice 2 as first assigned slot)
+                    // Already handled above in the bid loop — we try all submitted bids in order.
+
+                    // ── PHASE 3: Auto-assign if employee still has fewer than 2 slots ──
+                    while (assignedSlots.length < 2) {
                         let slotAssigned = false;
-                        
-                        // For 35-day employees, prioritize Slot C
+
+                        // Priority: prefer slot types that fit the entitlement perfectly
                         const slotPriority = entitlement === 35 ? ['C', 'A', 'B'] : ['A', 'B', 'C'];
-                        
-                        // Try each month
+
                         for (const month of this.state.months) {
-                            if (!slotAvailability[month] || !slotAvailability[month][department]) continue;
-                            
-                            // Try each slot type based on priority
+                            if (slotAssigned) break;
+                            if (!slotAvailability[month]?.[department]) continue;
+
                             for (const slotType of slotPriority) {
                                 if (slotAvailability[month][department][slotType] > 0) {
-                                    const potentialAssignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
-                                    
-                                    // Check if this would exceed entitlement
-                                    if (assignedDays + potentialAssignment.days <= entitlement) {
-                                        // NEW: Check if this creates a perfect 35-day combination
+                                    const potential = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
+
+                                    if (assignedDays + potential.days <= entitlement) {
+                                        // For 35-day employees ensure the combo adds up correctly
                                         if (entitlement === 35) {
-                                            const remainingDays = entitlement - (assignedDays + potentialAssignment.days);
-                                            // If this leaves exactly 15 or 20 days remaining, it's good
-                                            if (remainingDays === 15 || remainingDays === 20 || remainingDays === 0) {
-                                                assignedSlots.push(potentialAssignment);
-                                                assignedDays += potentialAssignment.days;
+                                            const remaining = entitlement - (assignedDays + potential.days);
+                                            if (remaining === 15 || remaining === 20 || remaining === 0) {
+                                                potential.type = 'Auto-Assigned';
+                                                potential.bidChoice = null;
+                                                assignedSlots.push(potential);
+                                                assignedDays += potential.days;
                                                 slotAvailability[month][department][slotType]--;
                                                 slotAssigned = true;
                                                 break;
                                             }
                                         } else {
-                                            // For 30-day employees, any combination that doesn't exceed limit
-                                            assignedSlots.push(potentialAssignment);
-                                            assignedDays += potentialAssignment.days;
+                                            potential.type = 'Auto-Assigned';
+                                            potential.bidChoice = null;
+                                            assignedSlots.push(potential);
+                                            assignedDays += potential.days;
                                             slotAvailability[month][department][slotType]--;
                                             slotAssigned = true;
                                             break;
@@ -2739,43 +2740,34 @@
                                     }
                                 }
                             }
-                            if (slotAssigned) break;
                         }
-                        
-                        // If no slot found, assign default with consideration for 35-day requirement
-                        if (!slotAssigned && assignedSlots.length < 2) {
-                            const defaultMonth = this.state.months[assignedSlots.length % 12];
-                            
-                            // For 35-day employees, try to get Slot C if possible
-                            let defaultSlotType;
-                            if (entitlement === 35 && assignedDays === 0) {
-                                defaultSlotType = 'C'; // Start with 20-day slot
-                            } else if (entitlement === 35 && assignedDays === 20) {
-                                defaultSlotType = 'A'; // Need 15 more days
-                            } else {
-                                defaultSlotType = assignedSlots.length % 3 === 0 ? 'A' : assignedSlots.length % 3 === 1 ? 'B' : 'C';
-                            }
-                            
-                            const defaultAssignment = assignSlotToEmployee(employee, defaultMonth, defaultSlotType, assignedSlots.length + 1);
-                            assignedSlots.push(defaultAssignment);
-                            assignedDays += defaultAssignment.days;
-                            
-                            // Create availability if doesn't exist
-                            if (!slotAvailability[defaultMonth]) slotAvailability[defaultMonth] = {};
-                            if (!slotAvailability[defaultMonth][department]) slotAvailability[defaultMonth][department] = { A: 0, B: 0, C: 0 };
-                            slotAvailability[defaultMonth][department][defaultSlotType] = Math.max(0, slotAvailability[defaultMonth][department][defaultSlotType] - 1);
+
+                        // Last resort: force-assign with no capacity check
+                        if (!slotAssigned) {
+                            const fallbackMonth    = this.state.months[assignedSlots.length % 12];
+                            const fallbackSlotType = entitlement === 35
+                                ? (assignedDays === 0 ? 'C' : 'A')
+                                : (assignedSlots.length % 3 === 0 ? 'A' : assignedSlots.length % 3 === 1 ? 'B' : 'C');
+
+                            const fallback = assignSlotToEmployee(employee, fallbackMonth, fallbackSlotType, assignedSlots.length + 1);
+                            fallback.type      = 'Auto-Assigned';
+                            fallback.bidChoice = null;
+                            assignedSlots.push(fallback);
+                            assignedDays += fallback.days;
+
+                            if (!slotAvailability[fallbackMonth]) slotAvailability[fallbackMonth] = {};
+                            if (!slotAvailability[fallbackMonth][department]) slotAvailability[fallbackMonth][department] = { A: 0, B: 0, C: 0 };
                         }
                     }
-                    
+
                     // Add all assignments to results
                     assignedSlots.forEach((assignment, slotIndex) => {
                         slotAssignments.push({
                             ...assignment,
                             seniorityRank: index + 1,
-                            type: employeeBids.length > slotIndex ? 'Bid Awarded' : 'Auto-Assigned',
                             totalEmployeeSlots: 2,
                             slotOrder: slotIndex + 1,
-                            entitlement: entitlement
+                            entitlement
                         });
                     });
                 });
