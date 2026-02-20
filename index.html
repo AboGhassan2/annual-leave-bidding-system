@@ -1894,28 +1894,40 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${this.state.months.map(month => {
+                                        ${this.state.months.map((month, monthIdx) => {
+                                            const year = this.state.biddingYear;
+                                            // Default start = 1st of month, end = last day of month
+                                            const pad = n => String(n).padStart(2, '0');
+                                            const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+                                            const defaultStart = `${year}-${pad(monthIdx + 1)}-01`;
+                                            const defaultEnd   = `${year}-${pad(monthIdx + 1)}-${pad(lastDay)}`;
                                             return `
                                                 <tr class="hover:bg-gray-50">
                                                     <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
                                                     ${['SA','SB','SC'].map((slotId, si) => {
                                                         const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500'];
                                                         const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50'];
+                                                        const savedStart    = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`];
+                                                        const savedEnd      = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`];
+                                                        const savedCapacity = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`];
+                                                        const startVal    = savedStart    !== undefined ? savedStart    : defaultStart;
+                                                        const endVal      = savedEnd      !== undefined ? savedEnd      : defaultEnd;
+                                                        const capacityVal = savedCapacity !== undefined ? savedCapacity : 1;
                                                         return `
                                                             <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
                                                                 <input type="date"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
                                                                     class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
-                                                                    min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
-                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`] || ''}"
+                                                                    min="${year}-01-01" max="${year}-12-31"
+                                                                    value="${startVal}"
                                                                 />
                                                             </td>
                                                             <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
                                                                 <input type="date"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
                                                                     class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
-                                                                    min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
-                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`] || ''}"
+                                                                    min="${year}-01-01" max="${year}-12-31"
+                                                                    value="${endVal}"
                                                                 />
                                                             </td>
                                                             <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
@@ -1923,7 +1935,7 @@
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
                                                                     class="cal-slot-input slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
                                                                     placeholder="1"
-                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] !== undefined ? this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] : 1}"
+                                                                    value="${capacityVal}"
                                                                 />
                                                             </td>
                                                         `;
@@ -2021,7 +2033,13 @@
                     const month = input.dataset.month;
                     const slot = input.dataset.slot;
                     const field = input.dataset.field;
-                    const value = field === 'capacity' ? (parseInt(input.value) || 0) : input.value;
+                    let value;
+                    if (field === 'capacity') {
+                        value = parseInt(input.value);
+                        if (isNaN(value)) value = 1; // default capacity = 1
+                    } else {
+                        value = input.value;
+                    }
                     
                     if (dept && slot && field) {
                         const key = month 
@@ -2033,6 +2051,23 @@
                 });
                 
                 this.saveState();
+
+                // Also push slot config to Supabase so other browsers get it
+                if (this.supabase) {
+                    this.supabase.from('system_config').upsert({
+                        id: 1,
+                        bidding_deadline: this.state.biddingDeadline,
+                        bidding_year: this.state.biddingYear,
+                        is_processed: this.state.isProcessed,
+                        planner_password: this.state.plannerPassword,
+                        slot_capacities: this.state.slotCapacities,
+                        results: this.state.results,
+                        last_updated: new Date().toISOString()
+                    }, { onConflict: 'id' }).then(({ error }) => {
+                        if (error) console.warn('⚠️ Could not push slot config to Supabase:', error.message);
+                        else console.log('✅ Slot config pushed to Supabase');
+                    });
+                }
                 
                 alert(`✅ Slot configurations saved!\n\n• ${savedCount} fields saved.\n• Each department now has Slot A, B, C configured per month (Jan–Dec).`);
                 
@@ -3056,6 +3091,8 @@
                         console.log('✅ Bid saved to Supabase');
                     } else {
                         console.warn('⚠️ Bid saved locally only — Supabase unavailable');
+                        // Show warning so user knows the bid may not be visible to the planner
+                        alert('⚠️ Your bid was recorded locally but could NOT be saved to the database.\n\nPlease check your internet connection and try submitting again, or contact the planner.');
                     }
                 });
 
@@ -3066,7 +3103,10 @@
             },
 
             async saveBidToSupabase(bid) {
-                if (!this.supabase) return false;
+                if (!this.supabase) {
+                    console.warn('⚠️ Supabase not initialised — bid saved locally only');
+                    return false;
+                }
                 try {
                     const row = {
                         employee_id: bid.employeeId,
@@ -3080,34 +3120,29 @@
                         created_at: bid.timestamp || new Date().toISOString()
                     };
 
-                    // First try upsert (works if unique constraint exists)
-                    const { error: upsertError } = await this.supabase
-                        .from('leave_requests')
-                        .upsert(row, { onConflict: 'employee_id,slot_type,start_date' });
-
-                    if (!upsertError) {
-                        console.log('✅ Bid saved to Supabase (upsert)');
-                        return true;
-                    }
-
-                    // If upsert fails (e.g. no unique constraint), try delete-then-insert
-                    console.warn('⚠️ Upsert failed, trying delete+insert:', upsertError.message);
-                    await this.supabase
+                    // Step 1: Delete any existing row for this employee+slot combo to avoid duplicates
+                    const { error: delError } = await this.supabase
                         .from('leave_requests')
                         .delete()
                         .eq('employee_id', bid.employeeId)
-                        .eq('slot_type', bid.slotType)
-                        .eq('start_date', bid.startDate);
+                        .eq('slot_type', bid.slotType);
 
-                    const { error: insertError } = await this.supabase
+                    if (delError) {
+                        console.warn('⚠️ Pre-delete warning (non-fatal):', delError.message);
+                    }
+
+                    // Step 2: Insert the new bid row fresh
+                    const { data, error: insertError } = await this.supabase
                         .from('leave_requests')
-                        .insert(row);
+                        .insert(row)
+                        .select();
 
                     if (insertError) {
-                        console.error('❌ Supabase bid insert error:', insertError.message);
+                        console.error('❌ Supabase bid insert error:', insertError.message, insertError);
                         return false;
                     }
-                    console.log('✅ Bid saved to Supabase (delete+insert)');
+
+                    console.log('✅ Bid saved to Supabase:', data);
                     return true;
                 } catch (e) {
                     console.error('❌ Supabase bid save exception:', e.message);
