@@ -326,7 +326,7 @@
                             id: emp.id,
                             name: emp.name,
                             seniorityDate: emp.seniority_date,
-                            role: emp.role || '',
+                            position: emp.position || '',
                             department: emp.department || 'Unassigned',
                             gender: emp.gender || '',
                             nationality: emp.nationality || '',
@@ -444,7 +444,7 @@
                             id: emp.id,
                             name: emp.name,
                             seniority_date: emp.seniorityDate,
-                            role: emp.role || '',
+                            position: emp.position || '',
                             department: emp.department || '',
                             gender: emp.gender || '',
                             nationality: emp.nationality || '',
@@ -884,7 +884,7 @@
                             <h2 class="text-2xl font-bold mb-4">Upload Employee Data</h2>
                             <p class="text-gray-600 mb-6">
                                 Upload an Excel file with employee information. The file should have columns like:
-                                "Personnel number", "Name", "Seniority Date", "Department", etc.
+                                "Personnel number", "Name", "Seniority Date", "Department" (Position), "Scheduling row" (L-code), etc.
                             </p>
                             
                             <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-4">
@@ -912,7 +912,7 @@
                                             ✓ ${this.state.employees.length} employees loaded for ${this.state.biddingYear}
                                         </span>
                                         <div class="text-xs text-green-600 mt-1">
-                                            Departments found: ${[...new Set(this.state.employees.map(e => e.department || 'Unassigned'))].join(', ')}
+                                            Positions found: ${[...new Set(this.state.employees.map(e => e.position || e.department || 'Unassigned'))].join(', ')}
                                         </div>
                                     </div>
                                 </div>
@@ -983,19 +983,33 @@
                                 name = `${forename} ${surname}`.trim();
                             }
                             
-                            // Find department
-                            let department = '';
-                            const deptColumns = ['Department', 'Scheduling row', 'Scheduling_row', 
-                                               'SchedulingRow', 'DEPARTMENT'];
-                            
-                            for (const col of deptColumns) {
+                            // Read position (display name, e.g. 'Depot Controller') from Department column
+                            let position = '';
+                            const positionColumns = ['Department', 'DEPARTMENT', 'Position', 'Job Title', 'Role'];
+                            for (const col of positionColumns) {
                                 if (row[col] !== undefined && row[col] !== '') {
-                                    department = String(row[col]).trim();
-                                    // Clean up department name
-                                    department = department.split('.')[0].trim();
+                                    position = String(row[col]).trim().split('.')[0].trim();
                                     break;
                                 }
                             }
+
+                            // Read department (L-code, e.g. 'L3-DEP-DC') from Scheduling row column
+                            let department = '';
+                            const deptColumns = [
+                                'Scheduling row', 'Scheduling_row', 'SchedulingRow',
+                                'Org. Unit', 'Org Unit', 'OrgUnit'
+                            ];
+                            for (const col of deptColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    const raw = String(row[col]).trim().split('.')[0].trim();
+                                    if (/^(L3|L46|L5)[-\s]/i.test(raw) || /^(L3-SA|L5 SA|L3 SAMB|L5 SAMB|L46 SAMB)$/i.test(raw)) {
+                                        department = raw;
+                                        break;
+                                    }
+                                }
+                            }
+                            // Fallback: if no L-code found, use position as department
+                            if (!department) department = position;
                             
                             // Find seniority date
                             let seniorityDate = '';
@@ -1047,7 +1061,7 @@
                                 name: name,
                                 seniorityDate: seniorityDate,
                                 department: department,
-                                role: row['Role'] || row['Position'] || row['Job Title'] || '',
+                                position: position,
                                 gender: row['Gender'] || row['gender'] || '',
                                 nationality: row['Nationality'] || row['nationality'] || ''
                             };
@@ -1062,9 +1076,9 @@
                             this.saveState();
                             
                             // Show summary of departments found
-                            const departmentsFound = [...new Set(employees.map(e => e.department))];
+                            const departmentsFound = [...new Set(employees.map(e => e.position || e.department))];
                             const message = `✅ Successfully loaded ${employees.length} employees\n\n` +
-                                          `Departments found (${departmentsFound.length}):\n` +
+                                          `Positions found (${departmentsFound.length}):\n` +
                                           departmentsFound.join(', ');
                             
                             alert(message);
@@ -2104,6 +2118,7 @@
                         employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
                         seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
                         department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
+                        position: this.state.employees.find(e => e.id === bid.employee_id)?.position || '',
                         slotType: bid.slot_type || 'slotA',
                         startDate: bid.start_date,
                         endDate: bid.end_date,
@@ -2174,7 +2189,7 @@
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Employee ID</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Start Date</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
@@ -2197,7 +2212,7 @@
                                             <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
                                             <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${bid.employeeId}</td>
                                             <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${bid.employeeName || emp?.name || 'Unknown'}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.department || emp?.department || 'Unassigned'}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.position || emp?.position || bid.department || emp?.department || 'Unassigned'}</td>
                                             <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${slotDisplay}</span></td>
                                             <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.startDate || '—'}</td>
                                             <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
@@ -2286,8 +2301,12 @@
 
             renderAdminView() {
                 const content = document.getElementById('contentArea');
-                const allDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
-                const depts = ['all', ...allDepts].sort();
+                // Use exact same department list as Configure Slots (L3/L46/L5 codes only)
+                const employeeDeptsAdmin = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const allRawDeptsAdmin = [...new Set([...this.state.departments, ...employeeDeptsAdmin])];
+                const filteredDeptsAdmin = allRawDeptsAdmin.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const allDepts = filteredDeptsAdmin;
+                const depts = ['all', ...filteredDeptsAdmin];
                 
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
@@ -2312,7 +2331,7 @@
                             </div>
 
                             <div class="mb-6 p-4 bg-purple-50 rounded-lg">
-                                <label class="block font-semibold mb-2">Filter by Department:</label>
+                                <label class="block font-semibold mb-2">Filter by Scheduling Row:</label>
                                 <select
                                     id="adminDeptFilter"
                                     class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
@@ -2320,7 +2339,7 @@
                                 >
                                     ${depts.map(dept => `
                                         <option value="${dept}" ${dept === this.state.selectedDepartment ? 'selected' : ''}>
-                                            ${dept === 'all' ? 'All Departments' : dept}
+                                            ${dept === 'all' ? 'All Departments (L3 / L46 / L5)' : dept}
                                         </option>
                                     `).join('')}
                                 </select>
@@ -2372,7 +2391,7 @@
                             <div class="bg-gray-50 p-4 rounded-lg">
                                 <h3 class="font-bold mb-2">System Information</h3>
                                 <div class="text-sm text-gray-600 space-y-1">
-                                    <p>&bull; Departments: ${allDepts.length}</p>
+                                    <p>&bull; Scheduling Rows configured: ${allDepts.length}</p>
                                     <p>&bull; Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
                                     <p>&bull; Bidding year: ${this.state.biddingYear}</p>
                                     <p>&bull; Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
@@ -2646,6 +2665,7 @@
                     return {
                         employeeId: employee.id,
                         employeeName: employee.name,
+                        position: employee.position || '',
                         department: dept,
                         slotName: `${slot ? slot.name : slotType}`,
                         slotType: `slot${slotType}`,
@@ -2660,11 +2680,53 @@
                     };
                 };
                 
+                // Build a dept resolver: maps an employee's department value to the
+                // best-matching key in slotAvailability (handles cases where the Excel
+                // 'Department' column has a display name like 'Depot Controller' instead
+                // of the L-code 'L3-DEP-DC' that was used when configuring slots).
+                const configuredDeptKeys = new Set(
+                    Object.values(slotAvailability).flatMap(monthObj => Object.keys(monthObj || {}))
+                );
+                const deptResolveCache = {};
+                const resolveEmployeeDept = (empDept) => {
+                    if (deptResolveCache[empDept] !== undefined) return deptResolveCache[empDept];
+                    // Exact match first
+                    if (configuredDeptKeys.has(empDept)) {
+                        deptResolveCache[empDept] = empDept;
+                        return empDept;
+                    }
+                    // Try case-insensitive exact match
+                    for (const key of configuredDeptKeys) {
+                        if (key.toLowerCase() === empDept.toLowerCase()) {
+                            deptResolveCache[empDept] = key;
+                            return key;
+                        }
+                    }
+                    // No match found — return original so warning logic catches it
+                    deptResolveCache[empDept] = empDept;
+                    return empDept;
+                };
+
+                // Warn if any employee departments have no configured slots
+                const configuredDepts = new Set(Object.keys(slotAvailability).flatMap(month => Object.keys(slotAvailability[month] || {})));
+                const employeeDeptSet = new Set(sortedEmployees.map(e => resolveEmployeeDept(e.department || 'Unassigned')));
+                const unconfiguredDepts = [...employeeDeptSet].filter(d => !configuredDepts.has(d));
+                if (unconfiguredDepts.length > 0) {
+                    const proceed = confirm(
+                        `⚠️ WARNING: The following employee departments have NO slot capacity configured:\n\n` +
+                        unconfiguredDepts.map(d => `• ${d}`).join('\n') +
+                        `\n\nEmployees in these departments will be auto-assigned using available slots from other configured departments.\n\n` +
+                        `It is strongly recommended to Cancel and configure slots for these departments first.\n\nContinue anyway?`
+                    );
+                    if (!proceed) return;
+                }
+
                 // Process each employee by seniority (most senior first)
                 sortedEmployees.forEach((employee, index) => {
                     const employeeBids = this.state.bids.filter(bid => bid.employeeId === employee.id);
                     const entitlement  = getEmployeeEntitlement(employee);
-                    const department   = employee.department || 'Unassigned';
+                    // Resolve employee department to the configured slot key (L3/L46/L5 code)
+                    const department   = resolveEmployeeDept(employee.department || 'Unassigned');
 
                     const assignedSlots = [];
                     let assignedDays    = 0;
@@ -2707,35 +2769,42 @@
                         // Priority: prefer slot types that fit the entitlement perfectly
                         const slotPriority = entitlement === 35 ? ['C', 'A', 'B'] : ['A', 'B', 'C'];
 
-                        for (const month of this.state.months) {
+                        // First try employee's own department, then fall back to any dept with capacity
+                        const deptSearchOrder = [department, ...Object.keys(slotAvailability).flatMap(m => Object.keys(slotAvailability[m] || {})).filter(d => d !== department)];
+                        const uniqueDepts = [...new Set(deptSearchOrder)];
+
+                        for (const searchMonth of this.state.months) {
                             if (slotAssigned) break;
-                            if (!slotAvailability[month]?.[department]) continue;
+                            for (const searchDept of uniqueDepts) {
+                                if (slotAssigned) break;
+                                if (!slotAvailability[searchMonth]?.[searchDept]) continue;
 
-                            for (const slotType of slotPriority) {
-                                if (slotAvailability[month][department][slotType] > 0) {
-                                    const potential = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
+                                for (const slotType of slotPriority) {
+                                    if (slotAvailability[searchMonth][searchDept][slotType] > 0) {
+                                        const potential = assignSlotToEmployee(employee, searchMonth, slotType, assignedSlots.length + 1);
 
-                                    if (assignedDays + potential.days <= entitlement) {
-                                        // For 35-day employees ensure the combo adds up correctly
-                                        if (entitlement === 35) {
-                                            const remaining = entitlement - (assignedDays + potential.days);
-                                            if (remaining === 15 || remaining === 20 || remaining === 0) {
+                                        if (assignedDays + potential.days <= entitlement) {
+                                            // For 35-day employees ensure the combo adds up correctly
+                                            if (entitlement === 35) {
+                                                const remaining = entitlement - (assignedDays + potential.days);
+                                                if (remaining === 15 || remaining === 20 || remaining === 0) {
+                                                    potential.type = 'Auto-Assigned';
+                                                    potential.bidChoice = null;
+                                                    assignedSlots.push(potential);
+                                                    assignedDays += potential.days;
+                                                    slotAvailability[searchMonth][searchDept][slotType]--;
+                                                    slotAssigned = true;
+                                                    break;
+                                                }
+                                            } else {
                                                 potential.type = 'Auto-Assigned';
                                                 potential.bidChoice = null;
                                                 assignedSlots.push(potential);
                                                 assignedDays += potential.days;
-                                                slotAvailability[month][department][slotType]--;
+                                                slotAvailability[searchMonth][searchDept][slotType]--;
                                                 slotAssigned = true;
                                                 break;
                                             }
-                                        } else {
-                                            potential.type = 'Auto-Assigned';
-                                            potential.bidChoice = null;
-                                            assignedSlots.push(potential);
-                                            assignedDays += potential.days;
-                                            slotAvailability[month][department][slotType]--;
-                                            slotAssigned = true;
-                                            break;
                                         }
                                     }
                                 }
@@ -2806,15 +2875,17 @@
                 
                 // Create Excel workbook
                 const wsData = [
-                    ['Seniority Rank', 'Employee ID', 'Employee Name', 'Department', 'Slot Type', 
+                    ['Seniority Rank', 'Employee ID', 'Employee Name', 'Position', 'Scheduling Row (Department)', 'Slot Type', 
                      'Month', 'Start Date', 'End Date', 'Days', 'Assignment Type']
                 ];
                 
                 this.state.results.forEach(result => {
+                    const emp = this.state.employees.find(e => e.id === result.employeeId);
                     wsData.push([
                         result.seniorityRank,
                         result.employeeId,
                         result.employeeName,
+                        emp?.position || result.position || '',
                         result.department,
                         result.slotName,
                         result.month,
@@ -3066,6 +3137,7 @@
                     employeeId: this.state.verifiedEmployee.id,
                     employeeName: this.state.verifiedEmployee.name,
                     seniorityDate: this.state.verifiedEmployee.seniorityDate,
+                    position: this.state.verifiedEmployee.position || '',
                     department: this.state.verifiedEmployee.department,
                     slotType: window.selectedSlot,
                     startDate,
@@ -3365,7 +3437,7 @@
                                             <tr>
                                                 <th class="p-3">Rank</th>
                                                 <th class="p-3">Employee</th>
-                                                <th class="p-3">Department</th>
+                                                <th class="p-3">Position</th>
                                                 <th class="p-3">Seniority</th>
                                                 <th class="p-3">Slot 1</th>
                                                 <th class="p-3">Slot 2</th>
@@ -3388,7 +3460,7 @@
                                                         <td class="p-3">${employee?.name || 'Unknown'}<br>
                                                             <span class="text-xs text-gray-500">${empId}</span>
                                                         </td>
-                                                        <td class="p-3">${employee?.department || 'Unassigned'}</td>
+                                                        <td class="p-3">${employee?.position || employee?.department || 'Unassigned'}</td>
                                                         <td class="p-3">${slot1?.yearsOfService || 'N/A'} yrs</td>
                                                         <td class="p-3">
                                                             ${slot1?.slotName || 'N/A'}<br>
