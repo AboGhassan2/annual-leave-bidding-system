@@ -811,7 +811,12 @@
             setActiveView(view) {
                 console.log('Setting view to:', view);
                 this.state.activeView = view;
-                this.renderView();
+                // Auto-refresh bids from Supabase when planner opens Admin Panel
+                if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
+                    this.refreshBidsFromSupabase();
+                } else {
+                    this.renderView();
+                }
             },
 
             renderView() {
@@ -1915,8 +1920,8 @@
                                                                 <input type="number" min="0" max="200"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
                                                                     class="cal-slot-input slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
-                                                                    placeholder="0"
-                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] || ''}"
+                                                                    placeholder="1"
+                                                                    value="${this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] !== undefined ? this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] : 1}"
                                                                 />
                                                             </td>
                                                         `;
@@ -2032,6 +2037,48 @@
                 this.setActiveView('admin');
             },
 
+            async refreshBidsFromSupabase() {
+                if (!this.supabase) {
+                    alert('⚠️ Not connected to database.');
+                    return;
+                }
+                this.updateSystemStatus('Refreshing bids...');
+                try {
+                    let allBids = [];
+                    let from = 0;
+                    const batchSize = 1000;
+                    let hasMore = true;
+                    while (hasMore) {
+                        const { data: bidsBatch, error } = await this.supabase
+                            .from('leave_requests')
+                            .select('*')
+                            .range(from, from + batchSize - 1);
+                        if (error || !bidsBatch || bidsBatch.length === 0) { hasMore = false; break; }
+                        allBids = [...allBids, ...bidsBatch];
+                        hasMore = bidsBatch.length === batchSize;
+                        from += batchSize;
+                    }
+                    this.state.bids = allBids.map(bid => ({
+                        employeeId: bid.employee_id,
+                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
+                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
+                        slotType: bid.slot_type || 'slotA',
+                        startDate: bid.start_date,
+                        endDate: bid.end_date,
+                        days: bid.days_requested,
+                        timestamp: bid.created_at
+                    }));
+                    this.saveState();
+                    this.updateSystemStatus(`✅ ${this.state.bids.length} bids loaded`);
+                    this.renderAdminView();
+                } catch (e) {
+                    console.error('Refresh bids error:', e);
+                    this.updateSystemStatus('⚠️ Refresh failed');
+                    alert('Failed to refresh bids: ' + e.message);
+                }
+            },
+
             renderAdminView() {
                 const content = document.getElementById('contentArea');
                 const allDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
@@ -2101,6 +2148,10 @@
                                         📊 Export Results to Excel
                                     </button>
                                 ` : ''}
+                                
+                                <button onclick="app.refreshBidsFromSupabase()" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
+                                    🔄 Refresh Bids from Database
+                                </button>
                                 
                                 <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
                                     🔄 Reset System
