@@ -121,6 +121,11 @@
                 >
                     Login
                 </button>
+                <div class="mt-4 text-center">
+                    <button onclick="app.renderForgotPasswordView()" class="text-sm text-blue-500 hover:underline">
+                        Forgot Password?
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -3502,25 +3507,32 @@
 
             renderChangePasswordView() {
                 const content = document.getElementById('contentArea');
+                const backView = this.state.userType === 'goldencommand' ? 'goldenCommand' : 'employee';
                 content.innerHTML = `
                     <div class="max-w-md mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-8">
-                            <h2 class="text-2xl font-bold mb-6">Change Password</h2>
+                            <h2 class="text-2xl font-bold mb-2">🔑 Change Password</h2>
+                            <p class="text-gray-500 text-sm mb-6">Update your login password below.</p>
+                            <div id="cpMsg"></div>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block font-semibold mb-2">New Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">Current Password:</label>
+                                    <input type="password" id="cpCurrent" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Enter current password" />
                                 </div>
                                 <div>
-                                    <label class="block font-semibold mb-2">Confirm Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">New Password:</label>
+                                    <input type="password" id="cpNew" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Enter new password (min 4 chars)" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                    <input type="password" id="cpConfirm" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Repeat new password" />
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
-                                <button onclick="app.setActiveView('employee')" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg">
-                                    Save
+                                <button onclick="app.doChangePassword()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold">
+                                    💾 Save Password
                                 </button>
-                                <button onclick="app.setActiveView('employee')" class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg">
+                                <button onclick="app.setActiveView('${backView}')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
                                     Cancel
                                 </button>
                             </div>
@@ -3529,33 +3541,260 @@
                 `;
             },
 
+            async doChangePassword() {
+                const current = document.getElementById('cpCurrent').value;
+                const newPass = document.getElementById('cpNew').value;
+                const confirm = document.getElementById('cpConfirm').value;
+                const msg = document.getElementById('cpMsg');
+
+                const showMsg = (text, color) => {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border ${color}">${text}</div>`;
+                };
+
+                const user = this.state.currentUser;
+                const userId = user.id;
+                const userType = this.state.userType;
+
+                // Verify current password
+                let storedPass;
+                if (userType === 'goldencommand') {
+                    const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                    storedPass = gcUser ? (gcUser.password || gcUser.id) : userId;
+                } else {
+                    storedPass = this.state.employeePasswords[userId] || userId;
+                }
+
+                if (current !== storedPass) {
+                    showMsg('❌ Current password is incorrect.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+                if (newPass.length < 4) {
+                    showMsg('⚠️ New password must be at least 4 characters.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    return;
+                }
+                if (newPass !== confirm) {
+                    showMsg('❌ New passwords do not match.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+
+                try {
+                    if (userType === 'goldencommand') {
+                        // Update in Supabase golden_command_users table
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('golden_command_users')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            if (error) throw error;
+                        }
+                        // Update local state
+                        const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                        if (gcUser) gcUser.password = newPass;
+                    } else {
+                        // Employee: update local state + employeePasswords
+                        this.state.employeePasswords[userId] = newPass;
+                        // Also update the employees table password column if it exists
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('employees')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            // ignore error if column doesn't exist
+                        }
+                    }
+
+                    this.saveState();
+                    showMsg('✅ Password changed successfully!', 'bg-green-50 border-green-300 text-green-700');
+                    // Clear fields
+                    document.getElementById('cpCurrent').value = '';
+                    document.getElementById('cpNew').value = '';
+                    document.getElementById('cpConfirm').value = '';
+                } catch (err) {
+                    console.error('Password change error:', err);
+                    showMsg('❌ Failed to save password. Changes saved locally.', 'bg-red-50 border-red-300 text-red-700');
+                    // Still update locally
+                    if (userType === 'goldencommand') {
+                        const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                        if (gcUser) gcUser.password = newPass;
+                    } else {
+                        this.state.employeePasswords[userId] = newPass;
+                    }
+                    this.saveState();
+                }
+            },
+
             renderChangePlannerPasswordView() {
                 const content = document.getElementById('contentArea');
                 content.innerHTML = `
                     <div class="max-w-md mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-8">
-                            <h2 class="text-2xl font-bold mb-6">Change Planner Password</h2>
+                            <h2 class="text-2xl font-bold mb-2">🔐 Change Planner Password</h2>
+                            <p class="text-gray-500 text-sm mb-6">Update the planner login password. This is saved to the database.</p>
+                            <div id="ppMsg"></div>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block font-semibold mb-2">New Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">Current Password:</label>
+                                    <input type="password" id="ppCurrent" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Enter current planner password" />
                                 </div>
                                 <div>
-                                    <label class="block font-semibold mb-2">Confirm Password:</label>
-                                    <input type="password" class="w-full px-4 py-2 border rounded-lg">
+                                    <label class="block font-semibold mb-2">New Password:</label>
+                                    <input type="password" id="ppNew" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Enter new password (min 4 chars)" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                    <input type="password" id="ppConfirm" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Repeat new password" />
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
-                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 bg-purple-500 text-white rounded-lg">
-                                    Save
+                                <button onclick="app.doChangePlannerPassword()" class="flex-1 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold">
+                                    💾 Save Password
                                 </button>
-                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 bg-gray-500 text-white rounded-lg">
+                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
                                     Cancel
                                 </button>
                             </div>
                         </div>
                     </div>
                 `;
+            },
+
+            async doChangePlannerPassword() {
+                const current = document.getElementById('ppCurrent').value;
+                const newPass = document.getElementById('ppNew').value;
+                const confirm = document.getElementById('ppConfirm').value;
+                const msg = document.getElementById('ppMsg');
+
+                const showMsg = (text, color) => {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border ${color}">${text}</div>`;
+                };
+
+                if (current !== this.state.plannerPassword) {
+                    showMsg('❌ Current password is incorrect.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+                if (newPass.length < 4) {
+                    showMsg('⚠️ New password must be at least 4 characters.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    return;
+                }
+                if (newPass !== confirm) {
+                    showMsg('❌ New passwords do not match.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+
+                this.state.plannerPassword = newPass;
+                this.saveState();
+
+                try {
+                    if (this.supabase) {
+                        const { error } = await this.supabase
+                            .from('system_config')
+                            .update({ planner_password: newPass })
+                            .eq('id', 1);
+                        if (error) throw error;
+                        showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
+                    } else {
+                        showMsg('✅ Password updated locally (database not connected).', 'bg-green-50 border-green-300 text-green-700');
+                    }
+                } catch (err) {
+                    console.error('Planner password change error:', err);
+                    showMsg('✅ Password updated locally. ⚠️ Database save failed — reconnect and try again.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                }
+
+                document.getElementById('ppCurrent').value = '';
+                document.getElementById('ppNew').value = '';
+                document.getElementById('ppConfirm').value = '';
+            },
+
+            // ==================== FORGOT PASSWORD ====================
+            renderForgotPasswordView() {
+                const loginView = document.getElementById('loginView');
+                const content = loginView.querySelector('.bg-white');
+                content.innerHTML = `
+                    <h1 class="text-2xl font-bold text-center mb-2 text-blue-600">Forgot Password</h1>
+                    <p class="text-gray-500 text-sm text-center mb-6">Reset your password to your Employee ID (default).</p>
+                    <div id="fpMsg"></div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block font-semibold mb-2">Employee ID:</label>
+                            <input type="text" id="fpId" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Enter your Employee ID" />
+                        </div>
+                    </div>
+                    <div class="flex gap-3 mt-6">
+                        <button onclick="app.doForgotPassword()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold">
+                            🔄 Reset Password
+                        </button>
+                        <button onclick="app.showLoginView()" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
+                            ← Back to Login
+                        </button>
+                    </div>
+                `;
+            },
+
+            async doForgotPassword() {
+                const empId = document.getElementById('fpId').value.trim();
+                const msg = document.getElementById('fpMsg');
+
+                const showMsg = (text, color) => {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border ${color}">${text}</div>`;
+                };
+
+                if (!empId) {
+                    showMsg('⚠️ Please enter your Employee ID.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    return;
+                }
+
+                const employee = this.state.employees.find(e => e.id === empId);
+                if (!employee) {
+                    showMsg('❌ Employee ID not found. Make sure data is loaded.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+
+                // Reset password to default (Employee ID)
+                this.state.employeePasswords[empId] = empId;
+                this.saveState();
+
+                try {
+                    if (this.supabase) {
+                        // Try to update password column if it exists
+                        await this.supabase.from('employees').update({ password: empId }).eq('id', empId);
+                    }
+                } catch (err) {
+                    console.warn('Could not update password in DB:', err);
+                }
+
+                showMsg(`✅ Password for <strong>${employee.name}</strong> has been reset to your Employee ID: <strong>${empId}</strong>. Please log in and change your password immediately.`, 'bg-green-50 border-green-300 text-green-700');
+            },
+
+            showLoginView() {
+                const loginView = document.getElementById('loginView');
+                const content = loginView.querySelector('.bg-white');
+                // Rebuild original login content
+                content.innerHTML = `
+                    <h1 class="text-2xl font-bold text-center mb-6 text-blue-600">Annual Leave Bidding System</h1>
+                    <div class="mb-4 text-center">
+                        <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-3">
+                            <p class="text-sm font-semibold text-blue-800">System Status:</p>
+                            <p id="systemStatus" class="text-xs text-blue-700">${document.getElementById('systemStatus')?.textContent || 'Ready'}</p>
+                        </div>
+                        <button onclick="app.syncWithSupabase()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-semibold mb-4">
+                            🔄 Sync with Database
+                        </button>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block font-semibold mb-3">Login As:</label>
+                        <div class="flex gap-4">
+                            <button onclick="app.setLoginType('employee')" class="flex-1 px-4 py-3 rounded-lg font-semibold ${this.state.loginType === 'employee' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">Employee</button>
+                            <button onclick="app.setLoginType('planner')" class="flex-1 px-4 py-3 rounded-lg font-semibold ${this.state.loginType === 'planner' ? 'bg-purple-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">Planner</button>
+                            <button onclick="app.setLoginType('goldencommand')" class="flex-1 px-4 py-3 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500">⭐ Golden Command</button>
+                        </div>
+                    </div>
+                    <div id="loginForm"></div>
+                    <button onclick="app.handleLogin()" class="w-full mt-6 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold">Login</button>
+                    <div class="mt-4 text-center">
+                        <button onclick="app.renderForgotPasswordView()" class="text-sm text-blue-500 hover:underline">Forgot Password?</button>
+                    </div>
+                `;
+                this.renderLoginForm();
             },
 
             // ==================== INITIALIZATION ====================
