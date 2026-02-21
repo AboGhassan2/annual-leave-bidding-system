@@ -420,7 +420,6 @@
                     <div>
                         <label class="metro-label">Password</label>
                         <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" disabled />
-                        <div class="info-hint">📌 Default password is your Employee ID</div>
                     </div>
                 </div>
 
@@ -436,7 +435,10 @@
         </div>
 
         <!-- Planner Navigation -->
-        <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6">
+        <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6 flex-wrap gap-2">
+            <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+                📊 Dashboard
+            </button>
             <button onclick="app.setActiveView('upload')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 📤 Upload Data
             </button>
@@ -453,7 +455,7 @@
                 🔐 Change Password
             </button>
             <button onclick="app.setActiveView('results')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                📊 View Results
+                📋 View Results
             </button>
         </div>
 
@@ -462,8 +464,9 @@
             <button onclick="app.setActiveView('employee')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 📅 Place Bids
             </button>
-            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="myResultsNavBtn">
                 📋 My Results
+                <span id="resultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
             </button>
             <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🔑 Change Password
@@ -475,8 +478,9 @@
             <button onclick="app.setActiveView('goldenCommand')" class="px-4 py-2 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500 border border-yellow-500">
                 ⭐ Place GC Bids
             </button>
-            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="gcResultsNavBtn">
                 📋 My Results
+                <span id="gcResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
             </button>
             <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🔑 Change Password
@@ -491,6 +495,8 @@
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- EmailJS -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
     <script>
         // ==================== SUPABASE CONFIG ====================
@@ -951,7 +957,7 @@
                         <div>
                             <label class="metro-label">Password</label>
                             <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasData ? 'disabled' : ''} />
-                            <div class="info-hint">📌 Default password is your Employee ID</div>
+
                         </div>
                     `;
                 }
@@ -965,7 +971,7 @@
                     if (password === this.state.plannerPassword) {
                         this.state.currentUser = { name: 'Planner Admin' };
                         this.state.userType = 'planner';
-                        this.state.activeView = 'upload';
+                        this.state.activeView = 'dashboard';
                         
                         document.body.classList.add('logged-in');
                         ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
@@ -1110,8 +1116,19 @@
                 if (!content) return;
                 
                 content.innerHTML = '';
+
+                // Show/hide results ready badge
+                const userId = this.state.verifiedEmployee?.id;
+                const hasMyResults = userId && this.state.isProcessed && this.state.results.some(r => r.employeeId === userId);
+                ['resultsReadyBadge', 'gcResultsReadyBadge'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.toggle('hidden', !hasMyResults);
+                });
                 
                 switch(this.state.activeView) {
+                    case 'dashboard':
+                        this.renderDashboardView();
+                        break;
                     case 'upload':
                         this.renderUploadView();
                         break;
@@ -1129,6 +1146,9 @@
                         break;
                     case 'results':
                         this.renderResultsView();
+                        break;
+                    case 'manualOverride':
+                        this.renderManualOverrideView();
                         break;
                     case 'changePassword':
                         this.renderChangePasswordView();
@@ -1410,8 +1430,28 @@
                 const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
                 const remainingLeave = entitlement - totalBidDays;
             
+                // Countdown timer helper
+                const deadlineCountdown = (() => {
+                    if (!this.state.biddingDeadline) return '';
+                    const dl = new Date(this.state.biddingDeadline);
+                    const now = new Date();
+                    const diff = dl - now;
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const days = Math.floor(diff / 86400000);
+                    const hrs  = Math.floor((diff % 86400000) / 3600000);
+                    const mins = Math.floor((diff % 3600000) / 60000);
+                    const secs = Math.floor((diff % 60000) / 1000);
+                    const urgency = diff < 3600000 ? 'bg-red-50 border-red-300 text-red-700' : diff < 86400000 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}">
+                        <p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p>
+                        <p class="text-2xl font-bold font-mono" id="countdownTimer">${days}d ${hrs}h ${mins}m ${secs}s</p>
+                        <p class="text-xs mt-1">Deadline: ${dl.toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+                    </div>`;
+                })();
+
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdown}
                         <!-- Header with leave entitlement -->
                         <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
                             <h2 class="text-2xl font-bold mb-4">Leave Bidding for ${this.state.biddingYear}</h2>
@@ -1615,6 +1655,20 @@
                         btn.className = btn.className.replace('bg-gray-100', 'bg-blue-500 text-white');
                     }
                 });
+
+                // Live countdown ticker
+                if (this.state.biddingDeadline) {
+                    clearInterval(window._countdownInterval);
+                    window._countdownInterval = setInterval(() => {
+                        const el = document.getElementById('countdownTimer');
+                        if (!el) { clearInterval(window._countdownInterval); return; }
+                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._countdownInterval); return; }
+                        const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000),
+                              m = Math.floor((diff%3600000)/60000), s = Math.floor((diff%60000)/1000);
+                        el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                    }, 1000);
+                }
             },
 
             renderGoldenCommandBiddingView() {
@@ -1626,9 +1680,21 @@
                 const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
                 const totalBidDays = gcBids.reduce((sum, bid) => sum + bid.days, 0);
                 const entitlement = 35; // Golden Command always gets 35 days
+
+                // Countdown
+                const deadlineCountdownGC = (() => {
+                    if (!this.state.biddingDeadline) return '';
+                    const dl = new Date(this.state.biddingDeadline);
+                    const diff = dl - new Date();
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    const urgency = diff<3600000?'bg-red-50 border-red-300 text-red-700':diff<86400000?'bg-yellow-50 border-yellow-300 text-yellow-700':'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}"><p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p><p class="text-2xl font-bold font-mono" id="gcCountdownTimer">${d}d ${h}h ${m}m ${s}s</p></div>`;
+                })();
             
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdownGC}
                         <!-- Header with GC styling -->
                         <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-yellow-400">
                             <div class="flex items-center gap-3 mb-4">
@@ -1828,6 +1894,19 @@
                 // Initialize GC slot state — default to Custom (free selection)
                 if (!window.gcSelectedSlot) {
                     window.gcSelectedSlot = 'gcCustom';
+                }
+
+                // Live countdown ticker for GC
+                if (this.state.biddingDeadline) {
+                    clearInterval(window._gcCountdownInterval);
+                    window._gcCountdownInterval = setInterval(() => {
+                        const el = document.getElementById('gcCountdownTimer');
+                        if (!el) { clearInterval(window._gcCountdownInterval); return; }
+                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._gcCountdownInterval); return; }
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                        el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                    }, 1000);
                 }
             },
 
@@ -2660,6 +2739,12 @@
                                 ${this.state.isProcessed ? `
                                     <button onclick="app.exportResults()" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg font-semibold">
                                         📊 Export Results to Excel
+                                    </button>
+                                    <button onclick="app.showEmailNotifyModal()" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
+                                        📧 Notify Staff by Email (Results Ready)
+                                    </button>
+                                    <button onclick="app.setActiveView('manualOverride')" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600">
+                                        ✏️ Manual Override Results
                                     </button>
                                 ` : ''}
                                 
@@ -3655,33 +3740,143 @@
 
             renderMyResultsView() {
                 const content = document.getElementById('contentArea');
-                const myResults = this.state.results.filter(r => r.employeeId === this.state.verifiedEmployee?.id);
-                
+                const user = this.state.verifiedEmployee;
+                const myResults = this.state.results.filter(r => r.employeeId === user?.id)
+                    .sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
+
+                const totalDays = myResults.reduce((sum, r) => sum + (r.days || 0), 0);
+                const entitlement = myResults[0]?.entitlement || (user ? (this.state.results.find(r => r.employeeId === user.id)?.entitlement) : 0) || '—';
+                const rank = myResults[0]?.seniorityRank || '—';
+                const yos = myResults[0]?.yearsOfService || '—';
+                const allAwarded = myResults.length > 0 && myResults.every(r => r.type === 'Bid Awarded');
+                const anyAwarded = myResults.some(r => r.type === 'Bid Awarded');
+
+                // Format date nicely
+                const fmtDate = (d) => {
+                    if (!d) return '—';
+                    try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }); }
+                    catch(e) { return d; }
+                };
+
+                // Slot color config
+                const slotColors = {
+                    'Bid Awarded': { bg: 'bg-green-50', border: 'border-green-300', badge: 'bg-green-100 text-green-800', icon: '✅', label: 'Bid Awarded' },
+                    'Auto-Assigned': { bg: 'bg-blue-50', border: 'border-blue-300', badge: 'bg-blue-100 text-blue-800', icon: '📋', label: 'Auto-Assigned' }
+                };
+
                 content.innerHTML = `
-                    <div class="max-w-4xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-4">My Leave Assignment</h2>
-                            
-                            ${myResults.length === 0 ? `
-                                <div class="text-center py-8">
-                                    <p class="text-gray-600">No results available yet.</p>
-                                    ${this.state.isProcessed ? '' : '<p class="text-sm mt-2">Bids have not been processed yet.</p>'}
-                                </div>
-                            ` : `
-                                <div class="space-y-3">
-                                    ${myResults.map(result => `
-                                        <div class="border border-gray-200 rounded p-4">
-                                            <p class="font-bold text-lg">${result.slotName}</p>
-                                            <p class="text-sm text-gray-600">${result.startDate} to ${result.endDate}</p>
-                                            <p class="text-sm font-semibold">${result.days} days</p>
-                                            <span class="px-2 py-1 rounded text-xs ${result.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
-                                                ${result.type}
-                                            </span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            `}
+                    <div class="max-w-3xl mx-auto">
+
+                        <!-- Page Header -->
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">📋 My Leave Results — ${this.state.biddingYear}</h2>
+                            <p class="text-gray-500 text-sm mt-1">Your annual leave assignments for ${this.state.biddingYear}</p>
                         </div>
+
+                        ${!this.state.isProcessed ? `
+                            <!-- Not processed yet -->
+                            <div class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-8 text-center">
+                                <div class="text-5xl mb-4">⏳</div>
+                                <h3 class="text-xl font-bold text-yellow-800 mb-2">Results Not Yet Available</h3>
+                                <p class="text-yellow-700 text-sm">The planner has not processed the bids yet. Please check back later.</p>
+                            </div>
+                        ` : myResults.length === 0 ? `
+                            <!-- Processed but no results for this user -->
+                            <div class="bg-orange-50 border-2 border-orange-200 rounded-xl p-8 text-center">
+                                <div class="text-5xl mb-4">🔍</div>
+                                <h3 class="text-xl font-bold text-orange-800 mb-2">No Assignment Found</h3>
+                                <p class="text-orange-700 text-sm">Bids have been processed but no assignment was found for your ID. Please contact the planner.</p>
+                            </div>
+                        ` : `
+
+                            <!-- Summary Cards -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-blue-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Seniority Rank</p>
+                                    <p class="text-2xl font-bold text-blue-600">#${rank}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-purple-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Years of Service</p>
+                                    <p class="text-2xl font-bold text-purple-600">${yos}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-green-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Days</p>
+                                    <p class="text-2xl font-bold text-green-600">${totalDays}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-yellow-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Entitlement</p>
+                                    <p class="text-2xl font-bold text-yellow-600">${entitlement} days</p>
+                                </div>
+                            </div>
+
+                            <!-- Overall Status Banner -->
+                            <div class="mb-6 rounded-xl p-4 text-center font-semibold text-sm
+                                ${allAwarded ? 'bg-green-100 border border-green-300 text-green-800' :
+                                  anyAwarded ? 'bg-yellow-100 border border-yellow-300 text-yellow-800' :
+                                  'bg-blue-100 border border-blue-300 text-blue-800'}">
+                                ${allAwarded ? '🎉 All your bids were awarded!' :
+                                  anyAwarded ? '⚡ Partial bid award — one slot bid awarded, one auto-assigned.' :
+                                  '📋 Both slots were auto-assigned by the system.'}
+                            </div>
+
+                            <!-- Slot Cards -->
+                            <div class="space-y-4 mb-6">
+                                ${myResults.map((result, i) => {
+                                    const colors = slotColors[result.type] || slotColors['Auto-Assigned'];
+                                    return `
+                                    <div class="bg-white rounded-xl shadow-md border-l-4 ${result.type === 'Bid Awarded' ? 'border-green-400' : 'border-blue-400'} overflow-hidden">
+                                        <div class="p-5">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-lg font-bold text-gray-700">Slot ${result.slotOrder || i + 1}</span>
+                                                    <span class="px-3 py-1 rounded-full text-xs font-bold ${result.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
+                                                        ${colors.icon} ${colors.label}
+                                                    </span>
+                                                </div>
+                                                <span class="text-2xl font-bold text-gray-800">${result.days} <span class="text-sm font-normal text-gray-500">days</span></span>
+                                            </div>
+
+                                            <h3 class="text-xl font-bold text-gray-800 mb-3">${result.slotName || '—'}</h3>
+
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div class="bg-gray-50 rounded-lg p-3">
+                                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Start Date</p>
+                                                    <p class="font-semibold text-gray-800">${fmtDate(result.startDate)}</p>
+                                                </div>
+                                                <div class="bg-gray-50 rounded-lg p-3">
+                                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">End Date</p>
+                                                    <p class="font-semibold text-gray-800">${fmtDate(result.endDate)}</p>
+                                                </div>
+                                            </div>
+
+                                            ${result.type === 'Bid Awarded' ? `
+                                                <p class="text-xs text-green-600 mt-3 font-medium">✓ This slot matched your bid preference (choice ${result.bidChoice || i + 1})</p>
+                                            ` : `
+                                                <p class="text-xs text-blue-600 mt-3 font-medium">ℹ This slot was automatically assigned based on availability</p>
+                                            `}
+                                        </div>
+
+                                        <!-- Calendar mini-bar -->
+                                        <div class="bg-gray-50 border-t px-5 py-3 flex items-center gap-2 text-xs text-gray-500">
+                                            <span>📅</span>
+                                            <span>${fmtDate(result.startDate)} → ${fmtDate(result.endDate)}</span>
+                                            <span class="ml-auto font-semibold text-gray-700">${result.days} calendar days</span>
+                                        </div>
+                                    </div>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <!-- Note -->
+                            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+                                <p class="font-semibold text-gray-700 mb-1">📌 Important Notes</p>
+                                <ul class="list-disc list-inside space-y-1 text-xs">
+                                    <li>Leave assignments are final once processed by the planner.</li>
+                                    <li>If you have questions about your assignment, contact your planner directly.</li>
+                                    <li>Total allocated: <strong>${totalDays} days</strong> out of your <strong>${entitlement}-day</strong> entitlement.</li>
+                                </ul>
+                            </div>
+                        `}
                     </div>
                 `;
             },
@@ -3902,6 +4097,315 @@
                 }
             },
 
+            // ==================== PLANNER DASHBOARD ====================
+            renderDashboardView() {
+                const content = document.getElementById('contentArea');
+                const total = this.state.employees.length;
+                const biddedIds = new Set(this.state.bids.map(b => b.employeeId));
+                const bidded = biddedIds.size;
+                const notBidded = total - bidded;
+                const pct = total > 0 ? Math.round((bidded / total) * 100) : 0;
+                const processed = this.state.isProcessed;
+
+                // Deadline countdown
+                let deadlineHtml = '<p class="text-gray-400 text-sm">No deadline set</p>';
+                if (this.state.biddingDeadline) {
+                    const dl = new Date(this.state.biddingDeadline);
+                    const diff = dl - new Date();
+                    if (diff <= 0) {
+                        deadlineHtml = '<p class="text-red-600 font-bold text-lg">⛔ Deadline Passed</p>';
+                    } else {
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
+                        const color = diff < 86400000 ? 'text-red-600' : diff < 259200000 ? 'text-yellow-600' : 'text-green-600';
+                        deadlineHtml = `<p class="text-2xl font-bold ${color}" id="dashCountdown">${d}d ${h}h ${m}m</p>
+                            <p class="text-xs text-gray-500 mt-1">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>`;
+                    }
+                }
+
+                // Dept breakdown for chart
+                const deptBidMap = {};
+                this.state.bids.forEach(b => {
+                    const emp = this.state.employees.find(e => e.id === b.employeeId);
+                    const dept = emp?.department || 'Unknown';
+                    deptBidMap[dept] = (deptBidMap[dept] || new Set());
+                    deptBidMap[dept].add(b.employeeId);
+                });
+                const deptTotalMap = {};
+                this.state.employees.forEach(e => {
+                    const dept = e.department || 'Unknown';
+                    deptTotalMap[dept] = (deptTotalMap[dept] || 0) + 1;
+                });
+                const depts = Object.keys(deptTotalMap).sort();
+                const maxEmp = Math.max(...depts.map(d => deptTotalMap[d] || 0), 1);
+
+                // Bid type breakdown (if processed)
+                const awardedCount = this.state.results.filter(r => r.type === 'Bid Awarded').length;
+                const autoCount = this.state.results.filter(r => r.type === 'Auto-Assigned').length;
+
+                // Staff who haven't bid
+                const notBiddedStaff = this.state.employees.filter(e => !biddedIds.has(e.id));
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto space-y-6">
+                        <h2 class="text-2xl font-bold text-gray-800">📊 Planner Dashboard — ${this.state.biddingYear}</h2>
+
+                        <!-- Top KPI Cards -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-blue-500">
+                                <p class="text-3xl font-bold text-blue-600">${total}</p>
+                                <p class="text-sm text-gray-500 mt-1">Total Staff</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-green-500">
+                                <p class="text-3xl font-bold text-green-600">${bidded}</p>
+                                <p class="text-sm text-gray-500 mt-1">Staff Bid</p>
+                                <div class="mt-2 bg-gray-100 rounded-full h-2"><div class="bg-green-500 h-2 rounded-full" style="width:${pct}%"></div></div>
+                                <p class="text-xs text-gray-400 mt-1">${pct}% participation</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-orange-400">
+                                <p class="text-3xl font-bold text-orange-500">${notBidded}</p>
+                                <p class="text-sm text-gray-500 mt-1">Not Bid Yet</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-purple-500">
+                                <p class="text-3xl font-bold ${processed ? 'text-green-600' : 'text-gray-400'}">${processed ? '✅ Done' : '⏳ Pending'}</p>
+                                <p class="text-sm text-gray-500 mt-1">Processing Status</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Deadline Card -->
+                            <div class="bg-white rounded-xl shadow p-6">
+                                <h3 class="font-bold text-gray-700 mb-3">⏰ Bidding Deadline</h3>
+                                ${deadlineHtml}
+                            </div>
+
+                            <!-- Result Breakdown (if processed) -->
+                            <div class="bg-white rounded-xl shadow p-6">
+                                <h3 class="font-bold text-gray-700 mb-3">🎯 Result Breakdown</h3>
+                                ${processed && this.state.results.length > 0 ? `
+                                    <div class="space-y-3">
+                                        <div>
+                                            <div class="flex justify-between text-sm mb-1">
+                                                <span class="text-green-700 font-semibold">✅ Bid Awarded</span>
+                                                <span>${awardedCount} slots</span>
+                                            </div>
+                                            <div class="bg-gray-100 rounded-full h-3">
+                                                <div class="bg-green-500 h-3 rounded-full" style="width:${Math.round(awardedCount/(awardedCount+autoCount)*100)}%"></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="flex justify-between text-sm mb-1">
+                                                <span class="text-blue-700 font-semibold">📋 Auto-Assigned</span>
+                                                <span>${autoCount} slots</span>
+                                            </div>
+                                            <div class="bg-gray-100 rounded-full h-3">
+                                                <div class="bg-blue-400 h-3 rounded-full" style="width:${Math.round(autoCount/(awardedCount+autoCount)*100)}%"></div>
+                                            </div>
+                                        </div>
+                                        <button onclick="app.setActiveView('manualOverride')" class="mt-2 w-full px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600">
+                                            ✏️ Manual Override
+                                        </button>
+                                    </div>
+                                ` : `<p class="text-gray-400 text-sm">${processed ? 'No results yet.' : 'Process bids to see breakdown.'}</p>
+                                    <button onclick="app.setActiveView('admin')" class="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600">🚀 Go to Admin Panel</button>`}
+                            </div>
+                        </div>
+
+                        <!-- Department Participation Chart -->
+                        <div class="bg-white rounded-xl shadow p-6">
+                            <h3 class="font-bold text-gray-700 mb-4">🏢 Department Participation</h3>
+                            <div class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                                ${depts.map(dept => {
+                                    const t = deptTotalMap[dept] || 0;
+                                    const b = deptBidMap[dept]?.size || 0;
+                                    const p = t > 0 ? Math.round(b/t*100) : 0;
+                                    const barW = Math.round(b/maxEmp*100);
+                                    const color = p===100?'bg-green-500':p>=50?'bg-blue-500':'bg-orange-400';
+                                    return `<div class="flex items-center gap-3 text-sm">
+                                        <div class="w-40 text-gray-600 truncate text-xs" title="${dept}">${dept}</div>
+                                        <div class="flex-1 bg-gray-100 rounded-full h-5 relative">
+                                            <div class="${color} h-5 rounded-full transition-all" style="width:${barW}%"></div>
+                                            <span class="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-700">${b}/${t} (${p}%)</span>
+                                        </div>
+                                    </div>`;
+                                }).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Staff Who Haven't Bid -->
+                        ${notBiddedStaff.length > 0 ? `
+                        <div class="bg-white rounded-xl shadow p-6">
+                            <h3 class="font-bold text-gray-700 mb-4">⚠️ Staff Who Haven't Bid Yet (${notBiddedStaff.length})</h3>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="p-2 text-left">ID</th>
+                                            <th class="p-2 text-left">Name</th>
+                                            <th class="p-2 text-left">Department</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${notBiddedStaff.map(e => `
+                                            <tr class="border-b hover:bg-gray-50">
+                                                <td class="p-2 font-mono text-xs text-gray-500">${e.id}</td>
+                                                <td class="p-2 font-semibold">${e.name}</td>
+                                                <td class="p-2 text-gray-500">${e.department || '—'}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        ` : processed ? '' : `
+                        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center text-green-700 font-semibold">
+                            🎉 All staff have submitted their bids!
+                        </div>`}
+
+                        <!-- Quick Actions -->
+                        <div class="bg-white rounded-xl shadow p-6">
+                            <h3 class="font-bold text-gray-700 mb-4">⚡ Quick Actions</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <button onclick="app.setActiveView('upload')" class="px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-semibold hover:bg-blue-100">📤 Upload Data</button>
+                                <button onclick="app.setActiveView('configureSlots')" class="px-4 py-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-semibold hover:bg-purple-100">⚙️ Configure Slots</button>
+                                <button onclick="app.setActiveView('admin')" class="px-4 py-3 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-semibold hover:bg-green-100">🛠️ Admin Panel</button>
+                                <button onclick="app.setActiveView('results')" class="px-4 py-3 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-lg text-sm font-semibold hover:bg-yellow-100">📋 View Results</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Live dashboard countdown
+                if (this.state.biddingDeadline) {
+                    clearInterval(window._dashInterval);
+                    window._dashInterval = setInterval(() => {
+                        const el = document.getElementById('dashCountdown');
+                        if (!el) { clearInterval(window._dashInterval); return; }
+                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._dashInterval); return; }
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
+                        el.textContent = `${d}d ${h}h ${m}m`;
+                    }, 30000);
+                }
+            },
+
+            // ==================== MANUAL OVERRIDE ====================
+            renderManualOverrideView() {
+                const content = document.getElementById('contentArea');
+                if (!this.state.isProcessed || this.state.results.length === 0) {
+                    content.innerHTML = `
+                        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
+                            <p class="text-2xl mb-4">⚠️</p>
+                            <p class="text-gray-600">No results to override. Process bids first.</p>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                        </div>`;
+                    return;
+                }
+
+                // Group results by employee
+                const empMap = {};
+                this.state.results.forEach(r => {
+                    if (!empMap[r.employeeId]) empMap[r.employeeId] = [];
+                    empMap[r.employeeId].push(r);
+                });
+
+                content.innerHTML = `
+                    <div class="max-w-5xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold">✏️ Manual Override</h2>
+                                    <p class="text-sm text-gray-500 mt-1">Edit any employee's assigned leave slots directly.</p>
+                                </div>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                            </div>
+                            <div id="overrideMsg"></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50 text-gray-600">
+                                        <tr>
+                                            <th class="p-3 text-left">Employee</th>
+                                            <th class="p-3 text-left">Slot</th>
+                                            <th class="p-3 text-left">Slot Name</th>
+                                            <th class="p-3 text-left">Start Date</th>
+                                            <th class="p-3 text-left">End Date</th>
+                                            <th class="p-3 text-left">Days</th>
+                                            <th class="p-3 text-left">Type</th>
+                                            <th class="p-3 text-left">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${Object.entries(empMap).map(([empId, slots]) => {
+                                            const emp = this.state.employees.find(e => e.id === empId);
+                                            return slots.sort((a,b)=>(a.slotOrder||0)-(b.slotOrder||0)).map((r, i) => `
+                                                <tr class="border-b hover:bg-gray-50" id="row-${empId}-${r.slotOrder}">
+                                                    ${i===0 ? `<td class="p-3 font-semibold" rowspan="${slots.length}">${emp?.name||empId}<br><span class="text-xs text-gray-400">${empId}</span></td>` : ''}
+                                                    <td class="p-3 text-gray-500">Slot ${r.slotOrder}</td>
+                                                    <td class="p-3">
+                                                        <input type="text" class="border rounded px-2 py-1 w-28 text-xs" value="${r.slotName||''}" id="ov-slotName-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-start-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-end-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="number" class="border rounded px-2 py-1 w-16 text-xs" value="${r.days||0}" id="ov-days-${empId}-${r.slotOrder}" min="1" max="60" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <select class="border rounded px-2 py-1 text-xs" id="ov-type-${empId}-${r.slotOrder}">
+                                                            <option value="Bid Awarded" ${r.type==='Bid Awarded'?'selected':''}>Bid Awarded</option>
+                                                            <option value="Auto-Assigned" ${r.type==='Auto-Assigned'?'selected':''}>Auto-Assigned</option>
+                                                            <option value="Manual Override" ${r.type==='Manual Override'?'selected':''}>Manual Override</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <button onclick="app.saveOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                    </td>
+                                                </tr>
+                                            `).join('');
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-6 flex gap-3">
+                                <button onclick="app.saveAllOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            saveOverride(empId, slotOrder) {
+                const idx = this.state.results.findIndex(r => r.employeeId === empId && r.slotOrder === slotOrder);
+                if (idx === -1) { alert('Result not found'); return; }
+                this.state.results[idx].slotName  = document.getElementById(`ov-slotName-${empId}-${slotOrder}`)?.value || this.state.results[idx].slotName;
+                this.state.results[idx].startDate = document.getElementById(`ov-start-${empId}-${slotOrder}`)?.value || this.state.results[idx].startDate;
+                this.state.results[idx].endDate   = document.getElementById(`ov-end-${empId}-${slotOrder}`)?.value   || this.state.results[idx].endDate;
+                this.state.results[idx].days      = parseInt(document.getElementById(`ov-days-${empId}-${slotOrder}`)?.value) || this.state.results[idx].days;
+                this.state.results[idx].type      = document.getElementById(`ov-type-${empId}-${slotOrder}`)?.value || this.state.results[idx].type;
+                this.saveState();
+                const msg = document.getElementById('overrideMsg');
+                if (msg) { msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ Slot ${slotOrder} for ${this.state.employees.find(e=>e.id===empId)?.name||empId} updated locally. Click "Save All" to push to database.</div>`; }
+            },
+
+            async saveAllOverrides() {
+                this.saveState();
+                try {
+                    if (this.supabase) {
+                        const { error } = await this.supabase.from('system_config').update({ results: this.state.results }).eq('id', 1);
+                        if (error) throw error;
+                    }
+                    const msg = document.getElementById('overrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ All overrides saved to database successfully!</div>`;
+                } catch(err) {
+                    console.error(err);
+                    const msg = document.getElementById('overrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">❌ Database save failed. Changes saved locally only.</div>`;
+                }
+            },
+
             renderChangePlannerPasswordView() {
                 const content = document.getElementById('contentArea');
                 content.innerHTML = `
@@ -4076,6 +4580,74 @@
                 this.renderLoginForm();
             },
 
+            // ==================== EMAIL NOTIFICATION ====================
+            showEmailNotifyModal() {
+                document.getElementById('emailModal').style.display = 'flex';
+                document.getElementById('emailModalMsg').innerHTML = '';
+                document.getElementById('emailProgress').style.display = 'none';
+            },
+
+            async sendResultsNotification() {
+                const serviceId  = document.getElementById('ejsServiceId').value.trim();
+                const templateId = document.getElementById('ejsTemplateId').value.trim();
+                const publicKey  = document.getElementById('ejsPublicKey').value.trim();
+                const msgEl = document.getElementById('emailModalMsg');
+
+                if (!serviceId || !templateId || !publicKey) {
+                    msgEl.innerHTML = '<div style="padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.8rem;margin-bottom:12px;">⚠️ Please fill in all three EmailJS fields.</div>';
+                    return;
+                }
+
+                // Save keys for next time
+                localStorage.setItem('ejs_service', serviceId);
+                localStorage.setItem('ejs_template', templateId);
+                localStorage.setItem('ejs_pubkey', publicKey);
+
+                // Get unique employees with emails
+                const staffToNotify = this.state.employees.filter(e => e.email);
+                if (staffToNotify.length === 0) {
+                    msgEl.innerHTML = '<div style="padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.8rem;margin-bottom:12px;">❌ No employee emails found. Make sure emails are loaded from the database.</div>';
+                    return;
+                }
+
+                // Init EmailJS
+                try { emailjs.init(publicKey); } catch(e) { console.warn('EmailJS init:', e); }
+
+                // Show progress
+                const prog = document.getElementById('emailProgress');
+                const bar  = document.getElementById('emailProgressBar');
+                const txt  = document.getElementById('emailProgressText');
+                prog.style.display = 'block';
+                msgEl.innerHTML = '';
+
+                let sent = 0, failed = 0;
+                for (let i = 0; i < staffToNotify.length; i++) {
+                    const emp = staffToNotify[i];
+                    try {
+                        await emailjs.send(serviceId, templateId, {
+                            to_email: emp.email,
+                            to_name: emp.name,
+                            employee_id: emp.id,
+                            year: this.state.biddingYear
+                        });
+                        sent++;
+                    } catch(err) {
+                        console.warn(`Failed to send to ${emp.email}:`, err);
+                        failed++;
+                    }
+                    const pct = Math.round(((i+1)/staffToNotify.length)*100);
+                    bar.style.width = pct + '%';
+                    txt.textContent = `Sending... ${i+1}/${staffToNotify.length} (${sent} sent, ${failed} failed)`;
+                    // Small delay to avoid rate limiting
+                    await new Promise(r => setTimeout(r, 300));
+                }
+
+                prog.style.display = 'none';
+                const color = failed === 0 ? '#f0fdf4;border-color:#bbf7d0;color:#166534' : '#fef2f2;border-color:#fecaca;color:#991b1b';
+                msgEl.innerHTML = `<div style="padding:10px;background:${color};border:1px solid;border-radius:8px;font-size:0.8rem;margin-bottom:12px;">
+                    ${failed===0?'✅':'⚠️'} Done! ${sent} emails sent${failed>0?`, ${failed} failed`:''}.</div>`;
+            },
+
             _startClock() {
                 const tick = () => {
                     const now = new Date();
@@ -4137,5 +4709,40 @@
             app.init();
         });
     </script>
+    <!-- Email Notification Modal -->
+    <div id="emailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:16px;padding:32px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <h3 style="font-size:1.25rem;font-weight:700;margin-bottom:6px;">📧 Notify Staff — Results Ready</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">Send an email to all staff notifying them their leave results are available. Requires EmailJS setup.</p>
+            <div id="emailModalMsg"></div>
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">EmailJS Service ID</label>
+                <input type="text" id="ejsServiceId" placeholder="service_xxxxxxx" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" value="${localStorage.getItem('ejs_service')||''}" />
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">EmailJS Template ID</label>
+                <input type="text" id="ejsTemplateId" placeholder="template_xxxxxxx" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" value="${localStorage.getItem('ejs_template')||''}" />
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">EmailJS Public Key</label>
+                <input type="text" id="ejsPublicKey" placeholder="xxxxxxxxxxxxxxxxx" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" value="${localStorage.getItem('ejs_pubkey')||''}" />
+            </div>
+            <div style="margin-bottom:16px;padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:0.75rem;color:#166534;">
+                <strong>Template variables needed:</strong><br/>
+                <code>{{to_email}}</code>, <code>{{to_name}}</code>, <code>{{employee_id}}</code>, <code>{{year}}</code>
+            </div>
+            <div id="emailProgress" style="display:none;margin-bottom:12px;">
+                <div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                    <div id="emailProgressBar" style="height:100%;background:#2d6a4f;border-radius:3px;width:0%;transition:width 0.3s;"></div>
+                </div>
+                <p id="emailProgressText" style="font-size:0.75rem;color:#6b7280;margin-top:4px;"></p>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.sendResultsNotification()" style="flex:1;padding:11px;background:#2d6a4f;color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer;">📤 Send to All Staff</button>
+                <button onclick="document.getElementById('emailModal').style.display='none'" style="flex:1;padding:11px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-weight:600;cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
