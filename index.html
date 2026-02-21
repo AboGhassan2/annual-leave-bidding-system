@@ -5,127 +5,433 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Annual Leave Bidding System</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        * {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+        :root {
+            --metro-green: #2d6a4f;
+            --metro-green-dark: #1b4332;
+            --metro-green-mid: #40916c;
+            --metro-green-light: #74c69d;
+            --metro-accent: #52b788;
+            --metro-bg: #081c15;
+            --metro-card: rgba(255,255,255,0.06);
+            --metro-border: rgba(255,255,255,0.12);
+            --metro-text: #d8f3dc;
         }
-        
+
+        * { font-family: 'Barlow', sans-serif; box-sizing: border-box; }
+        h1, h2, h3, .brand-font { font-family: 'Barlow Condensed', sans-serif; letter-spacing: 0.05em; }
+
         body {
-            background: linear-gradient(135deg, #f0f4ff 0%, #e6f0ff 100%);
+            background: var(--metro-bg);
             min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
         }
+
+        /* Animated metro background */
+        #loginView {
+            position: relative;
+            z-index: 1;
+        }
+
+        .login-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse 100% 60% at 50% 0%, #1b4332 0%, transparent 65%),
+                radial-gradient(ellipse 70% 50% at 0% 50%, #2d6a4f22 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 100% 60%, #40916c22 0%, transparent 60%),
+                linear-gradient(180deg, #081c15 0%, #0d2818 60%, #081c15 100%);
+            pointer-events: none;
+        }
+
+        /* Subtle grid lines like metro map */
+        .login-bg::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(74,182,130,0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(74,182,130,0.04) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        /* Glowing orbs */
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.25;
+            pointer-events: none;
+            animation: orbFloat 8s ease-in-out infinite;
+        }
+        .orb-1 { width: 500px; height: 500px; background: #2d6a4f; top: -100px; left: -100px; animation-delay: 0s; }
+        .orb-2 { width: 400px; height: 400px; background: #40916c; bottom: -80px; right: -80px; animation-delay: -4s; }
+        .orb-3 { width: 300px; height: 300px; background: #1b4332; top: 40%; left: 60%; animation-delay: -2s; }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(20px, -20px) scale(1.05); }
+            66% { transform: translate(-15px, 15px) scale(0.95); }
+        }
+
+        /* Login card */
+        .login-card {
+            background: rgba(13, 40, 24, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(82, 183, 136, 0.2);
+            border-radius: 20px;
+            box-shadow:
+                0 0 0 1px rgba(82,183,136,0.08),
+                0 25px 60px rgba(0,0,0,0.5),
+                inset 0 1px 0 rgba(255,255,255,0.05);
+            animation: cardReveal 0.6s cubic-bezier(0.16,1,0.3,1) both;
+        }
+
+        @keyframes cardReveal {
+            from { opacity: 0; transform: translateY(30px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* Logo area */
+        .logo-area {
+            border-bottom: 1px solid rgba(82,183,136,0.15);
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+        }
+
+        .flow-logo {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #fff;
+            line-height: 1;
+        }
+        .flow-logo span { color: var(--metro-green-light); }
+
+        .logo-divider {
+            width: 1px;
+            height: 36px;
+            background: rgba(255,255,255,0.2);
+            margin: 0 14px;
+        }
+
+        .logo-sub {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            color: rgba(255,255,255,0.5);
+            text-transform: uppercase;
+            line-height: 1.4;
+        }
+
+        /* Clock */
+        .clock-display {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.85rem;
+            letter-spacing: 0.1em;
+            color: var(--metro-green-light);
+            background: rgba(82,183,136,0.08);
+            border: 1px solid rgba(82,183,136,0.15);
+            border-radius: 8px;
+            padding: 6px 14px;
+            display: inline-block;
+        }
+
+        /* Status pill */
+        .status-pill {
+            background: rgba(82,183,136,0.1);
+            border: 1px solid rgba(82,183,136,0.2);
+            border-radius: 20px;
+            padding: 5px 14px;
+            font-size: 0.75rem;
+            color: var(--metro-green-light);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--metro-green-light);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%,100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* Tab switcher */
+        .tab-bar {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(82,183,136,0.15);
+            border-radius: 12px;
+            padding: 4px;
+            display: flex;
+            gap: 2px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 9px 8px;
+            border-radius: 9px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: rgba(255,255,255,0.45);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            background: transparent;
+            text-align: center;
+        }
+        .tab-btn:hover { color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.05); }
+        .tab-btn.active-emp {
+            background: linear-gradient(135deg, #2d6a4f, #40916c);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(45,106,79,0.5);
+        }
+        .tab-btn.active-plan {
+            background: linear-gradient(135deg, #1565c0, #1976d2);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(21,101,192,0.5);
+        }
+        .tab-btn.active-gc {
+            background: linear-gradient(135deg, #b7791f, #d97706);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(183,121,31,0.5);
+        }
+
+        /* Inputs */
+        .metro-input {
+            width: 100%;
+            padding: 11px 14px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(82,183,136,0.2);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .metro-input::placeholder { color: rgba(255,255,255,0.25); }
+        .metro-input:focus {
+            border-color: var(--metro-accent);
+            box-shadow: 0 0 0 3px rgba(82,183,136,0.12);
+        }
+        .metro-input:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .metro-label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 7px;
+        }
+
+        /* Login button */
+        .login-btn {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, #2d6a4f 0%, #40916c 100%);
+            color: #fff;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 20px rgba(45,106,79,0.4);
+            position: relative;
+            overflow: hidden;
+        }
+        .login-btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), transparent);
+        }
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 28px rgba(45,106,79,0.55);
+            background: linear-gradient(135deg, #40916c 0%, #52b788 100%);
+        }
+        .login-btn:active { transform: translateY(0); }
+
+        /* Sync button */
+        .sync-btn {
+            padding: 7px 16px;
+            background: rgba(82,183,136,0.1);
+            border: 1px solid rgba(82,183,136,0.25);
+            border-radius: 8px;
+            color: var(--metro-green-light);
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .sync-btn:hover { background: rgba(82,183,136,0.2); border-color: rgba(82,183,136,0.4); }
+
+        /* Info hint */
+        .info-hint {
+            background: rgba(82,183,136,0.07);
+            border: 1px solid rgba(82,183,136,0.15);
+            border-radius: 8px;
+            padding: 9px 13px;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.45);
+            margin-top: 8px;
+        }
+
+        /* Forgot password link */
+        .forgot-link {
+            color: rgba(116,198,157,0.7);
+            font-size: 0.8rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: color 0.2s;
+            background: none;
+            border: none;
+        }
+        .forgot-link:hover { color: var(--metro-green-light); text-decoration: underline; }
+
+        /* Post-login header bar */
+        .metro-header-bar {
+            background: rgba(13,40,24,0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(82,183,136,0.15);
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            margin-bottom: 24px;
+        }
+
+        /* Keep rest of app readable on light bg after login */
+        body.logged-in {
+            background: #f0f4f0;
+        }
+        body.logged-in .login-bg,
+        body.logged-in .orb { display: none; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0d2818; }
+        ::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 3px; }
     </style>
 </head>
-<body class="p-4 md:p-6">
-    <div id="app" class="max-w-7xl mx-auto">
-        <!-- Header -->
-        <div class="mb-8 text-center">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">
-                Annual Leave Bidding System
-            </h1>
-            <div id="userInfo" class="hidden flex justify-center items-center gap-4 mt-4">
-                <div class="bg-white px-4 py-2 rounded-lg shadow">
-                    <span class="text-sm text-gray-600">Logged in as: </span>
-                    <span id="currentUserName" class="font-semibold"></span>
+<body>
+    <!-- Background layers (hidden after login) -->
+    <div class="login-bg" id="loginBg"></div>
+    <div class="orb orb-1" id="loginOrb1"></div>
+    <div class="orb orb-2" id="loginOrb2"></div>
+    <div class="orb orb-3" id="loginOrb3"></div>
+
+    <div id="app" class="max-w-7xl mx-auto relative" style="z-index:1">
+
+        <!-- Post-login header (hidden on login screen) -->
+        <div id="userInfo" class="hidden metro-header-bar rounded-xl mb-6">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:700;color:#fff;letter-spacing:0.06em;">
+                    FL<span style="color:#74c69d;">O</span>W
+                </div>
+                <div style="width:1px;height:22px;background:rgba(255,255,255,0.15)"></div>
+                <div style="font-size:0.72rem;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:0.12em;text-transform:uppercase;">Annual Leave System</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="background:rgba(82,183,136,0.1);border:1px solid rgba(82,183,136,0.2);border-radius:8px;padding:5px 14px;">
+                    <span style="font-size:0.75rem;color:rgba(255,255,255,0.5);">Logged in as </span>
+                    <span id="currentUserName" style="font-weight:600;color:#fff;font-size:0.85rem;"></span>
                     <span id="userTypeBadge" class="ml-2 px-2 py-1 text-xs rounded"></span>
                 </div>
-                <button
-                    onclick="app.handleLogout()"
-                    class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold"
-                >
+                <button onclick="app.handleLogout()" style="padding:7px 16px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.8rem;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.25)'" onmouseout="this.style.background='rgba(239,68,68,0.15)'">
                     Logout
                 </button>
             </div>
         </div>
 
-        <!-- Login View -->
-        <div id="loginView" class="max-w-md mx-auto mt-10">
-            <div class="bg-white rounded-xl shadow-xl p-8">
-                <h1 class="text-2xl font-bold text-center mb-6 text-blue-600">
-                    Annual Leave Bidding System
-                </h1>
-                
-                <div class="mb-4 text-center">
-                    <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-3">
-                        <p class="text-sm font-semibold text-blue-800">System Status:</p>
-                        <p id="systemStatus" class="text-xs text-blue-700">Initializing...</p>
+        <!-- LOGIN VIEW -->
+        <div id="loginView" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+            <div class="login-card" style="width:100%;max-width:440px;padding:36px;">
+
+                <!-- Logo -->
+                <div class="logo-area" style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex;align-items:center;">
+                        <div class="flow-logo">FL<span>O</span>W</div>
+                        <div class="logo-divider"></div>
+                        <div class="logo-sub">Riyadh Metro<br>Operator</div>
                     </div>
-                    
-                    <button onclick="app.syncWithSupabase()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm font-semibold mb-4">
-                        🔄 Sync with Database
-                    </button>
-                </div>
-                
-                <div class="mb-6">
-                    <label class="block font-semibold mb-3">Login As:</label>
-                    <div class="flex gap-4">
-                        <button
-                            onclick="app.setLoginType('employee')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-blue-500 text-white"
-                        >
-                            Employee
-                        </button>
-                        <button
-                            onclick="app.setLoginType('planner')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        >
-                            Planner
-                        </button>
-                        <button
-                            onclick="app.setLoginType('goldencommand')"
-                            class="flex-1 px-4 py-3 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500"
-                        >
-                            ⭐ Golden Command
-                        </button>
-                    </div>
+                    <div class="clock-display" id="liveClock">--:-- --</div>
                 </div>
 
-                <div id="loginForm">
-                    <!-- Default employee login form -->
-                    <div class="space-y-4">
-                        <div id="noDataWarning" class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
-                            <span class="text-sm">No employee data loaded. Click "Sync with Database" or upload data.</span>
-                        </div>
-                        <div>
-                            <label class="block font-semibold mb-2">Employee ID:</label>
-                            <input
-                                type="text"
-                                id="loginId"
-                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                placeholder="Enter your ID"
-                                disabled
-                            />
-                        </div>
-                        <div>
-                            <label class="block font-semibold mb-2">Password:</label>
-                            <input
-                                type="password"
-                                id="loginPassword"
-                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                placeholder="Enter your password"
-                                disabled
-                            />
-                            <div class="mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                                <p class="text-sm font-semibold text-blue-800">📌 Default Password:</p>
-                                <p class="text-xs text-blue-700 mt-1">Your password is the same as your Employee ID</p>
-                            </div>
+                <!-- Title -->
+                <div style="margin-bottom:22px;">
+                    <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:1.55rem;font-weight:700;color:#fff;letter-spacing:0.04em;margin-bottom:4px;">Annual Leave Bidding</h2>
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                        <p style="font-size:0.78rem;color:rgba(255,255,255,0.35);letter-spacing:0.02em;" id="liveDate">--</p>
+                        <div class="status-pill">
+                            <div class="status-dot"></div>
+                            <span id="systemStatus">Initializing...</span>
                         </div>
                     </div>
                 </div>
 
-                <button
-                    onclick="app.handleLogin()"
-                    class="w-full mt-6 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold"
-                >
-                    Login
-                </button>
-                <div class="mt-4 text-center">
-                    <button onclick="app.renderForgotPasswordView()" class="text-sm text-blue-500 hover:underline">
-                        Forgot Password?
-                    </button>
+                <!-- Sync button -->
+                <div style="margin-bottom:20px;">
+                    <button onclick="app.syncWithSupabase()" class="sync-btn">🔄 Sync with Database</button>
                 </div>
+
+                <!-- Tab bar -->
+                <div style="margin-bottom:20px;">
+                    <div class="tab-bar" id="loginTabBar">
+                        <button class="tab-btn active-emp" onclick="app.setLoginType('employee')" id="tab-employee">
+                            👤 Employee
+                        </button>
+                        <button class="tab-btn" onclick="app.setLoginType('planner')" id="tab-planner">
+                            🛠️ Planner
+                        </button>
+                        <button class="tab-btn" onclick="app.setLoginType('goldencommand')" id="tab-goldencommand">
+                            ⭐ GC
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dynamic login form -->
+                <div id="loginForm" style="margin-bottom:20px;">
+                    <div style="margin-bottom:14px;">
+                        <label class="metro-label">Employee ID</label>
+                        <input type="text" id="loginId" class="metro-input" placeholder="Enter your ID" disabled />
+                    </div>
+                    <div>
+                        <label class="metro-label">Password</label>
+                        <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" disabled />
+                        <div class="info-hint">📌 Default password is your Employee ID</div>
+                    </div>
+                </div>
+
+                <!-- Login button -->
+                <button onclick="app.handleLogin()" class="login-btn">→ Sign In</button>
+
+                <!-- Forgot password -->
+                <div style="text-align:center;margin-top:16px;">
+                    <button onclick="app.renderForgotPasswordView()" class="forgot-link">Forgot your password?</button>
+                </div>
+
             </div>
         </div>
 
@@ -593,18 +899,19 @@
             setLoginType(type) {
                 console.log('Setting login type to:', type);
                 this.state.loginType = type;
-                
-                const empBtn = document.querySelector('[onclick*="employee"]');
-                const planBtn = document.querySelector('[onclick*="planner"]');
-                
-                if (type === 'employee') {
-                    if (empBtn) empBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-blue-500 text-white';
-                    if (planBtn) planBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
-                } else {
-                    if (empBtn) empBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300';
-                    if (planBtn) planBtn.className = 'flex-1 px-4 py-3 rounded-lg font-semibold bg-purple-500 text-white';
-                }
-                
+
+                // Update tab bar active states
+                ['employee','planner','goldencommand'].forEach(t => {
+                    const btn = document.getElementById('tab-' + t);
+                    if (!btn) return;
+                    btn.className = 'tab-btn';
+                    if (t === type) {
+                        if (t === 'employee') btn.classList.add('active-emp');
+                        else if (t === 'planner') btn.classList.add('active-plan');
+                        else btn.classList.add('active-gc');
+                    }
+                });
+
                 this.renderLoginForm();
             },
 
@@ -615,80 +922,36 @@
                 if (this.state.loginType === 'planner') {
                     form.innerHTML = `
                         <div>
-                            <label class="block font-semibold mb-2">Planner Password:</label>
-                            <input
-                                type="password"
-                                id="loginPassword"
-                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                                placeholder="Enter planner password"
-                            />
+                            <label class="metro-label">Planner Password</label>
+                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter planner password" />
                         </div>
                     `;
                 } else if (this.state.loginType === 'goldencommand') {
                     const gcUsers = this.state.goldenCommandUsers || [];
                     const hasGCUsers = gcUsers.length > 0;
                     form.innerHTML = `
-                        <div class="space-y-4">
-                            ${!hasGCUsers ? `
-                                <div class="bg-yellow-50 border border-yellow-300 rounded p-4 mb-4">
-                                    <span class="text-sm text-yellow-800">No Golden Command users configured. Ask the planner to add GC users in Admin Panel.</span>
-                                </div>
-                            ` : ''}
-                            <div>
-                                <label class="block font-semibold mb-2">Golden Command ID:</label>
-                                <input
-                                    type="text"
-                                    id="gcLoginId"
-                                    class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg focus:border-yellow-600 focus:outline-none"
-                                    placeholder="Enter your GC ID"
-                                    ${!hasGCUsers ? 'disabled' : ''}
-                                />
-                            </div>
-                            <div>
-                                <label class="block font-semibold mb-2">Password:</label>
-                                <input
-                                    type="password"
-                                    id="loginPassword"
-                                    class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg focus:border-yellow-600 focus:outline-none"
-                                    placeholder="Enter your password"
-                                    ${!hasGCUsers ? 'disabled' : ''}
-                                />
-                                <div class="mt-2"></div>
-                            </div>
+                        <div style="margin-bottom:14px;">
+                            ${!hasGCUsers ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No Golden Command users configured. Contact the planner.</div>` : ''}
+                            <label class="metro-label">Golden Command ID</label>
+                            <input type="text" id="gcLoginId" class="metro-input" placeholder="Enter your GC ID" ${!hasGCUsers ? 'disabled' : ''} />
                         </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasGCUsers ? 'disabled' : ''} />
                         </div>
                     `;
                 } else {
                     const hasData = this.state.employees.length > 0;
-                    
                     form.innerHTML = `
-                        <div class="space-y-4">
-                            ${!hasData ? `
-                                <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
-                                    <span class="text-sm">No employee data loaded. Click "Sync with Database" or upload data.</span>
-                                </div>
-                            ` : ''}
-                            <div>
-                                <label class="block font-semibold mb-2">Employee ID:</label>
-                                <input
-                                    type="text"
-                                    id="loginId"
-                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                    placeholder="Enter your ID"
-                                    ${!hasData ? 'disabled' : ''}
-                                />
-                            </div>
-                            <div>
-                                <label class="block font-semibold mb-2">Password:</label>
-                                <input
-                                    type="password"
-                                    id="loginPassword"
-                                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                    placeholder="Enter your password"
-                                    ${!hasData ? 'disabled' : ''}
-                                />
-                                <div class="mt-2"></div>
-                            </div>
+                        <div style="margin-bottom:14px;">
+                            ${!hasData ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No employee data loaded. Click "Sync with Database" above.</div>` : ''}
+                            <label class="metro-label">Employee ID</label>
+                            <input type="text" id="loginId" class="metro-input" placeholder="Enter your ID" ${!hasData ? 'disabled' : ''} />
+                        </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasData ? 'disabled' : ''} />
+                            <div class="info-hint">📌 Default password is your Employee ID</div>
                         </div>
                     `;
                 }
@@ -704,10 +967,12 @@
                         this.state.userType = 'planner';
                         this.state.activeView = 'upload';
                         
-                        document.getElementById('userInfo').classList.remove('hidden');
-                        document.getElementById('loginView').classList.add('hidden');
+                        document.body.classList.add('logged-in');
+                        ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                        document.getElementById('loginView').style.display = 'none';
+                        const uip = document.getElementById('userInfo');
+                        uip.style.display = 'flex'; uip.classList.remove('hidden');
                         document.getElementById('plannerNav').classList.remove('hidden');
-                        
                         document.getElementById('currentUserName').textContent = 'Planner Admin';
                         document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
@@ -747,10 +1012,13 @@
                     this.state.verifiedEmployee = { id: gcUser.id, name: gcUser.name, department: 'Golden Command', seniorityDate: '2000-01-01' };
                     this.state.activeView = 'goldenCommand';
                     
-                    document.getElementById('userInfo').classList.remove('hidden');
-                    document.getElementById('loginView').classList.add('hidden');
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const ui = document.getElementById('userInfo');
+                    ui.style.display = 'flex'; ui.classList.remove('hidden');
                     document.getElementById('goldenCommandNav').classList.remove('hidden');
-                    
                     document.getElementById('currentUserName').textContent = gcUser.name;
                     document.getElementById('userTypeBadge').textContent = '⭐ Golden Command';
                     document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800';
@@ -782,10 +1050,13 @@
                         this.state.verifiedEmployee = employee;
                         this.state.activeView = 'employee';
                         
-                        document.getElementById('userInfo').classList.remove('hidden');
-                        document.getElementById('loginView').classList.add('hidden');
+                        // Hide login, show app
+                        document.body.classList.add('logged-in');
+                        ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                        document.getElementById('loginView').style.display = 'none';
+                        const ui2 = document.getElementById('userInfo');
+                        ui2.style.display = 'flex'; ui2.classList.remove('hidden');
                         document.getElementById('employeeNav').classList.remove('hidden');
-                        
                         document.getElementById('currentUserName').textContent = employee.name;
                         document.getElementById('userTypeBadge').textContent = 'Employee';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
@@ -804,11 +1075,19 @@
                 this.state.verifiedEmployee = null;
                 this.state.activeView = 'login';
                 
-                document.getElementById('userInfo').classList.add('hidden');
+                document.getElementById('userInfo').style.display = 'none';
                 document.getElementById('plannerNav').classList.add('hidden');
                 document.getElementById('employeeNav').classList.add('hidden');
                 document.getElementById('goldenCommandNav').classList.add('hidden');
-                document.getElementById('loginView').classList.remove('hidden');
+                document.getElementById('loginView').style.display = 'flex';
+                document.getElementById('contentArea').innerHTML = '';
+
+                // Restore dark bg
+                document.body.classList.remove('logged-in');
+                ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = '';
+                });
                 
                 this.renderLoginForm();
             },
@@ -3797,6 +4076,22 @@
                 this.renderLoginForm();
             },
 
+            _startClock() {
+                const tick = () => {
+                    const now = new Date();
+                    const clockEl = document.getElementById('liveClock');
+                    const dateEl = document.getElementById('liveDate');
+                    if (clockEl) {
+                        clockEl.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    }
+                    if (dateEl) {
+                        dateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    }
+                };
+                tick();
+                setInterval(tick, 1000);
+            },
+
             // ==================== INITIALIZATION ====================
             async init() {
                 console.log('App initializing...');
@@ -3829,6 +4124,9 @@
                         this.handleLogin();
                     }
                 });
+                
+                // Start live clock
+                this._startClock();
                 
                 console.log('App ready');
             }
