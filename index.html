@@ -457,6 +457,9 @@
             <button onclick="app.setActiveView('results')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 📋 View Results
             </button>
+            <button onclick="app.setActiveView('auditLog')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+                🔍 Audit Log
+            </button>
         </div>
 
         <!-- Employee Navigation -->
@@ -984,6 +987,7 @@
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
                         
                         this.renderView();
+                        this.writeAuditLog('LOGIN', { role: 'planner' });
                         alert('✅ Welcome, Planner!');
                     } else {
                         alert('❌ Incorrect planner password.');
@@ -1030,6 +1034,7 @@
                     document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800';
                     
                     this.renderView();
+                    this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
                     alert(`✅ Welcome, ${gcUser.name}!`);
                 } else {
                     const idInput = document.getElementById('loginId');
@@ -1068,6 +1073,7 @@
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
                         
                         this.renderView();
+                        this.writeAuditLog('LOGIN', { name: employee.name, id: employee.id, department: employee.department });
                         alert(`✅ Welcome, ${employee.name}!`);
                     } else {
                         alert(`❌ Incorrect password.`);
@@ -1076,6 +1082,7 @@
             },
 
             handleLogout() {
+                this.writeAuditLog('LOGOUT', { name: this.state.currentUser?.name, role: this.state.userType });
                 this.state.currentUser = null;
                 this.state.userType = null;
                 this.state.verifiedEmployee = null;
@@ -1149,6 +1156,9 @@
                         break;
                     case 'manualOverride':
                         this.renderManualOverrideView();
+                        break;
+                    case 'auditLog':
+                        this.renderAuditLogView();
                         break;
                     case 'changePassword':
                         this.renderChangePasswordView();
@@ -1378,6 +1388,7 @@
                             });
                             
                             this.saveState();
+                            this.writeAuditLog('DATA_UPLOADED', { count: employees.length, year: this.state.biddingYear });
                             
                             // Show summary of departments found
                             const departmentsFound = [...new Set(employees.map(e => e.position || e.department))];
@@ -2094,6 +2105,7 @@
 
                 this.state.bids.push(newBid);
                 this.saveState();
+                this.writeAuditLog('BID_PLACED', { type: 'GC', slot: window.gcSelectedSlot, start: startDate, end: endDate, days });
 
                 // Save bid immediately to Supabase so it survives refresh
                 this.saveBidToSupabase(newBid).then(saved => {
@@ -2933,11 +2945,6 @@
                     return;
                 }
                 
-                // Sort employees by seniority (oldest first)
-                const sortedEmployees = [...this.state.employees].sort((a, b) => {
-                    return new Date(a.seniorityDate) - new Date(b.seniorityDate);
-                });
-                
                 // Calculate entitlement for each employee
                 const calculateYearsOfService = (seniorityDate) => {
                     const today = new Date();
@@ -3076,6 +3083,45 @@
                     return empDept;
                 };
 
+                // ── PER-DEPARTMENT SENIORITY ──
+                // Group employees by their resolved department, sort each group by seniority,
+                // then interleave: rank-1 of every dept goes first, then rank-2, etc.
+                // This ensures L3-SAMB #1 and L3-DEP-DC #1 both get priority before anyone's #2.
+
+                // First resolve all departments
+                const empWithDept = this.state.employees.map(e => ({
+                    ...e,
+                    resolvedDept: resolveEmployeeDept(e.department || 'Unassigned')
+                }));
+
+                // Group by resolved department
+                const deptGroups = {};
+                empWithDept.forEach(e => {
+                    if (!deptGroups[e.resolvedDept]) deptGroups[e.resolvedDept] = [];
+                    deptGroups[e.resolvedDept].push(e);
+                });
+
+                // Sort each department group by seniority (oldest first = most senior)
+                Object.keys(deptGroups).forEach(dept => {
+                    deptGroups[dept].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                });
+
+                // Build per-department sequential processing order:
+                // Process ALL employees in dept A (rank 1→N) before moving to dept B.
+                // This ensures each department is fully self-contained — L3-SAMB rank #1
+                // through #N are processed entirely before L3-DEP-DC rank #1 starts.
+                // Within each department, employees are ordered oldest seniority date first.
+                const sortedDeptKeys = Object.keys(deptGroups).sort();
+                const sortedEmployees = [];
+                const deptRankMap = {}; // employeeId → { dept, deptRank }
+
+                sortedDeptKeys.forEach(dept => {
+                    deptGroups[dept].forEach((emp, rankIdx) => {
+                        sortedEmployees.push(emp);
+                        deptRankMap[emp.id] = { dept, deptRank: rankIdx + 1 };
+                    });
+                });
+
                 // Warn if any employee departments have no configured slots
                 const configuredDepts = new Set(Object.keys(slotAvailability).flatMap(month => Object.keys(slotAvailability[month] || {})));
                 const employeeDeptSet = new Set(sortedEmployees.map(e => resolveEmployeeDept(e.department || 'Unassigned')));
@@ -3198,11 +3244,13 @@
                         }
                     }
 
-                    // Add all assignments to results
+                // Add all assignments to results
                     assignedSlots.forEach((assignment, slotIndex) => {
+                        const deptInfo = deptRankMap[employee.id] || {};
                         slotAssignments.push({
                             ...assignment,
-                            seniorityRank: index + 1,
+                            seniorityRank: deptInfo.deptRank || (index + 1),
+                            deptSeniorityRank: deptInfo.deptRank || (index + 1),
                             totalEmployeeSlots: 2,
                             slotOrder: slotIndex + 1,
                             entitlement
@@ -3214,6 +3262,7 @@
                 this.state.results = slotAssignments;
                 this.state.isProcessed = true;
                 this.saveState();
+                this.writeAuditLog('BIDS_PROCESSED', { total_employees: sortedEmployees.length, total_slots: slotAssignments.length, year: this.state.biddingYear });
                 
                 // Calculate statistics
                 const totalSlots = slotAssignments.length;
@@ -3224,6 +3273,7 @@
                 const juniorEmployees = totalEmployees - seniorEmployees;
                 
                 const message = `✅ Successfully processed ${totalEmployees} employees!\n\n` +
+                               `• Seniority: Per-department (each dept processed independently)\n` +
                                `• Total slots assigned: ${totalSlots} (${totalEmployees} × 2)\n` +
                                `• Senior employees (35 days): ${seniorEmployees}\n` +
                                `• Junior employees (30 days): ${juniorEmployees}\n` +
@@ -3275,6 +3325,7 @@
 
             resetSystem() {
                 if (confirm('⚠️ WARNING: This will reset ALL data including employees, bids, and results. Continue?')) {
+                    this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
                     localStorage.clear();
                     this.state.employees = [];
                     this.state.bids = [];
@@ -3517,6 +3568,7 @@
 
                 this.state.bids.push(newBid);
                 this.saveState();
+                this.writeAuditLog('BID_PLACED', { slot: window.selectedSlot, start: startDate, end: endDate, days, department: newBid.department });
 
                 // Save bid immediately to Supabase so it survives refresh
                 this.saveBidToSupabase(newBid).then(saved => {
@@ -3596,6 +3648,7 @@
                           bid.startDate === startDate)
                     );
                     this.saveState();
+                    this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
 
                     // Delete from Supabase immediately
                     if (this.supabase) {
@@ -3792,7 +3845,7 @@
                             <!-- Summary Cards -->
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                                 <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-blue-400">
-                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Seniority Rank</p>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Dept. Seniority Rank</p>
                                     <p class="text-2xl font-bold text-blue-600">#${rank}</p>
                                 </div>
                                 <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-purple-400">
@@ -3914,14 +3967,14 @@
                                     <table class="w-full text-sm">
                                         <thead class="bg-gray-100">
                                             <tr>
-                                                <th class="p-3">Rank</th>
-                                                <th class="p-3">Employee</th>
-                                                <th class="p-3">Position</th>
-                                                <th class="p-3">Seniority</th>
-                                                <th class="p-3">Slot 1</th>
-                                                <th class="p-3">Slot 2</th>
-                                                <th class="p-3">Total Days</th>
-                                                <th class="p-3">Status</th>
+                                                <th class="p-3 text-left">Dept. Rank</th>
+                                                <th class="p-3 text-left">Employee</th>
+                                                <th class="p-3 text-left">Department</th>
+                                                <th class="p-3 text-left">Seniority</th>
+                                                <th class="p-3 text-left">Slot 1</th>
+                                                <th class="p-3 text-left">Slot 2</th>
+                                                <th class="p-3 text-left">Total Days</th>
+                                                <th class="p-3 text-left">Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -3935,11 +3988,11 @@
                                                 
                                                 return `
                                                     <tr class="border-b hover:bg-gray-50">
-                                                        <td class="p-3">#${slot1?.seniorityRank || 'N/A'}</td>
+                                                        <td class="p-3 font-mono text-sm">#${slot1?.deptSeniorityRank || slot1?.seniorityRank || 'N/A'}</td>
                                                         <td class="p-3">${employee?.name || 'Unknown'}<br>
                                                             <span class="text-xs text-gray-500">${empId}</span>
                                                         </td>
-                                                        <td class="p-3">${employee?.position || employee?.department || 'Unassigned'}</td>
+                                                        <td class="p-3 text-xs">${slot1?.department || employee?.department || '—'}</td>
                                                         <td class="p-3">${slot1?.yearsOfService || 'N/A'} yrs</td>
                                                         <td class="p-3">
                                                             ${slot1?.slotName || 'N/A'}<br>
@@ -4079,6 +4132,7 @@
 
                     this.saveState();
                     showMsg('✅ Password changed successfully!', 'bg-green-50 border-green-300 text-green-700');
+                    this.writeAuditLog('PASSWORD_CHANGED', { user_type: userType });
                     // Clear fields
                     document.getElementById('cpCurrent').value = '';
                     document.getElementById('cpNew').value = '';
@@ -4212,22 +4266,17 @@
 
                         <!-- Department Participation Chart -->
                         <div class="bg-white rounded-xl shadow p-6">
-                            <h3 class="font-bold text-gray-700 mb-4">🏢 Department Participation</h3>
-                            <div class="space-y-2 max-h-80 overflow-y-auto pr-2">
-                                ${depts.map(dept => {
-                                    const t = deptTotalMap[dept] || 0;
-                                    const b = deptBidMap[dept]?.size || 0;
-                                    const p = t > 0 ? Math.round(b/t*100) : 0;
-                                    const barW = Math.round(b/maxEmp*100);
-                                    const color = p===100?'bg-green-500':p>=50?'bg-blue-500':'bg-orange-400';
-                                    return `<div class="flex items-center gap-3 text-sm">
-                                        <div class="w-40 text-gray-600 truncate text-xs" title="${dept}">${dept}</div>
-                                        <div class="flex-1 bg-gray-100 rounded-full h-5 relative">
-                                            <div class="${color} h-5 rounded-full transition-all" style="width:${barW}%"></div>
-                                            <span class="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-700">${b}/${t} (${p}%)</span>
-                                        </div>
-                                    </div>`;
-                                }).join('')}
+                            <div class="flex items-center justify-between mb-1">
+                                <h3 class="font-bold text-gray-700">🏢 Department Participation</h3>
+                                <div class="flex items-center gap-3 text-xs text-gray-500">
+                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#2d6a4f;display:inline-block;"></span> 100%</span>
+                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#3b82f6;display:inline-block;"></span> ≥50%</span>
+                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#f97316;display:inline-block;"></span> &lt;50%</span>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-4">${bidded} of ${total} staff have submitted bids (${pct}% overall)</p>
+                            <div style="overflow-y:auto; max-height:420px; padding-right:4px;">
+                                <canvas id="deptBarChart" width="700" height="${Math.max(depts.length * 34, 60)}"></canvas>
                             </div>
                         </div>
 
@@ -4286,6 +4335,96 @@
                         el.textContent = `${d}d ${h}h ${m}m`;
                     }, 30000);
                 }
+
+                // ── Draw horizontal bar chart ──
+                requestAnimationFrame(() => {
+                    const barCanvas = document.getElementById('deptBarChart');
+                    if (!barCanvas) return;
+
+                    const barData = depts.map(dept => ({
+                        label: dept,
+                        bidded: deptBidMap[dept]?.size || 0,
+                        total: deptTotalMap[dept] || 0
+                    })).sort((a, b) => {
+                        // Sort by participation % desc, then name
+                        const pa = a.total > 0 ? a.bidded / a.total : 0;
+                        const pb = b.total > 0 ? b.bidded / b.total : 0;
+                        return pb - pa || a.label.localeCompare(b.label);
+                    });
+
+                    const rowH   = 34;
+                    const labelW = 160;
+                    const padR   = 60;
+                    const W      = barCanvas.width;
+                    const barMaxW = W - labelW - padR;
+
+                    barCanvas.height = Math.max(barData.length * rowH + 10, 60);
+                    const ctx = barCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, W, barCanvas.height);
+
+                    // Subtle vertical gridlines at 25%, 50%, 75%, 100%
+                    [0.25, 0.5, 0.75, 1].forEach(frac => {
+                        const x = labelW + Math.round(frac * barMaxW);
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#e5e7eb';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, barCanvas.height);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        // tick label
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '9px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${Math.round(frac * 100)}%`, x, barCanvas.height - 2);
+                    });
+
+                    barData.forEach((d, i) => {
+                        const y    = i * rowH + 4;
+                        const midY = y + (rowH - 8) / 2;
+                        const pct2 = d.total > 0 ? d.bidded / d.total : 0;
+                        const fillW = Math.round(pct2 * barMaxW);
+                        const color = pct2 === 1 ? '#2d6a4f' : pct2 >= 0.5 ? '#3b82f6' : '#f97316';
+
+                        // Department label
+                        ctx.fillStyle = '#374151';
+                        ctx.font = '11px sans-serif';
+                        ctx.textAlign = 'right';
+                        ctx.textBaseline = 'middle';
+                        const shortLabel = d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label;
+                        ctx.fillText(shortLabel, labelW - 8, midY);
+
+                        // Background track
+                        ctx.fillStyle = '#f3f4f6';
+                        ctx.beginPath();
+                        ctx.roundRect(labelW, y + 2, barMaxW, rowH - 12, 5);
+                        ctx.fill();
+
+                        // Filled bar
+                        if (fillW > 4) {
+                            ctx.fillStyle = color;
+                            ctx.beginPath();
+                            ctx.roundRect(labelW, y + 2, fillW, rowH - 12, 5);
+                            ctx.fill();
+
+                            // Percentage text inside bar (if wide enough)
+                            if (fillW > 38) {
+                                ctx.fillStyle = '#fff';
+                                ctx.font = 'bold 10px sans-serif';
+                                ctx.textAlign = 'left';
+                                ctx.fillText(`${Math.round(pct2 * 100)}%`, labelW + 7, midY);
+                            }
+                        }
+
+                        // Count label to the right
+                        ctx.fillStyle = '#6b7280';
+                        ctx.font = '10px sans-serif';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(`${d.bidded}/${d.total}`, labelW + barMaxW + 5, midY);
+                    });
+                });
             },
 
             // ==================== MANUAL OVERRIDE ====================
@@ -4392,6 +4531,7 @@
 
             async saveAllOverrides() {
                 this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { total_results: this.state.results.length });
                 try {
                     if (this.supabase) {
                         const { error } = await this.supabase.from('system_config').update({ results: this.state.results }).eq('id', 1);
@@ -4646,6 +4786,200 @@
                 const color = failed === 0 ? '#f0fdf4;border-color:#bbf7d0;color:#166534' : '#fef2f2;border-color:#fecaca;color:#991b1b';
                 msgEl.innerHTML = `<div style="padding:10px;background:${color};border:1px solid;border-radius:8px;font-size:0.8rem;margin-bottom:12px;">
                     ${failed===0?'✅':'⚠️'} Done! ${sent} emails sent${failed>0?`, ${failed} failed`:''}.</div>`;
+            },
+
+            // ==================== AUDIT LOG ====================
+            async writeAuditLog(action, details = {}) {
+                const entry = {
+                    action,
+                    user_id: this.state.currentUser?.id || this.state.currentUser?.name || 'unknown',
+                    user_name: this.state.currentUser?.name || 'unknown',
+                    user_type: this.state.userType || 'unknown',
+                    details: JSON.stringify(details),
+                    timestamp: new Date().toISOString()
+                };
+
+                // Always save locally
+                try {
+                    const local = JSON.parse(localStorage.getItem('auditLog') || '[]');
+                    local.unshift(entry);
+                    localStorage.setItem('auditLog', JSON.stringify(local.slice(0, 500))); // keep last 500
+                } catch(e) { console.warn('Audit local save failed', e); }
+
+                // Also save to Supabase audit_logs table
+                if (this.supabase) {
+                    try {
+                        await this.supabase.from('audit_logs').insert({
+                            action: entry.action,
+                            user_id: entry.user_id,
+                            user_name: entry.user_name,
+                            user_type: entry.user_type,
+                            details: entry.details,
+                            created_at: entry.timestamp
+                        });
+                    } catch(e) { console.warn('Audit Supabase save failed', e); }
+                }
+            },
+
+            async renderAuditLogView() {
+                const content = document.getElementById('contentArea');
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold">🔍 Audit Log</h2>
+                                    <p class="text-sm text-gray-500 mt-1">All system activity — logins, bids, overrides, password changes</p>
+                                </div>
+                                <div class="flex gap-3">
+                                    <button onclick="app.renderAuditLogView()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">🔄 Refresh</button>
+                                    <button onclick="app.clearAuditLog()" class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-100">🗑 Clear Local</button>
+                                </div>
+                            </div>
+
+                            <!-- Filters -->
+                            <div class="flex gap-3 mb-5 flex-wrap">
+                                <select id="auditFilterType" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
+                                    <option value="all">All Actions</option>
+                                    <option value="LOGIN">Login</option>
+                                    <option value="LOGOUT">Logout</option>
+                                    <option value="BID_PLACED">Bid Placed</option>
+                                    <option value="BID_REMOVED">Bid Removed</option>
+                                    <option value="BIDS_PROCESSED">Bids Processed</option>
+                                    <option value="PASSWORD_CHANGED">Password Changed</option>
+                                    <option value="MANUAL_OVERRIDE">Manual Override</option>
+                                    <option value="DATA_UPLOADED">Data Uploaded</option>
+                                    <option value="SYSTEM_RESET">System Reset</option>
+                                </select>
+                                <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
+                                    <option value="all">All Roles</option>
+                                    <option value="employee">Employee</option>
+                                    <option value="planner">Planner</option>
+                                    <option value="goldencommand">Golden Command</option>
+                                </select>
+                                <input type="text" id="auditSearch" oninput="app.filterAuditLog()" placeholder="Search name or ID..." class="px-3 py-2 border rounded-lg text-sm flex-1 min-w-40" />
+                            </div>
+
+                            <div id="auditTableContainer">
+                                <div class="text-center py-8 text-gray-400">⏳ Loading audit log...</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Load from Supabase first, fallback to localStorage
+                let logs = [];
+                if (this.supabase) {
+                    try {
+                        const { data, error } = await this.supabase
+                            .from('audit_logs')
+                            .select('*')
+                            .order('created_at', { ascending: false })
+                            .limit(500);
+                        if (!error && data) {
+                            logs = data.map(r => ({
+                                action: r.action,
+                                user_id: r.user_id,
+                                user_name: r.user_name,
+                                user_type: r.user_type,
+                                details: r.details,
+                                timestamp: r.created_at
+                            }));
+                        }
+                    } catch(e) { console.warn('Audit load from Supabase failed', e); }
+                }
+
+                // Merge with local if Supabase had nothing
+                if (logs.length === 0) {
+                    logs = JSON.parse(localStorage.getItem('auditLog') || '[]');
+                }
+
+                this._auditLogs = logs;
+                this.filterAuditLog();
+            },
+
+            filterAuditLog() {
+                const logs = this._auditLogs || [];
+                const typeFilter = document.getElementById('auditFilterType')?.value || 'all';
+                const roleFilter = document.getElementById('auditFilterRole')?.value || 'all';
+                const search = (document.getElementById('auditSearch')?.value || '').toLowerCase();
+
+                const filtered = logs.filter(l => {
+                    if (typeFilter !== 'all' && l.action !== typeFilter) return false;
+                    if (roleFilter !== 'all' && l.user_type !== roleFilter) return false;
+                    if (search && !l.user_name?.toLowerCase().includes(search) && !l.user_id?.toLowerCase().includes(search)) return false;
+                    return true;
+                });
+
+                const actionColors = {
+                    'LOGIN':            'bg-green-100 text-green-800',
+                    'LOGOUT':           'bg-gray-100 text-gray-700',
+                    'BID_PLACED':       'bg-blue-100 text-blue-800',
+                    'BID_REMOVED':      'bg-orange-100 text-orange-800',
+                    'BIDS_PROCESSED':   'bg-purple-100 text-purple-800',
+                    'PASSWORD_CHANGED': 'bg-yellow-100 text-yellow-800',
+                    'MANUAL_OVERRIDE':  'bg-red-100 text-red-800',
+                    'DATA_UPLOADED':    'bg-indigo-100 text-indigo-800',
+                    'SYSTEM_RESET':     'bg-red-200 text-red-900',
+                };
+
+                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐' };
+
+                const container = document.getElementById('auditTableContainer');
+                if (!container) return;
+
+                if (filtered.length === 0) {
+                    container.innerHTML = `<div class="text-center py-12 text-gray-400">
+                        <p class="text-3xl mb-3">📭</p>
+                        <p>No audit entries found${search ? ' matching your search' : ''}.</p>
+                    </div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <p class="text-xs text-gray-400 mb-3">${filtered.length} entr${filtered.length===1?'y':'ies'} found</p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                                <tr>
+                                    <th class="p-3 text-left">Timestamp</th>
+                                    <th class="p-3 text-left">Action</th>
+                                    <th class="p-3 text-left">User</th>
+                                    <th class="p-3 text-left">Role</th>
+                                    <th class="p-3 text-left">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.map(l => {
+                                    const ts = l.timestamp ? new Date(l.timestamp).toLocaleString('en-US', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+                                    const colorClass = actionColors[l.action] || 'bg-gray-100 text-gray-700';
+                                    const roleIcon = roleIcons[l.user_type] || '👤';
+                                    let detailsObj = {};
+                                    try { detailsObj = JSON.parse(l.details || '{}'); } catch(e) {}
+                                    const detailStr = Object.entries(detailsObj).map(([k,v]) => `<span class="text-gray-500">${k}:</span> <span class="font-medium">${v}</span>`).join(' · ');
+                                    return `
+                                        <tr class="border-b hover:bg-gray-50 transition-colors">
+                                            <td class="p-3 text-xs text-gray-500 whitespace-nowrap font-mono">${ts}</td>
+                                            <td class="p-3"><span class="px-2 py-1 rounded-full text-xs font-bold ${colorClass}">${l.action}</span></td>
+                                            <td class="p-3">
+                                                <p class="font-semibold text-gray-800">${l.user_name || '—'}</p>
+                                                <p class="text-xs text-gray-400">${l.user_id || ''}</p>
+                                            </td>
+                                            <td class="p-3 text-xs">${roleIcon} ${l.user_type || '—'}</td>
+                                            <td class="p-3 text-xs text-gray-600">${detailStr || '—'}</td>
+                                        </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            },
+
+            clearAuditLog() {
+                if (!confirm('Clear local audit log? (Supabase records will remain)')) return;
+                localStorage.removeItem('auditLog');
+                this._auditLogs = [];
+                this.filterAuditLog();
             },
 
             _startClock() {
