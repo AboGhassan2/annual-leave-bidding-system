@@ -205,6 +205,11 @@
             color: #fff;
             box-shadow: 0 2px 12px rgba(183,121,31,0.5);
         }
+        .tab-btn.active-cs {
+            background: linear-gradient(135deg, #1565c0, #0288d1);
+            color: #fff;
+            box-shadow: 0 2px 12px rgba(21,101,192,0.5);
+        }
 
         /* Inputs */
         .metro-input {
@@ -408,6 +413,9 @@
                         <button class="tab-btn" onclick="app.setLoginType('goldencommand')" id="tab-goldencommand">
                             ⭐ GC
                         </button>
+                        <button class="tab-btn" onclick="app.setLoginType('corporatestaff')" id="tab-corporatestaff">
+                            🏢 Corp Staff
+                        </button>
                     </div>
                 </div>
 
@@ -484,6 +492,20 @@
             <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="gcResultsNavBtn">
                 📋 My Results
                 <span id="gcResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
+            </button>
+            <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
+                🔑 Change Password
+            </button>
+        </div>
+
+        <!-- Corporate Staff Navigation -->
+        <div id="corporateStaffNav" class="hidden flex justify-center space-x-4 mb-6">
+            <button onclick="app.setActiveView('corporateStaff')" class="px-4 py-2 rounded-lg font-semibold bg-blue-500 text-white hover:bg-blue-600 border border-blue-600">
+                🏢 Place CS Bids
+            </button>
+            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="csResultsNavBtn">
+                📋 My Results
+                <span id="csResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
             </button>
             <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🔑 Change Password
@@ -932,14 +954,15 @@
                 this.state.loginType = type;
 
                 // Update tab bar active states
-                ['employee','planner','goldencommand'].forEach(t => {
+                ['employee','planner','goldencommand','corporatestaff'].forEach(t => {
                     const btn = document.getElementById('tab-' + t);
                     if (!btn) return;
                     btn.className = 'tab-btn';
                     if (t === type) {
                         if (t === 'employee') btn.classList.add('active-emp');
                         else if (t === 'planner') btn.classList.add('active-plan');
-                        else btn.classList.add('active-gc');
+                        else if (t === 'goldencommand') btn.classList.add('active-gc');
+                        else if (t === 'corporatestaff') btn.classList.add('active-cs');
                     }
                 });
 
@@ -969,6 +992,20 @@
                         <div>
                             <label class="metro-label">Password</label>
                             <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasGCUsers ? 'disabled' : ''} />
+                        </div>
+                    `;
+                } else if (this.state.loginType === 'corporatestaff') {
+                    const csUsers = this.state.corporateStaffUsers || [];
+                    const hasCSUsers = csUsers.length > 0;
+                    form.innerHTML = `
+                        <div style="margin-bottom:14px;">
+                            ${!hasCSUsers ? `<div style="background:rgba(2,136,209,0.08);border:1px solid rgba(2,136,209,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(2,136,209,0.9);">No Corporate Staff users configured. Contact the planner.</div>` : ''}
+                            <label class="metro-label">Corporate Staff ID</label>
+                            <input type="text" id="csLoginId" class="metro-input" placeholder="Enter your Staff ID" ${!hasCSUsers ? 'disabled' : ''} />
+                        </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasCSUsers ? 'disabled' : ''} />
                         </div>
                     `;
                 } else {
@@ -1058,6 +1095,50 @@
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
                     alert(`✅ Welcome, ${gcUser.name}!`);
+                } else if (this.state.loginType === 'corporatestaff') {
+                    const csIdInput = document.getElementById('csLoginId');
+                    const passInput = document.getElementById('loginPassword');
+                    const csId = csIdInput ? csIdInput.value.trim() : '';
+                    const password = passInput ? passInput.value : '';
+
+                    if (!csId || !password) {
+                        alert('⚠️ Please enter both Staff ID and password');
+                        return;
+                    }
+
+                    const csUsers = this.state.corporateStaffUsers || [];
+                    const csUser = csUsers.find(u => u.id === csId);
+
+                    if (!csUser) {
+                        alert('❌ Corporate Staff ID not found. Please contact the planner.');
+                        return;
+                    }
+
+                    const storedPass = csUser.password || csUser.id;
+                    if (password !== storedPass) {
+                        alert('❌ Incorrect password.');
+                        return;
+                    }
+
+                    this.state.currentUser = csUser;
+                    this.state.userType = 'corporatestaff';
+                    this.state.verifiedEmployee = { id: csUser.id, name: csUser.name, department: 'Corporate Staff', seniorityDate: '2000-01-01' };
+                    this.state.activeView = 'corporateStaff';
+
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const csUi = document.getElementById('userInfo');
+                    csUi.style.display = 'flex'; csUi.classList.remove('hidden');
+                    document.getElementById('corporateStaffNav').classList.remove('hidden');
+                    document.getElementById('currentUserName').textContent = csUser.name;
+                    document.getElementById('userTypeBadge').textContent = '🏢 Corporate Staff';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+
+                    this.renderView();
+                    this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
+                    alert(`✅ Welcome, ${csUser.name}!`);
                 } else {
                     const idInput = document.getElementById('loginId');
                     const passInput = document.getElementById('loginPassword');
@@ -1114,6 +1195,7 @@
                 document.getElementById('plannerNav').classList.add('hidden');
                 document.getElementById('employeeNav').classList.add('hidden');
                 document.getElementById('goldenCommandNav').classList.add('hidden');
+                document.getElementById('corporateStaffNav').classList.add('hidden');
                 document.getElementById('loginView').style.display = 'flex';
                 document.getElementById('contentArea').innerHTML = '';
 
@@ -1149,7 +1231,7 @@
                 // Show/hide results ready badge
                 const userId = this.state.verifiedEmployee?.id;
                 const hasMyResults = userId && this.state.isProcessed && this.state.results.some(r => r.employeeId === userId);
-                ['resultsReadyBadge', 'gcResultsReadyBadge'].forEach(id => {
+                ['resultsReadyBadge', 'gcResultsReadyBadge', 'csResultsReadyBadge'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.classList.toggle('hidden', !hasMyResults);
                 });
@@ -1190,6 +1272,9 @@
                         break;
                     case 'goldenCommand':
                         this.renderGoldenCommandBiddingView();
+                        break;
+                    case 'corporateStaff':
+                        this.renderCorporateStaffBiddingView();
                         break;
                 }
                 
@@ -2251,6 +2336,312 @@
                     }
 
                     this.renderGoldenCommandBiddingView();
+                }
+            },
+
+            // ==================== CORPORATE STAFF BIDDING ====================
+            renderCorporateStaffBiddingView() {
+                const content = document.getElementById('contentArea');
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) { content.innerHTML = '<p class="text-center">Please login first.</p>'; return; }
+
+                const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
+                const totalBidDays = csBids.reduce((sum, bid) => sum + bid.days, 0);
+                const entitlement = 35; // Corporate Staff entitlement
+
+                // Countdown
+                const deadlineCountdownCS = (() => {
+                    if (!this.state.biddingDeadline) return '';
+                    const dl = new Date(this.state.biddingDeadline);
+                    const diff = dl - new Date();
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    const urgency = diff<3600000?'bg-red-50 border-red-300 text-red-700':diff<86400000?'bg-yellow-50 border-yellow-300 text-yellow-700':'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}"><p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p><p class="text-2xl font-bold font-mono" id="csCountdownTimer">${d}d ${h}h ${m}m ${s}s</p></div>`;
+                })();
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdownCS}
+                        <!-- Header -->
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-blue-500">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="text-3xl">🏢</span>
+                                <h2 class="text-2xl font-bold">Corporate Staff — ${csUser.name} — Leave Bidding ${this.state.biddingYear}</h2>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <p class="text-2xl font-bold text-blue-800">${entitlement}</p>
+                                    <p class="text-sm text-gray-600">Total Leave Days</p>
+                                    <p class="text-xs text-blue-600">Corporate Staff Entitlement</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${csBids.length} <span class="text-sm font-normal text-gray-500">unlimited</span></p>
+                                    <p class="text-sm text-gray-600">Bids Placed</p>
+                                </div>
+                                <div class="bg-indigo-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${totalBidDays}</p>
+                                    <p class="text-sm text-gray-600">Days Bid</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-purple-700">∞</p>
+                                    <p class="text-sm text-gray-600">No Bid Limit</p>
+                                </div>
+                            </div>
+                            <div class="border-t pt-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <p class="font-semibold">Available Slot Types:</p>
+                                    <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">🏢 Corp Staff: Unlimited selections, free date range</span>
+                                </div>
+                                <div class="flex gap-4">
+                                    ${this.state.slotTypes.map(slot => `
+                                        <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
+                                            <p class="font-bold">${slot.name}</p>
+                                            <p class="text-sm">${slot.days} consecutive days</p>
+                                        </div>
+                                    `).join('')}
+                                    <div class="flex-1 p-3 rounded-lg border border-blue-400 bg-blue-50">
+                                        <p class="font-bold text-blue-800">🏢 Custom</p>
+                                        <p class="text-sm text-blue-700">Any date range — free choice</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Left: Place New Bid -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-blue-500">
+                                <h3 class="text-xl font-bold mb-4">🏢 Place New Corporate Staff Bid</h3>
+                                ${this.state.isProcessed ? `
+                                    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                    </div>` : ''}
+
+                                <!-- Slot Type Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                    <div class="space-y-2">
+                                        ${this.state.slotTypes.map(slot => `
+                                            <button
+                                                onclick="app.csSetSelectedSlot('${slot.id}')"
+                                                data-csslot="${slot.id}"
+                                                class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800 ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
+                                                ${this.state.isProcessed ? 'disabled' : ''}
+                                            >
+                                                ${slot.name} — ${slot.days} consecutive days
+                                            </button>
+                                        `).join('')}
+                                        <button
+                                            onclick="app.csSetSelectedSlot('csCustom')"
+                                            data-csslot="csCustom"
+                                            class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-50 border border-blue-300 hover:bg-blue-100 text-blue-800 ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
+                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                        >
+                                            🏢 Custom — Any date range (free choice)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Date Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Dates:</label>
+                                    <div id="csSlotInfo" class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800 font-medium">
+                                        Select a slot type above first
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-semibold mb-1">Start Date</label>
+                                            <input type="date" id="csStartDate"
+                                                class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                                min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
+                                                onchange="app.csUpdateEndDate()" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-semibold mb-1">End Date <span class="text-gray-400 font-normal">(auto)</span></label>
+                                            <input type="date" id="csEndDate"
+                                                class="w-full px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-50"
+                                                readonly />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button onclick="app.submitCSBid()"
+                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
+                                    ${this.state.isProcessed ? 'disabled' : ''}>
+                                    🏢 Submit Corporate Staff Bid
+                                </button>
+                            </div>
+
+                            <!-- Right: My Current Bids -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-indigo-400">
+                                <h3 class="text-xl font-bold mb-4">📋 My Current Bids (${csBids.length})</h3>
+                                ${csBids.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-500">
+                                        <p class="text-4xl mb-3">📭</p>
+                                        <p class="font-semibold">No bids placed yet</p>
+                                        <p class="text-sm mt-1">Place your first bid on the left</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                                        ${csBids.map(bid => {
+                                            const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                            const slotLabel = bid.slotType === 'csCustom' ? '🏢 Custom' : (slot?.name || bid.slotType);
+                                            return `
+                                                <div class="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                                                    <div class="flex justify-between items-start">
+                                                        <div>
+                                                            <p class="font-bold text-blue-900">${slotLabel}</p>
+                                                            <p class="text-sm text-gray-600">${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-sm font-semibold text-blue-700">${bid.days} days</p>
+                                                        </div>
+                                                        <button onclick="app.removeCSBid('${bid.slotType}','${bid.startDate}')"
+                                                            class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 font-semibold">
+                                                            ✕ Remove
+                                                        </button>
+                                                    </div>
+                                                </div>`;
+                                        }).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Start countdown timer
+                clearInterval(window._csCountdownTimer);
+                window._csCountdownTimer = setInterval(() => {
+                    const el = document.getElementById('csCountdownTimer');
+                    if (!el) { clearInterval(window._csCountdownTimer); return; }
+                    const diff = new Date(this.state.biddingDeadline) - new Date();
+                    if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._csCountdownTimer); return; }
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                }, 1000);
+            },
+
+            csSetSelectedSlot(slotId) {
+                window.csSelectedSlot = slotId;
+                // Highlight selected
+                document.querySelectorAll('.cs-slot-btn').forEach(btn => {
+                    const isSelected = btn.dataset.csslot === slotId;
+                    btn.classList.toggle('ring-2', isSelected);
+                    btn.classList.toggle('ring-blue-500', isSelected);
+                    btn.classList.toggle('bg-blue-100', isSelected);
+                });
+                const infoEl = document.getElementById('csSlotInfo');
+                if (!infoEl) return;
+                if (slotId === 'csCustom') {
+                    infoEl.textContent = '🏢 Custom — Choose any start and end date freely';
+                } else {
+                    const slot = this.state.slotTypes.find(s => s.id === slotId);
+                    infoEl.textContent = slot ? `${slot.name} — exactly ${slot.days} consecutive days. Pick a start date.` : '';
+                }
+                // Recalculate end date if start already filled
+                this.csUpdateEndDate();
+            },
+
+            csUpdateEndDate() {
+                const startInput = document.getElementById('csStartDate');
+                const endInput = document.getElementById('csEndDate');
+                if (!startInput || !endInput || !startInput.value) return;
+                if (!window.csSelectedSlot || window.csSelectedSlot === 'csCustom') {
+                    endInput.value = '';
+                    endInput.removeAttribute('readonly');
+                    endInput.classList.remove('bg-gray-50');
+                    return;
+                }
+                const slot = this.state.slotTypes.find(s => s.id === window.csSelectedSlot);
+                if (!slot) return;
+                const start = new Date(startInput.value);
+                const end = new Date(start);
+                end.setDate(end.getDate() + slot.days - 1);
+                endInput.value = end.toISOString().split('T')[0];
+                endInput.setAttribute('readonly', true);
+                endInput.classList.add('bg-gray-50');
+            },
+
+            submitCSBid() {
+                if (this.state.isProcessed) { alert('Bidding has been processed. No more bids.'); return; }
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) return;
+                if (!window.csSelectedSlot) { alert('⚠️ Please select a slot type first.'); return; }
+
+                const startDate = document.getElementById('csStartDate')?.value;
+                let endDate = document.getElementById('csEndDate')?.value;
+                if (!startDate) { alert('⚠️ Please select a start date.'); return; }
+
+                if (window.csSelectedSlot === 'csCustom') {
+                    if (!endDate) { alert('⚠️ Please enter an end date for Custom slot.'); return; }
+                    if (endDate < startDate) { alert('⚠️ End date must be after start date.'); return; }
+                }
+
+                const days = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+
+                if (window.csSelectedSlot !== 'csCustom') {
+                    const slot = this.state.slotTypes.find(s => s.id === window.csSelectedSlot);
+                    if (slot && days !== slot.days) {
+                        alert(`${slot.name} requires exactly ${slot.days} days. Select "Custom" for free range.`);
+                        return;
+                    }
+                }
+
+                // Check overlap with existing CS bids
+                const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
+                for (const bid of csBids) {
+                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                        alert(`Date overlap with an existing bid (${bid.startDate} → ${bid.endDate}).`);
+                        return;
+                    }
+                }
+
+                const slotLabel = window.csSelectedSlot === 'csCustom'
+                    ? 'Custom' : (this.state.slotTypes.find(s => s.id === window.csSelectedSlot)?.name || window.csSelectedSlot);
+
+                const newBid = {
+                    employeeId: csUser.id,
+                    employeeName: csUser.name,
+                    seniorityDate: csUser.seniorityDate || '2000-01-01',
+                    department: 'Corporate Staff',
+                    slotType: window.csSelectedSlot,
+                    startDate,
+                    endDate,
+                    days,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.state.bids.push(newBid);
+                this.saveState();
+                this.writeAuditLog('BID_PLACED', { type: 'CS', slot: window.csSelectedSlot, start: startDate, end: endDate, days });
+
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (saved) console.log('✅ CS Bid saved to Supabase');
+                });
+
+                alert(`🏢 Corporate Staff Bid placed!\n${slotLabel} — ${startDate} → ${endDate} (${days} day${days !== 1 ? 's' : ''})`);
+                this.renderCorporateStaffBiddingView();
+            },
+
+            removeCSBid(slotType, startDate) {
+                if (this.state.isProcessed) { alert('Cannot remove bids after processing.'); return; }
+                const csUser = this.state.verifiedEmployee;
+                if (confirm('Remove this Corporate Staff bid?')) {
+                    const idx = this.state.bids.findIndex(bid =>
+                        bid.employeeId === csUser.id && bid.slotType === slotType && bid.startDate === startDate
+                    );
+                    if (idx !== -1) this.state.bids.splice(idx, 1);
+                    this.saveState();
+                    if (this.supabase) {
+                        this.supabase.from('leave_requests').delete()
+                            .eq('employee_id', csUser.id)
+                            .eq('slot_type', slotType)
+                            .eq('start_date', startDate)
+                            .then(({ error }) => {
+                                if (error) console.warn('⚠️ Could not delete CS bid from Supabase:', error.message);
+                                else console.log('✅ CS Bid deleted from Supabase');
+                            });
+                    }
+                    this.renderCorporateStaffBiddingView();
                 }
             },
 
@@ -4187,7 +4578,7 @@
 
             renderChangePasswordView() {
                 const content = document.getElementById('contentArea');
-                const backView = this.state.userType === 'goldencommand' ? 'goldenCommand' : 'employee';
+                const backView = this.state.userType === 'goldencommand' ? 'goldenCommand' : this.state.userType === 'corporatestaff' ? 'corporateStaff' : 'employee';
                 content.innerHTML = `
                     <div class="max-w-md mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-8">
@@ -4240,6 +4631,9 @@
                 if (userType === 'goldencommand') {
                     const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
                     storedPass = gcUser ? (gcUser.password || gcUser.id) : userId;
+                } else if (userType === 'corporatestaff') {
+                    const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                    storedPass = csUser ? (csUser.password || csUser.id) : userId;
                 } else {
                     storedPass = this.state.employeePasswords[userId] || userId;
                 }
@@ -4270,6 +4664,18 @@
                         // Update local state
                         const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
                         if (gcUser) gcUser.password = newPass;
+                    } else if (userType === 'corporatestaff') {
+                        // Update in Supabase corporate_staff_users table
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('corporate_staff_users')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            if (error) throw error;
+                        }
+                        // Update local state
+                        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                        if (csUser) csUser.password = newPass;
                     } else {
                         // Employee: update local state + employeePasswords
                         this.state.employeePasswords[userId] = newPass;
@@ -4297,6 +4703,9 @@
                     if (userType === 'goldencommand') {
                         const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
                         if (gcUser) gcUser.password = newPass;
+                    } else if (userType === 'corporatestaff') {
+                        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                        if (csUser) csUser.password = newPass;
                     } else {
                         this.state.employeePasswords[userId] = newPass;
                     }
@@ -5076,7 +5485,7 @@
                     'SYSTEM_RESET':     'bg-red-200 text-red-900',
                 };
 
-                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐' };
+                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐', corporatestaff: '🏢' };
 
                 const container = document.getElementById('auditTableContainer');
                 if (!container) return;
