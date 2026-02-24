@@ -459,6 +459,9 @@
             <button onclick="app.publishToSupabase()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold">
                 💾 Save to Database
             </button>
+            <button onclick="app.setActiveView('manageOnCall')" class="px-4 py-2 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-300">
+                📅 On-Call Manager
+            </button>
             <button onclick="app.setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🔐 Change Password
             </button>
@@ -553,6 +556,15 @@
                 ],
                 corporateStaffUsers: [],
                 results: [],
+
+                // On-Call dates per employee (extracted from Director_On-Call.xlsx)
+                // Keyed by Employee ID → array of 'YYYY-MM-DD' strings
+                onCallDates: {
+                    "1003752": ["2026-02-08","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-14","2026-03-29","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-03","2026-04-04","2026-05-17","2026-05-18","2026-05-19","2026-05-20","2026-05-21","2026-05-22","2026-05-23","2026-07-05","2026-07-06","2026-07-07","2026-07-08","2026-07-09","2026-07-10","2026-07-11","2026-08-23","2026-08-24","2026-08-25","2026-08-26","2026-08-27","2026-08-28","2026-08-29","2026-10-11","2026-10-12","2026-10-13","2026-10-14","2026-10-15","2026-10-16","2026-10-17","2026-11-29","2026-11-30","2026-12-01","2026-12-02","2026-12-03","2026-12-04","2026-12-05"],
+                    "1007066": ["2025-12-28","2025-12-29","2025-12-30","2025-12-31","2026-01-01","2026-01-02","2026-01-03","2026-02-15","2026-02-16","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-21","2026-04-05","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-11","2026-05-24","2026-05-25","2026-05-26","2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-07-12","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-18","2026-08-30","2026-08-31","2026-09-01","2026-09-02","2026-09-03","2026-09-04","2026-09-05","2026-10-18","2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-12-06","2026-12-07","2026-12-08","2026-12-09","2026-12-10","2026-12-11","2026-12-12"],
+                    "10015":   ["2026-02-01","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-07","2026-03-22","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-28","2026-05-10","2026-05-11","2026-05-12","2026-05-13","2026-05-14","2026-05-15","2026-05-16","2026-06-28","2026-06-29","2026-06-30","2026-07-01","2026-07-02","2026-07-03","2026-07-04","2026-08-16","2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21","2026-08-22","2026-10-04","2026-10-05","2026-10-06","2026-10-07","2026-10-08","2026-10-09","2026-10-10","2026-11-22","2026-11-23","2026-11-24","2026-11-25","2026-11-26","2026-11-27","2026-11-28"],
+                    "10020":   ["2026-01-25","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-01-31","2026-03-15","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-21","2026-05-03","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-09","2026-06-21","2026-06-22","2026-06-23","2026-06-24","2026-06-25","2026-06-26","2026-06-27","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-15","2026-09-27","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03","2026-11-15","2026-11-16","2026-11-17","2026-11-18","2026-11-19","2026-11-20","2026-11-21"]
+                },
                 selectedDepartment: 'all',
                 slotCapacities: {},
                 
@@ -1269,6 +1281,9 @@
                         break;
                     case 'changePlannerPassword':
                         this.renderChangePlannerPasswordView();
+                        break;
+                    case 'manageOnCall':
+                        this.renderManageOnCallView();
                         break;
                     case 'goldenCommand':
                         this.renderGoldenCommandBiddingView();
@@ -1996,6 +2011,32 @@
                                             ${window.gcSelectedSlot === 'gcCustom' ? '⭐ Custom: Pick any start and end date' : (this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot) ? `${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).name} — end date auto-calculated (${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).days} days)` : 'Select a slot type above')}
                                         </p>
                                     </div>
+
+                                    ${(() => {
+                                        // On-Call schedule notice for this GC user
+                                        const myOnCall = this.state.onCallDates[gcUser.id] || [];
+                                        if (myOnCall.length === 0) return '';
+                                        // Group consecutive dates into ranges
+                                        const sorted = [...myOnCall].sort();
+                                        const ranges = [];
+                                        let rangeStart = sorted[0], rangeEnd = sorted[0];
+                                        for (let k = 1; k < sorted.length; k++) {
+                                            const prev = new Date(sorted[k-1]);
+                                            const curr = new Date(sorted[k]);
+                                            const diffDays = (curr - prev) / 86400000;
+                                            if (diffDays === 1) {
+                                                rangeEnd = sorted[k];
+                                            } else {
+                                                ranges.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`);
+                                                rangeStart = sorted[k]; rangeEnd = sorted[k];
+                                            }
+                                        }
+                                        ranges.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`);
+                                        return `<div class="mb-4 p-3 bg-red-50 border border-red-300 rounded-lg">
+                                            <p class="font-bold text-red-800 text-sm mb-2">🚫 Your On-Call Dates (leave cannot be selected on these dates):</p>
+                                            <div class="flex flex-wrap gap-1">${ranges.map(r => `<span class="inline-block bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200">${r}</span>`).join('')}</div>
+                                        </div>`;
+                                    })()}
             
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
@@ -2213,17 +2254,36 @@
 
                 const days = Math.ceil(Math.abs(new Date(endDateInput.value) - new Date(startDateInput.value)) / (1000 * 60 * 60 * 24)) + 1;
 
+                // ── On-Call conflict live check ──────────────────────────────
+                const gcUser = this.state.verifiedEmployee;
+                const onCallSet = new Set(gcUser ? (this.state.onCallDates[gcUser.id] || []) : []);
+                const conflictDates = [];
+                if (onCallSet.size > 0 && startDateInput.value && endDateInput.value) {
+                    const cur = new Date(startDateInput.value);
+                    const end = new Date(endDateInput.value);
+                    while (cur <= end) {
+                        const iso = cur.toISOString().slice(0, 10);
+                        if (onCallSet.has(iso)) conflictDates.push(iso);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                }
+                const onCallWarning = conflictDates.length > 0
+                    ? `<p class="font-semibold text-red-700 mt-2">🚫 On-Call conflict on: ${conflictDates.join(', ')}</p>`
+                    : (onCallSet.size > 0 ? `<p class="text-green-700 text-sm mt-1">✅ No On-Call conflicts in this range</p>` : '');
+                // ────────────────────────────────────────────────────────────
+
                 let validMsg = '';
                 if (window.gcSelectedSlot === 'gcCustom') {
                     validMsg = `<p class="font-semibold text-yellow-800">⭐ Custom selection: ${days} day${days !== 1 ? 's' : ''} ✓</p>`;
-                    dateInfo.className = 'p-3 rounded mb-2 bg-yellow-50 border border-yellow-300';
+                    dateInfo.className = conflictDates.length > 0 ? 'p-3 rounded mb-2 bg-red-50 border border-red-300' : 'p-3 rounded mb-2 bg-yellow-50 border border-yellow-300';
                 } else {
                     const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
                     const ok = slot && days === slot.days;
                     validMsg = `<p class="font-semibold ${ok ? 'text-green-800' : 'text-red-800'}">${days} day${days !== 1 ? 's' : ''} selected ${ok ? '✓' : `(${slot?.name} requires exactly ${slot?.days} days)`}</p>`;
-                    dateInfo.className = `p-3 rounded mb-2 ${ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
+                    dateInfo.className = conflictDates.length > 0 ? 'p-3 rounded mb-2 bg-red-50 border border-red-300'
+                        : `p-3 rounded mb-2 ${ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
                 }
-                dateInfo.innerHTML = validMsg + `<p class="text-sm text-gray-600 mt-1">${startDateInput.value} → ${endDateInput.value}</p>`;
+                dateInfo.innerHTML = validMsg + `<p class="text-sm text-gray-600 mt-1">${startDateInput.value} → ${endDateInput.value}</p>` + onCallWarning;
                 dateInfo.classList.remove('hidden');
             },
 
@@ -2277,6 +2337,26 @@
                         return;
                     }
                 }
+
+                // ── On-Call Conflict Check ──────────────────────────────────────
+                // Build a set of all dates in the requested leave range
+                const onCallDatesForUser = new Set(this.state.onCallDates[gcUser.id] || []);
+                if (onCallDatesForUser.size > 0) {
+                    const conflictingOnCallDates = [];
+                    const cursor = new Date(startDate);
+                    const rangeEnd = new Date(endDate);
+                    while (cursor <= rangeEnd) {
+                        const iso = cursor.toISOString().slice(0, 10);
+                        if (onCallDatesForUser.has(iso)) conflictingOnCallDates.push(iso);
+                        cursor.setDate(cursor.getDate() + 1);
+                    }
+                    if (conflictingOnCallDates.length > 0) {
+                        const conflictList = conflictingOnCallDates.join(', ');
+                        alert(`⚠️ On-Call Conflict Detected!\n\nYour selected leave period (${startDate} → ${endDate}) overlaps with your scheduled On-Call duties on the following date${conflictingOnCallDates.length > 1 ? 's' : ''}:\n\n${conflictList}\n\nPlease choose dates that do not conflict with your On-Call schedule.`);
+                        return;
+                    }
+                }
+                // ───────────────────────────────────────────────────────────────
 
                 const slotLabel = window.gcSelectedSlot === 'gcCustom'
                     ? 'Custom'
@@ -5106,6 +5186,193 @@
                     const msg = document.getElementById('overrideMsg');
                     if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">❌ Database save failed. Changes saved locally only.</div>`;
                 }
+            },
+
+            // ==================== ON-CALL MANAGER ====================
+            renderManageOnCallView() {
+                const content = document.getElementById('contentArea');
+                const onCallDates = this.state.onCallDates || {};
+
+                // Get all staff names from GC users + look up employees
+                const gcUsers = this.state.goldenCommandUsers || [];
+
+                // Build staff list combining GC users + any onCallDates keys that may be freestanding
+                const staffIds = new Set([
+                    ...gcUsers.map(u => u.id),
+                    ...Object.keys(onCallDates)
+                ]);
+
+                const getStaffName = (id) => {
+                    const gc = gcUsers.find(u => u.id === id);
+                    if (gc) return gc.name;
+                    const emp = (this.state.employees || []).find(e => e.id === id);
+                    if (emp) return emp.name;
+                    return id;
+                };
+
+                const renderStaffRows = () => [...staffIds].map(id => {
+                    const dates = (onCallDates[id] || []).slice().sort();
+                    // Group into week blocks (consecutive 7-day groups starting on Sunday)
+                    const grouped = {};
+                    dates.forEach(d => {
+                        const dt = new Date(d + 'T00:00:00');
+                        // Find week start (Sunday)
+                        const day = dt.getDay();
+                        const weekStart = new Date(dt);
+                        weekStart.setDate(dt.getDate() - day);
+                        const key = weekStart.toISOString().slice(0,10);
+                        if (!grouped[key]) grouped[key] = [];
+                        grouped[key].push(d);
+                    });
+
+                    const dateChips = dates.length === 0
+                        ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
+                        : Object.entries(grouped).map(([weekStart, wDates]) => {
+                            const label = wDates.length >= 7
+                                ? `Week of ${weekStart} (${wDates[0]} → ${wDates[wDates.length-1]})`
+                                : wDates.join(', ');
+                            return `<div class="flex items-center gap-2 flex-wrap mb-1">
+                                <span class="inline-block bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 whitespace-nowrap">${label}</span>
+                                <button onclick="app.deleteOnCallBlock('${id}','${wDates[0]}','${wDates[wDates.length-1]}')"
+                                    class="text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap">🗑 Delete block</button>
+                            </div>`;
+                        }).join('');
+
+                    return `
+                    <div class="bg-white rounded-xl shadow border border-gray-100 p-5 mb-4" id="staff-card-${id}">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <p class="font-bold text-gray-800">${getStaffName(id)}</p>
+                                <p class="text-xs text-gray-400">ID: ${id}</p>
+                            </div>
+                            <span class="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">${dates.length} date${dates.length !== 1 ? 's' : ''}</span>
+                        </div>
+
+                        <div class="mb-4">${dateChips}</div>
+
+                        <!-- Add dates form -->
+                        <details class="mt-2">
+                            <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 select-none">➕ Add On-Call dates for this person</summary>
+                            <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                        <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                        <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                    </div>
+                                </div>
+                                <button onclick="app.addOnCallRange('${id}')"
+                                    class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                                    ✅ Add On-Call Block
+                                </button>
+                            </div>
+                        </details>
+                    </div>`;
+                }).join('');
+
+                content.innerHTML = `
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800">📅 On-Call Date Manager</h2>
+                            <p class="text-sm text-gray-500 mt-1">Add or remove On-Call dates per staff member. Leave bids that conflict with these dates will be blocked.</p>
+                        </div>
+                        <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
+                    </div>
+
+                    <!-- Add a new staff member section -->
+                    <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-5 mb-6">
+                        <h3 class="font-bold text-yellow-800 mb-3">➕ Add On-Call dates for a new / unlisted person</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Employee ID</label>
+                                <input type="text" id="newOcId" placeholder="e.g. 1003752" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                <input type="date" id="newOcFrom" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                <input type="date" id="newOcTo" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                            </div>
+                        </div>
+                        <button onclick="app.addOnCallRangeNew()"
+                            class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
+                            ✅ Add Block
+                        </button>
+                    </div>
+
+                    <!-- Staff cards -->
+                    <div id="onCallStaffList">
+                        ${staffIds.size === 0
+                            ? '<p class="text-center text-gray-400 py-12">No staff found. Add GC users in the Admin panel first.</p>'
+                            : renderStaffRows()
+                        }
+                    </div>
+                </div>`;
+            },
+
+            addOnCallRange(empId) {
+                const from = document.getElementById(`ocFrom-${empId}`)?.value;
+                const to   = document.getElementById(`ocTo-${empId}`)?.value;
+                this._applyOnCallRange(empId, from, to);
+            },
+
+            addOnCallRangeNew() {
+                const empId = document.getElementById('newOcId')?.value?.trim();
+                const from  = document.getElementById('newOcFrom')?.value;
+                const to    = document.getElementById('newOcTo')?.value;
+                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                this._applyOnCallRange(empId, from, to, true);
+            },
+
+            _applyOnCallRange(empId, from, to, isNew = false) {
+                if (!from || !to) { alert('Please select both a start and end date.'); return; }
+                if (from > to)    { alert('Start date must be on or before end date.'); return; }
+
+                if (!this.state.onCallDates) this.state.onCallDates = {};
+                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
+
+                const existing = new Set(this.state.onCallDates[empId]);
+                const cur = new Date(from + 'T00:00:00');
+                const end = new Date(to   + 'T00:00:00');
+                let added = 0;
+                while (cur <= end) {
+                    const iso = cur.toISOString().slice(0,10);
+                    if (!existing.has(iso)) { existing.add(iso); added++; }
+                    cur.setDate(cur.getDate() + 1);
+                }
+                this.state.onCallDates[empId] = [...existing].sort();
+                this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_add', empId, from, to, added });
+                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.`);
+                this.renderManageOnCallView();
+            },
+
+            deleteOnCallBlock(empId, blockFrom, blockTo) {
+                if (!confirm(`Remove all On-Call dates from ${blockFrom} to ${blockTo} for ${empId}?`)) return;
+                if (!this.state.onCallDates?.[empId]) return;
+
+                const from = new Date(blockFrom + 'T00:00:00');
+                const to   = new Date(blockTo   + 'T00:00:00');
+                const toDelete = new Set();
+                const cur = new Date(from);
+                while (cur <= to) {
+                    toDelete.add(cur.toISOString().slice(0,10));
+                    cur.setDate(cur.getDate() + 1);
+                }
+
+                const before = this.state.onCallDates[empId].length;
+                this.state.onCallDates[empId] = this.state.onCallDates[empId].filter(d => !toDelete.has(d));
+                const removed = before - this.state.onCallDates[empId].length;
+                this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_delete', empId, blockFrom, blockTo, removed });
+                alert(`🗑 Removed ${removed} date${removed !== 1 ? 's' : ''} from On-Call schedule.`);
+                this.renderManageOnCallView();
             },
 
             renderChangePlannerPasswordView() {
