@@ -599,6 +599,10 @@
                 try {
                     this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                     console.log('✅ Supabase initialized');
+                    // Ensure on_call_dates column exists in system_config (silent migration)
+                    try {
+                        await this.supabase.rpc('add_on_call_dates_column').catch(() => {});
+                    } catch(e) { /* column likely already exists */ }
                     return true;
                 } catch (error) {
                     console.error('❌ Supabase init failed:', error);
@@ -733,6 +737,16 @@
                         this.state.plannerPassword = config.planner_password || 'admin123';
                         this.state.slotCapacities = config.slot_capacities || {};
                         this.state.results = config.results || [];
+                        // Load on-call dates — merge Supabase data over the hardcoded defaults
+                        if (config.on_call_dates && Object.keys(config.on_call_dates).length > 0) {
+                            this.state.onCallDates = config.on_call_dates;
+                            console.log('✅ Loaded on-call dates from Supabase');
+                        } else {
+                            // Fall back to localStorage if Supabase has no on_call_dates yet
+                            const localOC = localStorage.getItem('onCallDates');
+                            if (localOC) this.state.onCallDates = JSON.parse(localOC);
+                            console.log('ℹ️ No on-call dates in Supabase yet — using local/default');
+                        }
                         console.log('✅ Loaded system config from Supabase');
                     }
 
@@ -848,6 +862,7 @@
                             planner_password: this.state.plannerPassword,
                             slot_capacities: this.state.slotCapacities,
                             results: this.state.results,
+                            on_call_dates: this.state.onCallDates || {},
                             last_updated: new Date().toISOString()
                         }, { onConflict: 'id' });
 
@@ -927,6 +942,7 @@
                     localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
                     localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
                     localStorage.setItem('corporateStaffUsers', JSON.stringify(this.state.corporateStaffUsers || []));
+                    localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
                 } catch (e) {
                     console.error('Error saving state:', e);
                 }
@@ -947,6 +963,7 @@
                         this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
                         this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
                         this.state.corporateStaffUsers = JSON.parse(localStorage.getItem('corporateStaffUsers') || '[]');
+                        this.state.onCallDates = JSON.parse(localStorage.getItem('onCallDates') || '{}');
                         return true;
                     }
                 } catch (e) {
@@ -1446,6 +1463,7 @@
                 if (yearSelect) {
                     yearSelect.addEventListener('change', (e) => {
                         this.state.biddingYear = parseInt(e.target.value);
+                        this.saveConfigToSupabase();
                     });
                 }
             },
@@ -2985,7 +3003,7 @@
                     configArea.innerHTML = this.renderDeptConfig(filterVal);
                 }
                 
-                this.saveState();
+                this.saveConfigToSupabase();
                 alert(`✅ Copied January values to all months for ${departmentsToCopy.length} department(s)!`);
             },
             
@@ -3016,23 +3034,11 @@
                     }
                 });
                 
-                this.saveState();
+                this.saveConfigToSupabase();
 
                 // Also push slot config to Supabase so other browsers get it
                 if (this.supabase) {
-                    this.supabase.from('system_config').upsert({
-                        id: 1,
-                        bidding_deadline: this.state.biddingDeadline,
-                        bidding_year: this.state.biddingYear,
-                        is_processed: this.state.isProcessed,
-                        planner_password: this.state.plannerPassword,
-                        slot_capacities: this.state.slotCapacities,
-                        results: this.state.results,
-                        last_updated: new Date().toISOString()
-                    }, { onConflict: 'id' }).then(({ error }) => {
-                        if (error) console.warn('⚠️ Could not push slot config to Supabase:', error.message);
-                        else console.log('✅ Slot config pushed to Supabase');
-                    });
+                    // saveConfigToSupabase above already handles this — no duplicate upsert needed
                 }
                 
                 alert(`✅ Slot configurations saved!\n\n• ${savedCount} fields saved.\n• Each department now has Slot A, B, C configured per month (Jan–Dec).`);
@@ -3278,7 +3284,7 @@
                                     id="biddingDeadline"
                                     value="${this.state.biddingDeadline}"
                                     class="w-full px-4 py-2 border-2 border-blue-300 rounded-lg"
-                                    onchange="app.state.biddingDeadline = this.value; app.saveState()"
+                                    onchange="app.state.biddingDeadline = this.value; app.saveConfigToSupabase()"
                                 />
                             </div>
 
@@ -3885,7 +3891,7 @@
                 // Save results
                 this.state.results = slotAssignments;
                 this.state.isProcessed = true;
-                this.saveState();
+                this.saveConfigToSupabase();
                 this.writeAuditLog('BIDS_PROCESSED', { total_employees: sortedEmployees.length, total_slots: slotAssignments.length, year: this.state.biddingYear });
                 
                 // Calculate statistics
@@ -3956,9 +3962,11 @@
                     this.state.results = [];
                     this.state.isProcessed = false;
                     this.state.slotCapacities = {};
+                    this.state.onCallDates = {};
                     this.state.currentUser = null;
                     this.state.userType = null;
                     this.state.activeView = 'login';
+                    this.saveConfigToSupabase(); // push reset state to Supabase
                     
                     // Reset UI
                     document.getElementById('userInfo').classList.add('hidden');
@@ -5546,6 +5554,36 @@
                 this._applyOnCallRange(empId, from, to, true);
             },
 
+            // Saves all system_config fields (deadline, year, slots, on-call, password, results) to Supabase + localStorage
+            async saveConfigToSupabase() {
+                this.saveState(); // always write localStorage first
+                if (!this.supabase) return;
+                try {
+                    const { error } = await this.supabase
+                        .from('system_config')
+                        .upsert({
+                            id: 1,
+                            bidding_deadline: this.state.biddingDeadline,
+                            bidding_year: this.state.biddingYear,
+                            is_processed: this.state.isProcessed,
+                            planner_password: this.state.plannerPassword,
+                            slot_capacities: this.state.slotCapacities,
+                            results: this.state.results,
+                            on_call_dates: this.state.onCallDates || {},
+                            last_updated: new Date().toISOString()
+                        }, { onConflict: 'id' });
+                    if (error) console.warn('⚠️ Could not save config to Supabase:', error.message);
+                    else console.log('✅ Config saved to Supabase');
+                } catch (e) {
+                    console.warn('⚠️ Supabase config save error:', e.message);
+                }
+            },
+
+            // Immediately persists onCallDates to both localStorage and Supabase system_config
+            async saveOnCallDatesToSupabase() {
+                return this.saveConfigToSupabase();
+            },
+
             _applyOnCallRange(empId, from, to, isNew = false) {
                 if (!from || !to) { alert('Please select both a start and end date.'); return; }
                 if (from > to)    { alert('Start date must be on or before end date.'); return; }
@@ -5563,7 +5601,7 @@
                     cur.setDate(cur.getDate() + 1);
                 }
                 this.state.onCallDates[empId] = [...existing].sort();
-                this.saveState();
+                this.saveOnCallDatesToSupabase();
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_add', empId, from, to, added });
                 alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.`);
                 this.renderManageOnCallView();
@@ -5585,7 +5623,7 @@
                 const before = this.state.onCallDates[empId].length;
                 this.state.onCallDates[empId] = this.state.onCallDates[empId].filter(d => !toDelete.has(d));
                 const removed = before - this.state.onCallDates[empId].length;
-                this.saveState();
+                this.saveOnCallDatesToSupabase();
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_delete', empId, blockFrom, blockTo, removed });
                 alert(`🗑 Removed ${removed} date${removed !== 1 ? 's' : ''} from On-Call schedule.`);
                 this.renderManageOnCallView();
@@ -5650,15 +5688,10 @@
                 }
 
                 this.state.plannerPassword = newPass;
-                this.saveState();
 
                 try {
+                    await this.saveConfigToSupabase();
                     if (this.supabase) {
-                        const { error } = await this.supabase
-                            .from('system_config')
-                            .update({ planner_password: newPass })
-                            .eq('id', 1);
-                        if (error) throw error;
                         showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
                     } else {
                         showMsg('✅ Password updated locally (database not connected).', 'bg-green-50 border-green-300 text-green-700');
