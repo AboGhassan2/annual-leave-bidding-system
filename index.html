@@ -5192,6 +5192,7 @@
             renderManageOnCallView() {
                 const content = document.getElementById('contentArea');
                 const onCallDates = this.state.onCallDates || {};
+                const year = this.state.biddingYear;
 
                 // Get all staff names from GC users + look up employees
                 const gcUsers = this.state.goldenCommandUsers || [];
@@ -5210,13 +5211,91 @@
                     return id;
                 };
 
+                // Compute which week number a date string belongs to (max 52 — week 53 = week 1 of next year)
+                const getWeekNum = (dateStr) => {
+                    const dt = new Date(dateStr + 'T00:00:00');
+                    const jan1 = new Date(dt.getFullYear(), 0, 1);
+                    const jan1Day = jan1.getDay();
+                    const week1Sun = new Date(jan1);
+                    week1Sun.setDate(jan1.getDate() - jan1Day);
+                    const diffMs = dt - week1Sun;
+                    const wn = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+                    return wn >= 53 ? 1 : wn; // week 53 is really week 1 of the next year
+                };
+
+                // ── Coverage & Overlap Audit ─────────────────────────────────────
+                // Build a map: dateStr → [empId, ...] for all staff
+                const dateOwners = {};
+                [...staffIds].forEach(id => {
+                    (onCallDates[id] || []).forEach(d => {
+                        if (!dateOwners[d]) dateOwners[d] = [];
+                        dateOwners[d].push(id);
+                    });
+                });
+
+                // Collect all weeks in the year — always Week 1 through Week 52 only
+                const allWeeks = [];
+                for (let w = 1; w <= 52; w++) {
+                    const r = this.weekNumberToDateRange(w, year);
+                    allWeeks.push({ week: w, from: r.from, to: r.to });
+                }
+
+                // For each week, check coverage and overlaps
+                const uncoveredWeeks = [];
+                const overlappingWeeks = [];
+                allWeeks.forEach(({ week, from, to }) => {
+                    const cur = new Date(from + 'T00:00:00');
+                    const end = new Date(to   + 'T00:00:00');
+                    const fmtD = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                    let covered = false;
+                    let overlapping = false;
+                    while (cur <= end) {
+                        const iso = fmtD(cur);
+                        const owners = dateOwners[iso] || [];
+                        if (owners.length > 0) covered = true;
+                        if (owners.length > 1) overlapping = true;
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                    if (!covered) uncoveredWeeks.push(week);
+                    if (overlapping) overlappingWeeks.push(week);
+                });
+
+                const auditBanner = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="rounded-xl p-4 border ${uncoveredWeeks.length === 0 ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-lg">${uncoveredWeeks.length === 0 ? '✅' : '⚠️'}</span>
+                            <span class="font-bold text-sm ${uncoveredWeeks.length === 0 ? 'text-green-800' : 'text-red-800'}">
+                                Coverage — ${uncoveredWeeks.length === 0 ? 'All weeks covered' : uncoveredWeeks.length + ' week(s) not covered'}
+                            </span>
+                        </div>
+                        ${uncoveredWeeks.length === 0
+                            ? `<p class="text-xs text-green-700">Every week in ${year} has at least one GC assigned.</p>`
+                            : `<p class="text-xs text-red-700 mb-1">The following weeks have no On-Call assignment:</p>
+                               <div class="flex flex-wrap gap-1">${uncoveredWeeks.map(w => `<span class="bg-red-200 text-red-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`
+                        }
+                    </div>
+                    <div class="rounded-xl p-4 border ${overlappingWeeks.length === 0 ? 'bg-green-50 border-green-300' : 'bg-orange-50 border-orange-300'}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-lg">${overlappingWeeks.length === 0 ? '✅' : '⚠️'}</span>
+                            <span class="font-bold text-sm ${overlappingWeeks.length === 0 ? 'text-green-800' : 'text-orange-800'}">
+                                Overlaps — ${overlappingWeeks.length === 0 ? 'No overlapping weeks' : overlappingWeeks.length + ' week(s) overlap'}
+                            </span>
+                        </div>
+                        ${overlappingWeeks.length === 0
+                            ? `<p class="text-xs text-green-700">No two GC users share the same On-Call dates.</p>`
+                            : `<p class="text-xs text-orange-700 mb-1">Multiple GC users assigned on same dates:</p>
+                               <div class="flex flex-wrap gap-1">${overlappingWeeks.map(w => `<span class="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`
+                        }
+                    </div>
+                </div>`;
+
                 const renderStaffRows = () => [...staffIds].map(id => {
                     const dates = (onCallDates[id] || []).slice().sort();
                     // Group into week blocks (consecutive 7-day groups starting on Sunday)
                     const grouped = {};
                     dates.forEach(d => {
                         const dt = new Date(d + 'T00:00:00');
-                        // Find week start (Sunday)
                         const day = dt.getDay();
                         const weekStart = new Date(dt);
                         weekStart.setDate(dt.getDate() - day);
@@ -5227,12 +5306,18 @@
 
                     const dateChips = dates.length === 0
                         ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
-                        : Object.entries(grouped).map(([weekStart, wDates]) => {
+                        : Object.entries(grouped).map(([weekStartKey, wDates]) => {
+                            const wNum = getWeekNum(wDates[0]);
+                            const isOverlap = wDates.some(d => (dateOwners[d] || []).length > 1);
+                            const chipColor = isOverlap
+                                ? 'bg-orange-100 text-orange-800 border-orange-300'
+                                : 'bg-red-100 text-red-700 border-red-200';
                             const label = wDates.length >= 7
-                                ? `Week of ${weekStart} (${wDates[0]} → ${wDates[wDates.length-1]})`
-                                : wDates.join(', ');
+                                ? `Week ${wNum} (${wDates[0]} → ${wDates[wDates.length-1]})`
+                                : `Week ${wNum} — ${wDates.join(', ')}`;
+                            const overlapIcon = isOverlap ? ' ⚠️' : '';
                             return `<div class="flex items-center gap-2 flex-wrap mb-1">
-                                <span class="inline-block bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200 whitespace-nowrap">${label}</span>
+                                <span class="inline-block ${chipColor} text-xs font-semibold px-2 py-1 rounded border whitespace-nowrap">${label}${overlapIcon}</span>
                                 <button onclick="app.deleteOnCallBlock('${id}','${wDates[0]}','${wDates[wDates.length-1]}')"
                                     class="text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap">🗑 Delete block</button>
                             </div>`;
@@ -5294,14 +5379,14 @@
                                     <div class="grid grid-cols-2 gap-3 mb-2">
                                         <div>
                                             <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
-                                            <input type="number" id="ocWeek-${id}" min="1" max="53" placeholder="e.g. 10"
-                                                oninput="(function(el,id){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+id).value)||app.state.biddingYear;if(w>=1&&w<=53){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                            <input type="number" id="ocWeek-${id}" min="1" max="52" placeholder="e.g. 10"
+                                                oninput="(function(el,id){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+id).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
                                                 class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
                                         </div>
                                         <div>
                                             <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
                                             <input type="number" id="ocWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
-                                                oninput="(function(el,id){const w=parseInt(document.getElementById('ocWeek-'+id).value);const y=parseInt(el.value);if(w>=1&&w<=53&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                                oninput="(function(el,id){const w=parseInt(document.getElementById('ocWeek-'+id).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
                                                 class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
                                         </div>
                                     </div>
@@ -5325,6 +5410,8 @@
                         </div>
                         <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
                     </div>
+
+                    ${auditBanner}
 
                     <!-- Add a new staff member section -->
                     <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-5 mb-6">
@@ -5376,14 +5463,14 @@
                             <div class="grid grid-cols-2 gap-3 mb-2">
                                 <div>
                                     <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
-                                    <input type="number" id="newOcWeekNum" min="1" max="53" placeholder="e.g. 10"
-                                        oninput="(function(el){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear').value)||app.state.biddingYear;if(w>=1&&w<=53){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
+                                    <input type="number" id="newOcWeekNum" min="1" max="52" placeholder="e.g. 10"
+                                        oninput="(function(el){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear').value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
                                         class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
                                 </div>
                                 <div>
                                     <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
                                     <input type="number" id="newOcWeekYear" value="${this.state.biddingYear}" min="2020" max="2040"
-                                        oninput="(function(el){const w=parseInt(document.getElementById('newOcWeekNum').value);const y=parseInt(el.value);if(w>=1&&w<=53&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
+                                        oninput="(function(el){const w=parseInt(document.getElementById('newOcWeekNum').value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
                                         class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
                                 </div>
                             </div>
@@ -5422,7 +5509,7 @@
             // Returns { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } for a Sun-Sat week number.
             // Week 1 starts on the Sunday on or before Jan 1 of the given year.
             // e.g. for 2026: Jan 1 is Thursday → Week 1 = Dec 28 2025 (Sun) → Jan 3 2026 (Sat).
-            // Every week is always a full 7-day Sun-Sat block.
+            // Always 52 weeks max. What would be Week 53 is labelled Week 1 of the next year.
             weekNumberToDateRange(weekNum, year) {
                 // Use local date parts to avoid UTC offset shifting the date (e.g. UTC+3 turns midnight into previous day in UTC)
                 const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
