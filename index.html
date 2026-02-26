@@ -5220,7 +5220,7 @@
                         const day = dt.getDay();
                         const weekStart = new Date(dt);
                         weekStart.setDate(dt.getDate() - day);
-                        const key = weekStart.toISOString().slice(0,10);
+                        const key = weekStart.getFullYear() + '-' + String(weekStart.getMonth()+1).padStart(2,'0') + '-' + String(weekStart.getDate()).padStart(2,'0');
                         if (!grouped[key]) grouped[key] = [];
                         grouped[key].push(d);
                     });
@@ -5254,20 +5254,63 @@
                         <details class="mt-2">
                             <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 select-none">➕ Add On-Call dates for this person</summary>
                             <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                    <div>
-                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
-                                        <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
-                                        <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                    </div>
+                                <!-- Mode toggle -->
+                                <div class="flex gap-2 mb-3">
+                                    <button type="button"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='date';document.getElementById('ocDateFields-${id}').classList.remove('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');"
+                                        id="ocDateBtn-${id}"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-blue-600 text-white transition-colors">
+                                        📅 Date Range
+                                    </button>
+                                    <button type="button"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='week';document.getElementById('ocWeekFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');"
+                                        id="ocWeekBtn-${id}"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-white text-blue-600 transition-colors">
+                                        🗓 Week Number
+                                    </button>
                                 </div>
-                                <button onclick="app.addOnCallRange('${id}')"
-                                    class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                                    ✅ Add On-Call Block
-                                </button>
+                                <input type="hidden" id="ocDateMode-${id}" value="date" />
+
+                                <!-- Date range fields -->
+                                <div id="ocDateFields-${id}">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                            <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                            <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                        </div>
+                                    </div>
+                                    <button onclick="app.addOnCallRange('${id}')"
+                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                                        ✅ Add On-Call Block
+                                    </button>
+                                </div>
+
+                                <!-- Week number fields -->
+                                <div id="ocWeekFields-${id}" class="hidden">
+                                    <div class="grid grid-cols-2 gap-3 mb-2">
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                            <input type="number" id="ocWeek-${id}" min="1" max="53" placeholder="e.g. 10"
+                                                oninput="(function(el,id){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+id).value)||app.state.biddingYear;if(w>=1&&w<=53){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                                class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                            <input type="number" id="ocWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                                oninput="(function(el,id){const w=parseInt(document.getElementById('ocWeek-'+id).value);const y=parseInt(el.value);if(w>=1&&w<=53&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                                class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+                                        </div>
+                                    </div>
+                                    <p id="ocWeekPreview-${id}" class="text-xs text-blue-700 font-semibold mb-3 min-h-[1.2em]"></p>
+                                    <button onclick="app.addOnCallWeek('${id}')"
+                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                                        ✅ Add Week Block
+                                    </button>
+                                </div>
                             </div>
                         </details>
                     </div>`;
@@ -5286,24 +5329,70 @@
                     <!-- Add a new staff member section -->
                     <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-5 mb-6">
                         <h3 class="font-bold text-yellow-800 mb-3">➕ Add On-Call dates for a new / unlisted person</h3>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Employee ID</label>
-                                <input type="text" id="newOcId" placeholder="e.g. 1003752" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
-                                <input type="date" id="newOcFrom" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
-                                <input type="date" id="newOcTo" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                            </div>
+
+                        <!-- Employee ID (always shown) -->
+                        <div class="mb-3">
+                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Employee ID</label>
+                            <input type="text" id="newOcId" placeholder="e.g. 1003752" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
                         </div>
-                        <button onclick="app.addOnCallRangeNew()"
-                            class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
-                            ✅ Add Block
-                        </button>
+
+                        <!-- Mode toggle -->
+                        <div class="flex gap-2 mb-3">
+                            <button type="button"
+                                onclick="document.getElementById('newOcMode').value='date';document.getElementById('newOcDateFields').classList.remove('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');"
+                                id="newOcDateBtn"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-yellow-500 text-white transition-colors">
+                                📅 Date Range
+                            </button>
+                            <button type="button"
+                                onclick="document.getElementById('newOcMode').value='week';document.getElementById('newOcWeekFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');"
+                                id="newOcWeekBtn"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-white text-yellow-700 transition-colors">
+                                🗓 Week Number
+                            </button>
+                        </div>
+                        <input type="hidden" id="newOcMode" value="date" />
+
+                        <!-- Date range fields -->
+                        <div id="newOcDateFields">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                    <input type="date" id="newOcFrom" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                    <input type="date" id="newOcTo" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                                </div>
+                            </div>
+                            <button onclick="app.addOnCallRangeNew()"
+                                class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
+                                ✅ Add Block
+                            </button>
+                        </div>
+
+                        <!-- Week number fields -->
+                        <div id="newOcWeekFields" class="hidden">
+                            <div class="grid grid-cols-2 gap-3 mb-2">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                    <input type="number" id="newOcWeekNum" min="1" max="53" placeholder="e.g. 10"
+                                        oninput="(function(el){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear').value)||app.state.biddingYear;if(w>=1&&w<=53){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
+                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcWeekYear" value="${this.state.biddingYear}" min="2020" max="2040"
+                                        oninput="(function(el){const w=parseInt(document.getElementById('newOcWeekNum').value);const y=parseInt(el.value);if(w>=1&&w<=53&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
+                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                                </div>
+                            </div>
+                            <p id="newOcWeekPreview" class="text-xs text-yellow-800 font-semibold mb-3 min-h-[1.2em]"></p>
+                            <button onclick="app.addOnCallWeekNew()"
+                                class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
+                                ✅ Add Week Block
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Staff cards -->
@@ -5330,6 +5419,46 @@
                 this._applyOnCallRange(empId, from, to, true);
             },
 
+            // Returns { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } for a Sun-Sat week number.
+            // Week 1 starts on the Sunday on or before Jan 1 of the given year.
+            // e.g. for 2026: Jan 1 is Thursday → Week 1 = Dec 28 2025 (Sun) → Jan 3 2026 (Sat).
+            // Every week is always a full 7-day Sun-Sat block.
+            weekNumberToDateRange(weekNum, year) {
+                // Use local date parts to avoid UTC offset shifting the date (e.g. UTC+3 turns midnight into previous day in UTC)
+                const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                const jan1 = new Date(year, 0, 1);
+                const jan1Day = jan1.getDay(); // 0=Sun, 6=Sat
+                // Roll back to the Sunday on or before Jan 1
+                const week1Sun = new Date(jan1);
+                week1Sun.setDate(jan1.getDate() - jan1Day);
+                // Week N starts (weekNum-1)*7 days after week1Sun
+                const weekSun = new Date(week1Sun);
+                weekSun.setDate(week1Sun.getDate() + (weekNum - 1) * 7);
+                const weekSat = new Date(weekSun);
+                weekSat.setDate(weekSun.getDate() + 6);
+                return { from: fmt(weekSun), to: fmt(weekSat) };
+            },
+
+            addOnCallWeek(empId) {
+                const weekInput = document.getElementById(`ocWeek-${empId}`)?.value;
+                const yearInput = document.getElementById(`ocWeekYear-${empId}`)?.value;
+                const weekNum = parseInt(weekInput);
+                const year = parseInt(yearInput) || this.state.biddingYear;
+                if (!weekNum || weekNum < 1 || weekNum > 53) { alert('Please enter a valid week number (1–53).'); return; }
+                const { from, to } = this.weekNumberToDateRange(weekNum, year);
+                this._applyOnCallRange(empId, from, to);
+            },
+
+            addOnCallWeekNew() {
+                const empId = document.getElementById('newOcId')?.value?.trim();
+                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                const weekNum = parseInt(document.getElementById('newOcWeekNum')?.value);
+                const year = parseInt(document.getElementById('newOcWeekYear')?.value) || this.state.biddingYear;
+                if (!weekNum || weekNum < 1 || weekNum > 53) { alert('Please enter a valid week number (1–53).'); return; }
+                const { from, to } = this.weekNumberToDateRange(weekNum, year);
+                this._applyOnCallRange(empId, from, to, true);
+            },
+
             _applyOnCallRange(empId, from, to, isNew = false) {
                 if (!from || !to) { alert('Please select both a start and end date.'); return; }
                 if (from > to)    { alert('Start date must be on or before end date.'); return; }
@@ -5342,7 +5471,7 @@
                 const end = new Date(to   + 'T00:00:00');
                 let added = 0;
                 while (cur <= end) {
-                    const iso = cur.toISOString().slice(0,10);
+                    const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
                     if (!existing.has(iso)) { existing.add(iso); added++; }
                     cur.setDate(cur.getDate() + 1);
                 }
@@ -5362,7 +5491,7 @@
                 const toDelete = new Set();
                 const cur = new Date(from);
                 while (cur <= to) {
-                    toDelete.add(cur.toISOString().slice(0,10));
+                    toDelete.add(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
                     cur.setDate(cur.getDate() + 1);
                 }
 
