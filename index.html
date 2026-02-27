@@ -77,18 +77,338 @@
             66% { transform: translate(-15px, 15px) scale(0.95); }
         }
 
-        /* Login card */
-        .login-card {
-            background: rgba(13, 40, 24, 0.75);
+        /* ===== NEW LANDING PAGE STYLES ===== */
+
+        /* Top navbar */
+        .lp-navbar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 32px;
+            background: rgba(8,28,21,0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(82,183,136,0.12);
+        }
+        .lp-navbar-left { display: flex; align-items: center; gap: 16px; }
+        .lp-nav-logo {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.6rem; font-weight: 700; color: #fff; letter-spacing: 0.08em;
+        }
+        .lp-nav-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.18); }
+        .lp-nav-title {
+            font-size: 0.7rem; font-weight: 600; letter-spacing: 0.2em;
+            text-transform: uppercase; color: rgba(255,255,255,0.45);
+        }
+        .lp-navbar-center {
+            display: flex; align-items: center; gap: 0;
+            background: rgba(0,0,0,0.35);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .lp-role-select {
+            background: transparent;
+            border: none; outline: none;
+            color: #fff; font-size: 0.88rem; font-weight: 600;
+            padding: 8px 36px 8px 14px;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+        .lp-role-select option { background: #0d2818; }
+        .lp-select-wrap {
+            position: relative;
+            display: flex; align-items: center;
+            padding: 0 8px;
+            border-left: 1px solid rgba(255,255,255,0.12);
+        }
+        .lp-select-wrap::after {
+            content: '▾'; position: absolute; right: 16px;
+            color: rgba(255,255,255,0.5); font-size: 0.8rem; pointer-events: none;
+        }
+        .lp-select-icon { font-size: 0.9rem; }
+        .lp-navbar-right { display: flex; align-items: center; gap: 16px; }
+        .lp-lang-toggle {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.8rem; color: rgba(255,255,255,0.6);
+        }
+        .lp-lang-toggle span.active { color: #fff; font-weight: 600; }
+        .lp-theme-btn {
+            background: none; border: none; cursor: pointer;
+            color: rgba(255,255,255,0.55); font-size: 1.1rem; line-height: 1;
+        }
+        .lp-avatar {
+            width: 38px; height: 38px; border-radius: 50%;
+            background: linear-gradient(135deg, #40916c, #1b4332);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; color: #fff;
+            border: 2px solid rgba(82,183,136,0.3);
+            cursor: pointer;
+        }
+
+        /* Hero section */
+        .lp-hero {
+            min-height: 100vh;
+            padding: 100px 5% 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .lp-hero-top {
+            display: grid;
+            grid-template-columns: 1fr 420px;
+            gap: 48px;
+            align-items: center;
+            margin-bottom: 56px;
+        }
+        .lp-headline {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(2.8rem, 5vw, 4rem);
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.05;
+            letter-spacing: 0.01em;
+            margin-bottom: 8px;
+        }
+        .lp-subheadline {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: clamp(1.8rem, 3vw, 2.5rem);
+            font-weight: 500;
+            color: rgba(255,255,255,0.75);
+            margin-bottom: 16px;
+        }
+        .lp-desc {
+            font-size: 0.95rem;
+            color: rgba(255,255,255,0.45);
+            max-width: 420px;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+        .lp-cta-row { display: flex; gap: 14px; align-items: center; }
+        .lp-btn-primary {
+            padding: 13px 34px;
+            background: linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);
+            color: #fff;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.1em;
+            border: none; border-radius: 10px; cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 20px rgba(180,130,20,0.35);
+        }
+        .lp-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(180,130,20,0.5); }
+        .lp-btn-secondary {
+            padding: 13px 28px;
+            background: rgba(255,255,255,0.07);
+            color: rgba(255,255,255,0.75);
+            font-family: 'Barlow', sans-serif;
+            font-size: 0.9rem; font-weight: 500;
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; cursor: pointer;
+            transition: all 0.2s;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .lp-btn-secondary:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
+
+        /* Stats card */
+        .lp-stats-card {
+            background: rgba(230,240,235,0.92);
             backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(82, 183, 136, 0.2);
             border-radius: 20px;
-            box-shadow:
-                0 0 0 1px rgba(82,183,136,0.08),
-                0 25px 60px rgba(0,0,0,0.5),
-                inset 0 1px 0 rgba(255,255,255,0.05);
-            animation: cardReveal 0.6s cubic-bezier(0.16,1,0.3,1) both;
+            padding: 28px 28px 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.15);
+            color: #1a2e22;
+            animation: cardReveal 0.8s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        .lp-stats-row {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+            margin-bottom: 16px;
+        }
+        .lp-stat-label {
+            font-size: 0.75rem; font-weight: 600; color: #5a7a66;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            display: flex; align-items: center; gap: 6px;
+            margin-bottom: 4px;
+        }
+        .lp-stat-big {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 2.4rem; font-weight: 700; color: #1a2e22; line-height: 1;
+        }
+        .lp-stat-badge {
+            background: #fff;
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.4rem; font-weight: 700; color: #1a2e22;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .lp-stat-badge .arrow-up { color: #2d9f5f; font-size: 0.9rem; }
+        .lp-stat-line {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.07);
+            font-size: 0.85rem;
+        }
+        .lp-stat-line-label { color: #5a7a66; display: flex; align-items: center; gap: 7px; }
+        .lp-stat-line-val { font-weight: 700; color: #1a2e22; }
+        .lp-status-open { color: #1e8c4a; font-weight: 700; }
+        .lp-status-check { color: #1e8c4a; font-size: 1rem; }
+        .lp-quota-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding-top: 16px;
+        }
+        .lp-quota-left {}
+        .lp-quota-label { font-size: 0.75rem; font-weight: 600; color: #5a7a66; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+        .lp-quota-pct {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 2.2rem; font-weight: 700; color: #1a2e22;
+        }
+        .lp-quota-pct sup { font-size: 1rem; }
+        .lp-quota-bar {
+            width: 100px; height: 4px; background: rgba(0,0,0,0.1); border-radius: 2px; margin-top: 8px;
+        }
+        .lp-quota-bar-fill {
+            height: 100%; background: linear-gradient(90deg, #2d6a4f, #52b788);
+            border-radius: 2px;
+        }
+        .lp-donut-wrap { position: relative; width: 90px; height: 90px; }
+        .lp-donut-pct {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.1rem; font-weight: 700; color: #1a2e22;
+        }
+
+        /* Login cards grid */
+        .lp-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .lp-login-card {
+            background: rgba(220,235,228,0.88);
+            backdrop-filter: blur(16px);
+            border-radius: 18px;
+            padding: 28px 24px 24px;
+            border: 1px solid rgba(255,255,255,0.2);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+            animation: cardReveal 0.7s cubic-bezier(0.16,1,0.3,1) both;
+            color: #1a2e22;
+        }
+        .lp-login-card.gc-card {
+            background: rgba(240,232,210,0.92);
+            border: 2px solid rgba(184,134,11,0.5);
+            box-shadow: 0 8px 40px rgba(180,130,20,0.2);
+        }
+        .lp-login-card:nth-child(1) { animation-delay: 0.1s; }
+        .lp-login-card:nth-child(2) { animation-delay: 0.2s; }
+        .lp-login-card:nth-child(3) { animation-delay: 0.3s; }
+
+        .lp-card-header {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 18px;
+        }
+        .lp-card-icon { font-size: 1.6rem; }
+        .lp-card-title { font-family: 'Barlow Condensed', sans-serif; font-size: 1.3rem; font-weight: 700; color: #1a2e22; }
+        .lp-card-subtitle { font-size: 0.78rem; color: #5a7a66; margin-top: 1px; }
+        .lp-card-check { margin-left: auto; color: #2d9f5f; font-size: 1.1rem; }
+
+        .gc-badge {
+            background: linear-gradient(135deg, #8b6914, #d4a017);
+            border-radius: 10px;
+            padding: 6px 14px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em;
+            color: #fff;
+            text-transform: uppercase;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .gc-card-sub {
+            font-size: 0.88rem; font-weight: 600; color: #1a2e22;
+            margin-bottom: 18px;
+        }
+
+        .lp-input-wrap {
+            position: relative; margin-bottom: 12px;
+        }
+        .lp-input-icon {
+            position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+            color: #5a7a66; font-size: 0.9rem;
+        }
+        .lp-input-icon-right {
+            position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+            color: #8aa898; font-size: 0.85rem;
+        }
+        .lp-input {
+            width: 100%; padding: 11px 36px 11px 34px;
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(0,0,0,0.12);
+            border-radius: 10px;
+            font-size: 0.88rem; color: #1a2e22;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .lp-input::placeholder { color: #8aa898; }
+        .lp-input:focus {
+            border-color: #40916c;
+            box-shadow: 0 0 0 3px rgba(64,145,108,0.15);
+            background: rgba(255,255,255,0.8);
+        }
+        .gc-card .lp-input:focus {
+            border-color: #b8860b;
+            box-shadow: 0 0 0 3px rgba(184,134,11,0.15);
+        }
+
+        .lp-card-footer {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 16px; margin-top: 4px;
+        }
+        .lp-remember { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #5a7a66; cursor: pointer; }
+        .lp-forgot { margin-left: auto; font-size: 0.78rem; color: #2d6a4f; cursor: pointer; background: none; border: none; text-decoration: none; }
+        .lp-forgot:hover { text-decoration: underline; }
+
+        .lp-sign-btn {
+            width: 100%; padding: 12px;
+            background: linear-gradient(135deg, #1b4332, #2d6a4f);
+            color: #fff;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.08em;
+            border: none; border-radius: 10px; cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 16px rgba(27,67,50,0.35);
+        }
+        .lp-sign-btn:hover { background: linear-gradient(135deg, #2d6a4f, #40916c); transform: translateY(-1px); }
+
+        .gc-sign-btn {
+            background: linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);
+            box-shadow: 0 4px 16px rgba(184,134,11,0.35);
+        }
+        .gc-sign-btn:hover { background: linear-gradient(135deg, #a07820, #d4a017); }
+
+        /* Status bar */
+        .lp-status-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(8,28,21,0.9);
+            backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(82,183,136,0.15);
+            padding: 12px 32px;
+            display: flex; align-items: center; gap: 32px;
+            z-index: 50;
+        }
+        .lp-status-item {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.78rem; color: rgba(255,255,255,0.6);
+        }
+        .lp-status-check-icon {
+            width: 18px; height: 18px; border-radius: 50%;
+            background: rgba(45,159,95,0.2); border: 1px solid #2d9f5f;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.6rem; color: #2d9f5f;
         }
 
         @keyframes cardReveal {
@@ -96,7 +416,7 @@
             to   { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* Logo area */
+        /* Logo area (legacy) */
         .logo-area {
             border-bottom: 1px solid rgba(82,183,136,0.15);
             padding-bottom: 20px;
@@ -370,76 +690,237 @@
             </div>
         </div>
 
-        <!-- LOGIN VIEW -->
-        <div id="loginView" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
-            <div class="login-card" style="width:100%;max-width:440px;padding:36px;">
+        <!-- LOGIN VIEW — NEW LANDING PAGE -->
+        <div id="loginView" style="min-height:100vh;position:relative;z-index:1;">
 
-                <!-- Logo -->
-                <div class="logo-area" style="display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;">
-                        <div class="flow-logo">FL<span>O</span>W</div>
-                        <div class="logo-divider"></div>
-                        <div class="logo-sub">Riyadh Metro<br>Operator</div>
-                    </div>
-                    <div class="clock-display" id="liveClock">--:-- --</div>
+            <!-- Top Navbar -->
+            <nav class="lp-navbar">
+                <div class="lp-navbar-left">
+                    <div class="lp-nav-logo">FLOW</div>
+                    <div class="lp-nav-divider"></div>
+                    <div class="lp-nav-title">Annual Leave System</div>
                 </div>
+                <div class="lp-navbar-center">
+                    <span style="padding:8px 12px;font-size:0.9rem;">🔧</span>
+                    <div class="lp-select-wrap">
+                        <select class="lp-role-select" onchange="app.setLoginType(this.value)" id="navRoleSelect">
+                            <option value="employee">Employee</option>
+                            <option value="planner" selected>Planner</option>
+                            <option value="goldencommand">GC</option>
+                            <option value="corporatestaff">Corp Staff</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="lp-navbar-right">
+                    <button class="lp-theme-btn" title="Toggle theme">🌙</button>
+                    <div class="lp-lang-toggle">
+                        <span class="active">EN</span>
+                        <span style="opacity:0.3">|</span>
+                        <span>AR</span>
+                    </div>
+                    <div class="lp-avatar">👷</div>
+                </div>
+            </nav>
 
-                <!-- Title -->
-                <div style="margin-bottom:22px;">
-                    <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:1.55rem;font-weight:700;color:#fff;letter-spacing:0.04em;margin-bottom:4px;">Annual Leave Bidding</h2>
-                    <div style="display:flex;align-items:center;justify-content:space-between;">
-                        <p style="font-size:0.78rem;color:rgba(255,255,255,0.35);letter-spacing:0.02em;" id="liveDate">--</p>
-                        <div class="status-pill">
-                            <div class="status-dot"></div>
-                            <span id="systemStatus">Initializing...</span>
+            <!-- Hero Section -->
+            <div class="lp-hero">
+                <!-- Top row: headline + stats card -->
+                <div class="lp-hero-top">
+                    <!-- Left: headline -->
+                    <div>
+                        <h1 class="lp-headline">Annual Leave Bidding</h1>
+                        <h2 class="lp-subheadline">Made Transparent &amp; Fair</h2>
+                        <p class="lp-desc">Seniority-based allocation with real-time tracking and automated quota management.</p>
+                        <div class="lp-cta-row">
+                            <button class="lp-btn-primary" onclick="document.querySelector('.lp-cards-grid').scrollIntoView({behavior:'smooth'})">Sign In</button>
+                            <button class="lp-btn-secondary">
+                                <span>🔍</span> View Bidding Calendar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right: stats card -->
+                    <div class="lp-stats-card">
+                        <div class="lp-stats-row">
+                            <div>
+                                <div class="lp-stat-label">👥 Total Employees</div>
+                                <div class="lp-stat-big" id="statsEmpCount">—</div>
+                            </div>
+                            <div class="lp-stat-badge">
+                                <span id="statsEmpBadge">—</span>
+                                <span class="arrow-up">↗</span>
+                            </div>
+                        </div>
+                        <div class="lp-stat-line">
+                            <span class="lp-stat-line-label">📷 Bidding Phase</span>
+                            <span class="lp-status-open">Open</span>
+                        </div>
+                        <div class="lp-stat-line">
+                            <span class="lp-stat-line-label">📋 Current Slot</span>
+                            <span class="lp-stat-line-val">Batch 3 <span class="lp-status-check">✓</span></span>
+                        </div>
+                        <div class="lp-quota-row">
+                            <div class="lp-quota-left">
+                                <div class="lp-quota-label">Available Quota</div>
+                                <div class="lp-quota-pct">82<sup>%</sup></div>
+                                <div class="lp-quota-bar"><div class="lp-quota-bar-fill" style="width:82%"></div></div>
+                            </div>
+                            <div class="lp-donut-wrap">
+                                <svg width="90" height="90" viewBox="0 0 90 90">
+                                    <circle cx="45" cy="45" r="36" fill="none" stroke="rgba(0,0,0,0.08)" stroke-width="10"/>
+                                    <circle cx="45" cy="45" r="36" fill="none" stroke="#2d9f5f" stroke-width="10"
+                                        stroke-dasharray="226" stroke-dashoffset="40.68"
+                                        stroke-linecap="round"
+                                        transform="rotate(-90 45 45)"/>
+                                </svg>
+                                <div class="lp-donut-pct">82%</div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Sync button -->
-                <div style="margin-bottom:20px;">
-                    <button onclick="app.syncWithSupabase()" class="sync-btn">🔄 Sync with Database</button>
-                </div>
+                <!-- Bottom row: 4 login cards -->
+                <div class="lp-cards-grid" style="grid-template-columns: repeat(4, 1fr); max-width: 1100px;">
 
-                <!-- Tab bar -->
-                <div style="margin-bottom:20px;">
-                    <div class="tab-bar" id="loginTabBar">
-                        <button class="tab-btn active-emp" onclick="app.setLoginType('employee')" id="tab-employee">
-                            👤 Employee
-                        </button>
-                        <button class="tab-btn" onclick="app.setLoginType('planner')" id="tab-planner">
-                            🛠️ Planner
-                        </button>
-                        <button class="tab-btn" onclick="app.setLoginType('goldencommand')" id="tab-goldencommand">
-                            ⭐ GC
-                        </button>
-                        <button class="tab-btn" onclick="app.setLoginType('corporatestaff')" id="tab-corporatestaff">
-                            🏢 Corp Staff
-                        </button>
+                    <!-- 1. Employee Card -->
+                    <div class="lp-login-card" style="animation-delay:0.1s">
+                        <div class="lp-card-header">
+                            <span class="lp-card-icon">👤</span>
+                            <div>
+                                <div class="lp-card-title">Employee</div>
+                                <div class="lp-card-subtitle">Submit leave</div>
+                            </div>
+                            <span class="lp-card-check">✔</span>
+                        </div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">👤</span>
+                            <input class="lp-input" type="text" placeholder="Employee ID" id="empLoginId" autocomplete="username" />
+                        </div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">🔒</span>
+                            <input class="lp-input" type="password" placeholder="Password" id="empLoginPwd" autocomplete="current-password" />
+                        </div>
+                        <div class="lp-card-footer">
+                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                        </div>
+                        <button class="lp-sign-btn" onclick="
+                            app.setLoginType('employee');
+                            document.getElementById('loginId').value = document.getElementById('empLoginId').value;
+                            document.getElementById('loginPassword').value = document.getElementById('empLoginPwd').value;
+                            app.handleLogin();
+                        ">Sign In</button>
                     </div>
-                </div>
 
-                <!-- Dynamic login form -->
-                <div id="loginForm" style="margin-bottom:20px;">
-                    <div style="margin-bottom:14px;">
-                        <label class="metro-label">Employee ID</label>
-                        <input type="text" id="loginId" class="metro-input" placeholder="Enter your ID" disabled />
+                    <!-- 2. Corp Staff Card -->
+                    <div class="lp-login-card" style="animation-delay:0.2s">
+                        <div class="lp-card-header">
+                            <span class="lp-card-icon">🏢</span>
+                            <div>
+                                <div class="lp-card-title">Corp Staff</div>
+                                <div class="lp-card-subtitle">Oversight &amp; reporting</div>
+                            </div>
+                        </div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">👤</span>
+                            <!-- Must use id="csLoginId" — matches what handleLogin reads for corporatestaff -->
+                            <input class="lp-input" type="text" placeholder="Staff ID" id="csLoginId" autocomplete="username" />
+                        </div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">🔒</span>
+                            <input class="lp-input" type="password" placeholder="Password" id="csLoginPwd" autocomplete="current-password" />
+                        </div>
+                        <div class="lp-card-footer">
+                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                        </div>
+                        <button class="lp-sign-btn" onclick="
+                            app.setLoginType('corporatestaff');
+                            document.getElementById('loginPassword').value = document.getElementById('csLoginPwd').value;
+                            app.handleLogin();
+                        ">Sign In</button>
                     </div>
-                    <div>
-                        <label class="metro-label">Password</label>
-                        <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" disabled />
+
+                    <!-- 3. Planner Card -->
+                    <div class="lp-login-card" style="animation-delay:0.3s">
+                        <div class="lp-card-header">
+                            <span class="lp-card-icon">🛠️</span>
+                            <div>
+                                <div class="lp-card-title">Planner</div>
+                                <div class="lp-card-subtitle">Schedule &amp; configure</div>
+                            </div>
+                        </div>
+                        <!-- Planner login only needs a password, no ID -->
+                        <div class="lp-input-wrap" style="margin-top:8px;">
+                            <span class="lp-input-icon">🔒</span>
+                            <input class="lp-input" type="password" placeholder="Planner Password" id="plannerLoginPwd" autocomplete="current-password" />
+                        </div>
+                        <div class="lp-card-footer" style="margin-top:8px;">
+                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                        </div>
+                        <button class="lp-sign-btn" style="margin-top:4px;" onclick="
+                            app.setLoginType('planner');
+                            document.getElementById('loginPassword').value = document.getElementById('plannerLoginPwd').value;
+                            app.handleLogin();
+                        ">Sign In</button>
                     </div>
+
+                    <!-- 4. Golden Command Card (gold) -->
+                    <div class="lp-login-card gc-card" style="animation-delay:0.4s">
+                        <div class="lp-card-header">
+                            <div class="gc-badge">⭐ Golden Command</div>
+                        </div>
+                        <div class="gc-card-sub">Sign in to your account</div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">👤</span>
+                            <!-- Must use id="gcLoginId" — matches what handleLogin reads for goldencommand -->
+                            <input class="lp-input" type="text" placeholder="GC Employee ID" id="gcLoginId" autocomplete="username" />
+                        </div>
+                        <div class="lp-input-wrap">
+                            <span class="lp-input-icon">🔒</span>
+                            <input class="lp-input" type="password" placeholder="Password" id="gcLoginPwd" autocomplete="current-password" />
+                        </div>
+                        <div class="lp-card-footer">
+                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                            <button class="lp-forgot" style="color:#b8860b;" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                        </div>
+                        <button class="lp-sign-btn gc-sign-btn" onclick="
+                            app.setLoginType('goldencommand');
+                            document.getElementById('loginPassword').value = document.getElementById('gcLoginPwd').value;
+                            app.handleLogin();
+                        ">Sign In</button>
+                    </div>
+
                 </div>
-
-                <!-- Login button -->
-                <button onclick="app.handleLogin()" class="login-btn">→ Sign In</button>
-
-                <!-- Forgot password -->
-                <div style="text-align:center;margin-top:16px;">
-                    <button onclick="app.renderForgotPasswordView()" class="forgot-link">Forgot your password?</button>
-                </div>
-
             </div>
+
+            <!-- Bottom Status Bar -->
+            <div class="lp-status-bar">
+                <div class="lp-status-item">
+                    <div class="lp-status-check-icon">✓</div>
+                    Database synced at <span id="liveClock" style="color:rgba(255,255,255,0.85);font-weight:600;margin-left:4px;">--:-- --</span>
+                </div>
+                <div class="lp-status-item">
+                    <div class="lp-status-check-icon">✓</div>
+                    <span id="statsEmpStatus">—</span> employees active
+                </div>
+                <div class="lp-status-item">
+                    <div class="lp-status-check-icon">✓</div>
+                    System healthy
+                    <span class="status-pill" style="margin-left:8px;">
+                        <div class="status-dot"></div>
+                        <span id="systemStatus">Initializing...</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Hidden legacy inputs for app.js compatibility -->
+            <input type="hidden" id="loginId" />
+            <input type="hidden" id="loginPassword" />
+            <div id="loginForm" style="display:none"></div>
+            <div id="liveDate" style="display:none"></div>
+
         </div>
 
         <!-- Planner Navigation -->
@@ -737,15 +1218,19 @@
                         this.state.plannerPassword = config.planner_password || 'admin123';
                         this.state.slotCapacities = config.slot_capacities || {};
                         this.state.results = config.results || [];
-                        // Load on-call dates — merge Supabase data over the hardcoded defaults
+                        // Load on-call dates — MERGE Supabase data with hardcoded defaults
+                        // Never fully replace: Supabase wins per-key, but hardcoded keys survive
+                        const hardcodedOnCall = this.state.onCallDates || {};
                         if (config.on_call_dates && Object.keys(config.on_call_dates).length > 0) {
-                            this.state.onCallDates = config.on_call_dates;
-                            console.log('✅ Loaded on-call dates from Supabase');
+                            // Merge: start with hardcoded defaults, overlay with everything from Supabase
+                            this.state.onCallDates = { ...hardcodedOnCall, ...config.on_call_dates };
+                            console.log('✅ Loaded on-call dates from Supabase:', Object.keys(this.state.onCallDates).length, 'staff entries');
                         } else {
-                            // Fall back to localStorage if Supabase has no on_call_dates yet
-                            const localOC = localStorage.getItem('onCallDates');
-                            if (localOC) this.state.onCallDates = JSON.parse(localOC);
-                            console.log('ℹ️ No on-call dates in Supabase yet — using local/default');
+                            // Supabase has no on_call_dates yet — push the current state up now so it persists
+                            console.log('ℹ️ No on-call dates in Supabase yet — pushing current defaults up');
+                            this.state.onCallDates = hardcodedOnCall;
+                            // Schedule a push so defaults get stored in Supabase for future browsers
+                            setTimeout(() => this.saveConfigToSupabase(), 1000);
                         }
                         console.log('✅ Loaded system config from Supabase');
                     }
@@ -792,6 +1277,7 @@
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
                     this.renderLoginForm();
+                    this._updateLandingStats();
                     return true;
                     
                 } catch (error) {
@@ -899,7 +1385,7 @@
                     }
 
                     this.updateSystemStatus(`✅ Saved: ${empTotal} employees, ${this.state.bids.length} bids`);
-                    alert(`✅ All data saved to Supabase!\n\n• ${empTotal} employees\n• ${this.state.bids.length} bids\n• System configuration`);
+                    alert(`✅ All data saved to Supabase!\n\n• ${empTotal} employees\n• ${this.state.bids.length} bids\n• System configuration\n• ${Object.keys(this.state.onCallDates || {}).length} on-call staff entries`);
                     setTimeout(() => this.updateSystemStatus('Ready'), 4000);
 
                 } catch (error) {
@@ -1056,7 +1542,8 @@
 
             handleLogin() {
                 if (this.state.loginType === 'planner') {
-                    const input = document.getElementById('loginPassword');
+                    // Read from the dedicated planner card input, fall back to hidden field
+                    const input = document.getElementById('plannerLoginPwd') || document.getElementById('loginPassword');
                     const password = input ? input.value : '';
                     
                     if (password === this.state.plannerPassword) {
@@ -1082,7 +1569,8 @@
                     }
                 } else if (this.state.loginType === 'goldencommand') {
                     const gcIdInput = document.getElementById('gcLoginId');
-                    const passInput = document.getElementById('loginPassword');
+                    // Read from the GC card password input, fall back to hidden field
+                    const passInput = document.getElementById('gcLoginPwd') || document.getElementById('loginPassword');
                     const gcId = gcIdInput ? gcIdInput.value.trim() : '';
                     const password = passInput ? passInput.value : '';
                     
@@ -1126,7 +1614,8 @@
                     alert(`✅ Welcome, ${gcUser.name}!`);
                 } else if (this.state.loginType === 'corporatestaff') {
                     const csIdInput = document.getElementById('csLoginId');
-                    const passInput = document.getElementById('loginPassword');
+                    // Read from the Corp Staff card password input, fall back to hidden field
+                    const passInput = document.getElementById('csLoginPwd') || document.getElementById('loginPassword');
                     const csId = csIdInput ? csIdInput.value.trim() : '';
                     const password = passInput ? passInput.value : '';
 
@@ -1169,10 +1658,11 @@
                     this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
                     alert(`✅ Welcome, ${csUser.name}!`);
                 } else {
-                    const idInput = document.getElementById('loginId');
-                    const passInput = document.getElementById('loginPassword');
+                    // Employee login — read from card inputs, fall back to hidden fields
+                    const idInput = document.getElementById('empLoginId') || document.getElementById('loginId');
+                    const passInput = document.getElementById('empLoginPwd') || document.getElementById('loginPassword');
                     
-                    const id = idInput ? idInput.value : '';
+                    const id = idInput ? idInput.value.trim() : '';
                     const password = passInput ? passInput.value : '';
                     
                     if (!id || !password) {
@@ -1233,6 +1723,14 @@
                 ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.style.display = '';
+                });
+
+                // Clear all login card inputs so credentials don't persist
+                ['empLoginId','empLoginPwd','csLoginId','csLoginPwd',
+                 'plannerLoginPwd','gcLoginId','gcLoginPwd',
+                 'loginId','loginPassword'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
                 });
                 
                 this.renderLoginForm();
@@ -5559,23 +6057,32 @@
                 this.saveState(); // always write localStorage first
                 if (!this.supabase) return;
                 try {
+                    const payload = {
+                        id: 1,
+                        bidding_deadline: this.state.biddingDeadline,
+                        bidding_year: this.state.biddingYear,
+                        is_processed: this.state.isProcessed,
+                        planner_password: this.state.plannerPassword,
+                        slot_capacities: this.state.slotCapacities,
+                        results: this.state.results,
+                        on_call_dates: this.state.onCallDates || {},
+                        last_updated: new Date().toISOString()
+                    };
                     const { error } = await this.supabase
                         .from('system_config')
-                        .upsert({
-                            id: 1,
-                            bidding_deadline: this.state.biddingDeadline,
-                            bidding_year: this.state.biddingYear,
-                            is_processed: this.state.isProcessed,
-                            planner_password: this.state.plannerPassword,
-                            slot_capacities: this.state.slotCapacities,
-                            results: this.state.results,
-                            on_call_dates: this.state.onCallDates || {},
-                            last_updated: new Date().toISOString()
-                        }, { onConflict: 'id' });
-                    if (error) console.warn('⚠️ Could not save config to Supabase:', error.message);
-                    else console.log('✅ Config saved to Supabase');
+                        .upsert(payload, { onConflict: 'id' });
+                    if (error) {
+                        console.error('❌ Could not save on-call config to Supabase:', error.message);
+                        // Show a brief warning in the status bar so the planner is aware
+                        this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                        setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                    } else {
+                        console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
+                    }
                 } catch (e) {
                     console.warn('⚠️ Supabase config save error:', e.message);
+                    this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                    setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                 }
             },
 
@@ -6060,6 +6567,15 @@
                 this.filterAuditLog();
             },
 
+            _updateLandingStats() {
+                const count = this.state.employees ? this.state.employees.length : 0;
+                const countStr = count > 0 ? count.toLocaleString() : '—';
+                ['statsEmpCount','statsEmpBadge','statsEmpStatus'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = count > 0 ? countStr : '—';
+                });
+            },
+
             _startClock() {
                 const tick = () => {
                     const now = new Date();
@@ -6102,11 +6618,26 @@
                 
                 this.renderLoginForm();
                 
-                // Add Enter key support
+                // Update landing page stats
+                this._updateLandingStats();
+                
+                // Add Enter key support — detect which card the user is typing in
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && this.state.activeView === 'login') {
-                        this.handleLogin();
+                    if (e.key !== 'Enter' || this.state.activeView !== 'login') return;
+                    const focused = document.activeElement;
+                    if (focused) {
+                        const id = focused.id;
+                        if (id === 'empLoginId' || id === 'empLoginPwd') {
+                            this.state.loginType = 'employee';
+                        } else if (id === 'csLoginId' || id === 'csLoginPwd') {
+                            this.state.loginType = 'corporatestaff';
+                        } else if (id === 'plannerLoginPwd') {
+                            this.state.loginType = 'planner';
+                        } else if (id === 'gcLoginId' || id === 'gcLoginPwd') {
+                            this.state.loginType = 'goldencommand';
+                        }
                     }
+                    this.handleLogin();
                 });
                 
                 // Start live clock
