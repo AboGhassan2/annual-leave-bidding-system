@@ -1218,24 +1218,29 @@
                         this.state.plannerPassword = config.planner_password || 'admin123';
                         this.state.slotCapacities = config.slot_capacities || {};
                         this.state.results = config.results || [];
-                        // Load on-call dates — MERGE Supabase data with hardcoded defaults
-                        // Never fully replace: Supabase wins per-key, but hardcoded keys survive
-                        const hardcodedOnCall = this.state.onCallDates || {};
-                        if (config.on_call_dates && Object.keys(config.on_call_dates).length > 0) {
-                            // FIX: Supabase is the authoritative source for ALL on-call entries.
-                            // Hardcoded defaults only fill keys that Supabase doesn't have yet.
-                            // This ensures GC/Director staff entries are never lost on reload.
-                            this.state.onCallDates = { ...hardcodedOnCall, ...config.on_call_dates };
-                            console.log('✅ Loaded on-call dates from Supabase:', Object.keys(this.state.onCallDates).length, 'staff entries', Object.keys(this.state.onCallDates));
-                            // Write merged state back so any hardcoded-only keys also get persisted
-                            setTimeout(() => this.saveConfigToSupabase(), 2000);
-                        } else {
-                            // Supabase has no on_call_dates yet — push the current hardcoded defaults now
-                            console.log('ℹ️ No on-call dates in Supabase yet — pushing current defaults up');
-                            this.state.onCallDates = hardcodedOnCall;
-                            setTimeout(() => this.saveConfigToSupabase(), 1000);
-                        }
                         console.log('✅ Loaded system config from Supabase');
+                    }
+
+                    // Load on-call dates from dedicated oncall_dates table
+                    const { data: ocRows, error: ocError } = await this.supabase
+                        .from('oncall_dates')
+                        .select('employee_id, date');
+
+                    if (ocError) {
+                        console.warn('⚠️ Could not load oncall_dates:', ocError.message);
+                    } else if (ocRows && ocRows.length > 0) {
+                        const built = {};
+                        for (const row of ocRows) {
+                            if (!built[row.employee_id]) built[row.employee_id] = [];
+                            built[row.employee_id].push(row.date);
+                        }
+                        // Sort each employee's dates
+                        for (const id of Object.keys(built)) built[id].sort();
+                        // Merge with any hardcoded defaults
+                        this.state.onCallDates = { ...(this.state.onCallDates || {}), ...built };
+                        console.log(`✅ Loaded on-call dates from oncall_dates table: ${ocRows.length} rows, ${Object.keys(built).length} staff entries`);
+                    } else {
+                        console.log('ℹ️ No on-call dates in oncall_dates table yet');
                     }
 
                     // Load Golden Command users from dedicated table
@@ -1351,11 +1356,15 @@
                             planner_password: this.state.plannerPassword,
                             slot_capacities: this.state.slotCapacities,
                             results: this.state.results,
-                            on_call_dates: this.state.onCallDates || {},
                             last_updated: new Date().toISOString()
+                            // on_call_dates intentionally omitted — stored in oncall_dates table
                         }, { onConflict: 'id' });
 
                     if (configError) console.warn('Config save warning:', configError.message);
+
+                    // ── 2b. Save on-call dates to dedicated table ──
+                    this.updateSystemStatus('Saving on-call dates...');
+                    await this.saveOnCallDatesToSupabase();
 
                     // ── 3. Save bids in batches of 500 ──
                     if (this.state.bids.length > 0) {
@@ -5851,16 +5860,22 @@
                                 <!-- Mode toggle -->
                                 <div class="flex gap-2 mb-3">
                                     <button type="button"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='date';document.getElementById('ocDateFields-${id}').classList.remove('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='date';document.getElementById('ocDateFields-${id}').classList.remove('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');document.getElementById('ocMultiFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocMultiBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocMultiBtn-${id}').classList.add('bg-white','text-blue-600');"
                                         id="ocDateBtn-${id}"
                                         class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-blue-600 text-white transition-colors">
                                         📅 Date Range
                                     </button>
                                     <button type="button"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='week';document.getElementById('ocWeekFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='week';document.getElementById('ocWeekFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');document.getElementById('ocMultiFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocMultiBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocMultiBtn-${id}').classList.add('bg-white','text-blue-600');"
                                         id="ocWeekBtn-${id}"
                                         class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-white text-blue-600 transition-colors">
                                         🗓 Week Number
+                                    </button>
+                                    <button type="button"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='multi';document.getElementById('ocMultiFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');"
+                                        id="ocMultiBtn-${id}"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-white text-blue-600 transition-colors">
+                                        📋 Multi-Week ✨
                                     </button>
                                 </div>
                                 <input type="hidden" id="ocDateMode-${id}" value="date" />
@@ -5905,6 +5920,33 @@
                                         ✅ Add Week Block
                                     </button>
                                 </div>
+
+                                <!-- Multi-Week fields -->
+                                <div id="ocMultiFields-${id}" class="hidden">
+                                    <div class="mb-2 p-2 bg-blue-100 border border-blue-300 rounded text-xs text-blue-900">
+                                        <strong>Multi-week:</strong> e.g. <span class="font-mono bg-blue-200 px-1 rounded">1-4, 10, 22-26</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 mb-2">
+                                        <div class="col-span-2">
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Weeks / Ranges</label>
+                                            <input type="text" id="ocMultiWeekInput-${id}" placeholder="e.g. 1-4, 10, 22-26"
+                                                oninput="_previewOcMultiChips('${id}')"
+                                                class="w-full px-2 py-2 border border-blue-300 rounded-lg text-xs focus:outline-none focus:border-blue-500 font-mono"/>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                            <input type="number" id="ocMultiWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                                class="w-full px-2 py-2 border border-blue-300 rounded-lg text-xs"/>
+                                        </div>
+                                    </div>
+                                    <div id="ocMultiPreview-${id}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 bg-blue-100 rounded border border-blue-200">
+                                        <span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>
+                                    </div>
+                                    <button onclick="app.addOnCallMultiWeek('${id}')"
+                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
+                                        ✅ Add All Weeks
+                                    </button>
+                                </div>
                             </div>
                         </details>
                     </div>`;
@@ -5935,16 +5977,22 @@
                         <!-- Mode toggle -->
                         <div class="flex gap-2 mb-3">
                             <button type="button"
-                                onclick="document.getElementById('newOcMode').value='date';document.getElementById('newOcDateFields').classList.remove('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');"
+                                onclick="document.getElementById('newOcMode').value='date';document.getElementById('newOcDateFields').classList.remove('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');document.getElementById('newOcMultiFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcMultiBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcMultiBtn').classList.add('bg-white','text-yellow-700');"
                                 id="newOcDateBtn"
                                 class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-yellow-500 text-white transition-colors">
                                 📅 Date Range
                             </button>
                             <button type="button"
-                                onclick="document.getElementById('newOcMode').value='week';document.getElementById('newOcWeekFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');"
+                                onclick="document.getElementById('newOcMode').value='week';document.getElementById('newOcWeekFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');document.getElementById('newOcMultiFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcMultiBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcMultiBtn').classList.add('bg-white','text-yellow-700');"
                                 id="newOcWeekBtn"
                                 class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-white text-yellow-700 transition-colors">
                                 🗓 Week Number
+                            </button>
+                            <button type="button"
+                                onclick="document.getElementById('newOcMode').value='multi';document.getElementById('newOcMultiFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');"
+                                id="newOcMultiBtn"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-white text-yellow-700 transition-colors">
+                                📋 Multi-Week ✨
                             </button>
                         </div>
                         <input type="hidden" id="newOcMode" value="date" />
@@ -5987,6 +6035,34 @@
                             <button onclick="app.addOnCallWeekNew()"
                                 class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
                                 ✅ Add Week Block
+                            </button>
+                        </div>
+
+                        <!-- Multi-Week fields -->
+                        <div id="newOcMultiFields" class="hidden">
+                            <div class="mb-3 p-3 bg-yellow-100 border border-yellow-400 rounded-lg text-xs text-yellow-900 leading-relaxed">
+                                <strong>How to use:</strong> Type week numbers separated by commas. Use a dash for ranges.<br/>
+                                <span class="font-mono mt-1 block">e.g. <span class="bg-yellow-200 px-1 rounded">1-4, 10, 22-26, 40</span></span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3 mb-3">
+                                <div class="col-span-2">
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Numbers / Ranges</label>
+                                    <input type="text" id="newOcMultiWeekInput" placeholder="e.g. 1-4, 10, 22-26, 40"
+                                        oninput="_previewNewOcMultiChips()"
+                                        class="w-full px-3 py-2 border-2 border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600 font-mono" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcMultiWeekYear" value="${this.state.biddingYear}" min="2020" max="2040"
+                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
+                                </div>
+                            </div>
+                            <div id="newOcMultiPreview" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 bg-yellow-100 rounded-lg border border-yellow-300">
+                                <span class="text-xs text-yellow-600 italic">Week chips appear here…</span>
+                            </div>
+                            <button onclick="app.addOnCallMultiWeekNew()"
+                                class="px-8 py-2.5 bg-yellow-500 text-white rounded-lg text-sm font-bold hover:bg-yellow-600 transition-colors shadow">
+                                ✅ Add All Weeks
                             </button>
                         </div>
                     </div>
@@ -6055,6 +6131,74 @@
                 this._applyOnCallRange(empId, from, to, true);
             },
 
+            // ---- MULTI-WEEK helpers ----
+            _parseMultiWeekInput(raw, year) {
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks = new Set();
+                for (const tok of tokens) {
+                    const m = tok.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1, +m[1]); w <= Math.min(53, +m[2]); w++) weeks.add(w); }
+                    else { const n = +tok; if (!isNaN(n) && n >= 1 && n <= 53) weeks.add(n); }
+                }
+                return [...weeks].sort((a, b) => a - b);
+            },
+
+            addOnCallMultiWeekNew() {
+                const empId = document.getElementById('newOcId')?.value?.trim();
+                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                const raw  = document.getElementById('newOcMultiWeekInput')?.value || '';
+                const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || this.state.biddingYear;
+                if (!raw.trim()) { alert('Please enter at least one week number.'); return; }
+                const weeks = this._parseMultiWeekInput(raw, year);
+                if (!weeks.length) { alert('No valid weeks found. Example: 1-4, 10, 22-26'); return; }
+
+                if (!this.state.onCallDates) this.state.onCallDates = {};
+                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
+                const existing = new Set(this.state.onCallDates[empId]);
+                let added = 0;
+                for (const w of weeks) {
+                    const { from, to } = this.weekNumberToDateRange(w, year);
+                    const cur = new Date(from + 'T00:00:00'), end = new Date(to + 'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                }
+                this.state.onCallDates[empId] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_multi_add', empId, weeks: weeks.join(','), added });
+                alert(`✅ Added ${added} new date${added !== 1 ? 's' : ''} across ${weeks.length} week${weeks.length !== 1 ? 's' : ''} for "${empId}".\nTotal on-call dates: ${this.state.onCallDates[empId].length}`);
+                this.renderManageOnCallView();
+            },
+
+            addOnCallMultiWeek(empId) {
+                const raw  = document.getElementById(`ocMultiWeekInput-${empId}`)?.value || '';
+                const year = parseInt(document.getElementById(`ocMultiWeekYear-${empId}`)?.value) || this.state.biddingYear;
+                if (!raw.trim()) { alert('Please enter at least one week number.'); return; }
+                const weeks = this._parseMultiWeekInput(raw, year);
+                if (!weeks.length) { alert('No valid weeks found. Example: 1-4, 10, 22-26'); return; }
+
+                if (!this.state.onCallDates) this.state.onCallDates = {};
+                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
+                const existing = new Set(this.state.onCallDates[empId]);
+                let added = 0;
+                for (const w of weeks) {
+                    const { from, to } = this.weekNumberToDateRange(w, year);
+                    const cur = new Date(from + 'T00:00:00'), end = new Date(to + 'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                }
+                this.state.onCallDates[empId] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_multi_add', empId, weeks: weeks.join(','), added });
+                alert(`✅ Added ${added} new date${added !== 1 ? 's' : ''} across ${weeks.length} week${weeks.length !== 1 ? 's' : ''} for "${empId}".\nTotal: ${this.state.onCallDates[empId].length} dates`);
+                this.renderManageOnCallView();
+            },
+
             // Saves all system_config fields (deadline, year, slots, on-call, password, results) to Supabase + localStorage
             async saveConfigToSupabase() {
                 this.saveState(); // always write localStorage first
@@ -6068,19 +6212,19 @@
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
                         results: this.state.results,
-                        on_call_dates: this.state.onCallDates || {},
                         last_updated: new Date().toISOString()
+                        // on_call_dates intentionally omitted — now stored in oncall_dates table
                     };
                     const { error } = await this.supabase
                         .from('system_config')
                         .upsert(payload, { onConflict: 'id' });
                     if (error) {
-                        console.error('❌ Could not save on-call config to Supabase:', error.message, error);
+                        console.error('❌ Could not save on-call config to Supabase:', error.message);
+                        // Show a brief warning in the status bar so the planner is aware
                         this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
                         setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                     } else {
-                        const savedKeys = Object.keys(this.state.onCallDates || {});
-                        console.log('✅ Config saved to Supabase. on_call_dates keys:', savedKeys.length, savedKeys);
+                        console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
                     }
                 } catch (e) {
                     console.warn('⚠️ Supabase config save error:', e.message);
@@ -6089,9 +6233,43 @@
                 }
             },
 
-            // Immediately persists onCallDates to both localStorage and Supabase system_config
+            // Persists onCallDates to dedicated oncall_dates table + localStorage
             async saveOnCallDatesToSupabase() {
-                return this.saveConfigToSupabase();
+                this.saveState(); // always write localStorage first
+                if (!this.supabase) return;
+                try {
+                    const onCallDates = this.state.onCallDates || {};
+                    const rows = [];
+                    for (const [empId, dates] of Object.entries(onCallDates)) {
+                        for (const date of dates) {
+                            const d = new Date(date + 'T00:00:00');
+                            const jan1 = new Date(d.getFullYear(), 0, 1);
+                            const weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+                            rows.push({ employee_id: empId, date: date, week_number: weekNum, year: d.getFullYear() });
+                        }
+                    }
+                    if (rows.length === 0) return;
+                    const chunkSize = 500;
+                    for (let i = 0; i < rows.length; i += chunkSize) {
+                        const batch = rows.slice(i, i + chunkSize);
+                        const { error } = await this.supabase
+                            .from('oncall_dates')
+                            .upsert(batch, { onConflict: 'employee_id,date', ignoreDuplicates: true });
+                        if (error) {
+                            console.error('❌ oncall_dates save error:', error.message);
+                            this.updateSystemStatus('⚠️ On-call save failed — check console');
+                            setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                            return;
+                        }
+                    }
+                    console.log(`✅ Saved ${rows.length} on-call date rows to oncall_dates table`);
+                    this.updateSystemStatus(`✅ On-call dates saved (${rows.length} rows)`);
+                    setTimeout(() => this.updateSystemStatus('Ready'), 3000);
+                } catch (e) {
+                    console.warn('⚠️ oncall_dates save error:', e.message);
+                    this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                    setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                }
             },
 
             _applyOnCallRange(empId, from, to, isNew = false) {
@@ -6111,12 +6289,9 @@
                     cur.setDate(cur.getDate() + 1);
                 }
                 this.state.onCallDates[empId] = [...existing].sort();
-                // FIX: log all keys after save so we can verify in console
-                this.saveOnCallDatesToSupabase().then(() => {
-                    console.log('✅ On-call save complete. All staff IDs with on-call dates:', Object.keys(this.state.onCallDates));
-                });
+                this.saveOnCallDatesToSupabase();
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_add', empId, from, to, added });
-                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.\n\nCheck browser console (F12) to confirm save.`);
+                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.`);
                 this.renderManageOnCallView();
             },
 
@@ -6136,7 +6311,20 @@
                 const before = this.state.onCallDates[empId].length;
                 this.state.onCallDates[empId] = this.state.onCallDates[empId].filter(d => !toDelete.has(d));
                 const removed = before - this.state.onCallDates[empId].length;
-                this.saveOnCallDatesToSupabase();
+
+                // Delete from dedicated oncall_dates table
+                if (this.supabase && toDelete.size > 0) {
+                    this.supabase
+                        .from('oncall_dates')
+                        .delete()
+                        .eq('employee_id', empId)
+                        .in('date', [...toDelete])
+                        .then(({ error }) => {
+                            if (error) console.error('❌ oncall_dates delete error:', error.message);
+                            else console.log(`✅ Deleted ${toDelete.size} rows from oncall_dates for ${empId}`);
+                        });
+                }
+                this.saveState(); // keep localStorage in sync
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_delete', empId, blockFrom, blockTo, removed });
                 alert(`🗑 Removed ${removed} date${removed !== 1 ? 's' : ''} from On-Call schedule.`);
                 this.renderManageOnCallView();
@@ -6652,6 +6840,50 @@
                 console.log('App ready');
             }
         };
+
+        // ---- Multi-Week chip preview helpers (global, called from oninput) ----
+        function _parseWeeksForPreview(raw, year) {
+            const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+            const weeks = new Set();
+            for (const t of tokens) {
+                const m = t.match(/^(\d+)-(\d+)$/);
+                if (m) { for (let w = Math.max(1, +m[1]); w <= Math.min(53, +m[2]); w++) weeks.add(w); }
+                else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 53) weeks.add(n); }
+            }
+            return [...weeks].sort((a, b) => a - b);
+        }
+
+        function _previewNewOcMultiChips() {
+            const raw  = document.getElementById('newOcMultiWeekInput')?.value || '';
+            const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || (app.state?.biddingYear || new Date().getFullYear());
+            const box  = document.getElementById('newOcMultiPreview');
+            if (!box) return;
+            const arr = _parseWeeksForPreview(raw, year);
+            if (!arr.length) {
+                box.innerHTML = '<span class="text-xs text-yellow-600 italic">Week chips appear here…</span>';
+                return;
+            }
+            box.innerHTML = arr.map(w => {
+                const r = app.weekNumberToDateRange(w, year);
+                return `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin:2px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+            }).join('');
+        }
+
+        function _previewOcMultiChips(empId) {
+            const raw  = document.getElementById(`ocMultiWeekInput-${empId}`)?.value || '';
+            const year = parseInt(document.getElementById(`ocMultiWeekYear-${empId}`)?.value) || (app.state?.biddingYear || new Date().getFullYear());
+            const box  = document.getElementById(`ocMultiPreview-${empId}`);
+            if (!box) return;
+            const arr = _parseWeeksForPreview(raw, year);
+            if (!arr.length) {
+                box.innerHTML = '<span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>';
+                return;
+            }
+            box.innerHTML = arr.map(w => {
+                const r = app.weekNumberToDateRange(w, year);
+                return `<span style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1px solid #3b82f6;color:#1e3a8a;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:20px;margin:1px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+            }).join('');
+        }
 
         // Initialize when page loads
         window.addEventListener('load', () => {
