@@ -1222,14 +1222,17 @@
                         // Never fully replace: Supabase wins per-key, but hardcoded keys survive
                         const hardcodedOnCall = this.state.onCallDates || {};
                         if (config.on_call_dates && Object.keys(config.on_call_dates).length > 0) {
-                            // Merge: start with hardcoded defaults, overlay with everything from Supabase
+                            // FIX: Supabase is the authoritative source for ALL on-call entries.
+                            // Hardcoded defaults only fill keys that Supabase doesn't have yet.
+                            // This ensures GC/Director staff entries are never lost on reload.
                             this.state.onCallDates = { ...hardcodedOnCall, ...config.on_call_dates };
-                            console.log('✅ Loaded on-call dates from Supabase:', Object.keys(this.state.onCallDates).length, 'staff entries');
+                            console.log('✅ Loaded on-call dates from Supabase:', Object.keys(this.state.onCallDates).length, 'staff entries', Object.keys(this.state.onCallDates));
+                            // Write merged state back so any hardcoded-only keys also get persisted
+                            setTimeout(() => this.saveConfigToSupabase(), 2000);
                         } else {
-                            // Supabase has no on_call_dates yet — push the current state up now so it persists
+                            // Supabase has no on_call_dates yet — push the current hardcoded defaults now
                             console.log('ℹ️ No on-call dates in Supabase yet — pushing current defaults up');
                             this.state.onCallDates = hardcodedOnCall;
-                            // Schedule a push so defaults get stored in Supabase for future browsers
                             setTimeout(() => this.saveConfigToSupabase(), 1000);
                         }
                         console.log('✅ Loaded system config from Supabase');
@@ -6072,12 +6075,12 @@
                         .from('system_config')
                         .upsert(payload, { onConflict: 'id' });
                     if (error) {
-                        console.error('❌ Could not save on-call config to Supabase:', error.message);
-                        // Show a brief warning in the status bar so the planner is aware
+                        console.error('❌ Could not save on-call config to Supabase:', error.message, error);
                         this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
                         setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                     } else {
-                        console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
+                        const savedKeys = Object.keys(this.state.onCallDates || {});
+                        console.log('✅ Config saved to Supabase. on_call_dates keys:', savedKeys.length, savedKeys);
                     }
                 } catch (e) {
                     console.warn('⚠️ Supabase config save error:', e.message);
@@ -6108,9 +6111,12 @@
                     cur.setDate(cur.getDate() + 1);
                 }
                 this.state.onCallDates[empId] = [...existing].sort();
-                this.saveOnCallDatesToSupabase();
+                // FIX: log all keys after save so we can verify in console
+                this.saveOnCallDatesToSupabase().then(() => {
+                    console.log('✅ On-call save complete. All staff IDs with on-call dates:', Object.keys(this.state.onCallDates));
+                });
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_add', empId, from, to, added });
-                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.`);
+                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.\n\nCheck browser console (F12) to confirm save.`);
                 this.renderManageOnCallView();
             },
 
