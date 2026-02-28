@@ -1018,6 +1018,8 @@
             
             // ==================== STATE ====================
             state: {
+                tenantId: '00000000-0000-0000-0000-000000000001',
+                authUser: null,
                 employees: [],
                 employeePasswords: {},
                 bids: [],
@@ -1080,15 +1082,37 @@
                 try {
                     this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                     console.log('✅ Supabase initialized');
-                    // Ensure on_call_dates column exists in system_config (silent migration)
-                    try {
-                        await this.supabase.rpc('add_on_call_dates_column').catch(() => {});
-                    } catch(e) { /* column likely already exists */ }
+
+                    // Check for existing Supabase Auth session
+                    const { data: { session } } = await this.supabase.auth.getSession();
+                    if (session?.user) await this._applyAuthSession(session);
+
+                    // Listen for auth state changes
+                    this.supabase.auth.onAuthStateChange(async (event, session) => {
+                        if (session?.user) await this._applyAuthSession(session);
+                        else if (event === 'SIGNED_OUT') {
+                            this.state.authUser = null;
+                            this.state.tenantId = '00000000-0000-0000-0000-000000000001';
+                        }
+                    });
                     return true;
                 } catch (error) {
                     console.error('❌ Supabase init failed:', error);
                     return false;
                 }
+            },
+
+            async _applyAuthSession(session) {
+                this.state.authUser = session.user;
+                const claims = session.access_token
+                    ? JSON.parse(atob(session.access_token.split('.')[1]))
+                    : {};
+                if (claims.tenant_id) this.state.tenantId = claims.tenant_id;
+                if (claims.user_role)  this.state.userType  = claims.user_role;
+            },
+
+            _tid() {
+                return this.state.tenantId || '00000000-0000-0000-0000-000000000001';
             },
 
             async loadFromSupabase() {
@@ -1112,6 +1136,7 @@
                         const { data: employeesBatch, error: empError } = await this.supabase
                             .from('employees')
                             .select('*')
+                            .eq('tenant_id', this._tid())
                             .range(from, from + batchSize - 1);
                         
                         if (empError) throw empError;
@@ -1134,6 +1159,7 @@
                         const { data: bidsBatch, error: bidsError } = await this.supabase
                             .from('leave_requests')
                             .select('*')
+                            .eq('tenant_id', this._tid())
                             .range(from, from + batchSize - 1);
                         
                         if (bidsError) {
@@ -1154,6 +1180,7 @@
                     const { data: config, error: configError } = await this.supabase
                         .from('system_config')
                         .select('*')
+                        .eq('tenant_id', this._tid())
                         .single();
                     
                     if (configError && configError.code !== 'PGRST116') {
@@ -1224,7 +1251,8 @@
                     // Load on-call dates from dedicated oncall_dates table
                     const { data: ocRows, error: ocError } = await this.supabase
                         .from('oncall_dates')
-                        .select('employee_id, date');
+                        .select('employee_id, date')
+                        .eq('tenant_id', this._tid());
 
                     if (ocError) {
                         console.warn('⚠️ Could not load oncall_dates:', ocError.message);
@@ -1247,6 +1275,7 @@
                     const { data: gcUsers, error: gcError } = await this.supabase
                         .from('golden_command_users')
                         .select('*')
+                        .eq('tenant_id', this._tid())
                         .order('created_at', { ascending: true });
 
                     if (gcError) {
@@ -1267,6 +1296,7 @@
                     const { data: csUsers, error: csError } = await this.supabase
                         .from('corporate_staff_users')
                         .select('*')
+                        .eq('tenant_id', this._tid())
                         .order('created_at', { ascending: true });
 
                     if (csError) {
@@ -1324,6 +1354,7 @@
                     for (let i = 0; i < empChunks.length; i++) {
                         const batch = empChunks[i].map(emp => ({
                             id: emp.id,
+                            tenant_id: this._tid(),
                             name: emp.name,
                             seniority_date: emp.seniorityDate,
                             position: emp.position || '',
@@ -1350,6 +1381,7 @@
                         .from('system_config')
                         .upsert({
                             id: 1,
+                            tenant_id: this._tid(),
                             bidding_deadline: this.state.biddingDeadline,
                             bidding_year: this.state.biddingYear,
                             is_processed: this.state.isProcessed,
@@ -1374,6 +1406,7 @@
 
                         for (let i = 0; i < bidChunks.length; i++) {
                             const batch = bidChunks[i].map(bid => ({
+                                tenant_id: this._tid(),
                                 employee_id: bid.employeeId,
                                 employee_name: bid.employeeName || '',
                                 department: bid.department || '',
@@ -3993,6 +4026,7 @@
                             .upsert(
                                 currentUsers.map(u => ({
                                     id: u.id,
+                                    tenant_id: this._tid(),
                                     name: u.name,
                                     password: u.password,
                                     updated_at: new Date().toISOString()
@@ -4006,7 +4040,8 @@
                     // Fetch all IDs currently in the table
                     const { data: tableRows, error: fetchError } = await this.supabase
                         .from('golden_command_users')
-                        .select('id');
+                        .select('id')
+                        .eq('tenant_id', this._tid());
                     if (fetchError) throw fetchError;
 
                     const currentIds = currentUsers.map(u => u.id);
@@ -4038,6 +4073,7 @@
                             .upsert(
                                 currentUsers.map(u => ({
                                     id: u.id,
+                                    tenant_id: this._tid(),
                                     name: u.name,
                                     password: u.password,
                                     updated_at: new Date().toISOString()
@@ -4050,7 +4086,8 @@
                     // Step 2: Delete rows no longer in state
                     const { data: tableRows, error: fetchError } = await this.supabase
                         .from('corporate_staff_users')
-                        .select('id');
+                        .select('id')
+                        .eq('tenant_id', this._tid());
                     if (fetchError) throw fetchError;
 
                     const currentIds = currentUsers.map(u => u.id);
@@ -4736,6 +4773,7 @@
                 }
                 try {
                     const row = {
+                        tenant_id: this._tid(),
                         employee_id: bid.employeeId,
                         start_date: bid.startDate,
                         end_date: bid.endDate,
@@ -6206,6 +6244,7 @@
                 try {
                     const payload = {
                         id: 1,
+                        tenant_id: this._tid(),
                         bidding_deadline: this.state.biddingDeadline,
                         bidding_year: this.state.biddingYear,
                         is_processed: this.state.isProcessed,
@@ -6245,7 +6284,7 @@
                             const d = new Date(date + 'T00:00:00');
                             const jan1 = new Date(d.getFullYear(), 0, 1);
                             const weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
-                            rows.push({ employee_id: empId, date: date, week_number: weekNum, year: d.getFullYear() });
+                            rows.push({ tenant_id: this._tid(), employee_id: empId, date: date, week_number: weekNum, year: d.getFullYear() });
                         }
                     }
                     if (rows.length === 0) return;
@@ -6318,6 +6357,7 @@
                         .from('oncall_dates')
                         .delete()
                         .eq('employee_id', empId)
+                        .eq('tenant_id', this._tid())
                         .in('date', [...toDelete])
                         .then(({ error }) => {
                             if (error) console.error('❌ oncall_dates delete error:', error.message);
@@ -6589,6 +6629,7 @@
                 if (this.supabase) {
                     try {
                         await this.supabase.from('audit_logs').insert({
+                            tenant_id: this._tid(),
                             action: entry.action,
                             user_id: entry.user_id,
                             user_name: entry.user_name,
