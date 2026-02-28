@@ -1018,7 +1018,7 @@
             
             // ==================== STATE ====================
             state: {
-                tenantId: '00000000-0000-0000-0000-000000000001',
+                tenantId: new URLSearchParams(window.location.search).get('tenant') || '00000000-0000-0000-0000-000000000001',
                 authUser: null,
                 employees: [],
                 employeePasswords: {},
@@ -1092,7 +1092,7 @@
                         if (session?.user) await this._applyAuthSession(session);
                         else if (event === 'SIGNED_OUT') {
                             this.state.authUser = null;
-                            this.state.tenantId = '00000000-0000-0000-0000-000000000001';
+                            this.state.tenantId = new URLSearchParams(window.location.search).get('tenant') || '00000000-0000-0000-0000-000000000001';
                         }
                     });
                     return true;
