@@ -1018,7 +1018,7 @@
             
             // ==================== STATE ====================
             state: {
-                tenantId: new URLSearchParams(window.location.search).get('tenant') || '00000000-0000-0000-0000-000000000001',
+                tenantId: '00000000-0000-0000-0000-000000000001',
                 authUser: null,
                 employees: [],
                 employeePasswords: {},
@@ -1092,7 +1092,7 @@
                         if (session?.user) await this._applyAuthSession(session);
                         else if (event === 'SIGNED_OUT') {
                             this.state.authUser = null;
-                            this.state.tenantId = new URLSearchParams(window.location.search).get('tenant') || '00000000-0000-0000-0000-000000000001';
+                            this.state.tenantId = '00000000-0000-0000-0000-000000000001';
                         }
                     });
                     return true;
@@ -1380,7 +1380,7 @@
                     const { error: configError } = await this.supabase
                         .from('system_config')
                         .upsert({
-                            id: 1,
+    
                             tenant_id: this._tid(),
                             bidding_deadline: this.state.biddingDeadline,
                             bidding_year: this.state.biddingYear,
@@ -5732,7 +5732,7 @@
                 this.writeAuditLog('MANUAL_OVERRIDE', { total_results: this.state.results.length });
                 try {
                     if (this.supabase) {
-                        const { error } = await this.supabase.from('system_config').update({ results: this.state.results }).eq('id', 1);
+                        const { error } = await this.supabase.from('system_config').update({ results: this.state.results }).eq('tenant_id', this._tid());
                         if (error) throw error;
                     }
                     const msg = document.getElementById('overrideMsg');
@@ -6243,7 +6243,7 @@
                 if (!this.supabase) return;
                 try {
                     const payload = {
-                        id: 1,
+
                         tenant_id: this._tid(),
                         bidding_deadline: this.state.biddingDeadline,
                         bidding_year: this.state.biddingYear,
@@ -6256,7 +6256,7 @@
                     };
                     const { error } = await this.supabase
                         .from('system_config')
-                        .upsert(payload, { onConflict: 'id' });
+                        .upsert(payload, { onConflict: 'tenant_id' });
                     if (error) {
                         console.error('❌ Could not save on-call config to Supabase:', error.message);
                         // Show a brief warning in the status bar so the planner is aware
