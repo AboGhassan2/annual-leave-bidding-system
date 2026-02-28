@@ -1041,13 +1041,8 @@
                 results: [],
 
                 // On-Call dates per employee (extracted from Director_On-Call.xlsx)
-                // Keyed by Employee ID → array of 'YYYY-MM-DD' strings
-                onCallDates: {
-                    "1003752": ["2026-02-08","2026-02-09","2026-02-10","2026-02-11","2026-02-12","2026-02-13","2026-02-14","2026-03-29","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-03","2026-04-04","2026-05-17","2026-05-18","2026-05-19","2026-05-20","2026-05-21","2026-05-22","2026-05-23","2026-07-05","2026-07-06","2026-07-07","2026-07-08","2026-07-09","2026-07-10","2026-07-11","2026-08-23","2026-08-24","2026-08-25","2026-08-26","2026-08-27","2026-08-28","2026-08-29","2026-10-11","2026-10-12","2026-10-13","2026-10-14","2026-10-15","2026-10-16","2026-10-17","2026-11-29","2026-11-30","2026-12-01","2026-12-02","2026-12-03","2026-12-04","2026-12-05"],
-                    "1007066": ["2025-12-28","2025-12-29","2025-12-30","2025-12-31","2026-01-01","2026-01-02","2026-01-03","2026-02-15","2026-02-16","2026-02-17","2026-02-18","2026-02-19","2026-02-20","2026-02-21","2026-04-05","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-11","2026-05-24","2026-05-25","2026-05-26","2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-07-12","2026-07-13","2026-07-14","2026-07-15","2026-07-16","2026-07-17","2026-07-18","2026-08-30","2026-08-31","2026-09-01","2026-09-02","2026-09-03","2026-09-04","2026-09-05","2026-10-18","2026-10-19","2026-10-20","2026-10-21","2026-10-22","2026-10-23","2026-10-24","2026-12-06","2026-12-07","2026-12-08","2026-12-09","2026-12-10","2026-12-11","2026-12-12"],
-                    "10015":   ["2026-02-01","2026-02-02","2026-02-03","2026-02-04","2026-02-05","2026-02-06","2026-02-07","2026-03-22","2026-03-23","2026-03-24","2026-03-25","2026-03-26","2026-03-27","2026-03-28","2026-05-10","2026-05-11","2026-05-12","2026-05-13","2026-05-14","2026-05-15","2026-05-16","2026-06-28","2026-06-29","2026-06-30","2026-07-01","2026-07-02","2026-07-03","2026-07-04","2026-08-16","2026-08-17","2026-08-18","2026-08-19","2026-08-20","2026-08-21","2026-08-22","2026-10-04","2026-10-05","2026-10-06","2026-10-07","2026-10-08","2026-10-09","2026-10-10","2026-11-22","2026-11-23","2026-11-24","2026-11-25","2026-11-26","2026-11-27","2026-11-28"],
-                    "10020":   ["2026-01-25","2026-01-26","2026-01-27","2026-01-28","2026-01-29","2026-01-30","2026-01-31","2026-03-15","2026-03-16","2026-03-17","2026-03-18","2026-03-19","2026-03-20","2026-03-21","2026-05-03","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-09","2026-06-21","2026-06-22","2026-06-23","2026-06-24","2026-06-25","2026-06-26","2026-06-27","2026-08-09","2026-08-10","2026-08-11","2026-08-12","2026-08-13","2026-08-14","2026-08-15","2026-09-27","2026-09-28","2026-09-29","2026-09-30","2026-10-01","2026-10-02","2026-10-03","2026-11-15","2026-11-16","2026-11-17","2026-11-18","2026-11-19","2026-11-20","2026-11-21"]
-                },
+                // Keyed by Employee ID → array of 'YYYY-MM-DD' strings (loaded from Supabase)
+                onCallDates: {},
                 selectedDepartment: 'all',
                 slotCapacities: {},
                 
@@ -1260,7 +1255,9 @@
                         const built = {};
                         for (const row of ocRows) {
                             if (!built[row.employee_id]) built[row.employee_id] = [];
-                            built[row.employee_id].push(row.date);
+                            // Normalize date: Supabase may return "2026-01-04T00:00:00+00:00" — strip to "2026-01-04"
+                            const dateStr = row.date ? String(row.date).substring(0, 10) : null;
+                            if (dateStr) built[row.employee_id].push(dateStr);
                         }
                         // Sort each employee's dates
                         for (const id of Object.keys(built)) built[id].sort();
@@ -1748,7 +1745,7 @@
                 }
             },
 
-            handleLogout() {
+            async handleLogout() {
                 this.writeAuditLog('LOGOUT', { name: this.state.currentUser?.name, role: this.state.userType });
                 this.state.currentUser = null;
                 this.state.userType = null;
@@ -1857,7 +1854,7 @@
             },
 
             // ==================== VIEW RENDERING ====================
-            renderUploadView() {
+            async renderUploadView() {
                 const content = document.getElementById('contentArea');
                 content.innerHTML = `
                     <div class="max-w-4xl mx-auto">
@@ -1867,7 +1864,7 @@
                                 <select
                                     id="biddingYearSelect"
                                     class="w-full px-4 py-3 border-2 border-purple-300 rounded-lg text-lg font-semibold"
-                                    ${this.state.isProcessed || this.state.bids.length > 0 ? 'disabled' : ''}
+                                    ${this.state.isProcessed ? 'disabled' : ''}
                                 >
                                     ${[2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032].map(year => `
                                         <option value="${year}" ${year === this.state.biddingYear ? 'selected' : ''}>${year}</option>
@@ -2005,9 +2002,19 @@
                 const yearSelect = document.getElementById('biddingYearSelect');
                 if (yearSelect) {
                     yearSelect.addEventListener('change', async (e) => {
-                        this.state.biddingYear = parseInt(e.target.value);
-                        this.renderAdminView();
+                        const newYear = parseInt(e.target.value);
+                        if (newYear === this.state.biddingYear) return;
+                        if (this.state.bids.length > 0) {
+                            if (!confirm(`Changing the year will clear ${this.state.bids.length} existing bids for ${this.state.biddingYear}. Continue?`)) {
+                                e.target.value = this.state.biddingYear; // revert dropdown
+                                return;
+                            }
+                            this.state.bids = [];
+                        }
+                        this.state.biddingYear = newYear;
+                        this.state.slotCapacities = {}; // clear slot config for new year
                         await this.saveConfigToSupabase();
+                        this.renderUploadView();
                     });
                 }
             },
@@ -3506,7 +3513,7 @@
                 return html;
             },
             
-            copyToAllMonths() {
+            async copyToAllMonths() {
                 const filter = document.getElementById('deptFilter')?.value || 'all';
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
                 const allDepartments = [...new Set([...this.state.departments, ...employeeDepts])].sort();
@@ -3547,11 +3554,10 @@
                     configArea.innerHTML = this.renderDeptConfig(filterVal);
                 }
                 
-                this.saveConfigToSupabase();
-                alert(`✅ Copied January values to all months for ${departmentsToCopy.length} department(s)!`);
+                await this.saveConfigToSupabase();
             },
             
-            saveSlotConfiguration() {
+            async saveSlotConfiguration() {
                 // Save calendar-based slot inputs (new format: cal-dept-month-slotId-field)
                 const calInputs = document.querySelectorAll('.cal-slot-input');
                 let savedCount = 0;
@@ -3578,8 +3584,7 @@
                     }
                 });
                 
-                this.saveConfigToSupabase();
-
+                await this.saveConfigToSupabase();
                 // Also push slot config to Supabase so other browsers get it
                 if (this.supabase) {
                     // saveConfigToSupabase above already handles this — no duplicate upsert needed
@@ -3781,7 +3786,7 @@
                 alert('✅ All bids have been deleted.');
             },
 
-            startAdminPolling() {
+            async startAdminPolling() {
                 this.stopAdminPolling(); // clear any existing timer
                 console.log('🔄 Starting admin bid auto-poll (15s interval)');
                 this._adminPollTimer = setInterval(async () => {
@@ -4439,8 +4444,7 @@
                 // Save results
                 this.state.results = slotAssignments;
                 this.state.isProcessed = true;
-                this.saveConfigToSupabase();
-                this.writeAuditLog('BIDS_PROCESSED', { total_employees: sortedEmployees.length, total_slots: slotAssignments.length, year: this.state.biddingYear });
+                await this.saveConfigToSupabase();
                 
                 // Calculate statistics
                 const totalSlots = slotAssignments.length;
@@ -4501,7 +4505,7 @@
                 alert('✅ Results exported to Excel file!');
             },
 
-            resetSystem() {
+            async resetSystem() {
                 if (confirm('⚠️ WARNING: This will reset ALL data including employees, bids, and results. Continue?')) {
                     this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
                     localStorage.clear();
@@ -4514,8 +4518,7 @@
                     this.state.currentUser = null;
                     this.state.userType = null;
                     this.state.activeView = 'login';
-                    this.saveConfigToSupabase(); // push reset state to Supabase
-                    
+                    await this.saveConfigToSupabase(); // push reset state to Supabase
                     // Reset UI
                     document.getElementById('userInfo').classList.add('hidden');
                     document.getElementById('plannerNav').classList.add('hidden');
@@ -4849,7 +4852,7 @@
                 }
             },
                
-            loadAvailableSlots() {
+            async loadAvailableSlots() {
                 const slotsContainer = document.getElementById('slotsContainer');
                 if (!slotsContainer) return;
 
@@ -5782,9 +5785,11 @@
 
                 // ── Coverage & Overlap Audit ─────────────────────────────────────
                 // Build a map: dateStr → [empId, ...] for all staff
+                // Normalize all dates to YYYY-MM-DD in case of timezone suffix from Supabase
                 const dateOwners = {};
                 [...staffIds].forEach(id => {
-                    (onCallDates[id] || []).forEach(d => {
+                    (onCallDates[id] || []).forEach(raw => {
+                        const d = String(raw).substring(0, 10);
                         if (!dateOwners[d]) dateOwners[d] = [];
                         dateOwners[d].push(id);
                     });
@@ -6433,14 +6438,10 @@
 
                 try {
                     await this.saveConfigToSupabase();
-                    if (this.supabase) {
-                        showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
-                    } else {
-                        showMsg('✅ Password updated locally (database not connected).', 'bg-green-50 border-green-300 text-green-700');
-                    }
+                    showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
                 } catch (err) {
                     console.error('Planner password change error:', err);
-                    showMsg('✅ Password updated locally. ⚠️ Database save failed — reconnect and try again.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    showMsg('✅ Password updated locally. ⚠️ Database save failed.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
                 }
 
                 document.getElementById('ppCurrent').value = '';
@@ -6836,12 +6837,14 @@
                 // Initialize Supabase
                 const supabaseReady = await this.initSupabase();
                 if (supabaseReady) {
-                    this.updateSystemStatus('Connected to Supabase');
-                    
-                    // Try to load from Supabase first
-                    setTimeout(async () => {
+                    this.updateSystemStatus('⏳ Connecting to Supabase...');
+                    try {
                         await this.loadFromSupabase();
-                    }, 500);
+                    } catch (err) {
+                        console.error('❌ Failed to load from Supabase:', err);
+                        this.updateSystemStatus('⚠️ Supabase load failed — using local data');
+                        this.loadFromLocalStorage();
+                    }
                 } else {
                     // Fallback to localStorage
                     const localLoaded = this.loadFromLocalStorage();
