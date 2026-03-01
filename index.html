@@ -88,9 +88,8 @@
             align-items: center;
             justify-content: space-between;
             padding: 14px 32px;
-            background: rgba(8,28,21,0.97);
+            background: rgba(8,28,21,0.85);
             backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid rgba(82,183,136,0.12);
         }
         .lp-navbar-left { display: flex; align-items: center; gap: 16px; }
@@ -214,9 +213,8 @@
 
         /* Stats card */
         .lp-stats-card {
-            background: #e6f0eb;
+            background: rgba(230,240,235,0.92);
             backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
             border-radius: 20px;
             padding: 28px 28px 24px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.15);
@@ -292,18 +290,17 @@
             margin: 0 auto;
         }
         .lp-login-card {
-            background: #dceee4;
+            background: rgba(220,235,228,0.88);
             backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             border-radius: 18px;
             padding: 28px 24px 24px;
-            border: 1px solid rgba(255,255,255,0.4);
+            border: 1px solid rgba(255,255,255,0.2);
             box-shadow: 0 8px 32px rgba(0,0,0,0.25);
             animation: cardReveal 0.7s cubic-bezier(0.16,1,0.3,1) both;
             color: #1a2e22;
         }
         .lp-login-card.gc-card {
-            background: #f0e8d2;
+            background: rgba(240,232,210,0.92);
             border: 2px solid rgba(184,134,11,0.5);
             box-shadow: 0 8px 40px rgba(180,130,20,0.2);
         }
@@ -348,8 +345,8 @@
         }
         .lp-input {
             width: 100%; padding: 11px 36px 11px 34px;
-            background: #ffffff;
-            border: 1px solid rgba(0,0,0,0.15);
+            background: rgba(255,255,255,0.55);
+            border: 1px solid rgba(0,0,0,0.12);
             border-radius: 10px;
             font-size: 0.88rem; color: #1a2e22;
             outline: none;
@@ -359,7 +356,7 @@
         .lp-input:focus {
             border-color: #40916c;
             box-shadow: 0 0 0 3px rgba(64,145,108,0.15);
-            background: #ffffff;
+            background: rgba(255,255,255,0.8);
         }
         .gc-card .lp-input:focus {
             border-color: #b8860b;
@@ -396,9 +393,8 @@
         .lp-status-bar {
             position: fixed;
             bottom: 0; left: 0; right: 0;
-            background: rgba(8,28,21,0.97);
+            background: rgba(8,28,21,0.9);
             backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
             border-top: 1px solid rgba(82,183,136,0.15);
             padding: 12px 32px;
             display: flex; align-items: center; gap: 32px;
@@ -663,17 +659,17 @@
         ::-webkit-scrollbar-track { background: #0d2818; }
         ::-webkit-scrollbar-thumb { background: #2d6a4f; border-radius: 3px; }
 
+        /* ── Android fix: backdrop-filter unsupported in some mobile browsers.
+              Fully opaque backgrounds prevent dark body bleeding through cards. ── */
+        .lp-login-card          { background: #dceee4; -webkit-backdrop-filter: blur(16px); }
+        .lp-login-card.gc-card  { background: #f0e8d2; }
+        .lp-stats-card          { background: #e6f0eb; -webkit-backdrop-filter: blur(20px); }
+        .lp-input               { background: #ffffff; }
+        .lp-input:focus         { background: #ffffff; }
 
-        /* Forgot password overlay — always light regardless of page theme */
-        #fpOverlay * {
-            box-sizing: border-box;
-        }
-        #fpOverlay input,
-        #fpOverlay select,
-        #fpOverlay textarea {
-            color: #111827 !important;
-            -webkit-text-fill-color: #111827 !important;
-        }
+        /* ── Forgot-password overlay: always light regardless of page theme ── */
+        #fpOverlay * { box-sizing: border-box; }
+        #fpOverlay input, #fpOverlay select { color: #111827 !important; -webkit-text-fill-color: #111827 !important; }
         #fpOverlay input::placeholder { color: #9ca3af !important; }
     </style>
 </head>
@@ -1020,7 +1016,7 @@
     <!-- Scripts - Load at the end -->
     <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <!-- Supabase JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
     <!-- EmailJS -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     
@@ -1049,8 +1045,8 @@
                 currentUser: null,
                 userType: null,
                 plannerPassword: 'admin123',
-                plannerEmail: 'a_abdulqader@outlook.com',
-                ejsServiceId: '',
+                plannerEmail: 'a_abdulqader@outlook.com', // recovery email for OTP
+                ejsServiceId: '',  // EmailJS — set once in Admin → Email Settings
                 ejsTemplateId: '',
                 ejsPublicKey: '',
                 goldenCommandPassword: 'gc123',
@@ -1259,7 +1255,7 @@
                         this.state.biddingYear = config.bidding_year || 2026;
                         this.state.isProcessed = config.is_processed || false;
                         this.state.plannerPassword = config.planner_password || 'admin123';
-                        this.state.plannerEmail = config.planner_email || 'a_abdulqader@outlook.com';
+                        this.state.plannerEmail    = config.planner_email    || 'a_abdulqader@outlook.com';
                         this.state.slotCapacities = config.slot_capacities || {};
                         this.state.results = config.results || [];
                         console.log('✅ Loaded system config from Supabase');
@@ -1405,8 +1401,8 @@
                             bidding_year: this.state.biddingYear,
                             is_processed: this.state.isProcessed,
                             planner_password: this.state.plannerPassword,
-                            planner_email: this.state.plannerEmail,
-                            slot_capacities: this.state.slotCapacities,
+                            planner_email:    this.state.plannerEmail,
+                            slot_capacities:  this.state.slotCapacities,
                             results: this.state.results,
                             last_updated: new Date().toISOString()
                             // on_call_dates intentionally omitted — stored in oncall_dates table
@@ -1489,7 +1485,7 @@
                     localStorage.setItem('biddingYear', this.state.biddingYear.toString());
                     localStorage.setItem('isProcessed', JSON.stringify(this.state.isProcessed));
                     localStorage.setItem('plannerPassword', this.state.plannerPassword);
-                    localStorage.setItem('plannerEmail', this.state.plannerEmail || 'a_abdulqader@outlook.com');
+                    localStorage.setItem('plannerEmail',    this.state.plannerEmail || 'a_abdulqader@outlook.com');
                     localStorage.setItem('results', JSON.stringify(this.state.results));
                     localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
                     localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
@@ -1511,7 +1507,7 @@
                         this.state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
                         this.state.isProcessed = JSON.parse(localStorage.getItem('isProcessed') || 'false');
                         this.state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
-                        this.state.plannerEmail = localStorage.getItem('plannerEmail') || 'a_abdulqader@outlook.com';
+                        this.state.plannerEmail    = localStorage.getItem('plannerEmail')    || 'a_abdulqader@outlook.com';
                         this.state.results = JSON.parse(localStorage.getItem('results') || '[]');
                         this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
                         this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
@@ -3923,11 +3919,11 @@
                                 <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
                                     🔄 Refresh Bids Now
                                 </button>
-
-                                <button onclick="app.setActiveView('emailSettings')" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg font-semibold hover:bg-teal-600">
-                                    ⚙️ Email Settings (OTP & Notifications)
-                                </button>
                                 
+                                <button onclick="app.setActiveView('emailSettings')" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg font-semibold hover:bg-teal-600">
+                                    ⚙️ Email Settings (OTP &amp; Notifications)
+                                </button>
+
                                 <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
                                     🔄 Reset System
                                 </button>
@@ -4537,6 +4533,99 @@
                 alert('✅ Results exported to Excel file!');
             },
 
+            // ==================== EMAIL SETTINGS (Admin Only) ====================
+            renderEmailSettingsView() {
+                const content = document.getElementById('contentArea');
+                const svc = localStorage.getItem('ejs_service')  || '';
+                const tpl = localStorage.getItem('ejs_template') || '';
+                const key = localStorage.getItem('ejs_pubkey')   || '';
+                content.innerHTML = `
+                    <div class="max-w-lg mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-8">
+                            <h2 class="text-2xl font-bold mb-1">⚙️ Email Settings</h2>
+                            <p class="text-gray-500 text-sm mb-6">Configure EmailJS once here. Users never see this screen — these keys are used silently when sending OTP codes.</p>
+                            <div id="esMsg"></div>
+                            <div class="space-y-5">
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Planner Recovery Email</label>
+                                    <input type="email" id="esPlannerEmail" value="${this.state.plannerEmail || ''}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none text-sm" />
+                                    <p class="text-xs text-gray-400 mt-1">OTPs for Planner password recovery are sent here.</p>
+                                </div>
+                                <hr class="border-gray-200"/>
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">EmailJS Configuration</p>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Service ID</label>
+                                    <input type="text" id="esServiceId" placeholder="service_xxxxxxx" value="${svc}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Template ID</label>
+                                    <input type="text" id="esTemplateId" placeholder="template_xxxxxxx" value="${tpl}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                    <p class="text-xs text-gray-400 mt-1">Template must include: <code>{{to_email}}</code>, <code>{{to_name}}</code>, <code>{{otp_code}}</code></p>
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Public Key</label>
+                                    <input type="text" id="esPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" value="${key}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                </div>
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                                    <strong>How to set up EmailJS (free):</strong><br/>
+                                    1. Go to <a href="https://www.emailjs.com" target="_blank" class="underline">emailjs.com</a> and create an account.<br/>
+                                    2. Add your email service (Gmail, Outlook…).<br/>
+                                    3. Create a template with the variables above.<br/>
+                                    4. Copy your Service ID, Template ID, and Public Key here.
+                                </div>
+                            </div>
+                            <div class="flex gap-3 mt-7">
+                                <button onclick="app.doSaveEmailSettings()" class="flex-1 px-5 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 font-semibold">💾 Save</button>
+                                <button onclick="app.doTestOtpEmail()" class="flex-1 px-5 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold">🧪 Send Test OTP</button>
+                                <button onclick="app.setActiveView('admin')" class="px-5 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">← Back</button>
+                            </div>
+                        </div>
+                    </div>`;
+            },
+
+            doSaveEmailSettings() {
+                const email = document.getElementById('esPlannerEmail')?.value?.trim();
+                const svc   = document.getElementById('esServiceId')?.value?.trim();
+                const tpl   = document.getElementById('esTemplateId')?.value?.trim();
+                const key   = document.getElementById('esPublicKey')?.value?.trim();
+                const msg   = document.getElementById('esMsg');
+                if (email) this.state.plannerEmail   = email;
+                if (svc)   this.state.ejsServiceId   = svc;
+                if (tpl)   this.state.ejsTemplateId  = tpl;
+                if (key)   this.state.ejsPublicKey   = key;
+                localStorage.setItem('ejs_service',  svc  || '');
+                localStorage.setItem('ejs_template', tpl  || '');
+                localStorage.setItem('ejs_pubkey',   key  || '');
+                this.saveState();
+                try { this.saveConfigToSupabase(); } catch (e) {}
+                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Settings saved! OTP recovery is now active for all roles.</div>';
+            },
+
+            async doTestOtpEmail() {
+                const svc   = (document.getElementById('esServiceId')?.value    || '').trim();
+                const tpl   = (document.getElementById('esTemplateId')?.value   || '').trim();
+                const key   = (document.getElementById('esPublicKey')?.value    || '').trim();
+                const email = (document.getElementById('esPlannerEmail')?.value || '').trim();
+                const msg   = document.getElementById('esMsg');
+                if (!svc || !tpl || !key || !email) {
+                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-yellow-50 border-yellow-300 text-yellow-700 text-sm">⚠️ Please fill in all fields before sending a test.</div>';
+                    return;
+                }
+                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-sm">⏳ Sending test OTP…</div>';
+                try {
+                    emailjs.init(key);
+                    await emailjs.send(svc, tpl, { to_email: email, to_name: 'Planner', otp_code: '123456', employee_id: 'TEST', year: this.state.biddingYear });
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Test OTP (123456) sent to <strong>${email}</strong>. Check your inbox!</div>`;
+                } catch (err) {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-red-50 border-red-300 text-red-700 text-sm">❌ Failed: ${err?.text || err?.message || JSON.stringify(err)}</div>`;
+                }
+            },
+
+            // ==================== RESET SYSTEM ====================
             async resetSystem() {
                 if (confirm('⚠️ WARNING: This will reset ALL data including employees, bids, and results. Continue?')) {
                     this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
@@ -6418,11 +6507,6 @@
                             <div id="ppMsg"></div>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block font-semibold mb-2">Registered Recovery Email:</label>
-                                    <input type="email" id="ppEmail" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="e.g. a_abdulqader@outlook.com" value="${this.state.plannerEmail || 'a_abdulqader@outlook.com'}" />
-                                    <p class="text-xs text-gray-400 mt-1">This email is used to receive OTPs for password recovery.</p>
-                                </div>
-                                <div>
                                     <label class="block font-semibold mb-2">Current Password:</label>
                                     <input type="password" id="ppCurrent" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Enter current planner password" />
                                 </div>
@@ -6452,7 +6536,6 @@
                 const current = document.getElementById('ppCurrent').value;
                 const newPass = document.getElementById('ppNew').value;
                 const confirm = document.getElementById('ppConfirm').value;
-                const newEmail = (document.getElementById('ppEmail')?.value || '').trim();
                 const msg = document.getElementById('ppMsg');
 
                 const showMsg = (text, color) => {
@@ -6473,11 +6556,10 @@
                 }
 
                 this.state.plannerPassword = newPass;
-                if (newEmail) this.state.plannerEmail = newEmail;
 
                 try {
                     await this.saveConfigToSupabase();
-                    showMsg('✅ Planner password and recovery email updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
+                    showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
                 } catch (err) {
                     console.error('Planner password change error:', err);
                     showMsg('✅ Password updated locally. ⚠️ Database save failed.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
@@ -6488,369 +6570,92 @@
                 document.getElementById('ppConfirm').value = '';
             },
 
-            // ==================== EMAIL SETTINGS (Admin Only) ====================
-            renderEmailSettingsView() {
-                const content = document.getElementById('contentArea');
-                const savedSvc = localStorage.getItem('ejs_service') || '';
-                const savedTpl = localStorage.getItem('ejs_template') || '';
-                const savedKey = localStorage.getItem('ejs_pubkey') || '';
-                content.innerHTML = `
-                    <div class="max-w-lg mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-8">
-                            <h2 class="text-2xl font-bold mb-1">⚙️ Email Settings</h2>
-                            <p class="text-gray-500 text-sm mb-6">Configure EmailJS once here. These credentials are used to send OTP codes for password recovery and staff notifications. Users will never see this screen.</p>
-
-                            <div id="esMsg"></div>
-
-                            <div class="space-y-5">
-                                <div>
-                                    <label class="block font-semibold mb-1 text-sm">Planner Recovery Email</label>
-                                    <input type="email" id="esPlannerEmail" value="${this.state.plannerEmail || 'a_abdulqader@outlook.com'}"
-                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none text-sm" />
-                                    <p class="text-xs text-gray-400 mt-1">OTPs for planner password recovery are sent here.</p>
-                                </div>
-                                <hr class="border-gray-200"/>
-                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">EmailJS Configuration</p>
-                                <div>
-                                    <label class="block font-semibold mb-1 text-sm">Service ID</label>
-                                    <input type="text" id="esServiceId" placeholder="service_xxxxxxx" value="${savedSvc}"
-                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
-                                </div>
-                                <div>
-                                    <label class="block font-semibold mb-1 text-sm">Template ID</label>
-                                    <input type="text" id="esTemplateId" placeholder="template_xxxxxxx" value="${savedTpl}"
-                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
-                                    <p class="text-xs text-gray-400 mt-1">Template must include: <code>{{to_email}}</code>, <code>{{to_name}}</code>, <code>{{otp_code}}</code></p>
-                                </div>
-                                <div>
-                                    <label class="block font-semibold mb-1 text-sm">Public Key</label>
-                                    <input type="text" id="esPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" value="${savedKey}"
-                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
-                                </div>
-
-                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                                    <strong>How to set up EmailJS:</strong><br/>
-                                    1. Go to <a href="https://www.emailjs.com" target="_blank" class="underline">emailjs.com</a> and create a free account.<br/>
-                                    2. Add your email service (Gmail, Outlook, etc.).<br/>
-                                    3. Create an email template with the variables above.<br/>
-                                    4. Copy your Service ID, Template ID, and Public Key here.
-                                </div>
-                            </div>
-
-                            <div class="flex gap-3 mt-7">
-                                <button onclick="app.doSaveEmailSettings()" class="flex-1 px-5 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 font-semibold">
-                                    💾 Save Settings
-                                </button>
-                                <button onclick="app.doTestOtpEmail()" class="flex-1 px-5 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold">
-                                    🧪 Send Test OTP
-                                </button>
-                                <button onclick="app.setActiveView('admin')" class="px-5 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">
-                                    ← Back
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            },
-
-            doSaveEmailSettings() {
-                const plannerEmail = document.getElementById('esPlannerEmail')?.value?.trim();
-                const serviceId    = document.getElementById('esServiceId')?.value?.trim();
-                const templateId   = document.getElementById('esTemplateId')?.value?.trim();
-                const publicKey    = document.getElementById('esPublicKey')?.value?.trim();
-                const msg = document.getElementById('esMsg');
-
-                if (plannerEmail) {
-                    this.state.plannerEmail = plannerEmail;
-                    this.state.ejsServiceId  = serviceId;
-                    this.state.ejsTemplateId = templateId;
-                    this.state.ejsPublicKey  = publicKey;
-                }
-                localStorage.setItem('ejs_service',  serviceId);
-                localStorage.setItem('ejs_template', templateId);
-                localStorage.setItem('ejs_pubkey',   publicKey);
-                this.saveState();
-                try { this.saveConfigToSupabase(); } catch(e) {}
-                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Email settings saved successfully! OTP recovery is now active for all roles.</div>';
-            },
-
-            async doTestOtpEmail() {
-                const serviceId  = (document.getElementById('esServiceId')?.value || '').trim();
-                const templateId = (document.getElementById('esTemplateId')?.value || '').trim();
-                const publicKey  = (document.getElementById('esPublicKey')?.value || '').trim();
-                const toEmail    = (document.getElementById('esPlannerEmail')?.value || '').trim();
-                const msg = document.getElementById('esMsg');
-
-                if (!serviceId || !templateId || !publicKey || !toEmail) {
-                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-yellow-50 border-yellow-300 text-yellow-700 text-sm">⚠️ Please fill in all fields before sending a test.</div>';
-                    return;
-                }
-                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-sm">⏳ Sending test OTP…</div>';
-                try {
-                    emailjs.init(publicKey);
-                    await emailjs.send(serviceId, templateId, {
-                        to_email: toEmail, to_name: 'Planner', otp_code: '123456',
-                        employee_id: 'TEST', year: this.state.biddingYear
-                    });
-                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Test OTP (123456) sent to <strong>${toEmail}</strong>. Check your inbox!</div>`;
-                } catch(err) {
-                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-red-50 border-red-300 text-red-700 text-sm">❌ Failed: ${err?.text || err?.message || JSON.stringify(err)}</div>`;
-                }
-            },
-            _fpOtp: null,
-            _fpOtpExpiry: null,
-            _fpRole: null,
-            _fpIdentifier: null,
+            // ==================== FORGOT PASSWORD (OTP via EmailJS) ====================
+            // Internal OTP state — not part of app.state (no persistence needed)
+            _fpOtp: null, _fpOtpExpiry: null, _fpRole: null, _fpIdentifier: null,
 
             renderForgotPasswordView() {
-                let container = document.getElementById('fpOverlay');
-                if (!container) {
-                    container = document.createElement('div');
-                    container.id = 'fpOverlay';
-                    container.style.cssText = 'position:fixed;inset:0;background:rgba(8,28,21,0.82);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);';
-                    document.body.appendChild(container);
+                // Create full-screen modal overlay appended to body
+                let overlay = document.getElementById('fpOverlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'fpOverlay';
+                    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,28,21,0.82);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);';
+                    document.body.appendChild(overlay);
                 }
-                container.style.display = 'flex';
-                container.innerHTML = `
-                  <div style="background:#ffffff;border-radius:24px;padding:36px 32px;max-width:420px;width:95%;box-shadow:0 32px 80px rgba(0,0,0,0.5);position:relative;animation:cardReveal 0.35s cubic-bezier(0.16,1,0.3,1) both;color:#111827;font-family:Barlow,sans-serif;">
+                overlay.style.display = 'flex';
+                overlay.innerHTML = `
+                  <div style="background:#fff;border-radius:24px;padding:36px 32px;max-width:420px;width:95%;box-shadow:0 32px 80px rgba(0,0,0,0.5);position:relative;color:#111827;font-family:Barlow,sans-serif;">
                     <button onclick="app.closeForgotPasswordView()" style="position:absolute;top:16px;right:18px;background:rgba(0,0,0,0.06);border:none;width:32px;height:32px;border-radius:50%;font-size:1.1rem;cursor:pointer;color:#6b7280;line-height:32px;text-align:center;padding:0;">✕</button>
-
                     <div style="text-align:center;margin-bottom:24px;">
                       <div style="font-size:2.8rem;margin-bottom:8px;">🔐</div>
-                      <h2 style="font-size:1.5rem;font-weight:700;color:#111827;margin-bottom:4px;font-family:'Barlow Condensed',sans-serif;letter-spacing:.02em;">Password Recovery</h2>
-                      <p style="font-size:0.83rem;color:#6b7280;line-height:1.5;margin:0;">Enter your account details and an OTP will be sent to your registered email.</p>
+                      <h2 style="font-size:1.4rem;font-weight:700;color:#111827;margin-bottom:4px;">Password Recovery</h2>
+                      <p style="font-size:0.83rem;color:#6b7280;margin:0;">An OTP will be sent to your registered email.</p>
                     </div>
-
                     <div id="fpMsg"></div>
-
-                    <!-- STEP 1: Role + ID only -->
+                    <!-- Step 1 -->
                     <div id="fpStep1">
                       <div style="margin-bottom:14px;">
                         <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Account Type</label>
-                        <select id="fpRole" onchange="app._fpRoleChanged()" style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;background:#f9fafb;color:#111827;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E\");background-repeat:no-repeat;background-position:right 14px center;">
-                          <option value="employee" style="background:#ffffff;color:#111827;">👤 Employee</option>
-                          <option value="planner" style="background:#ffffff;color:#111827;">🗓️ Planner</option>
-                          <option value="goldencommand" style="background:#ffffff;color:#111827;">⭐ Golden Command</option>
-                          <option value="corporatestaff" style="background:#ffffff;color:#111827;">🏢 Corporate Staff</option>
+                        <select id="fpRole" onchange="app._fpRoleChanged()" style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;background:#f9fafb;color:#111827;outline:none;cursor:pointer;">
+                          <option value="employee">👤 Employee</option>
+                          <option value="planner">🗓️ Planner</option>
+                          <option value="goldencommand">⭐ Golden Command</option>
+                          <option value="corporatestaff">🏢 Corporate Staff</option>
                         </select>
                       </div>
-
-                      <div id="fpIdWrap" style="margin-bottom:18px;">
-                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;" id="fpIdLabel">Employee ID</label>
-                        <input type="text" id="fpId" style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;transition:border-color .2s;" placeholder="Enter your ID"
-                          onfocus="this.style.borderColor='#2d6a4f';this.style.background='#fff'"
-                          onblur="this.style.borderColor='#d1d5db';this.style.background='#f9fafb'" />
+                      <div id="fpIdWrap" style="margin-bottom:14px;">
+                        <label id="fpIdLabel" style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Employee ID</label>
+                        <input type="text" id="fpId" placeholder="Enter your ID"
+                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f';this.style.boxShadow='0 0 0 3px rgba(45,106,79,0.12)'"
+                          onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
                       </div>
-
-                      <div id="fpEmailPreview" style="display:none;margin-bottom:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:11px 14px;font-size:0.82rem;color:#166534;"></div>
-
-                      <button onclick="app.fpSendOtp()" id="fpSendBtn" style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;transition:opacity .2s;letter-spacing:.03em;">
+                      <div id="fpEmailPreview" style="display:none;margin-bottom:14px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:11px 14px;font-size:0.82rem;color:#166534;"></div>
+                      <button id="fpSendBtn" onclick="app.fpSendOtp()"
+                        style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;letter-spacing:.03em;">
                         📧 Send OTP to Email
                       </button>
-
-                      <p style="text-align:center;font-size:0.75rem;color:#9ca3af;margin-top:14px;">
-                        OTP expires in 10 minutes. Check your spam folder if not received.
-                      </p>
+                      <p style="text-align:center;font-size:0.75rem;color:#9ca3af;margin-top:12px;margin-bottom:0;">OTP expires in 10 minutes · Check spam if not received</p>
                     </div>
-
-                    <!-- STEP 2: OTP + new password -->
+                    <!-- Step 2 -->
                     <div id="fpStep2" style="display:none;">
-                      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:13px 14px;margin-bottom:18px;text-align:center;">
-                        <p style="font-size:0.85rem;color:#1e40af;line-height:1.5;" id="fpOtpSentMsg"></p>
+                      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:13px;margin-bottom:18px;text-align:center;">
+                        <p id="fpOtpSentMsg" style="font-size:0.85rem;color:#1e40af;line-height:1.5;margin:0;"></p>
                       </div>
-
                       <div style="margin-bottom:14px;">
                         <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">6-Digit OTP Code</label>
-                        <input type="text" id="fpOtpInput" maxlength="6" inputmode="numeric"
-                          style="width:100%;padding:15px 14px;border:2px solid #3b82f6;border-radius:12px;font-size:1.6rem;text-align:center;letter-spacing:.3em;color:#111827;outline:none;background:#f9fafb;"
-                          placeholder="• • • • • •"
-                          onfocus="this.style.background='#fff'" onblur="this.style.background='#f9fafb'" />
+                        <input type="text" id="fpOtpInput" maxlength="6" inputmode="numeric" placeholder="• • • • • •"
+                          style="width:100%;padding:15px;border:2px solid #3b82f6;border-radius:12px;font-size:1.6rem;text-align:center;letter-spacing:.3em;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;" />
                       </div>
-
                       <div style="margin-bottom:14px;">
-                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;" id="fpNewPwdLabel">New Password</label>
-                        <input type="password" id="fpNewPwd"
-                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;"
-                          placeholder="Enter new password"
-                          onfocus="this.style.borderColor='#2d6a4f';this.style.background='#fff'"
-                          onblur="this.style.borderColor='#d1d5db';this.style.background='#f9fafb'" />
+                        <label id="fpNewPwdLabel" style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">New Password</label>
+                        <input type="password" id="fpNewPwd" placeholder="Enter new password"
+                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#d1d5db'" />
                       </div>
-
                       <div style="margin-bottom:20px;">
                         <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Confirm New Password</label>
-                        <input type="password" id="fpConfirmPwd"
-                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;"
-                          placeholder="Confirm new password"
-                          onfocus="this.style.borderColor='#2d6a4f';this.style.background='#fff'"
-                          onblur="this.style.borderColor='#d1d5db';this.style.background='#f9fafb'" />
+                        <input type="password" id="fpConfirmPwd" placeholder="Confirm new password"
+                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#d1d5db'" />
                       </div>
-
-                      <button onclick="app.fpVerifyOtp()" style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;margin-bottom:10px;letter-spacing:.03em;">
+                      <button onclick="app.fpVerifyOtp()"
+                        style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;margin-bottom:10px;">
                         ✅ Verify & Reset Password
                       </button>
-                      <button onclick="app.fpGoBack()" style="width:100%;padding:11px;background:#f3f4f6;color:#374151;font-weight:600;font-size:0.88rem;border:none;border-radius:12px;cursor:pointer;">
+                      <button onclick="app.fpGoBack()"
+                        style="width:100%;padding:11px;background:#f3f4f6;color:#374151;font-weight:600;font-size:0.88rem;border:1.5px solid #e5e7eb;border-radius:12px;cursor:pointer;">
                         ← Try a Different Account
                       </button>
                     </div>
-                  </div>
-                `;
-
-                // Trigger role UI update
+                  </div>`;
                 setTimeout(() => this._fpRoleChanged(), 30);
             },
 
-            _fpRoleChanged() {
-                const role = document.getElementById('fpRole')?.value;
-                const idWrap = document.getElementById('fpIdWrap');
-                const idLabel = document.getElementById('fpIdLabel');
-                const emailPreview = document.getElementById('fpEmailPreview');
-                if (!role) return;
-                if (role === 'planner') {
-                    if (idWrap) idWrap.style.display = 'none';
-                    if (emailPreview) {
-                        const plannerEmail = this.state.plannerEmail || 'a_abdulqader@outlook.com';
-                        emailPreview.style.display = 'block';
-                        emailPreview.innerHTML = `📧 OTP will be sent to the registered planner email: <strong>${plannerEmail}</strong>`;
-                    }
-                } else {
-                    if (idWrap) idWrap.style.display = 'block';
-                    if (emailPreview) emailPreview.style.display = 'none';
-                    if (idLabel) {
-                        if (role === 'employee') idLabel.textContent = 'Employee ID';
-                        else if (role === 'goldencommand') idLabel.textContent = 'Golden Command ID';
-                        else if (role === 'corporatestaff') idLabel.textContent = 'Corporate Staff ID';
-                    }
-                }
-            },
-
-            _fpGetEmailForRole(role, identifier) {
-                if (role === 'planner') {
-                    return { email: this.state.plannerEmail || 'a_abdulqader@outlook.com', name: 'Planner' };
-                } else if (role === 'employee') {
-                    const emp = this.state.employees.find(e => e.id === identifier);
-                    if (!emp) return null;
-                    if (!emp.email) return { email: null, name: emp.name };
-                    return { email: emp.email, name: emp.name };
-                } else if (role === 'goldencommand') {
-                    const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === identifier);
-                    if (!gcUser) return null;
-                    const email = gcUser.email || this.state.plannerEmail; // fallback to planner email
-                    return { email, name: gcUser.name };
-                } else if (role === 'corporatestaff') {
-                    const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === identifier);
-                    if (!csUser) return null;
-                    const email = csUser.email || this.state.plannerEmail;
-                    return { email, name: csUser.name };
-                }
-                return null;
-            },
-
-            async fpSendOtp() {
-                const role = document.getElementById('fpRole')?.value;
-                const identifier = (document.getElementById('fpId')?.value || '').trim();
-                const msg = document.getElementById('fpMsg');
-                const btn = document.getElementById('fpSendBtn');
-
-                const showMsg = (text, type) => {
-                    const colors = {
-                        error: 'background:#fef2f2;border:1px solid #fecaca;color:#991b1b',
-                        warn:  'background:#fffbeb;border:1px solid #fcd34d;color:#92400e',
-                        info:  'background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af'
-                    };
-                    msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${colors[type]||colors.info}">${text}</div>`;
-                };
-
-                // Validate identifier for non-planner roles
-                if (role !== 'planner' && !identifier) {
-                    showMsg('⚠️ Please enter your ID.', 'warn');
-                    return;
-                }
-
-                const target = this._fpGetEmailForRole(role, identifier);
-                if (target === null) {
-                    showMsg('❌ ID not found. Please check your ID or contact the planner.', 'error');
-                    return;
-                }
-                if (!target.email) {
-                    showMsg('❌ No email address is registered for this account. Please contact the planner to add your email.', 'error');
-                    return;
-                }
-
-                // Retrieve saved EmailJS keys (set once by admin in the admin panel)
-                const serviceId  = localStorage.getItem('ejs_service')  || this.state.ejsServiceId  || '';
-                const templateId = localStorage.getItem('ejs_template') || this.state.ejsTemplateId || '';
-                const publicKey  = localStorage.getItem('ejs_pubkey')   || this.state.ejsPublicKey  || '';
-
-                // Generate 6-digit OTP
-                const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                this._fpOtp       = otp;
-                this._fpOtpExpiry = Date.now() + 10 * 60 * 1000; // 10 min
-                this._fpRole      = role;
-                this._fpIdentifier = identifier;
-
-                // Disable button and show spinner
-                if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; btn.style.opacity = '0.7'; }
-                showMsg('⏳ Sending OTP to your registered email…', 'info');
-
-                let sent = false;
-
-                // Method 1: Supabase Edge Function (if available) — no keys needed
-                if (!sent && this.supabase) {
-                    try {
-                        const { error } = await this.supabase.functions.invoke('send-otp-email', {
-                            body: {
-                                to_email:    target.email,
-                                to_name:     target.name,
-                                otp_code:    otp,
-                                employee_id: identifier || 'planner',
-                                year:        this.state.biddingYear
-                            }
-                        });
-                        if (!error) sent = true;
-                        else console.warn('Supabase function error:', error);
-                    } catch(e) {
-                        console.warn('Supabase edge function not available:', e);
-                    }
-                }
-
-                // Method 2: EmailJS with admin-saved keys
-                if (!sent && serviceId && templateId && publicKey) {
-                    try {
-                        emailjs.init(publicKey);
-                        await emailjs.send(serviceId, templateId, {
-                            to_email:    target.email,
-                            to_name:     target.name,
-                            otp_code:    otp,
-                            employee_id: identifier || 'planner',
-                            year:        this.state.biddingYear
-                        });
-                        sent = true;
-                    } catch(err) {
-                        console.error('EmailJS send failed:', err);
-                    }
-                }
-
-                // Re-enable button
-                if (btn) { btn.disabled = false; btn.innerHTML = '📧 Send OTP to Email'; btn.style.opacity = '1'; }
-
-                if (!sent) {
-                    showMsg(`❌ Could not send OTP email. EmailJS is not configured yet — please ask the planner to set up email in the Admin Panel → Email Settings, then try again.`, 'error');
-                    return;
-                }
-
-                // Move to Step 2
-                msg.innerHTML = '';
-                document.getElementById('fpStep1').style.display = 'none';
-                document.getElementById('fpStep2').style.display = 'block';
-                const maskedEmail = target.email.replace(/(.{2})(.+?)(@.+)$/, (_, a, b, c) => a + '*'.repeat(Math.min(b.length, 5)) + c);
-                document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${maskedEmail}</strong>.<br>Please check your inbox (and spam folder). Expires in 10 minutes.`;
-
-                const newPwdLabel = document.getElementById('fpNewPwdLabel');
-                if (newPwdLabel) {
-                    newPwdLabel.textContent = role === 'employee'
-                        ? 'New Password (leave blank to reset to your Employee ID)'
-                        : 'New Password';
-                }
+            closeForgotPasswordView() {
+                const overlay = document.getElementById('fpOverlay');
+                if (overlay) overlay.style.display = 'none';
             },
 
             fpGoBack() {
@@ -6859,105 +6664,153 @@
                 document.getElementById('fpMsg').innerHTML = '';
             },
 
-            async fpVerifyOtp() {
-                const otpInput = (document.getElementById('fpOtpInput')?.value || '').trim();
-                const newPwd = (document.getElementById('fpNewPwd')?.value || '').trim();
-                const confirmPwd = (document.getElementById('fpConfirmPwd')?.value || '').trim();
-                const msg = document.getElementById('fpMsg');
+            _fpRoleChanged() {
+                const role = document.getElementById('fpRole')?.value;
+                const idWrap = document.getElementById('fpIdWrap');
+                const idLabel = document.getElementById('fpIdLabel');
+                const preview = document.getElementById('fpEmailPreview');
+                if (!role) return;
+                if (role === 'planner') {
+                    idWrap.style.display = 'none';
+                    preview.style.display = 'block';
+                    preview.innerHTML = `📧 OTP will be sent to: <strong>${this.state.plannerEmail}</strong>`;
+                } else {
+                    idWrap.style.display = 'block';
+                    preview.style.display = 'none';
+                    const labels = { employee: 'Employee ID', goldencommand: 'Golden Command ID', corporatestaff: 'Corporate Staff ID' };
+                    idLabel.textContent = labels[role] || 'ID';
+                }
+            },
 
-                const showMsg = (text, type) => {
-                    const colors = {
-                        error: 'background:#fef2f2;border:1px solid #fecaca;color:#991b1b',
-                        warn: 'background:#fffbeb;border:1px solid #fcd34d;color:#92400e',
-                        success: 'background:#f0fdf4;border:1px solid #bbf7d0;color:#166534'
-                    };
-                    msg.innerHTML = `<div style="padding:10px 12px;border-radius:8px;font-size:0.82rem;margin-bottom:12px;${colors[type]||colors.success}">${text}</div>`;
+            _fpGetEmailForRole(role, id) {
+                if (role === 'planner')
+                    return { email: this.state.plannerEmail, name: 'Planner' };
+                if (role === 'employee') {
+                    const emp = this.state.employees.find(e => e.id === id);
+                    if (!emp) return null;
+                    return { email: emp.email || this.state.plannerEmail, name: emp.name };
+                }
+                if (role === 'goldencommand') {
+                    const u = (this.state.goldenCommandUsers || []).find(u => u.id === id);
+                    if (!u) return null;
+                    return { email: u.email || this.state.plannerEmail, name: u.name };
+                }
+                if (role === 'corporatestaff') {
+                    const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                    if (!u) return null;
+                    return { email: u.email || this.state.plannerEmail, name: u.name };
+                }
+                return null;
+            },
+
+            async fpSendOtp() {
+                const role       = document.getElementById('fpRole')?.value;
+                const identifier = (document.getElementById('fpId')?.value || '').trim();
+                const btn        = document.getElementById('fpSendBtn');
+                const msg        = document.getElementById('fpMsg');
+                const showMsg    = (text, type) => {
+                    const s = { error:'background:#fef2f2;border:1px solid #fecaca;color:#991b1b', warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e', info:'background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af' };
+                    msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.info}">${text}</div>`;
                 };
 
-                if (!this._fpOtp) {
-                    showMsg('❌ Session expired. Please start again.', 'error');
+                if (role !== 'planner' && !identifier) { showMsg('⚠️ Please enter your ID.', 'warn'); return; }
+
+                const target = this._fpGetEmailForRole(role, identifier);
+                if (!target)       { showMsg('❌ ID not found. Please check and try again.', 'error'); return; }
+                if (!target.email) { showMsg('❌ No email registered for this account. Contact the planner.', 'error'); return; }
+
+                // Retrieve EmailJS keys saved by admin
+                const svcId  = localStorage.getItem('ejs_service')  || this.state.ejsServiceId  || '';
+                const tplId  = localStorage.getItem('ejs_template') || this.state.ejsTemplateId || '';
+                const pubKey = localStorage.getItem('ejs_pubkey')   || this.state.ejsPublicKey  || '';
+
+                // Generate OTP
+                const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                this._fpOtp       = otp;
+                this._fpOtpExpiry = Date.now() + 10 * 60 * 1000;
+                this._fpRole      = role;
+                this._fpIdentifier = identifier;
+
+                if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; btn.style.opacity = '.7'; }
+                showMsg('⏳ Sending OTP to your registered email…', 'info');
+
+                let sent = false;
+
+                // Method 1 — EmailJS (admin-configured keys)
+                if (!sent && svcId && tplId && pubKey) {
+                    try {
+                        emailjs.init(pubKey);
+                        await emailjs.send(svcId, tplId, {
+                            to_email: target.email, to_name: target.name,
+                            otp_code: otp, employee_id: identifier || 'planner',
+                            year: this.state.biddingYear
+                        });
+                        sent = true;
+                    } catch (err) { console.error('EmailJS error:', err); }
+                }
+
+                if (btn) { btn.disabled = false; btn.innerHTML = '📧 Send OTP to Email'; btn.style.opacity = '1'; }
+
+                if (!sent) {
+                    showMsg('❌ Could not send OTP. Ask the planner to configure Email Settings in the Admin Panel first.', 'error');
                     return;
                 }
-                if (Date.now() > this._fpOtpExpiry) {
-                    showMsg('❌ OTP has expired (10-minute limit). Please request a new one.', 'error');
-                    this._fpOtp = null;
-                    return;
-                }
-                if (otpInput !== this._fpOtp) {
-                    showMsg('❌ Incorrect OTP. Please check your email and try again.', 'error');
-                    return;
-                }
+
+                msg.innerHTML = '';
+                document.getElementById('fpStep1').style.display = 'none';
+                document.getElementById('fpStep2').style.display = 'block';
+                const masked = target.email.replace(/(.{2})(.+?)(@.+)$/, (_, a, b, c) => a + '*'.repeat(Math.min(b.length, 5)) + c);
+                document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${masked}</strong>.<br>Check your inbox and spam. Expires in 10 minutes.`;
+                document.getElementById('fpNewPwdLabel').textContent =
+                    role === 'employee' ? 'New Password (leave blank to reset to Employee ID)' : 'New Password';
+            },
+
+            async fpVerifyOtp() {
+                const otp     = (document.getElementById('fpOtpInput')?.value   || '').trim();
+                const newPwd  = (document.getElementById('fpNewPwd')?.value     || '').trim();
+                const confirm = (document.getElementById('fpConfirmPwd')?.value || '').trim();
+                const msg     = document.getElementById('fpMsg');
+                const showMsg = (text, type) => {
+                    const s = { error:'background:#fef2f2;border:1px solid #fecaca;color:#991b1b', warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e', ok:'background:#f0fdf4;border:1px solid #86efac;color:#166534' };
+                    msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.ok}">${text}</div>`;
+                };
+
+                if (!otp)                              { showMsg('⚠️ Please enter the OTP code.', 'warn'); return; }
+                if (!this._fpOtp)                      { showMsg('❌ Session expired. Please start again.', 'error'); return; }
+                if (Date.now() > this._fpOtpExpiry)    { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
+                if (otp !== this._fpOtp)               { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
+                if (newPwd && newPwd !== confirm)      { showMsg('❌ Passwords do not match.', 'error'); return; }
+                if (newPwd && newPwd.length < 4)       { showMsg('⚠️ Password must be at least 4 characters.', 'warn'); return; }
 
                 const role = this._fpRole;
-                const identifier = this._fpIdentifier;
+                const id   = this._fpIdentifier;
 
-                // Determine effective new password
-                let effectivePassword = newPwd;
-                if (role === 'employee' && !newPwd) {
-                    effectivePassword = identifier; // reset to employee ID
-                }
-                if (role !== 'employee' && !newPwd) {
-                    showMsg('⚠️ Please enter a new password.', 'warn');
-                    return;
-                }
-                if (newPwd && newPwd !== confirmPwd) {
-                    showMsg('❌ Passwords do not match.', 'error');
-                    return;
-                }
-                if (newPwd && newPwd.length < 4) {
-                    showMsg('⚠️ Password must be at least 4 characters.', 'warn');
-                    return;
-                }
-
-                // Apply password reset
                 if (role === 'employee') {
-                    this.state.employeePasswords[identifier] = effectivePassword;
-                    this.saveState();
-                    try {
-                        if (this.supabase) await this.supabase.from('employees').update({ password: effectivePassword }).eq('id', identifier);
-                    } catch(e) { console.warn('DB update failed:', e); }
-                    const emp = this.state.employees.find(e => e.id === identifier);
-                    showMsg(`✅ Password for <strong>${emp?.name || identifier}</strong> has been reset successfully. You can now log in.`, 'success');
+                    const finalPwd = newPwd || id;
+                    this.state.employeePasswords[id] = finalPwd;
+                    try { if (this.supabase) await this.supabase.from('employees').update({ password: finalPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
                 } else if (role === 'planner') {
-                    this.state.plannerPassword = effectivePassword;
-                    this.saveState();
-                    try { await this.saveConfigToSupabase(); } catch(e) { console.warn('DB update failed:', e); }
-                    showMsg('✅ Planner password has been reset successfully. You can now log in.', 'success');
+                    this.state.plannerPassword = newPwd;
+                    try { await this.saveConfigToSupabase(); } catch (e) { console.warn(e); }
                 } else if (role === 'goldencommand') {
-                    const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === identifier);
-                    if (gcUser) {
-                        gcUser.password = effectivePassword;
-                        this.saveState();
-                        try { await this.saveConfigToSupabase(); } catch(e) { console.warn('DB update failed:', e); }
-                    }
-                    showMsg('✅ Golden Command password has been reset successfully. You can now log in.', 'success');
+                    const u = (this.state.goldenCommandUsers || []).find(u => u.id === id);
+                    if (u) u.password = newPwd;
                 } else if (role === 'corporatestaff') {
-                    const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === identifier);
-                    if (csUser) {
-                        csUser.password = effectivePassword;
-                        this.saveState();
-                        try { await this.saveConfigToSupabase(); } catch(e) { console.warn('DB update failed:', e); }
-                    }
-                    showMsg('✅ Corporate Staff password has been reset successfully. You can now log in.', 'success');
+                    const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                    if (u) u.password = newPwd;
                 }
 
-                // Clear OTP state
-                this._fpOtp = null;
-                this._fpOtpExpiry = null;
+                this.saveState();
+                // Clear OTP session
+                this._fpOtp = null; this._fpOtpExpiry = null; this._fpRole = null; this._fpIdentifier = null;
 
-                // Auto-close after 3 seconds
+                showMsg('✅ Password reset successfully! You can now log in with your new password.', 'ok');
                 setTimeout(() => this.closeForgotPasswordView(), 3000);
             },
 
-            closeForgotPasswordView() {
-                const overlay = document.getElementById('fpOverlay');
-                if (overlay) overlay.style.display = 'none';
-            },
-
-            async doForgotPassword() {
-                // Legacy stub — redirects to new flow
-                this.renderForgotPasswordView();
-            },
+            // Legacy stub — kept so any old references don't crash
+            async doForgotPassword() { this.renderForgotPasswordView(); },
 
             showLoginView() {
                 const loginView = document.getElementById('loginView');
