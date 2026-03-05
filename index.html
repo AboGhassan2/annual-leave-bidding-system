@@ -3042,6 +3042,42 @@
                                 <span class="text-3xl">🏢</span>
                                 <h2 class="text-2xl font-bold">Corporate Staff — ${csUser.name} — Leave Bidding ${this.state.biddingYear}</h2>
                             </div>
+
+                            ${(() => {
+                                const myOnCall = this.state.onCallDates[csUser.id] || [];
+                                if (myOnCall.length === 0) return '';
+                                const sorted = [...myOnCall].sort();
+                                // Group into week blocks
+                                const weekGroups = {};
+                                sorted.forEach(d => {
+                                    const dt = new Date(d + 'T00:00:00');
+                                    const day = dt.getDay();
+                                    const ws = new Date(dt);
+                                    ws.setDate(dt.getDate() - day);
+                                    const key = ws.getFullYear() + '-' + String(ws.getMonth()+1).padStart(2,'0') + '-' + String(ws.getDate()).padStart(2,'0');
+                                    if (!weekGroups[key]) weekGroups[key] = [];
+                                    weekGroups[key].push(d);
+                                });
+                                const getWN = (ds) => {
+                                    const dt2 = new Date(ds + 'T00:00:00');
+                                    const j1 = new Date(dt2.getFullYear(), 0, 1);
+                                    const j1d = j1.getDay();
+                                    const w1s = new Date(j1); w1s.setDate(j1.getDate() - j1d);
+                                    const wn = Math.floor((dt2 - w1s) / (7*24*60*60*1000)) + 1;
+                                    return wn >= 53 ? 1 : wn;
+                                };
+                                const chips = Object.entries(weekGroups).map(([, wDates]) => {
+                                    const wNum = getWN(wDates[0]);
+                                    const label = wDates.length >= 7
+                                        ? `Week ${wNum} (${wDates[0]} → ${wDates[wDates.length-1]})`
+                                        : `Week ${wNum} — ${wDates.join(', ')}`;
+                                    return `<span class="inline-block bg-red-100 text-red-700 border border-red-300 text-xs font-semibold px-2 py-1 rounded whitespace-nowrap">${label}</span>`;
+                                }).join('');
+                                return `<div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                                    <p class="font-bold text-red-800 text-sm mb-2">🚫 Your On-Call Dates (leave cannot be selected on these dates):</p>
+                                    <div class="flex flex-wrap gap-1">${chips}</div>
+                                </div>`;
+                            })()}
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
                                     <p class="text-2xl font-bold text-blue-800">${entitlement}</p>
@@ -3133,9 +3169,11 @@
                                             <label class="block text-sm font-semibold mb-1">End Date <span class="text-gray-400 font-normal">(auto)</span></label>
                                             <input type="date" id="csEndDate"
                                                 class="w-full px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-50"
+                                                onchange="app._csCheckOnCallWarning()"
                                                 readonly />
                                         </div>
                                     </div>
+                                    <div id="csOnCallWarning" class="mt-1 text-sm"></div>
                                 </div>
 
                                 <button onclick="app.submitCSBid()"
@@ -3222,6 +3260,7 @@
                     endInput.value = '';
                     endInput.removeAttribute('readonly');
                     endInput.classList.remove('bg-gray-50');
+                    this._csCheckOnCallWarning();
                     return;
                 }
                 const slot = this.state.slotTypes.find(s => s.id === window.csSelectedSlot);
@@ -3232,6 +3271,29 @@
                 endInput.value = end.toISOString().split('T')[0];
                 endInput.setAttribute('readonly', true);
                 endInput.classList.add('bg-gray-50');
+                this._csCheckOnCallWarning();
+            },
+
+            _csCheckOnCallWarning() {
+                const warningEl = document.getElementById('csOnCallWarning');
+                if (!warningEl) return;
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) return;
+                const onCallSet = new Set(this.state.onCallDates[csUser.id] || []);
+                const startVal = document.getElementById('csStartDate')?.value;
+                const endVal = document.getElementById('csEndDate')?.value;
+                if (onCallSet.size === 0 || !startVal || !endVal) { warningEl.innerHTML = ''; return; }
+                const conflicts = [];
+                const cur = new Date(startVal + 'T00:00:00');
+                const endD = new Date(endVal + 'T00:00:00');
+                while (cur <= endD) {
+                    const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                    if (onCallSet.has(iso)) conflicts.push(iso);
+                    cur.setDate(cur.getDate() + 1);
+                }
+                warningEl.innerHTML = conflicts.length > 0
+                    ? `<p class="font-semibold text-red-700 mt-2">🚫 On-Call conflict on: ${conflicts.join(', ')}</p>`
+                    : `<p class="text-green-700 text-sm mt-1">✅ No On-Call conflicts in this range</p>`;
             },
 
             submitCSBid() {
@@ -3264,6 +3326,24 @@
                 for (const bid of csBids) {
                     if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
                         alert(`Date overlap with an existing bid (${bid.startDate} → ${bid.endDate}).`);
+                        return;
+                    }
+                }
+
+                // ── On-Call Conflict Check ────────────────────────────────────
+                const onCallDatesForCS = new Set(this.state.onCallDates[csUser.id] || []);
+                if (onCallDatesForCS.size > 0) {
+                    const conflictingOnCallDates = [];
+                    const cur = new Date(startDate + 'T00:00:00');
+                    const end2 = new Date(endDate + 'T00:00:00');
+                    while (cur <= end2) {
+                        const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                        if (onCallDatesForCS.has(iso)) conflictingOnCallDates.push(iso);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                    if (conflictingOnCallDates.length > 0) {
+                        const conflictList = conflictingOnCallDates.join(', ');
+                        alert(`⚠️ On-Call Conflict Detected!\n\nYour selected leave period (${startDate} → ${endDate}) overlaps with your scheduled On-Call duties on the following date${conflictingOnCallDates.length > 1 ? 's' : ''}:\n\n${conflictList}\n\nPlease choose dates that do not conflict with your On-Call schedule.`);
                         return;
                     }
                 }
@@ -5874,248 +5954,264 @@
                 const content = document.getElementById('contentArea');
                 const onCallDates = this.state.onCallDates || {};
                 const year = this.state.biddingYear;
-
-                // Get all staff names from GC users + look up employees
                 const gcUsers = this.state.goldenCommandUsers || [];
+                const csUsers = this.state.corporateStaffUsers || [];
 
-                // Build staff list combining GC users + any onCallDates keys that may be freestanding
-                const staffIds = new Set([
-                    ...gcUsers.map(u => u.id),
-                    ...Object.keys(onCallDates)
-                ]);
+                if (!window._ocTab) window._ocTab = 'gc';
 
                 const getStaffName = (id) => {
-                    const gc = gcUsers.find(u => u.id === id);
-                    if (gc) return gc.name;
-                    const emp = (this.state.employees || []).find(e => e.id === id);
-                    if (emp) return emp.name;
+                    const gc = gcUsers.find(u => u.id === id); if (gc) return gc.name;
+                    const cs = csUsers.find(u => u.id === id); if (cs) return cs.name;
+                    const emp = (this.state.employees || []).find(e => e.id === id); if (emp) return emp.name;
                     return id;
                 };
 
-                // Compute which week number a date string belongs to (max 52 — week 53 = week 1 of next year)
                 const getWeekNum = (dateStr) => {
                     const dt = new Date(dateStr + 'T00:00:00');
                     const jan1 = new Date(dt.getFullYear(), 0, 1);
-                    const jan1Day = jan1.getDay();
-                    const week1Sun = new Date(jan1);
-                    week1Sun.setDate(jan1.getDate() - jan1Day);
-                    const diffMs = dt - week1Sun;
-                    const wn = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
-                    return wn >= 53 ? 1 : wn; // week 53 is really week 1 of the next year
+                    const week1Sun = new Date(jan1); week1Sun.setDate(jan1.getDate() - jan1.getDay());
+                    const wn = Math.floor((dt - week1Sun) / (7*24*60*60*1000)) + 1;
+                    return wn >= 53 ? 1 : wn;
                 };
 
-                // ── Coverage & Overlap Audit ─────────────────────────────────────
-                // Build a map: dateStr → [empId, ...] for all staff
-                // Normalize all dates to YYYY-MM-DD in case of timezone suffix from Supabase
-                const dateOwners = {};
-                [...staffIds].forEach(id => {
-                    (onCallDates[id] || []).forEach(raw => {
-                        const d = String(raw).substring(0, 10);
-                        if (!dateOwners[d]) dateOwners[d] = [];
-                        dateOwners[d].push(id);
+                const buildAudit = (ids) => {
+                    const dateOwners = {};
+                    ids.forEach(id => {
+                        (onCallDates[id] || []).forEach(raw => {
+                            const d = String(raw).substring(0,10);
+                            if (!dateOwners[d]) dateOwners[d] = [];
+                            dateOwners[d].push(id);
+                        });
                     });
-                });
-
-                // Collect all weeks in the year — always Week 1 through Week 52 only
-                const allWeeks = [];
-                for (let w = 1; w <= 52; w++) {
-                    const r = this.weekNumberToDateRange(w, year);
-                    allWeeks.push({ week: w, from: r.from, to: r.to });
-                }
-
-                // For each week, check coverage and overlaps
-                const uncoveredWeeks = [];
-                const overlappingWeeks = [];
-                allWeeks.forEach(({ week, from, to }) => {
-                    const cur = new Date(from + 'T00:00:00');
-                    const end = new Date(to   + 'T00:00:00');
-                    const fmtD = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-                    let covered = false;
-                    let overlapping = false;
-                    while (cur <= end) {
-                        const iso = fmtD(cur);
-                        const owners = dateOwners[iso] || [];
-                        if (owners.length > 0) covered = true;
-                        if (owners.length > 1) overlapping = true;
-                        cur.setDate(cur.getDate() + 1);
+                    const uncovered = [], overlapping = [];
+                    for (let w = 1; w <= 52; w++) {
+                        const r = this.weekNumberToDateRange(w, year);
+                        const cur = new Date(r.from + 'T00:00:00'), end = new Date(r.to + 'T00:00:00');
+                        const fmt = d2 => d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');
+                        let covered = false, overlap = false;
+                        while (cur <= end) {
+                            const iso = fmt(cur); const owners = dateOwners[iso] || [];
+                            if (owners.length > 0) covered = true;
+                            if (owners.length > 1) overlap  = true;
+                            cur.setDate(cur.getDate() + 1);
+                        }
+                        if (!covered) uncovered.push(w);
+                        if (overlap)  overlapping.push(w);
                     }
-                    if (!covered) uncoveredWeeks.push(week);
-                    if (overlapping) overlappingWeeks.push(week);
-                });
+                    return { dateOwners, uncovered, overlapping };
+                };
 
-                const auditBanner = `
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div class="rounded-xl p-4 border ${uncoveredWeeks.length === 0 ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="text-lg">${uncoveredWeeks.length === 0 ? '✅' : '⚠️'}</span>
-                            <span class="font-bold text-sm ${uncoveredWeeks.length === 0 ? 'text-green-800' : 'text-red-800'}">
-                                Coverage — ${uncoveredWeeks.length === 0 ? 'All weeks covered' : uncoveredWeeks.length + ' week(s) not covered'}
-                            </span>
+                const renderAuditBanner = (audit) => {
+                    const { uncovered, overlapping } = audit;
+                    const cov = uncovered.length === 0, ovl = overlapping.length === 0;
+                    return `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="rounded-xl p-4 border ${cov ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-lg">${cov ? '✅' : '⚠️'}</span>
+                                <span class="font-bold text-sm ${cov ? 'text-green-800' : 'text-red-800'}">Coverage — ${cov ? 'All weeks covered' : uncovered.length + ' week(s) not covered'}</span>
+                            </div>
+                            ${cov ? `<p class="text-xs text-green-700">Every week in ${year} has at least one staff member assigned.</p>`
+                                   : `<p class="text-xs text-red-700 mb-1">Weeks with no On-Call assignment:</p><div class="flex flex-wrap gap-1">${uncovered.map(w => `<span class="bg-red-200 text-red-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`}
                         </div>
-                        ${uncoveredWeeks.length === 0
-                            ? `<p class="text-xs text-green-700">Every week in ${year} has at least one GC assigned.</p>`
-                            : `<p class="text-xs text-red-700 mb-1">The following weeks have no On-Call assignment:</p>
-                               <div class="flex flex-wrap gap-1">${uncoveredWeeks.map(w => `<span class="bg-red-200 text-red-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`
-                        }
-                    </div>
-                    <div class="rounded-xl p-4 border ${overlappingWeeks.length === 0 ? 'bg-green-50 border-green-300' : 'bg-orange-50 border-orange-300'}">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="text-lg">${overlappingWeeks.length === 0 ? '✅' : '⚠️'}</span>
-                            <span class="font-bold text-sm ${overlappingWeeks.length === 0 ? 'text-green-800' : 'text-orange-800'}">
-                                Overlaps — ${overlappingWeeks.length === 0 ? 'No overlapping weeks' : overlappingWeeks.length + ' week(s) overlap'}
-                            </span>
+                        <div class="rounded-xl p-4 border ${ovl ? 'bg-green-50 border-green-300' : 'bg-orange-50 border-orange-300'}">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-lg">${ovl ? '✅' : '⚠️'}</span>
+                                <span class="font-bold text-sm ${ovl ? 'text-green-800' : 'text-orange-800'}">Overlaps — ${ovl ? 'No overlapping weeks' : overlapping.length + ' week(s) overlap'}</span>
+                            </div>
+                            ${ovl ? `<p class="text-xs text-green-700">No two staff members share the same On-Call dates.</p>`
+                                   : `<p class="text-xs text-orange-700 mb-1">Multiple staff assigned on same dates:</p><div class="flex flex-wrap gap-1">${overlapping.map(w => `<span class="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`}
                         </div>
-                        ${overlappingWeeks.length === 0
-                            ? `<p class="text-xs text-green-700">No two GC users share the same On-Call dates.</p>`
-                            : `<p class="text-xs text-orange-700 mb-1">Multiple GC users assigned on same dates:</p>
-                               <div class="flex flex-wrap gap-1">${overlappingWeeks.map(w => `<span class="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`
-                        }
-                    </div>
-                </div>`;
+                    </div>`;
+                };
 
-                const renderStaffRows = () => [...staffIds].map(id => {
+                const renderCard = (id, dateOwners, isGCPanel) => {
                     const dates = (onCallDates[id] || []).slice().sort();
-                    // Group into week blocks (consecutive 7-day groups starting on Sunday)
                     const grouped = {};
                     dates.forEach(d => {
                         const dt = new Date(d + 'T00:00:00');
-                        const day = dt.getDay();
-                        const weekStart = new Date(dt);
-                        weekStart.setDate(dt.getDate() - day);
-                        const key = weekStart.getFullYear() + '-' + String(weekStart.getMonth()+1).padStart(2,'0') + '-' + String(weekStart.getDate()).padStart(2,'0');
+                        const ws = new Date(dt); ws.setDate(dt.getDate() - dt.getDay());
+                        const key = ws.getFullYear()+'-'+String(ws.getMonth()+1).padStart(2,'0')+'-'+String(ws.getDate()).padStart(2,'0');
                         if (!grouped[key]) grouped[key] = [];
                         grouped[key].push(d);
                     });
-
+                    const chipBase  = isGCPanel ? 'bg-yellow-50 border-yellow-300 text-yellow-800' : 'bg-blue-50 border-blue-300 text-blue-800';
+                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
+                    const inputBdr  = isGCPanel ? 'border-yellow-300 focus:border-yellow-500' : 'border-blue-300 focus:border-blue-500';
+                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-200' : 'bg-blue-100 border-blue-200';
+                    const pfx       = isGCPanel ? 'gc' : 'cs';
                     const dateChips = dates.length === 0
                         ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
-                        : Object.entries(grouped).map(([weekStartKey, wDates]) => {
+                        : Object.entries(grouped).map(([, wDates]) => {
                             const wNum = getWeekNum(wDates[0]);
-                            const isOverlap = wDates.some(d => (dateOwners[d] || []).length > 1);
-                            const chipColor = isOverlap
-                                ? 'bg-orange-100 text-orange-800 border-orange-300'
-                                : 'bg-red-100 text-red-700 border-red-200';
-                            const label = wDates.length >= 7
+                            const isOv = wDates.some(d2 => (dateOwners[d2] || []).length > 1);
+                            const cc   = isOv ? 'bg-orange-100 text-orange-800 border-orange-300' : chipBase;
+                            const lbl  = wDates.length >= 7
                                 ? `Week ${wNum} (${wDates[0]} → ${wDates[wDates.length-1]})`
                                 : `Week ${wNum} — ${wDates.join(', ')}`;
-                            const overlapIcon = isOverlap ? ' ⚠️' : '';
                             return `<div class="flex items-center gap-2 flex-wrap mb-1">
-                                <span class="inline-block ${chipColor} text-xs font-semibold px-2 py-1 rounded border whitespace-nowrap">${label}${overlapIcon}</span>
+                                <span class="inline-block ${cc} text-xs font-semibold px-2 py-1 rounded border whitespace-nowrap">${lbl}${isOv?' ⚠️':''}</span>
                                 <button onclick="app.deleteOnCallBlock('${id}','${wDates[0]}','${wDates[wDates.length-1]}')"
                                     class="text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap">🗑 Delete block</button>
                             </div>`;
                         }).join('');
-
                     return `
-                    <div class="bg-white rounded-xl shadow border border-gray-100 p-5 mb-4" id="staff-card-${id}">
+                    <div class="bg-white rounded-xl shadow border ${isGCPanel?'border-yellow-200':'border-blue-200'} p-5 mb-4" id="staff-card-${id}">
                         <div class="flex items-center justify-between mb-3">
                             <div>
                                 <p class="font-bold text-gray-800">${getStaffName(id)}</p>
                                 <p class="text-xs text-gray-400">ID: ${id}</p>
                             </div>
-                            <span class="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">${dates.length} date${dates.length !== 1 ? 's' : ''}</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">${dates.length} date${dates.length!==1?'s':''}</span>
+                                <button onclick="app.removeFromOnCallList('${id}','${pfx}')"
+                                    class="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition">✕ Remove</button>
+                            </div>
                         </div>
-
                         <div class="mb-4">${dateChips}</div>
-
-                        <!-- Add dates form -->
                         <details class="mt-2">
                             <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 select-none">➕ Add On-Call dates for this person</summary>
-                            <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                                <!-- Mode toggle -->
+                            <div class="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                 <div class="flex gap-2 mb-3">
-                                    <button type="button"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='date';document.getElementById('ocDateFields-${id}').classList.remove('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');document.getElementById('ocMultiFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocMultiBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocMultiBtn-${id}').classList.add('bg-white','text-blue-600');"
-                                        id="ocDateBtn-${id}"
-                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-blue-600 text-white transition-colors">
-                                        📅 Date Range
-                                    </button>
-                                    <button type="button"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='week';document.getElementById('ocWeekFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');document.getElementById('ocMultiFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocMultiBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocMultiBtn-${id}').classList.add('bg-white','text-blue-600');"
-                                        id="ocWeekBtn-${id}"
-                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-white text-blue-600 transition-colors">
-                                        🗓 Week Number
-                                    </button>
-                                    <button type="button"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='multi';document.getElementById('ocMultiFields-${id}').classList.remove('hidden');document.getElementById('ocDateFields-${id}').classList.add('hidden');document.getElementById('ocWeekFields-${id}').classList.add('hidden');this.classList.add('bg-blue-600','text-white');this.classList.remove('bg-white','text-blue-600');document.getElementById('ocDateBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocDateBtn-${id}').classList.add('bg-white','text-blue-600');document.getElementById('ocWeekBtn-${id}').classList.remove('bg-blue-600','text-white');document.getElementById('ocWeekBtn-${id}').classList.add('bg-white','text-blue-600');"
-                                        id="ocMultiBtn-${id}"
-                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-400 bg-white text-blue-600 transition-colors">
-                                        📋 Multi-Week ✨
-                                    </button>
+                                    <button type="button" id="ocDateBtn-${id}"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='date';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==0);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===0);el.classList.toggle('text-white',i===0);el.classList.toggle('bg-white',i!==0);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} ${btnCol.split(' ')[0]} text-white transition-colors">📅 Date Range</button>
+                                    <button type="button" id="ocWeekBtn-${id}"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='week';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==1);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===1);el.classList.toggle('text-white',i===1);el.classList.toggle('bg-white',i!==1);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">🗓 Week Number</button>
+                                    <button type="button" id="ocMultiBtn-${id}"
+                                        onclick="document.getElementById('ocDateMode-${id}').value='multi';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==2);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===2);el.classList.toggle('text-white',i===2);el.classList.toggle('bg-white',i!==2);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">📋 Multi-Week ✨</button>
                                 </div>
                                 <input type="hidden" id="ocDateMode-${id}" value="date" />
-
-                                <!-- Date range fields -->
                                 <div id="ocDateFields-${id}">
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                        <div>
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
-                                            <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                        </div>
-                                        <div>
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
-                                            <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                        </div>
+                                    <div class="grid grid-cols-2 gap-3 mb-3">
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From</label>
+                                            <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To</label>
+                                            <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                     </div>
-                                    <button onclick="app.addOnCallRange('${id}')"
-                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                                        ✅ Add On-Call Block
-                                    </button>
+                                    <button onclick="app.addOnCallRange('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
                                 </div>
-
-                                <!-- Week number fields -->
                                 <div id="ocWeekFields-${id}" class="hidden">
                                     <div class="grid grid-cols-2 gap-3 mb-2">
-                                        <div>
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
                                             <input type="number" id="ocWeek-${id}" min="1" max="52" placeholder="e.g. 10"
                                                 oninput="(function(el,id){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+id).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
-                                                class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                        </div>
-                                        <div>
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                                class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
                                             <input type="number" id="ocWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
                                                 oninput="(function(el,id){const w=parseInt(document.getElementById('ocWeek-'+id).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
-                                                class="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
-                                        </div>
+                                                class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                     </div>
-                                    <p id="ocWeekPreview-${id}" class="text-xs text-blue-700 font-semibold mb-3 min-h-[1.2em]"></p>
-                                    <button onclick="app.addOnCallWeek('${id}')"
-                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                                        ✅ Add Week Block
-                                    </button>
+                                    <p id="ocWeekPreview-${id}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
+                                    <button onclick="app.addOnCallWeek('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
                                 </div>
-
-                                <!-- Multi-Week fields -->
                                 <div id="ocMultiFields-${id}" class="hidden">
-                                    <div class="mb-2 p-2 bg-blue-100 border border-blue-300 rounded text-xs text-blue-900">
-                                        <strong>Multi-week:</strong> e.g. <span class="font-mono bg-blue-200 px-1 rounded">1-4, 10, 22-26</span>
+                                    <div class="mb-2 p-2 bg-gray-100 border border-gray-200 rounded text-xs text-gray-700">
+                                        e.g. <span class="font-mono bg-white px-1 rounded border">1-4, 10, 22-26</span>
                                     </div>
                                     <div class="grid grid-cols-3 gap-2 mb-2">
-                                        <div class="col-span-2">
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Weeks / Ranges</label>
+                                        <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Weeks / Ranges</label>
                                             <input type="text" id="ocMultiWeekInput-${id}" placeholder="e.g. 1-4, 10, 22-26"
                                                 oninput="_previewOcMultiChips('${id}')"
-                                                class="w-full px-2 py-2 border border-blue-300 rounded-lg text-xs focus:outline-none focus:border-blue-500 font-mono"/>
-                                        </div>
-                                        <div>
-                                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                                class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs focus:outline-none font-mono"/></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
                                             <input type="number" id="ocMultiWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
-                                                class="w-full px-2 py-2 border border-blue-300 rounded-lg text-xs"/>
-                                        </div>
+                                                class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs"/></div>
                                     </div>
-                                    <div id="ocMultiPreview-${id}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 bg-blue-100 rounded border border-blue-200">
+                                    <div id="ocMultiPreview-${id}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 ${prevBg} rounded border">
                                         <span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>
                                     </div>
-                                    <button onclick="app.addOnCallMultiWeek('${id}')"
-                                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-                                        ✅ Add All Weeks
-                                    </button>
+                                    <button onclick="app.addOnCallMultiWeek('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add All Weeks</button>
                                 </div>
                             </div>
                         </details>
                     </div>`;
-                }).join('');
+                };
+
+                const renderAddSection = (pfx, users, isGCPanel) => {
+                    const inputCol  = isGCPanel ? 'border-yellow-400 focus:border-yellow-600' : 'border-blue-400 focus:border-blue-600';
+                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
+                    const panelBg   = isGCPanel ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300';
+                    const titleCol  = isGCPanel ? 'text-yellow-800' : 'text-blue-800';
+                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-300' : 'bg-blue-100 border-blue-300';
+                    const icon      = isGCPanel ? '⭐' : '🏢';
+                    const label     = isGCPanel ? 'Golden Command' : 'Corporate Staff';
+                    return `
+                    <div class="border-2 ${panelBg} rounded-xl p-5 mb-6">
+                        <h3 class="font-bold ${titleCol} mb-1">${icon} Add On-Call Dates — ${label}</h3>
+                        <p class="text-xs text-gray-500 mb-4">Pick a ${label} member from the list to assign On-Call dates.</p>
+                        <div class="mb-3">
+                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Select ${label} User</label>
+                            <select id="newOcSelect-${pfx}" onchange="document.getElementById('newOcId-${pfx}').value=this.value"
+                                class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white">
+                                <option value="">— Choose user —</option>
+                                ${users.map(u => `<option value="${u.id}">${icon} ${u.name} (${u.id})</option>`).join('')}
+                            </select>
+                        </div>
+                        <input type="hidden" id="newOcId-${pfx}" />
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" id="newOcDateBtn-${pfx}"
+                                onclick="document.getElementById('newOcMode-${pfx}').value='date';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==0);});"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} ${btnCol.split(' ')[0]} text-white transition-colors">📅 Date Range</button>
+                            <button type="button" id="newOcWeekBtn-${pfx}"
+                                onclick="document.getElementById('newOcMode-${pfx}').value='week';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==1);});"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">🗓 Week Number</button>
+                            <button type="button" id="newOcMultiBtn-${pfx}"
+                                onclick="document.getElementById('newOcMode-${pfx}').value='multi';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==2);});"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">📋 Multi-Week ✨</button>
+                        </div>
+                        <input type="hidden" id="newOcMode-${pfx}" value="date" />
+                        <div id="newOcDateFields-${pfx}">
+                            <div class="grid grid-cols-2 gap-3 mb-3">
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                    <input type="date" id="newOcFrom-${pfx}" class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                    <input type="date" id="newOcTo-${pfx}" class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <button onclick="app.addOnCallRangeNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
+                        </div>
+                        <div id="newOcWeekFields-${pfx}" class="hidden">
+                            <div class="grid grid-cols-2 gap-3 mb-2">
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                    <input type="number" id="newOcWeekNum-${pfx}" min="1" max="52" placeholder="e.g. 10"
+                                        oninput="(function(el,p){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear-'+p).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview-'+p).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview-'+p).textContent='';}})(this,'${pfx}')"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcWeekYear-${pfx}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                        oninput="(function(el,p){const w=parseInt(document.getElementById('newOcWeekNum-'+p).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview-'+p).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview-'+p).textContent='';}})(this,'${pfx}')"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <p id="newOcWeekPreview-${pfx}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
+                            <button onclick="app.addOnCallWeekNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
+                        </div>
+                        <div id="newOcMultiFields-${pfx}" class="hidden">
+                            <div class="mb-3 p-3 ${prevBg.split(' ')[0].replace('border','bg')} border ${prevBg.split(' ')[1]} rounded-lg text-xs text-gray-700 leading-relaxed">
+                                <strong>How to use:</strong> e.g. <span class="font-mono bg-white px-1 rounded border">1-4, 10, 22-26, 40</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3 mb-3">
+                                <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Numbers / Ranges</label>
+                                    <input type="text" id="newOcMultiInput-${pfx}" placeholder="e.g. 1-4, 10, 22-26, 40"
+                                        oninput="app._previewOcMultiChipsTyped('${pfx}')"
+                                        class="w-full px-3 py-2 border-2 ${inputCol} rounded-lg text-sm focus:outline-none font-mono" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcMultiYear-${pfx}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <div id="newOcMultiPreview-${pfx}" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 ${prevBg} rounded-lg border">
+                                <span class="text-xs text-gray-400 italic">Week chips appear here…</span>
+                            </div>
+                            <button onclick="app.addOnCallMultiWeekNewTyped('${pfx}')" class="px-8 py-2.5 ${btnCol} text-white rounded-lg text-sm font-bold transition-colors shadow">✅ Add All Weeks</button>
+                        </div>
+                    </div>`;
+                };
+
+                const gcIds = new Set([...gcUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => gcUsers.find(u => u.id === id))]);
+                const csIds = new Set([...csUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => csUsers.find(u => u.id === id))]);
+                const gcAudit = buildAudit([...gcIds]);
+                const csAudit = buildAudit([...csIds]);
+                const isGC = window._ocTab === 'gc';
 
                 content.innerHTML = `
                 <div class="max-w-4xl mx-auto">
@@ -6127,120 +6223,122 @@
                         <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
                     </div>
 
-                    ${auditBanner}
+                    <div class="flex gap-0 mb-6 bg-gray-100 rounded-xl p-1 max-w-xs">
+                        <button onclick="window._ocTab='gc'; app.renderManageOnCallView();"
+                            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._ocTab === 'gc' ? 'bg-yellow-500 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
+                            ⭐ Golden Command
+                        </button>
+                        <button onclick="window._ocTab='cs'; app.renderManageOnCallView();"
+                            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._ocTab === 'cs' ? 'bg-blue-500 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
+                            🏢 Corporate Staff
+                        </button>
+                    </div>
 
-                    <!-- Add a new staff member section -->
-                    <div class="bg-yellow-50 border border-yellow-300 rounded-xl p-5 mb-6">
-                        <h3 class="font-bold text-yellow-800 mb-3">➕ Add On-Call dates for a new / unlisted person</h3>
-
-                        <!-- Employee ID (always shown) -->
-                        <div class="mb-3">
-                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Employee ID</label>
-                            <input type="text" id="newOcId" placeholder="e.g. 1003752" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                        </div>
-
-                        <!-- Mode toggle -->
-                        <div class="flex gap-2 mb-3">
-                            <button type="button"
-                                onclick="document.getElementById('newOcMode').value='date';document.getElementById('newOcDateFields').classList.remove('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');document.getElementById('newOcMultiFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcMultiBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcMultiBtn').classList.add('bg-white','text-yellow-700');"
-                                id="newOcDateBtn"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-yellow-500 text-white transition-colors">
-                                📅 Date Range
-                            </button>
-                            <button type="button"
-                                onclick="document.getElementById('newOcMode').value='week';document.getElementById('newOcWeekFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');document.getElementById('newOcMultiFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcMultiBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcMultiBtn').classList.add('bg-white','text-yellow-700');"
-                                id="newOcWeekBtn"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-white text-yellow-700 transition-colors">
-                                🗓 Week Number
-                            </button>
-                            <button type="button"
-                                onclick="document.getElementById('newOcMode').value='multi';document.getElementById('newOcMultiFields').classList.remove('hidden');document.getElementById('newOcDateFields').classList.add('hidden');document.getElementById('newOcWeekFields').classList.add('hidden');this.classList.add('bg-yellow-500','text-white');this.classList.remove('bg-white','text-yellow-700');document.getElementById('newOcDateBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcDateBtn').classList.add('bg-white','text-yellow-700');document.getElementById('newOcWeekBtn').classList.remove('bg-yellow-500','text-white');document.getElementById('newOcWeekBtn').classList.add('bg-white','text-yellow-700');"
-                                id="newOcMultiBtn"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border border-yellow-500 bg-white text-yellow-700 transition-colors">
-                                📋 Multi-Week ✨
-                            </button>
-                        </div>
-                        <input type="hidden" id="newOcMode" value="date" />
-
-                        <!-- Date range fields -->
-                        <div id="newOcDateFields">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
-                                    <input type="date" id="newOcFrom" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
-                                    <input type="date" id="newOcTo" class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                                </div>
-                            </div>
-                            <button onclick="app.addOnCallRangeNew()"
-                                class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
-                                ✅ Add Block
-                            </button>
-                        </div>
-
-                        <!-- Week number fields -->
-                        <div id="newOcWeekFields" class="hidden">
-                            <div class="grid grid-cols-2 gap-3 mb-2">
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
-                                    <input type="number" id="newOcWeekNum" min="1" max="52" placeholder="e.g. 10"
-                                        oninput="(function(el){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear').value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
-                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                    <input type="number" id="newOcWeekYear" value="${this.state.biddingYear}" min="2020" max="2040"
-                                        oninput="(function(el){const w=parseInt(document.getElementById('newOcWeekNum').value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview').textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview').textContent='';}})(this)"
-                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                                </div>
-                            </div>
-                            <p id="newOcWeekPreview" class="text-xs text-yellow-800 font-semibold mb-3 min-h-[1.2em]"></p>
-                            <button onclick="app.addOnCallWeekNew()"
-                                class="px-6 py-2 bg-yellow-500 text-white rounded-lg text-sm font-semibold hover:bg-yellow-600 transition-colors">
-                                ✅ Add Week Block
-                            </button>
-                        </div>
-
-                        <!-- Multi-Week fields -->
-                        <div id="newOcMultiFields" class="hidden">
-                            <div class="mb-3 p-3 bg-yellow-100 border border-yellow-400 rounded-lg text-xs text-yellow-900 leading-relaxed">
-                                <strong>How to use:</strong> Type week numbers separated by commas. Use a dash for ranges.<br/>
-                                <span class="font-mono mt-1 block">e.g. <span class="bg-yellow-200 px-1 rounded">1-4, 10, 22-26, 40</span></span>
-                            </div>
-                            <div class="grid grid-cols-3 gap-3 mb-3">
-                                <div class="col-span-2">
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Numbers / Ranges</label>
-                                    <input type="text" id="newOcMultiWeekInput" placeholder="e.g. 1-4, 10, 22-26, 40"
-                                        oninput="_previewNewOcMultiChips()"
-                                        class="w-full px-3 py-2 border-2 border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600 font-mono" />
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                    <input type="number" id="newOcMultiWeekYear" value="${this.state.biddingYear}" min="2020" max="2040"
-                                        class="w-full px-3 py-2 border border-yellow-400 rounded-lg text-sm focus:outline-none focus:border-yellow-600" />
-                                </div>
-                            </div>
-                            <div id="newOcMultiPreview" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 bg-yellow-100 rounded-lg border border-yellow-300">
-                                <span class="text-xs text-yellow-600 italic">Week chips appear here…</span>
-                            </div>
-                            <button onclick="app.addOnCallMultiWeekNew()"
-                                class="px-8 py-2.5 bg-yellow-500 text-white rounded-lg text-sm font-bold hover:bg-yellow-600 transition-colors shadow">
-                                ✅ Add All Weeks
-                            </button>
+                    <div id="ocPanel-gc" class="${window._ocTab === 'gc' ? '' : 'hidden'}">
+                        ${renderAuditBanner(gcAudit)}
+                        ${renderAddSection('gc', gcUsers, true)}
+                        <div id="onCallStaffList-gc">
+                            ${gcIds.size === 0
+                                ? '<p class="text-center text-gray-400 py-12">No Golden Command users. Add GC users in the Admin panel first.</p>'
+                                : [...gcIds].map(id => renderCard(id, gcAudit.dateOwners, true)).join('')
+                            }
                         </div>
                     </div>
 
-                    <!-- Staff cards -->
-                    <div id="onCallStaffList">
-                        ${staffIds.size === 0
-                            ? '<p class="text-center text-gray-400 py-12">No staff found. Add GC users in the Admin panel first.</p>'
-                            : renderStaffRows()
-                        }
+                    <div id="ocPanel-cs" class="${window._ocTab === 'cs' ? '' : 'hidden'}">
+                        ${renderAuditBanner(csAudit)}
+                        ${renderAddSection('cs', csUsers, false)}
+                        <div id="onCallStaffList-cs">
+                            ${csIds.size === 0
+                                ? '<p class="text-center text-gray-400 py-12">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                : [...csIds].map(id => renderCard(id, csAudit.dateOwners, false)).join('')
+                            }
+                        </div>
                     </div>
                 </div>`;
             },
+
+            addOnCallRangeNewTyped(pfx) {
+                const empId = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const from  = document.getElementById('newOcFrom-' + pfx)?.value;
+                const to    = document.getElementById('newOcTo-'   + pfx)?.value;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                this._applyOnCallRange(empId, from, to);
+            },
+
+            addOnCallWeekNewTyped(pfx) {
+                const empId   = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const weekNum = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
+                const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
+                const r = this.weekNumberToDateRange(weekNum, yr);
+                this._applyOnCallRange(empId, r.from, r.to);
+            },
+
+            addOnCallMultiWeekNewTyped(pfx) {
+                const empId = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const raw   = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
+                const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYear;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                if (weeks.size === 0) { alert('⚠️ No valid week numbers found.'); return; }
+                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
+                const existing = new Set(this.state.onCallDates[empId]);
+                let added = 0;
+                [...weeks].forEach(w => {
+                    const r = this.weekNumberToDateRange(w, yr);
+                    const cur = new Date(r.from+'T00:00:00'), end = new Date(r.to+'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate()+1);
+                    }
+                });
+                this.state.onCallDates[empId] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                alert(`✅ Added ${added} new date${added!==1?'s':''} for "${empId}".`);
+                this.renderManageOnCallView();
+            },
+
+            _previewOcMultiChipsTyped(pfx) {
+                const raw = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
+                const yr  = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || (this.state?.biddingYear || new Date().getFullYear());
+                const box = document.getElementById('newOcMultiPreview-' + pfx);
+                if (!box) return;
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                const arr = [...weeks].sort((a,b)=>a-b);
+                if (!arr.length) { box.innerHTML = '<span class="text-xs text-gray-400 italic">Week chips appear here…</span>'; return; }
+                box.innerHTML = arr.map(w => {
+                    const r = app.weekNumberToDateRange(w, yr);
+                    return `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin:2px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+                }).join('');
+            },
+
+            removeFromOnCallList(empId, pfx) {
+                const name = [...(this.state.goldenCommandUsers||[]), ...(this.state.corporateStaffUsers||[])].find(u => u.id === empId)?.name || empId;
+                if (!confirm(`Remove all On-Call dates for "${name}" (${empId})?\n\nThis clears their schedule but does NOT remove them as a ${pfx==='gc'?'Golden Command':'Corporate Staff'} user.`)) return;
+                delete this.state.onCallDates[empId];
+                if (this.supabase) {
+                    this.supabase.from('oncall_dates').delete().eq('staff_id', empId)
+                        .then(({ error }) => { if (error) console.warn('oncall_dates delete error:', error.message); else console.log('✅ Cleared oncall_dates for', empId); });
+                }
+                localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
+                this.renderManageOnCallView();
+            },
+
 
             addOnCallRange(empId) {
                 const from = document.getElementById(`ocFrom-${empId}`)?.value;
