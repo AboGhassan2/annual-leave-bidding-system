@@ -6335,59 +6335,56 @@
                     </div>`;
                 };
 
-                const renderAddSection = (pfx, users, isGCPanel, customLabel, customIcon, colorTheme) => {
-                    const label     = customLabel || (isGCPanel ? 'Golden Command' : 'Corporate Staff');
-                    const icon      = customIcon  || (isGCPanel ? '⭐' : '🏢');
-                    const inputCol  = isGCPanel ? 'border-yellow-400 focus:border-yellow-600'
-                                    : colorTheme === 'orange' ? 'border-orange-400 focus:border-orange-600'
-                                    : colorTheme === 'purple' ? 'border-purple-400 focus:border-purple-600'
-                                    : colorTheme === 'teal'   ? 'border-teal-400 focus:border-teal-600'
-                                    : 'border-blue-400 focus:border-blue-600';
-                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600'
-                                    : colorTheme === 'orange' ? 'bg-orange-500 hover:bg-orange-600'
-                                    : colorTheme === 'purple' ? 'bg-purple-500 hover:bg-purple-600'
-                                    : colorTheme === 'teal'   ? 'bg-teal-500 hover:bg-teal-600'
-                                    : 'bg-blue-500 hover:bg-blue-600';
-                    const panelBg   = isGCPanel ? 'bg-yellow-50 border-yellow-300'
-                                    : colorTheme === 'orange' ? 'bg-orange-50 border-orange-300'
-                                    : colorTheme === 'purple' ? 'bg-purple-50 border-purple-300'
-                                    : colorTheme === 'teal'   ? 'bg-teal-50 border-teal-300'
-                                    : 'bg-blue-50 border-blue-300';
-                    const titleCol  = isGCPanel ? 'text-yellow-800'
-                                    : colorTheme === 'orange' ? 'text-orange-800'
-                                    : colorTheme === 'purple' ? 'text-purple-800'
-                                    : colorTheme === 'teal'   ? 'text-teal-800'
-                                    : 'text-blue-800';
-                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-300'
-                                    : colorTheme === 'orange' ? 'bg-orange-100 border-orange-300'
-                                    : colorTheme === 'purple' ? 'bg-purple-100 border-purple-300'
-                                    : colorTheme === 'teal'   ? 'bg-teal-100 border-teal-300'
-                                    : 'bg-blue-100 border-blue-300';
+                const renderDeptPanel = (pfx, users, isGCPanel, label, icon, audit) => {
+                    const btnCol  = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
+                    const inputCol = isGCPanel ? 'border-yellow-400 focus:border-yellow-500' : 'border-blue-400 focus:border-blue-500';
+                    const panelBg  = isGCPanel ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300';
+                    const titleCol = isGCPanel ? 'text-yellow-800' : 'text-blue-800';
+                    const prevBg   = isGCPanel ? 'bg-yellow-100 border-yellow-200' : 'bg-blue-100 border-blue-200';
+
                     return `
                     <div class="border-2 ${panelBg} rounded-xl p-5 mb-6">
-                        <h3 class="font-bold ${titleCol} mb-1">${icon} Add On-Call Dates — ${label}</h3>
-                        <p class="text-xs text-gray-500 mb-4">Pick a ${label} member from the list to assign On-Call dates.</p>
-                        <div class="mb-3">
-                            <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Select ${label} User</label>
-                            <select id="newOcSelect-${pfx}" onchange="document.getElementById('newOcId-${pfx}').value=this.value"
-                                class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white">
-                                <option value="">— Choose user —</option>
-                                ${users.map(u => `<option value="${u.id}">${icon} ${u.name} (${u.id})</option>`).join('')}
-                            </select>
+                        <h3 class="font-bold ${titleCol} mb-1">${icon} Manage On-Call Dates — ${label}</h3>
+                        <p class="text-xs text-gray-500 mb-4">Search or select a staff member to view and assign their On-Call dates.</p>
+
+                        <!-- Search + Dropdown row -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">&#128269; Search Staff</label>
+                                <input type="text" id="ocSearch-${pfx}" placeholder="Type name or ID..."
+                                    oninput="app._ocSearchFilter(this.value,'${pfx}')"
+                                    class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Select Staff Member</label>
+                                <select id="newOcSelect-${pfx}"
+                                    onchange="app._ocSelectStaff(this.value,'${pfx}')"
+                                    class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white">
+                                    <option value="">— Choose user —</option>
+                                    ${users.map(u => `<option value="${u.id}">${icon} ${u.name} (${u.id})</option>`).join('')}
+                                </select>
+                            </div>
                         </div>
                         <input type="hidden" id="newOcId-${pfx}" />
+
+                        <!-- Selected person's current dates -->
+                        <div id="ocSelectedPreview-${pfx}" class="mb-4 min-h-[24px]"></div>
+
+                        <!-- Mode toggle -->
                         <div class="flex gap-2 mb-3">
                             <button type="button" id="newOcDateBtn-${pfx}"
-                                onclick="document.getElementById('newOcMode-${pfx}').value='date';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==0);});"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} ${btnCol.split(' ')[0]} text-white transition-colors">📅 Date Range</button>
+                                onclick="app._ocSetMode('${pfx}','date')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} ${btnCol.split(' ')[0]} text-white transition-colors">&#128197; Date Range</button>
                             <button type="button" id="newOcWeekBtn-${pfx}"
-                                onclick="document.getElementById('newOcMode-${pfx}').value='week';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==1);});"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">🗓 Week Number</button>
+                                onclick="app._ocSetMode('${pfx}','week')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">&#128197; Week Number</button>
                             <button type="button" id="newOcMultiBtn-${pfx}"
-                                onclick="document.getElementById('newOcMode-${pfx}').value='multi';['newOcDateFields','newOcWeekFields','newOcMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${pfx}').classList.toggle('hidden',i!==2);});"
-                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">📋 Multi-Week ✨</button>
+                                onclick="app._ocSetMode('${pfx}','multi')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">&#128203; Multi-Week</button>
                         </div>
                         <input type="hidden" id="newOcMode-${pfx}" value="date" />
+
+                        <!-- Date Range fields -->
                         <div id="newOcDateFields-${pfx}">
                             <div class="grid grid-cols-2 gap-3 mb-3">
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
@@ -6395,25 +6392,29 @@
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
                                     <input type="date" id="newOcTo-${pfx}" class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                             </div>
-                            <button onclick="app.addOnCallRangeNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
+                            <button onclick="app.addOnCallRangeNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">&#10003; Add Block</button>
                         </div>
+
+                        <!-- Week Number fields -->
                         <div id="newOcWeekFields-${pfx}" class="hidden">
                             <div class="grid grid-cols-2 gap-3 mb-2">
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
                                     <input type="number" id="newOcWeekNum-${pfx}" min="1" max="52" placeholder="e.g. 10"
-                                        oninput="(function(el,p){const w=parseInt(el.value);const y=parseInt(document.getElementById('newOcWeekYear-'+p).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview-'+p).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview-'+p).textContent='';}})(this,'${pfx}')"
+                                        oninput="app._ocWeekPreview('${pfx}')"
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
                                     <input type="number" id="newOcWeekYear-${pfx}" value="${this.state.biddingYear}" min="2020" max="2040"
-                                        oninput="(function(el,p){const w=parseInt(document.getElementById('newOcWeekNum-'+p).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('newOcWeekPreview-'+p).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('newOcWeekPreview-'+p).textContent='';}})(this,'${pfx}')"
+                                        oninput="app._ocWeekPreview('${pfx}')"
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                             </div>
                             <p id="newOcWeekPreview-${pfx}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
-                            <button onclick="app.addOnCallWeekNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
+                            <button onclick="app.addOnCallWeekNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">&#10003; Add Week Block</button>
                         </div>
+
+                        <!-- Multi-Week fields -->
                         <div id="newOcMultiFields-${pfx}" class="hidden">
-                            <div class="mb-3 p-3 ${prevBg.split(' ')[0].replace('border','bg')} border ${prevBg.split(' ')[1]} rounded-lg text-xs text-gray-700 leading-relaxed">
-                                <strong>How to use:</strong> e.g. <span class="font-mono bg-white px-1 rounded border">1-4, 10, 22-26, 40</span>
+                            <div class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs text-gray-600">
+                                <strong>How to use:</strong> e.g. <span class="font-mono bg-gray-50 px-1 rounded border">1-4, 10, 22-26, 40</span>
                             </div>
                             <div class="grid grid-cols-3 gap-3 mb-3">
                                 <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Numbers / Ranges</label>
@@ -6425,11 +6426,19 @@
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                             </div>
                             <div id="newOcMultiPreview-${pfx}" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 ${prevBg} rounded-lg border">
-                                <span class="text-xs text-gray-400 italic">Week chips appear here…</span>
+                                <span class="text-xs text-gray-400 italic">Week chips appear here...</span>
                             </div>
-                            <button onclick="app.addOnCallMultiWeekNewTyped('${pfx}')" class="px-8 py-2.5 ${btnCol} text-white rounded-lg text-sm font-bold transition-colors shadow">✅ Add All Weeks</button>
+                            <button onclick="app.addOnCallMultiWeekNewTyped('${pfx}')" class="px-8 py-2.5 ${btnCol} text-white rounded-lg text-sm font-bold transition-colors shadow">&#10003; Add All Weeks</button>
                         </div>
                     </div>`;
+                };
+
+                // keep renderAddSection as alias for GC panel
+                const renderAddSection = (pfx, users, isGCPanel, customLabel, customIcon, colorTheme) => {
+                    return renderDeptPanel(pfx, users, isGCPanel,
+                        customLabel || (isGCPanel ? 'Golden Command' : 'Corporate Staff'),
+                        customIcon  || (isGCPanel ? '⭐' : '🏢'),
+                        null);
                 };
 
                 const gcIds = new Set([...gcUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => gcUsers.find(u => u.id === id))]);
@@ -6484,13 +6493,7 @@
                                 <h3 class="text-lg font-bold text-blue-800">Corporate Staff</h3>
                             </div>
                             ${renderAuditBanner(csAudit)}
-                            ${renderAddSection('cs', csUsers, false)}
-                            <div id="onCallStaffList-cs">
-                                ${csIds.size === 0
-                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
-                                    : [...csIds].map(id => renderCard(id, csAudit.dateOwners, false, null, null)).join('')
-                                }
-                            </div>
+                            ${renderDeptPanel('cs', csUsers, false, 'Corporate Staff', '🏢', csAudit)}
                         </div>
 
                         <!-- L456 INM group — same staff, separate schedule -->
@@ -6500,13 +6503,7 @@
                                 <h3 class="text-lg font-bold text-blue-800">L456 INM</h3>
                             </div>
                             ${renderAuditBanner(l456Audit)}
-                            ${renderAddSection('l456inm', csUsers, false, 'L456 INM', '📋')}
-                            <div id="onCallStaffList-l456inm">
-                                ${csIds.size === 0
-                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
-                                    : [...csIds].map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('')
-                                }
-                            </div>
+                            ${renderDeptPanel('l456inm', csUsers, false, 'L456 INM', '📋', l456Audit)}
                         </div>
 
                         <!-- L3 INM group — same staff, separate schedule -->
@@ -6516,13 +6513,7 @@
                                 <h3 class="text-lg font-bold text-blue-800">L3 INM</h3>
                             </div>
                             ${renderAuditBanner(l3InmAudit)}
-                            ${renderAddSection('l3inm', csUsers, false, 'L3 INM', '📋')}
-                            <div id="onCallStaffList-l3inm">
-                                ${csIds.size === 0
-                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
-                                    : [...csIds].map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('')
-                                }
-                            </div>
+                            ${renderDeptPanel('l3inm', csUsers, false, 'L3 INM', '📋', l3InmAudit)}
                         </div>
 
                         <!-- L3 TSM group — same staff, separate schedule -->
@@ -6532,13 +6523,7 @@
                                 <h3 class="text-lg font-bold text-blue-800">L3 TSM</h3>
                             </div>
                             ${renderAuditBanner(l3TsmAudit)}
-                            ${renderAddSection('l3tsm', csUsers, false, 'L3 TSM', '📋')}
-                            <div id="onCallStaffList-l3tsm">
-                                ${csIds.size === 0
-                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
-                                    : [...csIds].map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('')
-                                }
-                            </div>
+                            ${renderDeptPanel('l3tsm', csUsers, false, 'L3 TSM', '📋', l3TsmAudit)}
                         </div>
 
                     </div>
@@ -6546,12 +6531,13 @@
             },
 
             addOnCallRangeNewTyped(pfx) {
-                const empId = document.getElementById('newOcId-' + pfx)?.value?.trim();
-                const from  = document.getElementById('newOcFrom-' + pfx)?.value;
-                const to    = document.getElementById('newOcTo-'   + pfx)?.value;
+                const empId   = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const dateFrom = document.getElementById('newOcFrom-' + pfx)?.value;
+                const dateTo   = document.getElementById('newOcTo-'   + pfx)?.value;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
                 const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
-                this._applyOnCallRange(ocKey, from, to);
+                this._applyOnCallRange(ocKey, dateFrom, dateTo);
+                setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
             },
 
             addOnCallWeekNewTyped(pfx) {
@@ -6563,6 +6549,7 @@
                 const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
                 const r = this.weekNumberToDateRange(weekNum, yr);
                 this._applyOnCallRange(ocKey, r.from, r.to);
+                setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
             },
 
             addOnCallMultiWeekNewTyped(pfx) {
@@ -6598,9 +6585,9 @@
             },
 
             addOnCallRangeKeyed(ocKey, cardEid) {
-                const from = document.getElementById('ocFrom-' + cardEid)?.value;
-                const to   = document.getElementById('ocTo-'   + cardEid)?.value;
-                this._applyOnCallRange(ocKey, from, to);
+                const dateFrom = document.getElementById('ocFrom-' + cardEid)?.value;
+                const dateTo   = document.getElementById('ocTo-'   + cardEid)?.value;
+                this._applyOnCallRange(ocKey, dateFrom, dateTo);
             },
 
             addOnCallWeekKeyed(ocKey, cardEid) {
@@ -6675,18 +6662,104 @@
             },
 
 
-            addOnCallRange(empId) {
-                const from = document.getElementById(`ocFrom-${empId}`)?.value;
-                const to   = document.getElementById(`ocTo-${empId}`)?.value;
-                this._applyOnCallRange(empId, from, to);
+            // ── Dept Panel helpers ──────────────────────────────────────────
+            _ocSelectStaff(val, pfx) {
+                const idEl = document.getElementById('newOcId-' + pfx);
+                if (idEl) idEl.value = val;
+                const preview = document.getElementById('ocSelectedPreview-' + pfx);
+                if (!preview) return;
+                if (!val) { preview.innerHTML = ''; return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? val : pfx + '::' + val;
+                const dates = (this.state.onCallDates[ocKey] || []).slice().sort();
+                if (!dates.length) {
+                    preview.innerHTML = '<p class="text-sm text-gray-400 italic mb-2">No On-Call dates assigned yet.</p>';
+                    return;
+                }
+                const grouped = {};
+                dates.forEach(d => {
+                    const dt = new Date(d + 'T00:00:00');
+                    const ws = new Date(dt); ws.setDate(dt.getDate() - dt.getDay());
+                    const k = ws.getFullYear() + '-' + String(ws.getMonth()+1).padStart(2,'0') + '-' + String(ws.getDate()).padStart(2,'0');
+                    if (!grouped[k]) grouped[k] = [];
+                    grouped[k].push(d);
+                });
+                const getWN = ds => {
+                    const dt2 = new Date(ds + 'T00:00:00');
+                    const j1 = new Date(dt2.getFullYear(), 0, 1);
+                    const w1s = new Date(j1); w1s.setDate(j1.getDate() - j1.getDay());
+                    return Math.min(52, Math.floor((dt2 - w1s) / (7*24*60*60*1000)) + 1);
+                };
+                const rows = Object.entries(grouped).map(([, wDates]) => {
+                    const wNum = getWN(wDates[0]);
+                    const lbl = wDates.length >= 7
+                        ? 'Week ' + wNum + ' (' + wDates[0] + ' to ' + wDates[wDates.length-1] + ')'
+                        : 'Week ' + wNum + ' - ' + wDates.join(', ');
+                    const btn = document.createElement('button');
+                    btn.className = 'text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap ml-2';
+                    btn.textContent = '🗑 Delete';
+                    btn.onclick = () => {
+                        this.deleteOnCallBlock(ocKey, wDates[0], wDates[wDates.length-1]);
+                        setTimeout(() => this._ocSelectStaff(val, pfx), 150);
+                    };
+                    const chip = document.createElement('span');
+                    chip.className = 'inline-block bg-blue-50 border border-blue-300 text-blue-800 text-xs font-semibold px-2 py-1 rounded whitespace-nowrap';
+                    chip.textContent = lbl;
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 flex-wrap mb-1';
+                    row.appendChild(chip); row.appendChild(btn);
+                    return row;
+                });
+                preview.innerHTML = '';
+                rows.forEach(r => preview.appendChild(r));
+            },
+
+            _ocSearchFilter(q, pfx) {
+                const sel = document.getElementById('newOcSelect-' + pfx);
+                if (!sel) return;
+                for (let i = 1; i < sel.options.length; i++) {
+                    const txt = sel.options[i].text.toLowerCase();
+                    sel.options[i].style.display = (!q || txt.includes(q.toLowerCase())) ? '' : 'none';
+                }
+            },
+
+            _ocSetMode(pfx, mode) {
+                ['date','week','multi'].forEach(m => {
+                    const fields = document.getElementById('newOc' + m.charAt(0).toUpperCase() + m.slice(1) + 'Fields-' + pfx);
+                    if (fields) fields.classList.toggle('hidden', m !== mode);
+                });
+                document.getElementById('newOcMode-' + pfx).value = mode;
+                const isGC = pfx === 'gc';
+                const activeClass = isGC ? 'bg-yellow-500' : 'bg-blue-600';
+                ['Date','Week','Multi'].forEach(m => {
+                    const btn = document.getElementById('newOc' + m + 'Btn-' + pfx);
+                    if (!btn) return;
+                    const isActive = m.toLowerCase() === mode || (m === 'Multi' && mode === 'multi');
+                    btn.classList.toggle(activeClass, isActive);
+                    btn.classList.toggle('text-white', isActive);
+                    btn.classList.toggle('bg-white', !isActive);
+                    btn.classList.toggle('text-gray-700', !isActive);
+                });
+            },
+
+            _ocWeekPreview(pfx) {
+                const w = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
+                const y = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
+                const el = document.getElementById('newOcWeekPreview-' + pfx);
+                if (!el) return;
+                if (w >= 1 && w <= 52) {
+                    const r = this.weekNumberToDateRange(w, y);
+                    el.textContent = '→ ' + r.from + ' to ' + r.to;
+                } else {
+                    el.textContent = '';
+                }
             },
 
             addOnCallRangeNew() {
-                const empId = document.getElementById('newOcId')?.value?.trim();
-                const from  = document.getElementById('newOcFrom')?.value;
-                const to    = document.getElementById('newOcTo')?.value;
+                const empId   = document.getElementById('newOcId')?.value?.trim();
+                const dateFrom = document.getElementById('newOcFrom')?.value;
+                const dateTo   = document.getElementById('newOcTo')?.value;
                 if (!empId) { alert('Please enter an Employee ID.'); return; }
-                this._applyOnCallRange(empId, from, to, true);
+                this._applyOnCallRange(empId, dateFrom, dateTo, true);
             },
 
             // Returns { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } for a Sun-Sat week number.
@@ -6898,11 +6971,11 @@
                 if (!confirm(`Remove all On-Call dates from ${blockFrom} to ${blockTo} for ${empId}?`)) return;
                 if (!this.state.onCallDates?.[empId]) return;
 
-                const from = new Date(blockFrom + 'T00:00:00');
-                const to   = new Date(blockTo   + 'T00:00:00');
+                const dateFrom = new Date(blockFrom + 'T00:00:00');
+                const dateTo   = new Date(blockTo   + 'T00:00:00');
                 const toDelete = new Set();
-                const cur = new Date(from);
-                while (cur <= to) {
+                const cur = new Date(dateFrom);
+                while (cur <= dateTo) {
                     toDelete.add(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
                     cur.setDate(cur.getDate() + 1);
                 }
