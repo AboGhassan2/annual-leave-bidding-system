@@ -6486,7 +6486,7 @@
                     <!-- Corporate Staff Panel — contains CS + 3 sub-departments all using same staff -->
                     <div id="ocPanel-cs" class="${window._ocTab === 'cs' ? '' : 'hidden'}">
 
-                        <!-- Corporate Staff group -->
+                    <!-- Corporate Staff group -->
                         <div class="mb-8">
                             <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
                                 <span class="text-xl">🏢</span>
@@ -6494,6 +6494,12 @@
                             </div>
                             ${renderAuditBanner(csAudit)}
                             ${renderDeptPanel('cs', csUsers, false, 'Corporate Staff', '🏢', csAudit)}
+                            <div id="onCallStaffList-cs">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, csAudit.dateOwners, false, null, null)).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet. Use the panel above to add someone.</p>'
+                                }
+                            </div>
                         </div>
 
                         <!-- L456 INM group — same staff, separate schedule -->
@@ -6504,6 +6510,12 @@
                             </div>
                             ${renderAuditBanner(l456Audit)}
                             ${renderDeptPanel('l456inm', csUsers, false, 'L456 INM', '📋', l456Audit)}
+                            <div id="onCallStaffList-l456inm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].filter(id => (onCallDates['l456inm::'+id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
                         </div>
 
                         <!-- L3 INM group — same staff, separate schedule -->
@@ -6514,6 +6526,12 @@
                             </div>
                             ${renderAuditBanner(l3InmAudit)}
                             ${renderDeptPanel('l3inm', csUsers, false, 'L3 INM', '📋', l3InmAudit)}
+                            <div id="onCallStaffList-l3inm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].filter(id => (onCallDates['l3inm::'+id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
                         </div>
 
                         <!-- L3 TSM group — same staff, separate schedule -->
@@ -6524,6 +6542,12 @@
                             </div>
                             ${renderAuditBanner(l3TsmAudit)}
                             ${renderDeptPanel('l3tsm', csUsers, false, 'L3 TSM', '📋', l3TsmAudit)}
+                            <div id="onCallStaffList-l3tsm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].filter(id => (onCallDates['l3tsm::'+id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
                         </div>
 
                     </div>
