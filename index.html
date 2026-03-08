@@ -1055,6 +1055,9 @@
                     { id: 'GC002', name: 'Golden Command 2', password: 'GC002' }
                 ],
                 corporateStaffUsers: [],
+                l456InmUsers: [],
+                l3InmUsers: [],
+                l3TsmUsers: [],
                 results: [],
 
                 // On-Call dates per employee (extracted from Director_On-Call.xlsx)
@@ -1490,6 +1493,9 @@
                     localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
                     localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
                     localStorage.setItem('corporateStaffUsers', JSON.stringify(this.state.corporateStaffUsers || []));
+                    localStorage.setItem('l456InmUsers', JSON.stringify(this.state.l456InmUsers || []));
+                    localStorage.setItem('l3InmUsers', JSON.stringify(this.state.l3InmUsers || []));
+                    localStorage.setItem('l3TsmUsers', JSON.stringify(this.state.l3TsmUsers || []));
                     localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
                 } catch (e) {
                     console.error('Error saving state:', e);
@@ -1512,6 +1518,9 @@
                         this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
                         this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
                         this.state.corporateStaffUsers = JSON.parse(localStorage.getItem('corporateStaffUsers') || '[]');
+                        this.state.l456InmUsers = JSON.parse(localStorage.getItem('l456InmUsers') || '[]');
+                        this.state.l3InmUsers = JSON.parse(localStorage.getItem('l3InmUsers') || '[]');
+                        this.state.l3TsmUsers = JSON.parse(localStorage.getItem('l3TsmUsers') || '[]');
                         this.state.onCallDates = JSON.parse(localStorage.getItem('onCallDates') || '{}');
                         return true;
                     }
@@ -2017,6 +2026,99 @@
                                 <button onclick="app.addCSUser()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 text-sm transition">
                                     🏢 Add Corporate Staff User
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- L456 INM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-orange-800">L456 INM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L456 INM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l456InmUserList">
+                                ${(this.state.l456InmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-orange-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded font-mono border border-orange-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL456InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l456InmUsers || []).length === 0 ? `<p class="text-sm text-orange-600 italic py-2">No L456 INM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-orange-50 border-2 border-orange-300 rounded-xl p-5">
+                                <p class="font-semibold text-orange-800 mb-3">➕ Add New L456 INM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL456InmId" placeholder="e.g. L456-001" class="w-full px-3 py-2 border-2 border-orange-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL456InmName" placeholder="e.g. John Smith" class="w-full px-3 py-2 border-2 border-orange-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL456InmUser()" class="px-6 py-2.5 bg-orange-500 text-white rounded-lg font-bold hover:bg-orange-600 text-sm transition">📋 Add L456 INM User</button>
+                            </div>
+                        </div>
+
+                        <!-- L3 INM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-purple-800">L3 INM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L3 INM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l3InmUserList">
+                                ${(this.state.l3InmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-purple-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded font-mono border border-purple-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL3InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l3InmUsers || []).length === 0 ? `<p class="text-sm text-purple-600 italic py-2">No L3 INM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-purple-50 border-2 border-purple-300 rounded-xl p-5">
+                                <p class="font-semibold text-purple-800 mb-3">➕ Add New L3 INM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL3InmId" placeholder="e.g. L3INM-001" class="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL3InmName" placeholder="e.g. Jane Doe" class="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL3InmUser()" class="px-6 py-2.5 bg-purple-500 text-white rounded-lg font-bold hover:bg-purple-600 text-sm transition">📋 Add L3 INM User</button>
+                            </div>
+                        </div>
+
+                        <!-- L3 TSM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-teal-800">L3 TSM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L3 TSM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l3TsmUserList">
+                                ${(this.state.l3TsmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-teal-50 border border-teal-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-teal-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded font-mono border border-teal-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL3TsmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l3TsmUsers || []).length === 0 ? `<p class="text-sm text-teal-600 italic py-2">No L3 TSM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-teal-50 border-2 border-teal-300 rounded-xl p-5">
+                                <p class="font-semibold text-teal-800 mb-3">➕ Add New L3 TSM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL3TsmId" placeholder="e.g. L3TSM-001" class="w-full px-3 py-2 border-2 border-teal-300 rounded-lg text-sm focus:border-teal-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL3TsmName" placeholder="e.g. Alex Johnson" class="w-full px-3 py-2 border-2 border-teal-300 rounded-lg text-sm focus:border-teal-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL3TsmUser()" class="px-6 py-2.5 bg-teal-500 text-white rounded-lg font-bold hover:bg-teal-600 text-sm transition">📋 Add L3 TSM User</button>
                             </div>
                         </div>
                     </div>
@@ -4125,6 +4227,75 @@
                 }
             },
 
+            addL456InmUser() {
+                const id = document.getElementById('newL456InmId')?.value?.trim();
+                const name = document.getElementById('newL456InmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l456InmUsers) this.state.l456InmUsers = [];
+                if (this.state.l456InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l456InmUsers.push({ id, name });
+                this.saveState();
+                alert(`✅ L456 INM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL456InmUser(index) {
+                const users = this.state.l456InmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L456 INM user "${user.name}" (${user.id})?`)) {
+                    this.state.l456InmUsers.splice(index, 1);
+                    this.saveState();
+                    this.renderUploadView();
+                }
+            },
+
+            addL3InmUser() {
+                const id = document.getElementById('newL3InmId')?.value?.trim();
+                const name = document.getElementById('newL3InmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l3InmUsers) this.state.l3InmUsers = [];
+                if (this.state.l3InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l3InmUsers.push({ id, name });
+                this.saveState();
+                alert(`✅ L3 INM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL3InmUser(index) {
+                const users = this.state.l3InmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L3 INM user "${user.name}" (${user.id})?`)) {
+                    this.state.l3InmUsers.splice(index, 1);
+                    this.saveState();
+                    this.renderUploadView();
+                }
+            },
+
+            addL3TsmUser() {
+                const id = document.getElementById('newL3TsmId')?.value?.trim();
+                const name = document.getElementById('newL3TsmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l3TsmUsers) this.state.l3TsmUsers = [];
+                if (this.state.l3TsmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l3TsmUsers.push({ id, name });
+                this.saveState();
+                alert(`✅ L3 TSM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL3TsmUser(index) {
+                const users = this.state.l3TsmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L3 TSM user "${user.name}" (${user.id})?`)) {
+                    this.state.l3TsmUsers.splice(index, 1);
+                    this.saveState();
+                    this.renderUploadView();
+                }
+            },
+
             async saveGCUsersToSupabase() {
                 // Syncs the full golden_command_users table with current state:
                 // 1. Upsert every user in state (add new, update existing)
@@ -5956,12 +6127,18 @@
                 const year = this.state.biddingYear;
                 const gcUsers = this.state.goldenCommandUsers || [];
                 const csUsers = this.state.corporateStaffUsers || [];
+                const l456InmUsers = this.state.l456InmUsers || [];
+                const l3InmUsers = this.state.l3InmUsers || [];
+                const l3TsmUsers = this.state.l3TsmUsers || [];
 
                 if (!window._ocTab) window._ocTab = 'gc';
 
                 const getStaffName = (id) => {
                     const gc = gcUsers.find(u => u.id === id); if (gc) return gc.name;
                     const cs = csUsers.find(u => u.id === id); if (cs) return cs.name;
+                    const l456 = l456InmUsers.find(u => u.id === id); if (l456) return l456.name;
+                    const l3inm = l3InmUsers.find(u => u.id === id); if (l3inm) return l3inm.name;
+                    const l3tsm = l3TsmUsers.find(u => u.id === id); if (l3tsm) return l3tsm.name;
                     const emp = (this.state.employees || []).find(e => e.id === id); if (emp) return emp.name;
                     return id;
                 };
@@ -5974,10 +6151,11 @@
                     return wn >= 53 ? 1 : wn;
                 };
 
-                const buildAudit = (ids) => {
+                const buildAudit = (ids, deptPfx) => {
                     const dateOwners = {};
                     ids.forEach(id => {
-                        (onCallDates[id] || []).forEach(raw => {
+                        const key = deptPfx ? deptPfx + '::' + id : id;
+                        (onCallDates[key] || []).forEach(raw => {
                             const d = String(raw).substring(0,10);
                             if (!dateOwners[d]) dateOwners[d] = [];
                             dateOwners[d].push(id);
@@ -6025,8 +6203,9 @@
                     </div>`;
                 };
 
-                const renderCard = (id, dateOwners, isGCPanel) => {
-                    const dates = (onCallDates[id] || []).slice().sort();
+                const renderCard = (id, dateOwners, isGCPanel, colorTheme, deptPfx) => {
+                    const ocKey = deptPfx ? deptPfx + '::' + id : id;
+                    const dates = (onCallDates[ocKey] || []).slice().sort();
                     const grouped = {};
                     dates.forEach(d => {
                         const dt = new Date(d + 'T00:00:00');
@@ -6035,11 +6214,36 @@
                         if (!grouped[key]) grouped[key] = [];
                         grouped[key].push(d);
                     });
-                    const chipBase  = isGCPanel ? 'bg-yellow-50 border-yellow-300 text-yellow-800' : 'bg-blue-50 border-blue-300 text-blue-800';
-                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
-                    const inputBdr  = isGCPanel ? 'border-yellow-300 focus:border-yellow-500' : 'border-blue-300 focus:border-blue-500';
-                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-200' : 'bg-blue-100 border-blue-200';
-                    const pfx       = isGCPanel ? 'gc' : 'cs';
+                    const chipBase  = isGCPanel ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                                    : colorTheme === 'orange' ? 'bg-orange-50 border-orange-300 text-orange-800'
+                                    : colorTheme === 'purple' ? 'bg-purple-50 border-purple-300 text-purple-800'
+                                    : colorTheme === 'teal'   ? 'bg-teal-50 border-teal-300 text-teal-800'
+                                    : 'bg-blue-50 border-blue-300 text-blue-800';
+                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600'
+                                    : colorTheme === 'orange' ? 'bg-orange-500 hover:bg-orange-600'
+                                    : colorTheme === 'purple' ? 'bg-purple-500 hover:bg-purple-600'
+                                    : colorTheme === 'teal'   ? 'bg-teal-500 hover:bg-teal-600'
+                                    : 'bg-blue-600 hover:bg-blue-700';
+                    const inputBdr  = isGCPanel ? 'border-yellow-300 focus:border-yellow-500'
+                                    : colorTheme === 'orange' ? 'border-orange-300 focus:border-orange-500'
+                                    : colorTheme === 'purple' ? 'border-purple-300 focus:border-purple-500'
+                                    : colorTheme === 'teal'   ? 'border-teal-300 focus:border-teal-500'
+                                    : 'border-blue-300 focus:border-blue-500';
+                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-200'
+                                    : colorTheme === 'orange' ? 'bg-orange-100 border-orange-200'
+                                    : colorTheme === 'purple' ? 'bg-purple-100 border-purple-200'
+                                    : colorTheme === 'teal'   ? 'bg-teal-100 border-teal-200'
+                                    : 'bg-blue-100 border-blue-200';
+                    const cardBorder = isGCPanel ? 'border-yellow-200'
+                                    : colorTheme === 'orange' ? 'border-orange-200'
+                                    : colorTheme === 'purple' ? 'border-purple-200'
+                                    : colorTheme === 'teal'   ? 'border-teal-200'
+                                    : 'border-blue-200';
+                    const pfx       = isGCPanel ? 'gc'
+                                    : colorTheme === 'orange' ? 'l456inm'
+                                    : colorTheme === 'purple' ? 'l3inm'
+                                    : colorTheme === 'teal'   ? 'l3tsm'
+                                    : 'cs';
                     const dateChips = dates.length === 0
                         ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
                         : Object.entries(grouped).map(([, wDates]) => {
@@ -6051,12 +6255,13 @@
                                 : `Week ${wNum} — ${wDates.join(', ')}`;
                             return `<div class="flex items-center gap-2 flex-wrap mb-1">
                                 <span class="inline-block ${cc} text-xs font-semibold px-2 py-1 rounded border whitespace-nowrap">${lbl}${isOv?' ⚠️':''}</span>
-                                <button onclick="app.deleteOnCallBlock('${id}','${wDates[0]}','${wDates[wDates.length-1]}')"
+                                <button onclick="app.deleteOnCallBlock('${ocKey}','${wDates[0]}','${wDates[wDates.length-1]}')"
                                     class="text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap">🗑 Delete block</button>
                             </div>`;
                         }).join('');
+                    const cardEid = ocKey.replace(/[^a-zA-Z0-9_-]/g, '_');
                     return `
-                    <div class="bg-white rounded-xl shadow border ${isGCPanel?'border-yellow-200':'border-blue-200'} p-5 mb-4" id="staff-card-${id}">
+                    <div class="bg-white rounded-xl shadow border ${cardBorder} p-5 mb-4" id="staff-card-${cardEid}">
                         <div class="flex items-center justify-between mb-3">
                             <div>
                                 <p class="font-bold text-gray-800">${getStaffName(id)}</p>
@@ -6064,7 +6269,7 @@
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">${dates.length} date${dates.length!==1?'s':''}</span>
-                                <button onclick="app.removeFromOnCallList('${id}','${pfx}')"
+                                <button onclick="app.removeFromOnCallList('${ocKey}','${pfx}')"
                                     class="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition">✕ Remove</button>
                             </div>
                         </div>
@@ -6073,71 +6278,91 @@
                             <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 select-none">➕ Add On-Call dates for this person</summary>
                             <div class="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                 <div class="flex gap-2 mb-3">
-                                    <button type="button" id="ocDateBtn-${id}"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='date';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==0);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===0);el.classList.toggle('text-white',i===0);el.classList.toggle('bg-white',i!==0);});"
+                                    <button type="button" id="ocDateBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='date';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==0);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===0);el.classList.toggle('text-white',i===0);el.classList.toggle('bg-white',i!==0);});"
                                         class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} ${btnCol.split(' ')[0]} text-white transition-colors">📅 Date Range</button>
-                                    <button type="button" id="ocWeekBtn-${id}"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='week';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==1);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===1);el.classList.toggle('text-white',i===1);el.classList.toggle('bg-white',i!==1);});"
+                                    <button type="button" id="ocWeekBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='week';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==1);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===1);el.classList.toggle('text-white',i===1);el.classList.toggle('bg-white',i!==1);});"
                                         class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">🗓 Week Number</button>
-                                    <button type="button" id="ocMultiBtn-${id}"
-                                        onclick="document.getElementById('ocDateMode-${id}').value='multi';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${id}').classList.toggle('hidden',i!==2);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${id}');el.classList.toggle('${btnCol.split(' ')[0]}',i===2);el.classList.toggle('text-white',i===2);el.classList.toggle('bg-white',i!==2);});"
+                                    <button type="button" id="ocMultiBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='multi';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==2);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===2);el.classList.toggle('text-white',i===2);el.classList.toggle('bg-white',i!==2);});"
                                         class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">📋 Multi-Week ✨</button>
                                 </div>
-                                <input type="hidden" id="ocDateMode-${id}" value="date" />
-                                <div id="ocDateFields-${id}">
+                                <input type="hidden" id="ocDateMode-${cardEid}" value="date" />
+                                <div id="ocDateFields-${cardEid}">
                                     <div class="grid grid-cols-2 gap-3 mb-3">
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From</label>
-                                            <input type="date" id="ocFrom-${id}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                            <input type="date" id="ocFrom-${cardEid}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To</label>
-                                            <input type="date" id="ocTo-${id}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                            <input type="date" id="ocTo-${cardEid}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                     </div>
-                                    <button onclick="app.addOnCallRange('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
+                                    <button onclick="app.addOnCallRangeKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
                                 </div>
-                                <div id="ocWeekFields-${id}" class="hidden">
+                                <div id="ocWeekFields-${cardEid}" class="hidden">
                                     <div class="grid grid-cols-2 gap-3 mb-2">
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
-                                            <input type="number" id="ocWeek-${id}" min="1" max="52" placeholder="e.g. 10"
-                                                oninput="(function(el,id){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+id).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                            <input type="number" id="ocWeek-${cardEid}" min="1" max="52" placeholder="e.g. 10"
+                                                oninput="(function(el,eid){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+eid).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
                                                 class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                            <input type="number" id="ocWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
-                                                oninput="(function(el,id){const w=parseInt(document.getElementById('ocWeek-'+id).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+id).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+id).textContent='';}})(this,'${id}')"
+                                            <input type="number" id="ocWeekYear-${cardEid}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                                oninput="(function(el,eid){const w=parseInt(document.getElementById('ocWeek-'+eid).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
                                                 class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                     </div>
-                                    <p id="ocWeekPreview-${id}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
-                                    <button onclick="app.addOnCallWeek('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
+                                    <p id="ocWeekPreview-${cardEid}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
+                                    <button onclick="app.addOnCallWeekKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
                                 </div>
-                                <div id="ocMultiFields-${id}" class="hidden">
+                                <div id="ocMultiFields-${cardEid}" class="hidden">
                                     <div class="mb-2 p-2 bg-gray-100 border border-gray-200 rounded text-xs text-gray-700">
                                         e.g. <span class="font-mono bg-white px-1 rounded border">1-4, 10, 22-26</span>
                                     </div>
                                     <div class="grid grid-cols-3 gap-2 mb-2">
                                         <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Weeks / Ranges</label>
-                                            <input type="text" id="ocMultiWeekInput-${id}" placeholder="e.g. 1-4, 10, 22-26"
-                                                oninput="_previewOcMultiChips('${id}')"
+                                            <input type="text" id="ocMultiWeekInput-${cardEid}" placeholder="e.g. 1-4, 10, 22-26"
+                                                oninput="_previewOcMultiChips('${cardEid}')"
                                                 class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs focus:outline-none font-mono"/></div>
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                            <input type="number" id="ocMultiWeekYear-${id}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                            <input type="number" id="ocMultiWeekYear-${cardEid}" value="${this.state.biddingYear}" min="2020" max="2040"
                                                 class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs"/></div>
                                     </div>
-                                    <div id="ocMultiPreview-${id}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 ${prevBg} rounded border">
+                                    <div id="ocMultiPreview-${cardEid}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 ${prevBg} rounded border">
                                         <span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>
                                     </div>
-                                    <button onclick="app.addOnCallMultiWeek('${id}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add All Weeks</button>
+                                    <button onclick="app.addOnCallMultiWeekKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add All Weeks</button>
                                 </div>
                             </div>
                         </details>
                     </div>`;
                 };
 
-                const renderAddSection = (pfx, users, isGCPanel) => {
-                    const inputCol  = isGCPanel ? 'border-yellow-400 focus:border-yellow-600' : 'border-blue-400 focus:border-blue-600';
-                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-500 hover:bg-blue-600';
-                    const panelBg   = isGCPanel ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300';
-                    const titleCol  = isGCPanel ? 'text-yellow-800' : 'text-blue-800';
-                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-300' : 'bg-blue-100 border-blue-300';
-                    const icon      = isGCPanel ? '⭐' : '🏢';
-                    const label     = isGCPanel ? 'Golden Command' : 'Corporate Staff';
+                const renderAddSection = (pfx, users, isGCPanel, customLabel, customIcon, colorTheme) => {
+                    const label     = customLabel || (isGCPanel ? 'Golden Command' : 'Corporate Staff');
+                    const icon      = customIcon  || (isGCPanel ? '⭐' : '🏢');
+                    const inputCol  = isGCPanel ? 'border-yellow-400 focus:border-yellow-600'
+                                    : colorTheme === 'orange' ? 'border-orange-400 focus:border-orange-600'
+                                    : colorTheme === 'purple' ? 'border-purple-400 focus:border-purple-600'
+                                    : colorTheme === 'teal'   ? 'border-teal-400 focus:border-teal-600'
+                                    : 'border-blue-400 focus:border-blue-600';
+                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600'
+                                    : colorTheme === 'orange' ? 'bg-orange-500 hover:bg-orange-600'
+                                    : colorTheme === 'purple' ? 'bg-purple-500 hover:bg-purple-600'
+                                    : colorTheme === 'teal'   ? 'bg-teal-500 hover:bg-teal-600'
+                                    : 'bg-blue-500 hover:bg-blue-600';
+                    const panelBg   = isGCPanel ? 'bg-yellow-50 border-yellow-300'
+                                    : colorTheme === 'orange' ? 'bg-orange-50 border-orange-300'
+                                    : colorTheme === 'purple' ? 'bg-purple-50 border-purple-300'
+                                    : colorTheme === 'teal'   ? 'bg-teal-50 border-teal-300'
+                                    : 'bg-blue-50 border-blue-300';
+                    const titleCol  = isGCPanel ? 'text-yellow-800'
+                                    : colorTheme === 'orange' ? 'text-orange-800'
+                                    : colorTheme === 'purple' ? 'text-purple-800'
+                                    : colorTheme === 'teal'   ? 'text-teal-800'
+                                    : 'text-blue-800';
+                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-300'
+                                    : colorTheme === 'orange' ? 'bg-orange-100 border-orange-300'
+                                    : colorTheme === 'purple' ? 'bg-purple-100 border-purple-300'
+                                    : colorTheme === 'teal'   ? 'bg-teal-100 border-teal-300'
+                                    : 'bg-blue-100 border-blue-300';
                     return `
                     <div class="border-2 ${panelBg} rounded-xl p-5 mb-6">
                         <h3 class="font-bold ${titleCol} mb-1">${icon} Add On-Call Dates — ${label}</h3>
@@ -6208,9 +6433,12 @@
                 };
 
                 const gcIds = new Set([...gcUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => gcUsers.find(u => u.id === id))]);
-                const csIds = new Set([...csUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => csUsers.find(u => u.id === id))]);
-                const gcAudit = buildAudit([...gcIds]);
-                const csAudit = buildAudit([...csIds]);
+                const csIds = new Set(csUsers.map(u => u.id));
+                const gcAudit    = buildAudit([...gcIds]);
+                const csAudit    = buildAudit([...csIds]);
+                const l456Audit  = buildAudit([...csIds], 'l456inm');
+                const l3InmAudit = buildAudit([...csIds], 'l3inm');
+                const l3TsmAudit = buildAudit([...csIds], 'l3tsm');
                 const isGC = window._ocTab === 'gc';
 
                 content.innerHTML = `
@@ -6223,7 +6451,7 @@
                         <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
                     </div>
 
-                    <div class="flex gap-0 mb-6 bg-gray-100 rounded-xl p-1 max-w-xs">
+                    <div class="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
                         <button onclick="window._ocTab='gc'; app.renderManageOnCallView();"
                             class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._ocTab === 'gc' ? 'bg-yellow-500 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
                             ⭐ Golden Command
@@ -6234,6 +6462,7 @@
                         </button>
                     </div>
 
+                    <!-- Golden Command Panel -->
                     <div id="ocPanel-gc" class="${window._ocTab === 'gc' ? '' : 'hidden'}">
                         ${renderAuditBanner(gcAudit)}
                         ${renderAddSection('gc', gcUsers, true)}
@@ -6245,15 +6474,73 @@
                         </div>
                     </div>
 
+                    <!-- Corporate Staff Panel — contains CS + 3 sub-departments all using same staff -->
                     <div id="ocPanel-cs" class="${window._ocTab === 'cs' ? '' : 'hidden'}">
-                        ${renderAuditBanner(csAudit)}
-                        ${renderAddSection('cs', csUsers, false)}
-                        <div id="onCallStaffList-cs">
-                            ${csIds.size === 0
-                                ? '<p class="text-center text-gray-400 py-12">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
-                                : [...csIds].map(id => renderCard(id, csAudit.dateOwners, false)).join('')
-                            }
+
+                        <!-- Corporate Staff group -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">🏢</span>
+                                <h3 class="text-lg font-bold text-blue-800">Corporate Staff</h3>
+                            </div>
+                            ${renderAuditBanner(csAudit)}
+                            ${renderAddSection('cs', csUsers, false)}
+                            <div id="onCallStaffList-cs">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].map(id => renderCard(id, csAudit.dateOwners, false, null, null)).join('')
+                                }
+                            </div>
                         </div>
+
+                        <!-- L456 INM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L456 INM</h3>
+                            </div>
+                            ${renderAuditBanner(l456Audit)}
+                            ${renderAddSection('l456inm', csUsers, false, 'L456 INM', '📋')}
+                            <div id="onCallStaffList-l456inm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('')
+                                }
+                            </div>
+                        </div>
+
+                        <!-- L3 INM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L3 INM</h3>
+                            </div>
+                            ${renderAuditBanner(l3InmAudit)}
+                            ${renderAddSection('l3inm', csUsers, false, 'L3 INM', '📋')}
+                            <div id="onCallStaffList-l3inm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('')
+                                }
+                            </div>
+                        </div>
+
+                        <!-- L3 TSM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L3 TSM</h3>
+                            </div>
+                            ${renderAuditBanner(l3TsmAudit)}
+                            ${renderAddSection('l3tsm', csUsers, false, 'L3 TSM', '📋')}
+                            <div id="onCallStaffList-l3tsm">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add CS users in the Admin panel first.</p>'
+                                    : [...csIds].map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('')
+                                }
+                            </div>
+                        </div>
+
                     </div>
                 </div>`;
             },
@@ -6263,7 +6550,8 @@
                 const from  = document.getElementById('newOcFrom-' + pfx)?.value;
                 const to    = document.getElementById('newOcTo-'   + pfx)?.value;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
-                this._applyOnCallRange(empId, from, to);
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                this._applyOnCallRange(ocKey, from, to);
             },
 
             addOnCallWeekNewTyped(pfx) {
@@ -6272,8 +6560,9 @@
                 const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
                 if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
                 const r = this.weekNumberToDateRange(weekNum, yr);
-                this._applyOnCallRange(empId, r.from, r.to);
+                this._applyOnCallRange(ocKey, r.from, r.to);
             },
 
             addOnCallMultiWeekNewTyped(pfx) {
@@ -6281,6 +6570,7 @@
                 const raw   = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
                 const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYear;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
                 const tokens = raw.split(/[\s,;]+/).filter(Boolean);
                 const weeks  = new Set();
                 for (const t of tokens) {
@@ -6289,8 +6579,8 @@
                     else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
                 }
                 if (weeks.size === 0) { alert('⚠️ No valid week numbers found.'); return; }
-                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
-                const existing = new Set(this.state.onCallDates[empId]);
+                if (!this.state.onCallDates[ocKey]) this.state.onCallDates[ocKey] = [];
+                const existing = new Set(this.state.onCallDates[ocKey]);
                 let added = 0;
                 [...weeks].forEach(w => {
                     const r = this.weekNumberToDateRange(w, yr);
@@ -6301,9 +6591,52 @@
                         cur.setDate(cur.getDate()+1);
                     }
                 });
-                this.state.onCallDates[empId] = [...existing].sort();
+                this.state.onCallDates[ocKey] = [...existing].sort();
                 this.saveOnCallDatesToSupabase();
                 alert(`✅ Added ${added} new date${added!==1?'s':''} for "${empId}".`);
+                this.renderManageOnCallView();
+            },
+
+            addOnCallRangeKeyed(ocKey, cardEid) {
+                const from = document.getElementById('ocFrom-' + cardEid)?.value;
+                const to   = document.getElementById('ocTo-'   + cardEid)?.value;
+                this._applyOnCallRange(ocKey, from, to);
+            },
+
+            addOnCallWeekKeyed(ocKey, cardEid) {
+                const weekNum = parseInt(document.getElementById('ocWeek-' + cardEid)?.value);
+                const yr      = parseInt(document.getElementById('ocWeekYear-' + cardEid)?.value) || this.state.biddingYear;
+                if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
+                const r = this.weekNumberToDateRange(weekNum, yr);
+                this._applyOnCallRange(ocKey, r.from, r.to);
+            },
+
+            addOnCallMultiWeekKeyed(ocKey, cardEid) {
+                const raw = document.getElementById('ocMultiWeekInput-' + cardEid)?.value || '';
+                const yr  = parseInt(document.getElementById('ocMultiWeekYear-' + cardEid)?.value) || this.state.biddingYear;
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                if (weeks.size === 0) { alert('⚠️ No valid week numbers found.'); return; }
+                if (!this.state.onCallDates[ocKey]) this.state.onCallDates[ocKey] = [];
+                const existing = new Set(this.state.onCallDates[ocKey]);
+                let added = 0;
+                [...weeks].forEach(w => {
+                    const r = this.weekNumberToDateRange(w, yr);
+                    const cur = new Date(r.from+'T00:00:00'), end = new Date(r.to+'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate()+1);
+                    }
+                });
+                this.state.onCallDates[ocKey] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                alert(`✅ Added ${added} new dates.`);
                 this.renderManageOnCallView();
             },
 
@@ -6327,13 +6660,15 @@
                 }).join('');
             },
 
-            removeFromOnCallList(empId, pfx) {
+            removeFromOnCallList(ocKey, pfx) {
+                const empId = ocKey.includes('::') ? ocKey.split('::')[1] : ocKey;
                 const name = [...(this.state.goldenCommandUsers||[]), ...(this.state.corporateStaffUsers||[])].find(u => u.id === empId)?.name || empId;
-                if (!confirm(`Remove all On-Call dates for "${name}" (${empId})?\n\nThis clears their schedule but does NOT remove them as a ${pfx==='gc'?'Golden Command':'Corporate Staff'} user.`)) return;
-                delete this.state.onCallDates[empId];
+                const deptLabel = pfx==='gc' ? 'Golden Command' : pfx==='cs' ? 'Corporate Staff' : pfx==='l456inm' ? 'L456 INM' : pfx==='l3inm' ? 'L3 INM' : 'L3 TSM';
+                if (!confirm(`Clear all On-Call dates for "${name}" in ${deptLabel}?\n\nThis only removes their schedule for this department.`)) return;
+                delete this.state.onCallDates[ocKey];
                 if (this.supabase) {
-                    this.supabase.from('oncall_dates').delete().eq('staff_id', empId)
-                        .then(({ error }) => { if (error) console.warn('oncall_dates delete error:', error.message); else console.log('✅ Cleared oncall_dates for', empId); });
+                    this.supabase.from('oncall_dates').delete().eq('staff_id', ocKey)
+                        .then(({ error }) => { if (error) console.warn('oncall_dates delete error:', error.message); else console.log('✅ Cleared oncall_dates for', ocKey); });
                 }
                 localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
                 this.renderManageOnCallView();
