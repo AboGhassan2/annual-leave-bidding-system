@@ -6714,11 +6714,7 @@
                 const deptLabel = pfx==='gc' ? 'Golden Command' : pfx==='cs' ? 'Corporate Staff' : pfx==='l456inm' ? 'L456 INM' : pfx==='l3inm' ? 'L3 INM' : 'L3 TSM';
                 if (!confirm(`Clear all On-Call dates for "${name}" in ${deptLabel}?\n\nThis only removes their schedule for this department.`)) return;
                 delete this.state.onCallDates[ocKey];
-                if (this.supabase) {
-                    this.supabase.from('oncall_dates').delete().eq('staff_id', ocKey)
-                        .then(({ error }) => { if (error) console.warn('oncall_dates delete error:', error.message); else console.log('✅ Cleared oncall_dates for', ocKey); });
-                }
-                localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
+                this.saveOnCallDatesToSupabase();
                 this.renderManageOnCallView();
             },
 
@@ -6981,15 +6977,31 @@
                             rows.push({ tenant_id: this._tid(), employee_id: empId, date: date, week_number: weekNum, year: d.getFullYear() });
                         }
                     }
-                    if (rows.length === 0) return;
+                    if (rows.length === 0) {
+                        console.log('ℹ️ No on-call dates to save');
+                        return;
+                    }
+                    // First clear all existing rows for this tenant, then re-insert fresh
+                    // This avoids upsert conflict key issues entirely
+                    const { error: delError } = await this.supabase
+                        .from('oncall_dates')
+                        .delete()
+                        .eq('tenant_id', this._tid());
+                    if (delError) {
+                        console.error('❌ oncall_dates clear error:', delError.message);
+                        this.updateSystemStatus('⚠️ On-call save failed — check console');
+                        setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                        return;
+                    }
+                    // Insert all rows in chunks of 500
                     const chunkSize = 500;
                     for (let i = 0; i < rows.length; i += chunkSize) {
                         const batch = rows.slice(i, i + chunkSize);
                         const { error } = await this.supabase
                             .from('oncall_dates')
-                            .upsert(batch, { onConflict: 'employee_id,date', ignoreDuplicates: true });
+                            .insert(batch);
                         if (error) {
-                            console.error('❌ oncall_dates save error:', error.message);
+                            console.error('❌ oncall_dates insert error:', error.message);
                             this.updateSystemStatus('⚠️ On-call save failed — check console');
                             setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                             return;
@@ -6999,7 +7011,7 @@
                     this.updateSystemStatus(`✅ On-call dates saved (${rows.length} rows)`);
                     setTimeout(() => this.updateSystemStatus('Ready'), 3000);
                 } catch (e) {
-                    console.warn('⚠️ oncall_dates save error:', e.message);
+                    console.error('❌ oncall_dates save exception:', e.message);
                     this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
                     setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                 }
@@ -7045,20 +7057,8 @@
                 this.state.onCallDates[empId] = this.state.onCallDates[empId].filter(d => !toDelete.has(d));
                 const removed = before - this.state.onCallDates[empId].length;
 
-                // Delete from dedicated oncall_dates table
-                if (this.supabase && toDelete.size > 0) {
-                    this.supabase
-                        .from('oncall_dates')
-                        .delete()
-                        .eq('employee_id', empId)
-                        .eq('tenant_id', this._tid())
-                        .in('date', [...toDelete])
-                        .then(({ error }) => {
-                            if (error) console.error('❌ oncall_dates delete error:', error.message);
-                            else console.log(`✅ Deleted ${toDelete.size} rows from oncall_dates for ${empId}`);
-                        });
-                }
-                this.saveState(); // keep localStorage in sync
+                // Update Supabase by re-saving the full state (delete + re-insert approach)
+                this.saveOnCallDatesToSupabase();
                 this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_delete', empId, blockFrom, blockTo, removed });
                 alert(`🗑 Removed ${removed} date${removed !== 1 ? 's' : ''} from On-Call schedule.`);
                 this.renderManageOnCallView();
