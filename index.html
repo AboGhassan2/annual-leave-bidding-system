@@ -4475,35 +4475,24 @@
                 for (const sg of subGroups) {
                     try {
                         const users = this.state[sg.stateKey] || [];
+                        // Delete all rows for this tenant, then re-insert fresh
+                        const { error: delError } = await this.supabase
+                            .from(sg.table).delete().eq('tenant_id', this._tid());
+                        if (delError) throw delError;
                         if (users.length > 0) {
-                            const { error: upsertError } = await this.supabase
+                            const { error: insError } = await this.supabase
                                 .from(sg.table)
-                                .upsert(
-                                    users.map(u => ({
-                                        id: u.id,
-                                        tenant_id: this._tid(),
-                                        name: u.name,
-                                        password: u.password || '',
-                                        updated_at: new Date().toISOString()
-                                    })),
-                                    { onConflict: 'id' }
-                                );
-                            if (upsertError) throw upsertError;
+                                .insert(users.map(u => ({
+                                    id:        u.id,
+                                    tenant_id: this._tid(),
+                                    name:      u.name,
+                                    password:  u.password || u.id,
+                                })));
+                            if (insError) throw insError;
                         }
-                        // Delete rows no longer in state
-                        const { data: tableRows, error: fetchError } = await this.supabase
-                            .from(sg.table).select('id').eq('tenant_id', this._tid());
-                        if (fetchError) throw fetchError;
-                        const currentIds = users.map(u => u.id);
-                        const toDelete = (tableRows || []).map(r => r.id).filter(id => !currentIds.includes(id));
-                        if (toDelete.length > 0) {
-                            const { error: deleteError } = await this.supabase
-                                .from(sg.table).delete().in('id', toDelete);
-                            if (deleteError) throw deleteError;
-                        }
-                        console.log(`✅ ${sg.table} synced (${users.length} users)`);
+                        console.log(`✅ ${sg.table} saved (${users.length} users)`);
                     } catch (e) {
-                        console.warn(`⚠️ ${sg.table} sync failed:`, e.message);
+                        console.error(`❌ ${sg.table} save failed:`, e.message);
                     }
                 }
             },
