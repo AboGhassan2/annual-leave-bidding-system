@@ -1345,15 +1345,15 @@
                     for (const sg of subGroups) {
                         const { data: sgRows, error: sgErr } = await this.supabase
                             .from(sg.table)
-                            .select('id, name, password')
+                            .select('id, name, password, tenant_id')
                             .eq('tenant_id', this._tid());
                         if (sgErr) {
                             console.error(`❌ Could not load ${sg.table}:`, sgErr.message);
                         } else if (sgRows && sgRows.length > 0) {
                             this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
-                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table}`);
+                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table} (tenant: ${sgRows[0].tenant_id})`);
                         } else {
-                            console.log(`ℹ️ No users found in ${sg.table}`);
+                            console.warn(`⚠️ No users found in ${sg.table} for tenant ${this._tid()}`);
                         }
                     }
                     // ────────────────────────────────────────────────────────────────────────
@@ -4475,24 +4475,28 @@
                 for (const sg of subGroups) {
                     try {
                         const users = this.state[sg.stateKey] || [];
-                        // Delete all rows for this tenant, then re-insert fresh
+                        // Step 1: delete ALL rows for this tenant
                         const { error: delError } = await this.supabase
                             .from(sg.table).delete().eq('tenant_id', this._tid());
-                        if (delError) throw delError;
+                        if (delError) { console.error(`❌ ${sg.table} delete failed:`, delError.message); continue; }
+                        // Step 2: insert fresh — use upsert to handle any lingering PK conflicts
                         if (users.length > 0) {
                             const { error: insError } = await this.supabase
                                 .from(sg.table)
-                                .insert(users.map(u => ({
-                                    id:        u.id,
-                                    tenant_id: this._tid(),
-                                    name:      u.name,
-                                    password:  u.password || u.id,
-                                })));
-                            if (insError) throw insError;
+                                .upsert(
+                                    users.map(u => ({
+                                        id:        u.id,
+                                        tenant_id: this._tid(),
+                                        name:      u.name,
+                                        password:  u.password || u.id,
+                                    })),
+                                    { onConflict: 'id', ignoreDuplicates: false }
+                                );
+                            if (insError) { console.error(`❌ ${sg.table} insert failed:`, insError.message); continue; }
                         }
                         console.log(`✅ ${sg.table} saved (${users.length} users)`);
                     } catch (e) {
-                        console.error(`❌ ${sg.table} save failed:`, e.message);
+                        console.error(`❌ ${sg.table} save exception:`, e.message);
                     }
                 }
             },
