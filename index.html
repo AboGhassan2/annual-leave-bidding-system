@@ -818,9 +818,10 @@
                             <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
                         </div>
                         <button class="lp-sign-btn" onclick="
-                            app.setLoginType('employee');
-                            document.getElementById('loginId').value = document.getElementById('empLoginId').value;
-                            document.getElementById('loginPassword').value = document.getElementById('empLoginPwd').value;
+                            const _empId = document.getElementById('empLoginId').value;
+                            const _empPw = document.getElementById('empLoginPwd').value;
+                            app.state.loginType = 'employee';
+                            app._pendingLogin = { empId: _empId, empPw: _empPw };
                             app.handleLogin();
                         ">Sign In</button>
                     </div>
@@ -899,8 +900,10 @@
                             <button class="lp-forgot" style="color:#b8860b;" onclick="app.renderForgotPasswordView()">Forgot password?</button>
                         </div>
                         <button class="lp-sign-btn gc-sign-btn" onclick="
-                            app.setLoginType('goldencommand');
-                            document.getElementById('loginPassword').value = document.getElementById('gcLoginPwd').value;
+                            const _gcId = document.getElementById('gcLoginId')?.value || '';
+                            const _gcPw = document.getElementById('gcLoginPwd').value;
+                            app.state.loginType = 'goldencommand';
+                            app._pendingLogin = { gcId: _gcId, gcPw: _gcPw };
                             app.handleLogin();
                         ">Sign In</button>
                     </div>
@@ -1316,7 +1319,7 @@
                     // Load Corporate Staff users from dedicated table
                     const { data: csUsers, error: csError } = await this.supabase
                         .from('corporate_staff_users')
-                        .select('staff_id, name, password')
+                        .select('id, name, password')
                         .eq('tenant_id', this._tid())
                         .order('created_at', { ascending: true });
 
@@ -1324,9 +1327,9 @@
                         console.warn('⚠️ Could not load Corporate Staff users:', csError.message);
                     } else if (csUsers && csUsers.length > 0) {
                         this.state.corporateStaffUsers = csUsers.map(u => ({
-                            id: u.staff_id,
+                            id: u.id,
                             name: u.name,
-                            password: u.password
+                            password: u.password || u.id
                         }));
                         console.log(`✅ Loaded ${csUsers.length} Corporate Staff users from dedicated table`);
                     } else {
@@ -1590,7 +1593,7 @@
                     form.innerHTML = `
                         <div>
                             <label class="metro-label">Planner Password</label>
-                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter planner password" />
+                            <input type="password" id="metro-plannerPwd" class="metro-input" placeholder="Enter planner password" />
                         </div>
                     `;
                 } else if (this.state.loginType === 'goldencommand') {
@@ -1600,11 +1603,11 @@
                         <div style="margin-bottom:14px;">
                             ${!hasGCUsers ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No Golden Command users configured. Contact the planner.</div>` : ''}
                             <label class="metro-label">Golden Command ID</label>
-                            <input type="text" id="gcLoginId" class="metro-input" placeholder="Enter your GC ID" ${!hasGCUsers ? 'disabled' : ''} />
+                            <input type="text" id="metro-gcLoginId" class="metro-input" placeholder="Enter your GC ID" ${!hasGCUsers ? 'disabled' : ''} />
                         </div>
                         <div>
                             <label class="metro-label">Password</label>
-                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasGCUsers ? 'disabled' : ''} />
+                            <input type="password" id="metro-gcPwd" class="metro-input" placeholder="Enter your password" ${!hasGCUsers ? 'disabled' : ''} />
                         </div>
                     `;
                 } else if (this.state.loginType === 'corporatestaff') {
@@ -1627,12 +1630,11 @@
                         <div style="margin-bottom:14px;">
                             ${!hasData ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No employee data loaded. Click "Sync with Database" above.</div>` : ''}
                             <label class="metro-label">Employee ID</label>
-                            <input type="text" id="loginId" class="metro-input" placeholder="Enter your ID" ${!hasData ? 'disabled' : ''} />
+                            <input type="text" id="metro-empLoginId" class="metro-input" placeholder="Enter your ID" ${!hasData ? 'disabled' : ''} />
                         </div>
                         <div>
                             <label class="metro-label">Password</label>
-                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasData ? 'disabled' : ''} />
-
+                            <input type="password" id="metro-empPwd" class="metro-input" placeholder="Enter your password" ${!hasData ? 'disabled' : ''} />
                         </div>
                     `;
                 }
@@ -1640,8 +1642,7 @@
 
             handleLogin() {
                 if (this.state.loginType === 'planner') {
-                    // Read from the dedicated planner card input, fall back to hidden field
-                    const input = document.getElementById('plannerLoginPwd') || document.getElementById('loginPassword');
+                    const input = document.getElementById('plannerLoginPwd') || document.getElementById('metro-plannerPwd') || document.getElementById('loginPassword');
                     const password = input ? input.value : '';
                     
                     if (password === this.state.plannerPassword) {
@@ -1666,11 +1667,10 @@
                         alert('❌ Incorrect planner password.');
                     }
                 } else if (this.state.loginType === 'goldencommand') {
-                    const gcIdInput = document.getElementById('gcLoginId');
-                    // Read from the GC card password input, fall back to hidden field
-                    const passInput = document.getElementById('gcLoginPwd') || document.getElementById('loginPassword');
-                    const gcId = gcIdInput ? gcIdInput.value.trim() : '';
-                    const password = passInput ? passInput.value : '';
+                    // Use _pendingLogin values if set by card button (avoids DOM ID conflicts)
+                    const gcId = (this._pendingLogin?.gcId) ?? (document.getElementById('gcLoginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.gcPw) ?? (document.getElementById('gcLoginPwd')?.value || document.getElementById('loginPassword')?.value || '');
+                    this._pendingLogin = null;
                     
                     if (!gcId || !password) {
                         alert('⚠️ Please enter both GC ID and password');
@@ -1712,7 +1712,6 @@
                     alert(`✅ Welcome, ${gcUser.name}!`);
                 } else if (this.state.loginType === 'corporatestaff') {
                     const csIdInput = document.getElementById('csLoginId');
-                    // Read from the Corp Staff card password input, fall back to hidden field
                     const passInput = document.getElementById('csLoginPwd') || document.getElementById('loginPassword');
                     const csId = csIdInput ? csIdInput.value.trim() : '';
                     const password = passInput ? passInput.value : '';
@@ -1730,8 +1729,7 @@
                         return;
                     }
 
-                    // password fallback: stored password → staff id → raw id
-                    const storedPass = csUser.password || csUser.id || csId;
+                    const storedPass = csUser.password || csUser.id;
                     if (password !== storedPass) {
                         alert('❌ Incorrect password.');
                         return;
@@ -1757,12 +1755,10 @@
                     this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
                     alert(`✅ Welcome, ${csUser.name}!`);
                 } else {
-                    // Employee login — read from card inputs, fall back to hidden fields
-                    const idInput = document.getElementById('empLoginId') || document.getElementById('loginId');
-                    const passInput = document.getElementById('empLoginPwd') || document.getElementById('loginPassword');
-                    
-                    const id = idInput ? idInput.value.trim() : '';
-                    const password = passInput ? passInput.value : '';
+                    // Employee login — use _pendingLogin if set by card button, else read from DOM
+                    const id = (this._pendingLogin?.empId) ?? (document.getElementById('empLoginId')?.value?.trim() || document.getElementById('loginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.empPw) ?? (document.getElementById('empLoginPwd')?.value || document.getElementById('loginPassword')?.value || '');
+                    this._pendingLogin = null;
                     
                     if (!id || !password) {
                         alert('⚠️ Please enter both ID and password');
@@ -1831,7 +1827,12 @@
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
-                
+
+                // Re-sync from Supabase so user lists are always fresh on next login
+                if (this.supabase) {
+                    try { await this.loadFromSupabase(); } catch(e) { /* silent */ }
+                }
+
                 this.renderLoginForm();
             },
 
@@ -4434,7 +4435,7 @@
                             .from('corporate_staff_users')
                             .insert(currentUsers.map(u => ({
                                 tenant_id: this._tid(),
-                                staff_id:  u.id,
+                                id:        u.id,
                                 name:      u.name,
                                 password:  u.password || u.id,
                             })));
@@ -7956,12 +7957,24 @@
                         const id = focused.id;
                         if (id === 'empLoginId' || id === 'empLoginPwd') {
                             this.state.loginType = 'employee';
+                            this._pendingLogin = {
+                                empId: document.getElementById('empLoginId')?.value?.trim() || '',
+                                empPw: document.getElementById('empLoginPwd')?.value || ''
+                            };
                         } else if (id === 'csLoginId' || id === 'csLoginPwd') {
                             this.state.loginType = 'corporatestaff';
+                            this._pendingLogin = {
+                                csId: document.getElementById('csLoginId')?.value?.trim() || '',
+                                csPw: document.getElementById('csLoginPwd')?.value || ''
+                            };
                         } else if (id === 'plannerLoginPwd') {
                             this.state.loginType = 'planner';
                         } else if (id === 'gcLoginId' || id === 'gcLoginPwd') {
                             this.state.loginType = 'goldencommand';
+                            this._pendingLogin = {
+                                gcId: document.getElementById('gcLoginId')?.value?.trim() || '',
+                                gcPw: document.getElementById('gcLoginPwd')?.value || ''
+                            };
                         }
                     }
                     this.handleLogin();
