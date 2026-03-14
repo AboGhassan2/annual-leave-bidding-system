@@ -1329,6 +1329,29 @@
                     } else {
                         console.log('ℹ️ No Corporate Staff users found in dedicated table');
                     }
+
+                    // ── Load CS sub-group users (L456 INM, L3 INM, L3 TSM) from Supabase ──
+                    const subGroups = [
+                        { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
+                        { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
+                        { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                    ];
+                    for (const sg of subGroups) {
+                        const { data: sgRows, error: sgErr } = await this.supabase
+                            .from(sg.table)
+                            .select('id, name, password')
+                            .eq('tenant_id', this._tid())
+                            .order('created_at', { ascending: true });
+                        if (sgErr) {
+                            console.warn(`⚠️ Could not load ${sg.table}:`, sgErr.message);
+                        } else if (sgRows && sgRows.length > 0) {
+                            this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password }));
+                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table}`);
+                        } else {
+                            console.log(`ℹ️ No users found in ${sg.table}`);
+                        }
+                    }
+                    // ────────────────────────────────────────────────────────────────────────
                     
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
@@ -4272,6 +4295,7 @@
                 if (this.state.l456InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l456InmUsers.push({ id, name });
                 this.saveState();
+                this.saveSubGroupUsersToSupabase(); // persist to Supabase
                 alert(`✅ L456 INM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4283,6 +4307,7 @@
                 if (confirm(`Remove L456 INM user "${user.name}" (${user.id})?`)) {
                     this.state.l456InmUsers.splice(index, 1);
                     this.saveState();
+                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4295,6 +4320,7 @@
                 if (this.state.l3InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l3InmUsers.push({ id, name });
                 this.saveState();
+                this.saveSubGroupUsersToSupabase(); // persist to Supabase
                 alert(`✅ L3 INM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4306,6 +4332,7 @@
                 if (confirm(`Remove L3 INM user "${user.name}" (${user.id})?`)) {
                     this.state.l3InmUsers.splice(index, 1);
                     this.saveState();
+                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4318,6 +4345,7 @@
                 if (this.state.l3TsmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l3TsmUsers.push({ id, name });
                 this.saveState();
+                this.saveSubGroupUsersToSupabase(); // persist to Supabase
                 alert(`✅ L3 TSM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4329,6 +4357,7 @@
                 if (confirm(`Remove L3 TSM user "${user.name}" (${user.id})?`)) {
                     this.state.l3TsmUsers.splice(index, 1);
                     this.saveState();
+                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4428,6 +4457,51 @@
                     console.warn('⚠️ Corporate Staff users sync failed:', e.message);
                 }
             },
+
+            // ── Save L456 INM / L3 INM / L3 TSM users to Supabase ──────────────────
+            async saveSubGroupUsersToSupabase() {
+                if (!this.supabase) return;
+                const subGroups = [
+                    { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
+                    { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
+                    { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                ];
+                for (const sg of subGroups) {
+                    try {
+                        const users = this.state[sg.stateKey] || [];
+                        if (users.length > 0) {
+                            const { error: upsertError } = await this.supabase
+                                .from(sg.table)
+                                .upsert(
+                                    users.map(u => ({
+                                        id: u.id,
+                                        tenant_id: this._tid(),
+                                        name: u.name,
+                                        password: u.password || '',
+                                        updated_at: new Date().toISOString()
+                                    })),
+                                    { onConflict: 'id' }
+                                );
+                            if (upsertError) throw upsertError;
+                        }
+                        // Delete rows no longer in state
+                        const { data: tableRows, error: fetchError } = await this.supabase
+                            .from(sg.table).select('id').eq('tenant_id', this._tid());
+                        if (fetchError) throw fetchError;
+                        const currentIds = users.map(u => u.id);
+                        const toDelete = (tableRows || []).map(r => r.id).filter(id => !currentIds.includes(id));
+                        if (toDelete.length > 0) {
+                            const { error: deleteError } = await this.supabase
+                                .from(sg.table).delete().in('id', toDelete);
+                            if (deleteError) throw deleteError;
+                        }
+                        console.log(`✅ ${sg.table} synced (${users.length} users)`);
+                    } catch (e) {
+                        console.warn(`⚠️ ${sg.table} sync failed:`, e.message);
+                    }
+                }
+            },
+            // ────────────────────────────────────────────────────────────────────────
 
             // ==================== OTHER FUNCTIONS ====================
 
