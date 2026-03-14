@@ -6786,7 +6786,7 @@
                             <div id="onCallStaffList-l456inm">
                                 ${l456Ids.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L456 INM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l456Ids].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l456Ids].filter(id => (onCallDates['l456inm::'+id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -6802,7 +6802,7 @@
                             <div id="onCallStaffList-l3inm">
                                 ${l3InmIds.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L3 INM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l3InmIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l3InmIds].filter(id => (onCallDates['l3inm::'+id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -6818,7 +6818,7 @@
                             <div id="onCallStaffList-l3tsm">
                                 ${l3TsmIds.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L3 TSM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l3TsmIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l3TsmIds].filter(id => (onCallDates['l3tsm::'+id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
