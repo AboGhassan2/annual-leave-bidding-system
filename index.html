@@ -1828,9 +1828,28 @@
                     if (el) el.value = '';
                 });
 
-                // Re-sync from Supabase so user lists are always fresh on next login
+                // Re-sync only user lists from Supabase so dropdowns are fresh on next login
                 if (this.supabase) {
-                    try { await this.loadFromSupabase(); } catch(e) { /* silent */ }
+                    try {
+                        // Reload CS users
+                        const { data: csRows } = await this.supabase
+                            .from('corporate_staff_users').select('id,name,password')
+                            .eq('tenant_id', this._tid());
+                        if (csRows && csRows.length > 0)
+                            this.state.corporateStaffUsers = csRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+
+                        // Reload sub-group users
+                        for (const sg of [
+                            { table:'l456inm_users', key:'l456InmUsers' },
+                            { table:'l3inm_users',   key:'l3InmUsers'   },
+                            { table:'l3tsm_users',   key:'l3TsmUsers'   },
+                        ]) {
+                            const { data: rows } = await this.supabase
+                                .from(sg.table).select('id,name,password').eq('tenant_id', this._tid());
+                            if (rows && rows.length > 0)
+                                this.state[sg.key] = rows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                        }
+                    } catch(e) { /* silent — use whatever is already in state */ }
                 }
 
                 this.renderLoginForm();
@@ -3181,9 +3200,9 @@
                                 // Collect on-call dates from all 4 dept groups this user belongs to
                                 const deptGroups = [
                                     { key: uid,               label: '🏢 Corporate Staff' },
-                                    { key: 'l456inm::' + uid, label: '📋 L456 INM' },
-                                    { key: 'l3inm::' + uid,   label: '📋 L3 INM' },
-                                    { key: 'l3tsm::' + uid,   label: '📋 L3 TSM' },
+                                    { key: uid, label: '📋 L456 INM' },
+                                    { key: uid, label: '📋 L3 INM' },
+                                    { key: uid, label: '📋 L3 TSM' },
                                 ].filter(g => (this.state.onCallDates[g.key] || []).length > 0);
 
                                 if (deptGroups.length === 0) return '';
@@ -3432,9 +3451,9 @@
                 const uid = csUser.id;
                 const allOnCall = [
                     ...(this.state.onCallDates[uid] || []),
-                    ...(this.state.onCallDates['l456inm::' + uid] || []),
-                    ...(this.state.onCallDates['l3inm::' + uid] || []),
-                    ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
                 ];
                 const onCallSet = new Set(allOnCall);
                 const startVal = document.getElementById('csStartDate')?.value;
@@ -3497,9 +3516,9 @@
                 const uid = csUser.id;
                 const allOnCallForCS = new Set([
                     ...(this.state.onCallDates[uid] || []),
-                    ...(this.state.onCallDates['l456inm::' + uid] || []),
-                    ...(this.state.onCallDates['l3inm::' + uid] || []),
-                    ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates[uid] || []),
                 ]);
                 const onCallDatesForCS = allOnCallForCS;
                 if (onCallDatesForCS.size > 0) {
@@ -6407,7 +6426,7 @@
                 const buildAudit = (ids, deptPfx) => {
                     const dateOwners = {};
                     ids.forEach(id => {
-                        const key = deptPfx ? deptPfx + '::' + id : id;
+                        const key = id; // plain ID — no prefix needed, staff are unique per group
                         (onCallDates[key] || []).forEach(raw => {
                             const d = String(raw).substring(0,10);
                             if (!dateOwners[d]) dateOwners[d] = [];
@@ -6457,7 +6476,7 @@
                 };
 
                 const renderCard = (id, dateOwners, isGCPanel, colorTheme, deptPfx) => {
-                    const ocKey = deptPfx ? deptPfx + '::' + id : id;
+                    const ocKey = id; // plain ID for all groups
                     const dates = (onCallDates[ocKey] || []).slice().sort();
                     const grouped = {};
                     dates.forEach(d => {
@@ -6769,7 +6788,7 @@
                             <div id="onCallStaffList-l456inm">
                                 ${l456Ids.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L456 INM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l456Ids].filter(id => (onCallDates['l456inm::'+id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l456Ids].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -6785,7 +6804,7 @@
                             <div id="onCallStaffList-l3inm">
                                 ${l3InmIds.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L3 INM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l3InmIds].filter(id => (onCallDates['l3inm::'+id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l3InmIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -6801,7 +6820,7 @@
                             <div id="onCallStaffList-l3tsm">
                                 ${l3TsmIds.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L3 TSM users. Add them in 👥 Manage Users first.</p>'
-                                    : [...l3TsmIds].filter(id => (onCallDates['l3tsm::'+id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                    : [...l3TsmIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -6815,7 +6834,7 @@
                 const dateFrom = document.getElementById('newOcFrom-' + pfx)?.value;
                 const dateTo   = document.getElementById('newOcTo-'   + pfx)?.value;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
-                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                const ocKey = empId; // plain ID for all groups — staff are unique across groups
                 this._applyOnCallRange(ocKey, dateFrom, dateTo);
                 setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
             },
@@ -6826,7 +6845,7 @@
                 const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
                 if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
-                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                const ocKey = empId; // plain ID for all groups — staff are unique across groups
                 const r = this.weekNumberToDateRange(weekNum, yr);
                 this._applyOnCallRange(ocKey, r.from, r.to);
                 setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
@@ -6837,7 +6856,7 @@
                 const raw   = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
                 const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYear;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
-                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                const ocKey = empId; // plain ID for all groups — staff are unique across groups
                 const tokens = raw.split(/[\s,;]+/).filter(Boolean);
                 const weeks  = new Set();
                 for (const t of tokens) {
@@ -6945,7 +6964,7 @@
                 const preview = document.getElementById('ocSelectedPreview-' + pfx);
                 if (!preview) return;
                 if (!val) { preview.innerHTML = ''; return; }
-                const ocKey = (pfx === 'gc' || pfx === 'cs') ? val : pfx + '::' + val;
+                const ocKey = val; // plain ID for all groups
                 const dates = (this.state.onCallDates[ocKey] || []).slice().sort();
                 if (!dates.length) {
                     preview.innerHTML = '<p class="text-sm text-gray-400 italic mb-2">No On-Call dates assigned yet.</p>';
