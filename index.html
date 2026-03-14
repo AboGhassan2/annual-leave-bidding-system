@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -4320,7 +4320,7 @@
                 if (this.state.l456InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l456InmUsers.push({ id, name });
                 this.saveState();
-                this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                this.saveSubGroupUsersToSupabase('l456inm'); // persist to Supabase
                 alert(`✅ L456 INM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4332,7 +4332,7 @@
                 if (confirm(`Remove L456 INM user "${user.name}" (${user.id})?`)) {
                     this.state.l456InmUsers.splice(index, 1);
                     this.saveState();
-                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                    this.saveSubGroupUsersToSupabase('l456inm'); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4345,7 +4345,7 @@
                 if (this.state.l3InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l3InmUsers.push({ id, name });
                 this.saveState();
-                this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                this.saveSubGroupUsersToSupabase('l3inm'); // persist to Supabase
                 alert(`✅ L3 INM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4357,7 +4357,7 @@
                 if (confirm(`Remove L3 INM user "${user.name}" (${user.id})?`)) {
                     this.state.l3InmUsers.splice(index, 1);
                     this.saveState();
-                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                    this.saveSubGroupUsersToSupabase('l3inm'); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4370,7 +4370,7 @@
                 if (this.state.l3TsmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
                 this.state.l3TsmUsers.push({ id, name });
                 this.saveState();
-                this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                this.saveSubGroupUsersToSupabase('l3tsm'); // persist to Supabase
                 alert(`✅ L3 TSM user "${name}" (ID: ${id}) added!`);
                 this.renderUploadView();
             },
@@ -4382,7 +4382,7 @@
                 if (confirm(`Remove L3 TSM user "${user.name}" (${user.id})?`)) {
                     this.state.l3TsmUsers.splice(index, 1);
                     this.saveState();
-                    this.saveSubGroupUsersToSupabase(); // persist to Supabase
+                    this.saveSubGroupUsersToSupabase('l3tsm'); // persist to Supabase
                     this.renderUploadView();
                 }
             },
@@ -4465,21 +4465,24 @@
             },
 
             // ── Save L456 INM / L3 INM / L3 TSM users to Supabase ──────────────────
-            async saveSubGroupUsersToSupabase() {
+            // Pass a groupKey ('l456inm','l3inm','l3tsm') to save only that group,
+            // or omit to save all three.
+            async saveSubGroupUsersToSupabase(groupKey) {
                 if (!this.supabase) return;
-                const subGroups = [
-                    { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
-                    { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
-                    { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                const allGroups = [
+                    { key: 'l456inm', table: 'l456inm_users', stateKey: 'l456InmUsers' },
+                    { key: 'l3inm',   table: 'l3inm_users',   stateKey: 'l3InmUsers'   },
+                    { key: 'l3tsm',   table: 'l3tsm_users',   stateKey: 'l3TsmUsers'   },
                 ];
-                for (const sg of subGroups) {
+                const toSave = groupKey
+                    ? allGroups.filter(g => g.key === groupKey)
+                    : allGroups;
+                for (const sg of toSave) {
                     try {
                         const users = this.state[sg.stateKey] || [];
-                        // Step 1: delete ALL rows for this tenant
                         const { error: delError } = await this.supabase
                             .from(sg.table).delete().eq('tenant_id', this._tid());
                         if (delError) { console.error(`❌ ${sg.table} delete failed:`, delError.message); continue; }
-                        // Step 2: insert fresh — use upsert to handle any lingering PK conflicts
                         if (users.length > 0) {
                             const { error: insError } = await this.supabase
                                 .from(sg.table)
@@ -6359,9 +6362,9 @@
                 this.state[stateKey].push({ id, name, password: pw || id });
                 this.saveState();
 
-                // Persist to the correct Supabase table
+                // Persist to the correct Supabase table — pass groupKey to save ONLY this group
                 if (groupKey === 'cs') this.saveCorporateStaffUsersToSupabase();
-                else this.saveSubGroupUsersToSupabase();
+                else this.saveSubGroupUsersToSupabase(groupKey);
 
                 this.renderManageUsersView();
             },
@@ -6378,7 +6381,7 @@
                 this.state[stateKey].splice(index, 1);
                 this.saveState();
                 if (groupKey === 'cs') this.saveCorporateStaffUsersToSupabase();
-                else this.saveSubGroupUsersToSupabase();
+                else this.saveSubGroupUsersToSupabase(groupKey);
                 this.renderManageUsersView();
             },
             // ==================== END MANAGE USERS ====================
