@@ -1,4 +1,4 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1345,19 +1345,18 @@
                     for (const sg of subGroups) {
                         const { data: sgRows, error: sgErr } = await this.supabase
                             .from(sg.table)
-                            .select('id, name, password, tenant_id')
+                            .select('id, name, password')
                             .eq('tenant_id', this._tid());
                         if (sgErr) {
                             console.error(`❌ Could not load ${sg.table}:`, sgErr.message);
                         } else if (sgRows && sgRows.length > 0) {
                             this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
-                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table} (tenant: ${sgRows[0].tenant_id})`);
+                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table}`);
                         } else {
                             console.warn(`⚠️ No users found in ${sg.table} for tenant ${this._tid()}`);
                         }
                     }
                     // ────────────────────────────────────────────────────────────────────────
-                    
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
                     this.renderLoginForm();
@@ -6387,15 +6386,33 @@
             // ==================== END MANAGE USERS ====================
 
             // ==================== ON-CALL MANAGER ====================
-            renderManageOnCallView() {
+            async renderManageOnCallView() {
                 const content = document.getElementById('contentArea');
                 const onCallDates = this.state.onCallDates || {};
                 const year = this.state.biddingYear;
                 const gcUsers = this.state.goldenCommandUsers || [];
                 const csUsers = this.state.corporateStaffUsers || [];
-                const l456InmUsers = this.state.l456InmUsers || [];
-                const l3InmUsers = this.state.l3InmUsers || [];
-                const l3TsmUsers = this.state.l3TsmUsers || [];
+                let l456InmUsers = this.state.l456InmUsers || [];
+                let l3InmUsers   = this.state.l3InmUsers   || [];
+                let l3TsmUsers   = this.state.l3TsmUsers   || [];
+
+                // If any sub-group is empty but Supabase is available, reload it now
+                if (this.supabase) {
+                    const toReload = [
+                        { empty: l456InmUsers.length === 0, table: 'l456inm_users', key: 'l456InmUsers' },
+                        { empty: l3InmUsers.length === 0,   table: 'l3inm_users',   key: 'l3InmUsers'   },
+                        { empty: l3TsmUsers.length === 0,   table: 'l3tsm_users',   key: 'l3TsmUsers'   },
+                    ].filter(g => g.empty);
+                    for (const g of toReload) {
+                        const { data } = await this.supabase.from(g.table).select('id,name,password').eq('tenant_id', this._tid());
+                        if (data && data.length > 0) {
+                            this.state[g.key] = data.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                        }
+                    }
+                    l456InmUsers = this.state.l456InmUsers || [];
+                    l3InmUsers   = this.state.l3InmUsers   || [];
+                    l3TsmUsers   = this.state.l3TsmUsers   || [];
+                }
 
                 if (!window._ocTab) window._ocTab = 'gc';
 
