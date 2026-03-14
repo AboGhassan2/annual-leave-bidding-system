@@ -1730,7 +1730,8 @@
                         return;
                     }
 
-                    const storedPass = csUser.password || csUser.id;
+                    // password fallback: stored password → staff id → raw id
+                    const storedPass = csUser.password || csUser.id || csId;
                     if (password !== storedPass) {
                         alert('❌ Incorrect password.');
                         return;
