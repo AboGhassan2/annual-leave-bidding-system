@@ -1271,26 +1271,33 @@
                     }
 
                     // Load on-call dates from dedicated oncall_dates table
-                    const { data: ocRows, error: ocError } = await this.supabase
-                        .from('oncall_dates')
-                        .select('employee_id, date')
-                        .eq('tenant_id', this._tid());
+                    // Load on-call dates with pagination (bypass 1000-row Supabase limit)
+                    let ocRows = [];
+                    let ocFrom = 0;
+                    const ocBatch = 1000;
+                    while (true) {
+                        const { data: batch, error: ocError } = await this.supabase
+                            .from('oncall_dates')
+                            .select('employee_id, date')
+                            .eq('tenant_id', this._tid())
+                            .range(ocFrom, ocFrom + ocBatch - 1);
+                        if (ocError) { console.warn('⚠️ Could not load oncall_dates:', ocError.message); break; }
+                        if (!batch || batch.length === 0) break;
+                        ocRows = [...ocRows, ...batch];
+                        if (batch.length < ocBatch) break;
+                        ocFrom += ocBatch;
+                    }
 
-                    if (ocError) {
-                        console.warn('⚠️ Could not load oncall_dates:', ocError.message);
-                    } else if (ocRows && ocRows.length > 0) {
+                    if (ocRows.length > 0) {
                         const built = {};
                         for (const row of ocRows) {
                             if (!built[row.employee_id]) built[row.employee_id] = [];
-                            // Normalize date: Supabase may return "2026-01-04T00:00:00+00:00" — strip to "2026-01-04"
                             const dateStr = row.date ? String(row.date).substring(0, 10) : null;
                             if (dateStr) built[row.employee_id].push(dateStr);
                         }
-                        // Sort each employee's dates
                         for (const id of Object.keys(built)) built[id].sort();
-                        // Merge with any hardcoded defaults
                         this.state.onCallDates = { ...(this.state.onCallDates || {}), ...built };
-                        console.log(`✅ Loaded on-call dates from oncall_dates table: ${ocRows.length} rows, ${Object.keys(built).length} staff entries`);
+                        console.log(`✅ Loaded on-call dates: ${ocRows.length} rows, ${Object.keys(built).length} staff entries`);
                     } else {
                         console.log('ℹ️ No on-call dates in oncall_dates table yet');
                     }
@@ -1342,22 +1349,31 @@
                         { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
                         { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
                     ];
+                    const _dbg = (msg) => { const el = document.getElementById('_dbgLog'); if(el) el.innerHTML += msg + '<br>'; };
                     for (const sg of subGroups) {
-                        const { data: sgRows, error: sgErr } = await this.supabase
-                            .from(sg.table)
-                            .select('id, name, password')
-                            .eq('tenant_id', this._tid());
-                        if (sgErr) {
-                            console.error(`❌ Could not load ${sg.table}:`, sgErr.message);
-                        } else if (sgRows && sgRows.length > 0) {
-                            this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
-                            console.log(`✅ Loaded ${sgRows.length} users from ${sg.table}`);
-                        } else {
-                            console.warn(`⚠️ No users found in ${sg.table} for tenant ${this._tid()}`);
+                        try {
+                            _dbg(`⏳ Loading ${sg.table}...`);
+                            const { data: sgRows, error: sgErr } = await this.supabase
+                                .from(sg.table)
+                                .select('id, name, password')
+                                .eq('tenant_id', this._tid());
+                            if (sgErr) {
+                                _dbg(`❌ ${sg.table} ERROR: ${sgErr.message}`);
+                            } else if (sgRows && sgRows.length > 0) {
+                                _dbg(`✅ ${sg.table}: ${sgRows.length} rows — assigning to state...`);
+                                this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                                _dbg(`✅ ${sg.table}: state updated OK`);
+                            } else {
+                                _dbg(`⚠️ ${sg.table}: 0 rows for tenant ${this._tid()}`);
+                            }
+                        } catch (sgEx) {
+                            _dbg(`❌ ${sg.table} EXCEPTION: ${sgEx.message}`);
                         }
                     }
+                    _dbg(`✅ Sub-group loop done. Calling saveState...`);
                     // ────────────────────────────────────────────────────────────────────────
                     this.saveState();
+                    _dbg(`✅ saveState done. l456: state=${(this.state.l456InmUsers||[]).length} localStorage=${JSON.parse(localStorage.getItem('l456InmUsers')||'[]').length}`);
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
                     this.renderLoginForm();
                     this._updateLandingStats();
@@ -6386,33 +6402,15 @@
             // ==================== END MANAGE USERS ====================
 
             // ==================== ON-CALL MANAGER ====================
-            async renderManageOnCallView() {
+            renderManageOnCallView() {
                 const content = document.getElementById('contentArea');
                 const onCallDates = this.state.onCallDates || {};
                 const year = this.state.biddingYear;
                 const gcUsers = this.state.goldenCommandUsers || [];
                 const csUsers = this.state.corporateStaffUsers || [];
-                let l456InmUsers = this.state.l456InmUsers || [];
-                let l3InmUsers   = this.state.l3InmUsers   || [];
-                let l3TsmUsers   = this.state.l3TsmUsers   || [];
-
-                // If any sub-group is empty but Supabase is available, reload it now
-                if (this.supabase) {
-                    const toReload = [
-                        { empty: l456InmUsers.length === 0, table: 'l456inm_users', key: 'l456InmUsers' },
-                        { empty: l3InmUsers.length === 0,   table: 'l3inm_users',   key: 'l3InmUsers'   },
-                        { empty: l3TsmUsers.length === 0,   table: 'l3tsm_users',   key: 'l3TsmUsers'   },
-                    ].filter(g => g.empty);
-                    for (const g of toReload) {
-                        const { data } = await this.supabase.from(g.table).select('id,name,password').eq('tenant_id', this._tid());
-                        if (data && data.length > 0) {
-                            this.state[g.key] = data.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
-                        }
-                    }
-                    l456InmUsers = this.state.l456InmUsers || [];
-                    l3InmUsers   = this.state.l3InmUsers   || [];
-                    l3TsmUsers   = this.state.l3TsmUsers   || [];
-                }
+                const l456InmUsers = this.state.l456InmUsers || [];
+                const l3InmUsers   = this.state.l3InmUsers   || [];
+                const l3TsmUsers   = this.state.l3TsmUsers   || [];
 
                 if (!window._ocTab) window._ocTab = 'gc';
 
@@ -6724,11 +6722,11 @@
                         null);
                 };
 
-                const gcIds    = new Set([...gcUsers.map(u => u.id), ...Object.keys(onCallDates).filter(id => gcUsers.find(u => u.id === id))]);
-                const csIds    = new Set(csUsers.map(u => u.id));
-                const l456Ids  = new Set(l456InmUsers.map(u => u.id));
-                const l3InmIds = new Set(l3InmUsers.map(u => u.id));
-                const l3TsmIds = new Set(l3TsmUsers.map(u => u.id));
+                const gcIds    = new Set([...gcUsers.map(u => u.id),       ...Object.keys(onCallDates).filter(id => !id.includes('::') && gcUsers.find(u => u.id === id))]);
+                const csIds    = new Set([...csUsers.map(u => u.id),       ...Object.keys(onCallDates).filter(id => !id.includes('::') && csUsers.find(u => u.id === id))]);
+                const l456Ids  = new Set([...l456InmUsers.map(u => u.id),  ...Object.keys(onCallDates).filter(k => k.startsWith('l456inm::')).map(k => k.split('::')[1])]);
+                const l3InmIds = new Set([...l3InmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3inm::')).map(k => k.split('::')[1])]);
+                const l3TsmIds = new Set([...l3TsmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3tsm::')).map(k => k.split('::')[1])]);
                 const gcAudit    = buildAudit([...gcIds]);
                 const csAudit    = buildAudit([...csIds]);
                 const l456Audit  = buildAudit([...l456Ids],  'l456inm');
@@ -7230,17 +7228,22 @@
                         console.log('ℹ️ No on-call dates to save');
                         return;
                     }
-                    // First clear all existing rows for this tenant, then re-insert fresh
-                    // This avoids upsert conflict key issues entirely
-                    const { error: delError } = await this.supabase
-                        .from('oncall_dates')
-                        .delete()
-                        .eq('tenant_id', this._tid());
-                    if (delError) {
-                        console.error('❌ oncall_dates clear error:', delError.message);
-                        this.updateSystemStatus('⚠️ On-call save failed — check console');
-                        setTimeout(() => this.updateSystemStatus('Ready'), 5000);
-                        return;
+                    // Delete only the employee_ids present in current state, then re-insert
+                    // This prevents wiping groups that aren't loaded in this session
+                    const empIds = [...new Set(rows.map(r => r.employee_id))];
+                    for (let i = 0; i < empIds.length; i += 100) {
+                        const batch = empIds.slice(i, i + 100);
+                        const { error: delError } = await this.supabase
+                            .from('oncall_dates')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .in('employee_id', batch);
+                        if (delError) {
+                            console.error('❌ oncall_dates clear error:', delError.message);
+                            this.updateSystemStatus('⚠️ On-call save failed — check console');
+                            setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                            return;
+                        }
                     }
                     // Insert all rows in chunks of 500
                     const chunkSize = 500;
