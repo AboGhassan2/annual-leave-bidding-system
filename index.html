@@ -7571,6 +7571,9 @@
                 const target = this._fpFindByEmail(emailInput);
                 if (!target) { showMsg('❌ No account found with that email. Check spelling or contact the planner.', 'error'); return; }
 
+                // Always use the typed email directly — state may have stale/empty email field
+                if (!target.email) target.email = emailInput;
+
                 // role and identifier come from the found record
                 const role       = target.role;
                 const identifier = target.id === 'planner' ? '' : target.id;
