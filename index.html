@@ -5046,7 +5046,7 @@
                 msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-sm">⏳ Sending test OTP…</div>';
                 try {
                     emailjs.init(key);
-                    await emailjs.send(svc, tpl, { to_email: email, to_name: 'Planner', otp_code: '123456', employee_id: 'TEST', year: this.state.biddingYear });
+                    await emailjs.send(svc, tpl, { email: email, to_email: email, to_name: 'Planner', otp_code: '123456', employee_id: 'TEST', year: this.state.biddingYear });
                     msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Test OTP (123456) sent to <strong>${email}</strong>. Check your inbox!</div>`;
                 } catch (err) {
                     msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-red-50 border-red-300 text-red-700 text-sm">❌ Failed: ${err?.text || err?.message || JSON.stringify(err)}</div>`;
@@ -7653,7 +7653,8 @@
                         const toName  = target.name || toEmail;
                         console.log('Sending to:', toEmail, '| name:', toName);
                         await emailjs.send(svcId, tplId, {
-                            to_email:    toEmail,
+                            email:       toEmail,   // matches {{email}} in EmailJS template
+                            to_email:    toEmail,   // kept for compatibility
                             to_name:     toName,
                             otp_code:    otp,
                             employee_id: identifier || 'planner',
