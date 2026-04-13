@@ -1272,7 +1272,7 @@
                         if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
                         if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
                         if (config.planner_email){ this.state.plannerEmail  = config.planner_email; localStorage.setItem('ejs_planner_email', config.planner_email); }
-                        console.log('✅ Loaded system config from Supabase');
+                        console.log('✅ Loaded system config from Supabase — ejs_service:', config.ejs_service || '(empty)', '| ejs_template:', config.ejs_template || '(empty)', '| ejs_pubkey:', config.ejs_pubkey ? config.ejs_pubkey.substring(0,6)+'…' : '(empty)');
                     }
 
                     // Load on-call dates from dedicated oncall_dates table
@@ -7189,29 +7189,37 @@
                 this.saveState(); // always write localStorage first
                 if (!this.supabase) return;
                 try {
-                    const payload = {
-                        id: 1,
-                        tenant_id: this._tid(),
+                    const ejsPayload = {
+                        ejs_service:   localStorage.getItem('ejs_service')       || this.state.ejsServiceId  || '',
+                        ejs_template:  localStorage.getItem('ejs_template')      || this.state.ejsTemplateId || '',
+                        ejs_pubkey:    localStorage.getItem('ejs_pubkey')        || this.state.ejsPublicKey  || '',
+                        planner_email: localStorage.getItem('ejs_planner_email') || this.state.plannerEmail  || '',
                         bidding_deadline: this.state.biddingDeadline,
                         bidding_year: this.state.biddingYear,
                         is_processed: this.state.isProcessed,
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
                         results: this.state.results,
-                        ejs_service:   localStorage.getItem('ejs_service')       || this.state.ejsServiceId  || '',
-                        ejs_template:  localStorage.getItem('ejs_template')      || this.state.ejsTemplateId || '',
-                        ejs_pubkey:    localStorage.getItem('ejs_pubkey')        || this.state.ejsPublicKey  || '',
-                        planner_email: localStorage.getItem('ejs_planner_email') || this.state.plannerEmail  || '',
                         last_updated: new Date().toISOString()
-                        // on_call_dates intentionally omitted — now stored in oncall_dates table
                     };
-                    const { error } = await this.supabase
+                    // Try UPDATE first (row already exists for this tenant)
+                    const { error: updateErr, data: updateData } = await this.supabase
                         .from('system_config')
-                        .upsert(payload, { onConflict: 'id' });
+                        .update(ejsPayload)
+                        .eq('tenant_id', this._tid())
+                        .select('id')
+                        .single();
+                    let error = null;
+                    if (updateErr || !updateData) {
+                        // Row doesn't exist yet — INSERT
+                        const { error: insertErr } = await this.supabase
+                            .from('system_config')
+                            .insert({ ...ejsPayload, tenant_id: this._tid() });
+                        error = insertErr;
+                    }
                     if (error) {
-                        console.error('❌ Could not save on-call config to Supabase:', error.message);
-                        // Show a brief warning in the status bar so the planner is aware
-                        this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                        console.error('❌ Could not save config to Supabase:', error.message);
+                        this.updateSystemStatus('⚠️ Save failed — data saved locally only');
                         setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                     } else {
                         console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
@@ -7428,23 +7436,15 @@
                     <div id="fpMsg"></div>
                     <!-- Step 1 -->
                     <div id="fpStep1">
-                      <div style="margin-bottom:14px;">
-                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Account Type</label>
-                        <select id="fpRole" onchange="app._fpRoleChanged()" style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;background:#f9fafb;color:#111827;outline:none;cursor:pointer;">
-                          <option value="employee">👤 Employee</option>
-                          <option value="planner">🗓️ Planner</option>
-                          <option value="goldencommand">⭐ Golden Command</option>
-                          <option value="corporatestaff">🏢 Corporate Staff</option>
-                        </select>
-                      </div>
-                      <div id="fpIdWrap" style="margin-bottom:14px;">
-                        <label id="fpIdLabel" style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Employee ID</label>
-                        <input type="text" id="fpId" placeholder="Enter your ID"
-                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                      <div style="margin-bottom:16px;">
+                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Your Registered Email</label>
+                        <input type="email" id="fpEmailInput" placeholder="name@flow-metro.com"
+                          style="width:100%;padding:13px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.95rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
                           onfocus="this.style.borderColor='#2d6a4f';this.style.boxShadow='0 0 0 3px rgba(45,106,79,0.12)'"
-                          onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+                          onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'"
+                          onkeydown="if(event.key==='Enter') app.fpSendOtp()" />
+                        <p style="font-size:0.75rem;color:#9ca3af;margin-top:6px;">Enter the email address registered to your account.</p>
                       </div>
-                      <div id="fpEmailPreview" style="display:none;margin-bottom:14px;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:11px 14px;font-size:0.82rem;color:#166534;"></div>
                       <button id="fpSendBtn" onclick="app.fpSendOtp()"
                         style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;letter-spacing:.03em;">
                         📧 Send OTP to Email
@@ -7483,7 +7483,8 @@
                       </button>
                     </div>
                   </div>`;
-                setTimeout(() => this._fpRoleChanged(), 30);
+                // focus the email input automatically
+                setTimeout(() => document.getElementById('fpEmailInput')?.focus(), 80);
             },
 
             closeForgotPasswordView() {
@@ -7516,29 +7517,47 @@
             },
 
             _fpGetEmailForRole(role, id) {
-                if (role === 'planner')
-                    return { email: this.state.plannerEmail, name: 'Planner' };
-                if (role === 'employee') {
-                    const emp = this.state.employees.find(e => e.id === id);
-                    if (!emp) return null;
-                    return { email: emp.email || this.state.plannerEmail, name: emp.name };
+                // Legacy method — kept for fallback compatibility
+                if (role === 'planner') return { email: this.state.plannerEmail, name: 'Planner', role: 'planner', id: 'planner' };
+                const pools = [
+                    { list: this.state.employees,           role: 'employee'       },
+                    { list: this.state.goldenCommandUsers,  role: 'goldencommand'  },
+                    { list: this.state.corporateStaffUsers, role: 'corporatestaff' },
+                    { list: this.state.l456InmUsers,        role: 'l456inm'        },
+                    { list: this.state.l3InmUsers,          role: 'l3inm'          },
+                    { list: this.state.l3TsmUsers,          role: 'l3tsm'          },
+                ];
+                for (const pool of pools) {
+                    const u = (pool.list || []).find(u => u.id === id);
+                    if (u) return { email: u.email || '', name: u.name, role: pool.role, id: u.id };
                 }
-                if (role === 'goldencommand') {
-                    const u = (this.state.goldenCommandUsers || []).find(u => u.id === id);
-                    if (!u) return null;
-                    return { email: u.email || this.state.plannerEmail, name: u.name };
-                }
-                if (role === 'corporatestaff') {
-                    const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
-                    if (!u) return null;
-                    return { email: u.email || this.state.plannerEmail, name: u.name };
+                return null;
+            },
+
+            _fpFindByEmail(email) {
+                // Search ALL user pools by email — returns { email, name, role, id }
+                const e = email.toLowerCase().trim();
+                // Planner
+                if (this.state.plannerEmail && this.state.plannerEmail.toLowerCase() === e)
+                    return { email: this.state.plannerEmail, name: 'Planner', role: 'planner', id: 'planner' };
+                // All staff pools
+                const pools = [
+                    { list: this.state.employees,           role: 'employee'       },
+                    { list: this.state.goldenCommandUsers,  role: 'goldencommand'  },
+                    { list: this.state.corporateStaffUsers, role: 'corporatestaff' },
+                    { list: this.state.l456InmUsers,        role: 'l456inm'        },
+                    { list: this.state.l3InmUsers,          role: 'l3inm'          },
+                    { list: this.state.l3TsmUsers,          role: 'l3tsm'          },
+                ];
+                for (const pool of pools) {
+                    const u = (pool.list || []).find(u => u.email && u.email.toLowerCase() === e);
+                    if (u) return { email: u.email, name: u.name, role: pool.role, id: u.id };
                 }
                 return null;
             },
 
             async fpSendOtp() {
-                const role       = document.getElementById('fpRole')?.value;
-                const identifier = (document.getElementById('fpId')?.value || '').trim();
+                const emailInput = (document.getElementById('fpEmailInput')?.value || '').trim();
                 const btn        = document.getElementById('fpSendBtn');
                 const msg        = document.getElementById('fpMsg');
                 const showMsg    = (text, type) => {
@@ -7546,11 +7565,15 @@
                     msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.info}">${text}</div>`;
                 };
 
-                if (role !== 'planner' && !identifier) { showMsg('⚠️ Please enter your ID.', 'warn'); return; }
+                if (!emailInput) { showMsg('⚠️ Please enter your email address.', 'warn'); return; }
+                if (!/^[^@]+@[^@]+\.[^@]+$/.test(emailInput)) { showMsg('⚠️ Please enter a valid email address.', 'warn'); return; }
 
-                const target = this._fpGetEmailForRole(role, identifier);
-                if (!target)       { showMsg('❌ ID not found. Please check and try again.', 'error'); return; }
-                if (!target.email) { showMsg('❌ No email registered for this account. Contact the planner.', 'error'); return; }
+                const target = this._fpFindByEmail(emailInput);
+                if (!target) { showMsg('❌ No account found with that email. Check spelling or contact the planner.', 'error'); return; }
+
+                // role and identifier come from the found record
+                const role       = target.role;
+                const identifier = target.id === 'planner' ? '' : target.id;
 
                 // Retrieve EmailJS keys saved by admin
                 const svcId  = localStorage.getItem('ejs_service')  || this.state.ejsServiceId  || '';
@@ -7572,9 +7595,14 @@
                 showMsg('⏳ Sending OTP to your registered email…', 'info');
 
                 let sent = false;
+                let sendError = '';
+
+                // Debug: log what keys we have
+                console.log('EmailJS keys — svcId:', svcId, '| tplId:', tplId, '| pubKey:', pubKey ? pubKey.substring(0,6)+'…' : '(empty)');
+                console.log('Target email:', target.email, '| name:', target.name);
 
                 // Method 1 — EmailJS (admin-configured keys)
-                if (!sent && svcId && tplId && pubKey) {
+                if (svcId && tplId && pubKey) {
                     try {
                         emailjs.init(pubKey);
                         await emailjs.send(svcId, tplId, {
@@ -7583,13 +7611,19 @@
                             year: this.state.biddingYear
                         });
                         sent = true;
-                    } catch (err) { console.error('EmailJS error:', err); }
+                    } catch (err) {
+                        console.error('EmailJS error:', err);
+                        sendError = err?.text || err?.message || JSON.stringify(err);
+                    }
+                } else {
+                    sendError = 'EmailJS keys missing — svcId:' + (svcId||'❌') + ' tplId:' + (tplId||'❌') + ' pubKey:' + (pubKey||'❌');
+                    console.warn(sendError);
                 }
 
                 if (btn) { btn.disabled = false; btn.innerHTML = '📧 Send OTP to Email'; btn.style.opacity = '1'; }
 
                 if (!sent) {
-                    showMsg('❌ Could not send OTP. Ask the planner to configure Email Settings in the Admin Panel first.', 'error');
+                    showMsg('❌ Could not send OTP. ' + (sendError ? '<br><small style="opacity:.8">' + sendError + '</small>' : 'Ask the planner to configure Email Settings in the Admin Panel first.'), 'error');
                     return;
                 }
 
@@ -7625,7 +7659,8 @@
                 const masked = target.email.replace(/(.{2})(.+?)(@.+)$/, (_, a, b, c) => a + '*'.repeat(Math.min(b.length, 5)) + c);
                 document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${masked}</strong>.<br>Check your inbox and spam. Expires in 10 minutes.`;
                 document.getElementById('fpNewPwdLabel').textContent =
-                    role === 'employee' ? 'New Password (leave blank to reset to Employee ID)' : 'New Password';
+                    (role === 'employee' || role === 'l456inm' || role === 'l3inm' || role === 'l3tsm')
+                    ? 'New Password (leave blank to reset to Employee ID)' : 'New Password';
             },
 
             async fpVerifyOtp() {
