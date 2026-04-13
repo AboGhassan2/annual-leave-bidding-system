@@ -7648,10 +7648,16 @@
                 if (svcId && tplId && pubKey) {
                     try {
                         emailjs.init(pubKey);
+                        // Use emailInput directly — guaranteed non-empty (validated above)
+                        const toEmail = emailInput || target.email || '';
+                        const toName  = target.name || toEmail;
+                        console.log('Sending to:', toEmail, '| name:', toName);
                         await emailjs.send(svcId, tplId, {
-                            to_email: target.email, to_name: target.name,
-                            otp_code: otp, employee_id: identifier || 'planner',
-                            year: this.state.biddingYear
+                            to_email:    toEmail,
+                            to_name:     toName,
+                            otp_code:    otp,
+                            employee_id: identifier || 'planner',
+                            year:        this.state.biddingYear
                         });
                         sent = true;
                     } catch (err) {
