@@ -3980,10 +3980,11 @@
                 if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
                 // Re-render bids table
                 const tableContainer = document.getElementById('adminBidsTableContainer');
-                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML();
+                const currentQuery = document.getElementById('bidSearchInput')?.value || '';
+                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML(currentQuery);
             },
 
-            _renderBidsTableHTML() {
+            _renderBidsTableHTML(filterQuery = '') {
                 if (this.state.bids.length === 0) {
                     return `
                         <div class="text-center py-10 text-gray-400">
@@ -3992,18 +3993,46 @@
                             <p class="text-sm mt-1">Auto-refreshing every 15 seconds. Bids appear here as soon as employees submit them.</p>
                         </div>`;
                 }
-                const sortedBids = [...this.state.bids].sort((a, b) => {
-                    const dA = new Date(this.state.employees.find(e => e.id === a.employeeId)?.seniorityDate || 0);
-                    const dB = new Date(this.state.employees.find(e => e.id === b.employeeId)?.seniorityDate || 0);
-                    return dA - dB;
-                });
+                const q = filterQuery.toLowerCase().trim();
+                const sortedBids = [...this.state.bids]
+                    .sort((a, b) => {
+                        const dA = new Date(this.state.employees.find(e => e.id === a.employeeId)?.seniorityDate || 0);
+                        const dB = new Date(this.state.employees.find(e => e.id === b.employeeId)?.seniorityDate || 0);
+                        return dA - dB;
+                    })
+                    .filter(bid => {
+                        if (!q) return true;
+                        const name = (bid.employeeName || this.state.employees.find(e => e.id === bid.employeeId)?.name || '').toLowerCase();
+                        const id   = (bid.employeeId || '').toLowerCase();
+                        return name.includes(q) || id.includes(q);
+                    });
                 const colorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
+                const noResults = sortedBids.length === 0 ? `
+                    <div class="text-center py-8 text-gray-400">
+                        <p class="text-3xl mb-2">🔍</p>
+                        <p class="font-semibold">No bids match "<span class="text-indigo-600">${filterQuery}</span>"</p>
+                        <p class="text-sm mt-1">Try a different name or ID.</p>
+                    </div>` : '';
                 return `
-                    <div class="mb-3 flex justify-end">
-                        <button onclick="app.deleteAllBids()" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
-                            🗑️ Delete All Bids
-                        </button>
+                    <div class="mb-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                        <div class="relative flex-1 max-w-sm">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                            <input type="text" id="bidSearchInput"
+                                placeholder="Search by name or ID…"
+                                value="${filterQuery.replace(/"/g, '&quot;')}"
+                                oninput="app._filterBidsTable(this.value)"
+                                style="width:100%;padding:9px 12px 9px 32px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:0.875rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                                onfocus="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.12)'"
+                                onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" />
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500">${sortedBids.length} of ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''}</span>
+                            <button onclick="app.deleteAllBids()" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
+                                🗑️ Delete All Bids
+                            </button>
+                        </div>
                     </div>
+                    ${noResults}
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm border-collapse">
                             <thead>
@@ -4080,6 +4109,14 @@
                 }
 
                 this._liveUpdateAdminPanel();
+            },
+
+            _filterBidsTable(query) {
+                const container = document.getElementById('adminBidsTableContainer');
+                if (container) container.innerHTML = this._renderBidsTableHTML(query);
+                // Re-focus and restore cursor position
+                const input = document.getElementById('bidSearchInput');
+                if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
             },
 
             async deleteAllBids() {
