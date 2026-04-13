@@ -1315,7 +1315,8 @@
                         this.state.goldenCommandUsers = gcUsers.map(u => ({
                             id: u.id,
                             name: u.name,
-                            password: u.password
+                            password: u.password,
+                            email: u.email || ''
                         }));
                         console.log(`✅ Loaded ${gcUsers.length} Golden Command users from dedicated table`);
                     } else {
@@ -1326,7 +1327,7 @@
                     // Load Corporate Staff users from dedicated table
                     const { data: csUsers, error: csError } = await this.supabase
                         .from('corporate_staff_users')
-                        .select('id, name, password')
+                        .select('id, name, password, email')
                         .eq('tenant_id', this._tid())
                         .order('created_at', { ascending: true });
 
@@ -1336,7 +1337,8 @@
                         this.state.corporateStaffUsers = csUsers.map(u => ({
                             id: u.id,
                             name: u.name,
-                            password: u.password || u.id
+                            password: u.password || u.id,
+                            email: u.email || ''
                         }));
                         console.log(`✅ Loaded ${csUsers.length} Corporate Staff users from dedicated table`);
                     } else {
@@ -1355,13 +1357,13 @@
                             _dbg(`⏳ Loading ${sg.table}...`);
                             const { data: sgRows, error: sgErr } = await this.supabase
                                 .from(sg.table)
-                                .select('id, name, password')
+                                .select('id, name, password, email')
                                 .eq('tenant_id', this._tid());
                             if (sgErr) {
                                 _dbg(`❌ ${sg.table} ERROR: ${sgErr.message}`);
                             } else if (sgRows && sgRows.length > 0) {
                                 _dbg(`✅ ${sg.table}: ${sgRows.length} rows — assigning to state...`);
-                                this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                                this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
                                 _dbg(`✅ ${sg.table}: state updated OK`);
                             } else {
                                 _dbg(`⚠️ ${sg.table}: 0 rows for tenant ${this._tid()}`);
@@ -1847,10 +1849,10 @@
                     try {
                         // Reload CS users
                         const { data: csRows } = await this.supabase
-                            .from('corporate_staff_users').select('id,name,password')
+                            .from('corporate_staff_users').select('id,name,password,email')
                             .eq('tenant_id', this._tid());
                         if (csRows && csRows.length > 0)
-                            this.state.corporateStaffUsers = csRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                            this.state.corporateStaffUsers = csRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
 
                         // Reload sub-group users
                         for (const sg of [
@@ -1859,9 +1861,9 @@
                             { table:'l3tsm_users',   key:'l3TsmUsers'   },
                         ]) {
                             const { data: rows } = await this.supabase
-                                .from(sg.table).select('id,name,password').eq('tenant_id', this._tid());
+                                .from(sg.table).select('id,name,password,email').eq('tenant_id', this._tid());
                             if (rows && rows.length > 0)
-                                this.state[sg.key] = rows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id }));
+                                this.state[sg.key] = rows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
                         }                    } catch(e) { /* silent — use whatever is already in state */ }
                 }
 
@@ -4918,6 +4920,8 @@
                 const svc = localStorage.getItem('ejs_service')  || '';
                 const tpl = localStorage.getItem('ejs_template') || '';
                 const key = localStorage.getItem('ejs_pubkey')   || '';
+                const savedPlannerEmail = localStorage.getItem('ejs_planner_email') || '';
+                if (savedPlannerEmail && !this.state.plannerEmail) this.state.plannerEmail = savedPlannerEmail;
                 content.innerHTML = `
                     <div class="max-w-lg mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-8">
@@ -4976,6 +4980,7 @@
                 if (svc)   this.state.ejsServiceId   = svc;
                 if (tpl)   this.state.ejsTemplateId  = tpl;
                 if (key)   this.state.ejsPublicKey   = key;
+                localStorage.setItem('ejs_planner_email', email || '');
                 localStorage.setItem('ejs_service',  svc  || '');
                 localStorage.setItem('ejs_template', tpl  || '');
                 localStorage.setItem('ejs_pubkey',   key  || '');
