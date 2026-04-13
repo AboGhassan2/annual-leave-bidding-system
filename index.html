@@ -1267,6 +1267,11 @@
                         this.state.plannerEmail    = config.planner_email    || 'a_abdulqader@outlook.com';
                         this.state.slotCapacities = config.slot_capacities || {};
                         this.state.results = config.results || [];
+                        // Load EmailJS keys from Supabase into localStorage so OTP works on any device
+                        if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
+                        if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
+                        if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
+                        if (config.planner_email){ this.state.plannerEmail  = config.planner_email; localStorage.setItem('ejs_planner_email', config.planner_email); }
                         console.log('✅ Loaded system config from Supabase');
                     }
 
@@ -7193,6 +7198,10 @@
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
                         results: this.state.results,
+                        ejs_service:   localStorage.getItem('ejs_service')       || this.state.ejsServiceId  || '',
+                        ejs_template:  localStorage.getItem('ejs_template')      || this.state.ejsTemplateId || '',
+                        ejs_pubkey:    localStorage.getItem('ejs_pubkey')        || this.state.ejsPublicKey  || '',
+                        planner_email: localStorage.getItem('ejs_planner_email') || this.state.plannerEmail  || '',
                         last_updated: new Date().toISOString()
                         // on_call_dates intentionally omitted — now stored in oncall_dates table
                     };
@@ -7396,7 +7405,7 @@
 
             // ==================== FORGOT PASSWORD (OTP via EmailJS) ====================
             // Internal OTP state — not part of app.state (no persistence needed)
-            _fpOtp: null, _fpOtpExpiry: null, _fpRole: null, _fpIdentifier: null,
+            _fpOtp: null, _fpOtpExpiry: null, _fpRole: null, _fpIdentifier: null, _fpTokenId: null,
 
             renderForgotPasswordView() {
                 // Create full-screen modal overlay appended to body
@@ -7550,10 +7559,14 @@
 
                 // Generate OTP
                 const otp = Math.floor(100000 + Math.random() * 900000).toString();
-                this._fpOtp       = otp;
-                this._fpOtpExpiry = Date.now() + 10 * 60 * 1000;
-                this._fpRole      = role;
+                const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+                // Keep in-memory as fallback
+                this._fpOtp        = otp;
+                this._fpOtpExpiry  = Date.now() + 10 * 60 * 1000;
+                this._fpRole       = role;
                 this._fpIdentifier = identifier;
+                this._fpTokenId    = null;
 
                 if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; btn.style.opacity = '.7'; }
                 showMsg('⏳ Sending OTP to your registered email…', 'info');
@@ -7580,6 +7593,32 @@
                     return;
                 }
 
+                // Persist token to Supabase so OTP survives page refresh
+                if (this.supabase) {
+                    try {
+                        // Delete any existing tokens for this user first
+                        await this.supabase.from('password_reset_tokens')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .eq('identifier', identifier || 'planner')
+                            .eq('role', role);
+
+                        const { data: tokenRow } = await this.supabase
+                            .from('password_reset_tokens')
+                            .insert({
+                                tenant_id:  this._tid(),
+                                identifier: identifier || 'planner',
+                                role:       role,
+                                token:      otp,
+                                expires_at: otpExpiry,
+                                email:      target.email
+                            })
+                            .select('id')
+                            .single();
+                        if (tokenRow) this._fpTokenId = tokenRow.id;
+                    } catch (e) { console.warn('Could not persist OTP token to Supabase:', e); }
+                }
+
                 msg.innerHTML = '';
                 document.getElementById('fpStep1').style.display = 'none';
                 document.getElementById('fpStep2').style.display = 'block';
@@ -7599,15 +7638,52 @@
                     msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.ok}">${text}</div>`;
                 };
 
-                if (!otp)                              { showMsg('⚠️ Please enter the OTP code.', 'warn'); return; }
-                if (!this._fpOtp)                      { showMsg('❌ Session expired. Please start again.', 'error'); return; }
-                if (Date.now() > this._fpOtpExpiry)    { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
-                if (otp !== this._fpOtp)               { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
-                if (newPwd && newPwd !== confirm)      { showMsg('❌ Passwords do not match.', 'error'); return; }
-                if (newPwd && newPwd.length < 4)       { showMsg('⚠️ Password must be at least 4 characters.', 'warn'); return; }
+                if (!otp) { showMsg('⚠️ Please enter the OTP code.', 'warn'); return; }
+                if (newPwd && newPwd !== confirm) { showMsg('❌ Passwords do not match.', 'error'); return; }
+                if (newPwd && newPwd.length < 4)  { showMsg('⚠️ Password must be at least 4 characters.', 'warn'); return; }
 
-                const role = this._fpRole;
-                const id   = this._fpIdentifier;
+                let role = this._fpRole;
+                let id   = this._fpIdentifier;
+
+                // Validate OTP — prefer Supabase (survives refresh), fall back to in-memory
+                if (this.supabase && (this._fpTokenId || role)) {
+                    try {
+                        const { data: tokenRow, error: tokenErr } = await this.supabase
+                            .from('password_reset_tokens')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .eq('identifier', id || 'planner')
+                            .eq('role', role)
+                            .eq('token', otp)
+                            .single();
+
+                        if (tokenErr || !tokenRow) {
+                            showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return;
+                        }
+                        if (new Date(tokenRow.expires_at) < new Date()) {
+                            // Clean up expired token
+                            await this.supabase.from('password_reset_tokens').delete().eq('id', tokenRow.id);
+                            showMsg('❌ OTP has expired. Please request a new one.', 'error'); return;
+                        }
+                        // Valid — recover role/id from DB in case page was refreshed
+                        role = tokenRow.role;
+                        id   = tokenRow.identifier === 'planner' ? null : tokenRow.identifier;
+                        this._fpRole       = role;
+                        this._fpIdentifier = id;
+                        this._fpTokenId    = tokenRow.id;
+                    } catch (e) {
+                        // Supabase unreachable — fall back to in-memory check
+                        console.warn('Supabase token check failed, using in-memory:', e);
+                        if (!this._fpOtp)                   { showMsg('❌ Session expired. Please start again.', 'error'); return; }
+                        if (Date.now() > this._fpOtpExpiry) { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
+                        if (otp !== this._fpOtp)            { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
+                    }
+                } else {
+                    // No Supabase — pure in-memory fallback
+                    if (!this._fpOtp)                   { showMsg('❌ Session expired. Please start again.', 'error'); return; }
+                    if (Date.now() > this._fpOtpExpiry) { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
+                    if (otp !== this._fpOtp)            { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
+                }
 
                 if (role === 'employee') {
                     const finalPwd = newPwd || id;
@@ -7626,8 +7702,12 @@
                 }
 
                 this.saveState();
-                // Clear OTP session
-                this._fpOtp = null; this._fpOtpExpiry = null; this._fpRole = null; this._fpIdentifier = null;
+                // Delete token from Supabase and clear in-memory session
+                if (this.supabase && this._fpTokenId) {
+                    try { await this.supabase.from('password_reset_tokens').delete().eq('id', this._fpTokenId); }
+                    catch (e) { console.warn('Could not delete reset token:', e); }
+                }
+                this._fpOtp = null; this._fpOtpExpiry = null; this._fpRole = null; this._fpIdentifier = null; this._fpTokenId = null;
 
                 showMsg('✅ Password reset successfully! You can now log in with your new password.', 'ok');
                 setTimeout(() => this.closeForgotPasswordView(), 3000);
