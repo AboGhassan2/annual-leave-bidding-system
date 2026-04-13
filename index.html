@@ -3171,6 +3171,7 @@
                         this.supabase
                             .from('leave_requests')
                             .delete()
+                            .eq('tenant_id', this._tid())
                             .eq('employee_id', gcUser.id)
                             .eq('slot_type', slotType)
                             .eq('start_date', startDate)
@@ -3595,6 +3596,7 @@
                     this.saveState();
                     if (this.supabase) {
                         this.supabase.from('leave_requests').delete()
+                            .eq('tenant_id', this._tid())
                             .eq('employee_id', csUser.id)
                             .eq('slot_type', slotType)
                             .eq('start_date', startDate)
@@ -5349,6 +5351,7 @@
                         this.supabase
                             .from('leave_requests')
                             .delete()
+                            .eq('tenant_id', this._tid())
                             .eq('employee_id', employeeId)
                             .eq('slot_type', slotType)
                             .eq('start_date', startDate)
