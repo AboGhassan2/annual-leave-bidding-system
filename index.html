@@ -717,7 +717,7 @@
                     <span style="padding:8px 12px;font-size:0.9rem;">🔧</span>
                     <div class="lp-select-wrap">
                         <select class="lp-role-select" onchange="app.setLoginType(this.value)" id="navRoleSelect">
-                            <option value="speration staff">Operation Staff</option>
+                            <option value="employee">Operation Staff</option>
                             <option value="planner" selected>Planner</option>
                             <option value="goldencommand">GC</option>
                             <option value="corporatestaff">Corp Staff</option>
@@ -756,7 +756,7 @@
                     <div class="lp-stats-card">
                         <div class="lp-stats-row">
                             <div>
-                                <div class="lp-stat-label">👥 Total Employees</div>
+                                <div class="lp-stat-label">👥 Total Operation Staff</div>
                                 <div class="lp-stat-big" id="statsEmpCount">—</div>
                             </div>
                             <div class="lp-stat-badge">
@@ -800,14 +800,14 @@
                         <div class="lp-card-header">
                             <span class="lp-card-icon">👤</span>
                             <div>
-                                <div class="lp-card-title">Employee</div>
+                                <div class="lp-card-title">Operation Staff</div>
                                 <div class="lp-card-subtitle">Submit leave</div>
                             </div>
                             <span class="lp-card-check">✔</span>
                         </div>
                         <div class="lp-input-wrap">
                             <span class="lp-input-icon">👤</span>
-                            <input class="lp-input" type="text" placeholder="Employee ID" id="empLoginId" autocomplete="username" />
+                            <input class="lp-input" type="text" placeholder="Operation Staff ID" id="empLoginId" autocomplete="username" />
                         </div>
                         <div class="lp-input-wrap">
                             <span class="lp-input-icon">🔒</span>
@@ -1650,7 +1650,7 @@
                     form.innerHTML = `
                         <div style="margin-bottom:14px;">
                             ${!hasData ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No employee data loaded. Click "Sync with Database" above.</div>` : ''}
-                            <label class="metro-label">Employee ID</label>
+                            <label class="metro-label">Operation Staff ID</label>
                             <input type="text" id="metro-empLoginId" class="metro-input" placeholder="Enter your ID" ${!hasData ? 'disabled' : ''} />
                         </div>
                         <div>
@@ -1788,7 +1788,7 @@
                     
                     const employee = this.state.employees.find(e => e.id === id);
                     if (!employee) {
-                        alert('❌ Employee ID not found. Please upload data first.');
+                        alert('❌ Operation Staff ID not found. Please upload data first.');
                         return;
                     }
                     
@@ -1807,7 +1807,7 @@
                         ui2.style.display = 'flex'; ui2.classList.remove('hidden');
                         document.getElementById('employeeNav').classList.remove('hidden');
                         document.getElementById('currentUserName').textContent = employee.name;
-                        document.getElementById('userTypeBadge').textContent = 'Employee';
+                        document.getElementById('userTypeBadge').textContent = 'Operation Staff';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
                         
                         this.renderView();
@@ -4076,7 +4076,7 @@
                             <thead>
                                 <tr class="bg-gray-100 text-left">
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Employee ID</th>
+                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Operation Staff ID</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
                                     <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
@@ -4246,7 +4246,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                                 <div class="bg-blue-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold">${this.state.employees.length}</p>
-                                    <p class="text-sm text-gray-600">Total Employees</p>
+                                    <p class="text-sm text-gray-600">Total Operation Staff</p>
                                 </div>
                                 <div class="bg-green-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold" id="adminBidCount">${this.state.bids.length}</p>
@@ -5769,7 +5769,7 @@
                                         <thead class="bg-gray-100">
                                             <tr>
                                                 <th class="p-3 text-left">Dept. Rank</th>
-                                                <th class="p-3 text-left">Employee</th>
+                                                <th class="p-3 text-left">Operation Staff</th>
                                                 <th class="p-3 text-left">Department</th>
                                                 <th class="p-3 text-left">Seniority</th>
                                                 <th class="p-3 text-left">Slot 1</th>
@@ -6281,7 +6281,7 @@
                                 <table class="w-full text-sm">
                                     <thead class="bg-gray-50 text-gray-600">
                                         <tr>
-                                            <th class="p-3 text-left">Employee</th>
+                                            <th class="p-3 text-left">Operation Staff</th>
                                             <th class="p-3 text-left">Slot</th>
                                             <th class="p-3 text-left">Slot Name</th>
                                             <th class="p-3 text-left">Start Date</th>
@@ -7179,7 +7179,7 @@
                 const empId   = document.getElementById('newOcId')?.value?.trim();
                 const dateFrom = document.getElementById('newOcFrom')?.value;
                 const dateTo   = document.getElementById('newOcTo')?.value;
-                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                if (!empId) { alert('Please enter an Operation Staff ID.'); return; }
                 this._applyOnCallRange(empId, dateFrom, dateTo, true);
             },
 
@@ -7215,7 +7215,7 @@
 
             addOnCallWeekNew() {
                 const empId = document.getElementById('newOcId')?.value?.trim();
-                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                if (!empId) { alert('Please enter an Operation Staff ID.'); return; }
                 const weekNum = parseInt(document.getElementById('newOcWeekNum')?.value);
                 const year = parseInt(document.getElementById('newOcWeekYear')?.value) || this.state.biddingYear;
                 if (!weekNum || weekNum < 1 || weekNum > 53) { alert('Please enter a valid week number (1–53).'); return; }
@@ -7237,7 +7237,7 @@
 
             addOnCallMultiWeekNew() {
                 const empId = document.getElementById('newOcId')?.value?.trim();
-                if (!empId) { alert('Please enter an Employee ID.'); return; }
+                if (!empId) { alert('Please enter an Operation Staff ID.'); return; }
                 const raw  = document.getElementById('newOcMultiWeekInput')?.value || '';
                 const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || this.state.biddingYear;
                 if (!raw.trim()) { alert('Please enter at least one week number.'); return; }
@@ -7618,7 +7618,7 @@
                 } else {
                     idWrap.style.display = 'block';
                     preview.style.display = 'none';
-                    const labels = { employee: 'Employee ID', goldencommand: 'Golden Command ID', corporatestaff: 'Corporate Staff ID' };
+                    const labels = { employee: 'Operation Staff ID', goldencommand: 'Golden Command ID', corporatestaff: 'Corporate Staff ID' };
                     idLabel.textContent = labels[role] || 'ID';
                 }
             },
@@ -7783,7 +7783,7 @@
                 document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${masked}</strong>.<br>Check your inbox and spam. Expires in 10 minutes.`;
                 document.getElementById('fpNewPwdLabel').textContent =
                     (role === 'employee' || role === 'l456inm' || role === 'l3inm' || role === 'l3tsm')
-                    ? 'New Password (leave blank to reset to Employee ID)' : 'New Password';
+                    ? 'New Password (leave blank to reset to Operation Staff ID)' : 'New Password';
             },
 
             async fpVerifyOtp() {
@@ -8040,7 +8040,7 @@
                                 </select>
                                 <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
                                     <option value="all">All Roles</option>
-                                    <option value="speration staff">Speration Staff</option>
+                                    <option value="employee">Operation Staff</option>
                                     <option value="planner">Planner</option>
                                     <option value="goldencommand">Golden Command</option>
                                 </select>
