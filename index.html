@@ -3981,10 +3981,43 @@
                 // Re-render bids table
                 const tableContainer = document.getElementById('adminBidsTableContainer');
                 const currentQuery = document.getElementById('bidSearchInput')?.value || '';
-                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML(currentQuery);
+                const activeTab = tableContainer?.dataset.activeTab || 'employees';
+                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML(currentQuery, activeTab);
             },
 
-            _renderBidsTableHTML(filterQuery = '') {
+            _isGcOrCs(employeeId) {
+                // Returns true if the employeeId belongs to GC, CS, or any sub-group (not a regular employee)
+                const gcIds  = (this.state.goldenCommandUsers  || []).map(u => u.id);
+                const csIds  = (this.state.corporateStaffUsers || []).map(u => u.id);
+                const l456   = (this.state.l456InmUsers        || []).map(u => u.id);
+                const l3Inm  = (this.state.l3InmUsers          || []).map(u => u.id);
+                const l3Tsm  = (this.state.l3TsmUsers          || []).map(u => u.id);
+                const allSpecial = [...gcIds, ...csIds, ...l456, ...l3Inm, ...l3Tsm];
+                return allSpecial.includes(employeeId);
+            },
+
+            _switchBidTab(tab) {
+                // Update button styles
+                const empBtn  = document.getElementById('bidTabEmp');
+                const gccsBtn = document.getElementById('bidTabGcCs');
+                if (empBtn && gccsBtn) {
+                    if (tab === 'employees') {
+                        empBtn.style.background  = '#4f46e5'; empBtn.style.color  = '#fff';
+                        gccsBtn.style.background = '#f3f4f6'; gccsBtn.style.color = '#374151';
+                    } else {
+                        gccsBtn.style.background = '#4f46e5'; gccsBtn.style.color = '#fff';
+                        empBtn.style.background  = '#f3f4f6'; empBtn.style.color  = '#374151';
+                    }
+                }
+                const container = document.getElementById('adminBidsTableContainer');
+                if (container) {
+                    const currentQuery = document.getElementById('bidSearchInput')?.value || '';
+                    container.innerHTML = this._renderBidsTableHTML(currentQuery, tab);
+                    container.dataset.activeTab = tab;
+                }
+            },
+
+            _renderBidsTableHTML(filterQuery = '', tabFilter = 'employees') {
                 if (this.state.bids.length === 0) {
                     return `
                         <div class="text-center py-10 text-gray-400">
@@ -4001,6 +4034,11 @@
                         return dA - dB;
                     })
                     .filter(bid => {
+                        // Tab filter
+                        const isSpecial = this._isGcOrCs(bid.employeeId);
+                        if (tabFilter === 'employees' && isSpecial)  return false;
+                        if (tabFilter === 'gccs'      && !isSpecial) return false;
+                        // Search filter
                         if (!q) return true;
                         const name = (bid.employeeName || this.state.employees.find(e => e.id === bid.employeeId)?.name || '').toLowerCase();
                         const id   = (bid.employeeId || '').toLowerCase();
@@ -4113,7 +4151,8 @@
 
             _filterBidsTable(query) {
                 const container = document.getElementById('adminBidsTableContainer');
-                if (container) container.innerHTML = this._renderBidsTableHTML(query);
+                const activeTab = container?.dataset.activeTab || 'employees';
+                if (container) container.innerHTML = this._renderBidsTableHTML(query, activeTab);
                 // Re-focus and restore cursor position
                 const input = document.getElementById('bidSearchInput');
                 if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
@@ -4269,17 +4308,36 @@
 
                             <!-- Staff Bids Details Section -->
                         <div class="mt-6 bg-white border-2 border-indigo-200 rounded-xl overflow-hidden">
-                            <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-200 flex justify-between items-center">
-                                <div>
-                                    <h3 class="text-xl font-bold text-indigo-900">📋 Staff Bid Details</h3>
-                                    <p class="text-sm text-indigo-600 mt-1">All bids from staff, sorted by seniority. Updates automatically every 15 seconds.</p>
+                            <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-200">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div>
+                                        <h3 class="text-xl font-bold text-indigo-900">📋 Bid Details</h3>
+                                        <p class="text-sm text-indigo-600 mt-1">Bids sorted by seniority. Updates every 15 seconds.</p>
+                                    </div>
+                                    <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
+                                        <span id="adminBidCount2">${this.state.bids.length}</span> total bids
+                                    </span>
                                 </div>
-                                <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
-                                    <span id="adminBidCount2">${this.state.bids.length}</span> bids from <span id="adminUniqueBidders2">${new Set(this.state.bids.map(b => b.employeeId)).size}</span> staff
-                                </span>
+                                <!-- Tab switcher -->
+                                <div class="flex gap-2">
+                                    <button id="bidTabEmp" onclick="app._switchBidTab('employees')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#4f46e5;color:#fff;">
+                                        👤 Employees
+                                        <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabGcCs" onclick="app._switchBidTab('gccs')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        ⭐ GC & Corporate Staff
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isGcOrCs(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                </div>
                             </div>
                             <div class="p-4" id="adminBidsTableContainer">
-                                ${this._renderBidsTableHTML()}
+                                ${this._renderBidsTableHTML('', 'employees')}
                             </div>
                         </div>
 
