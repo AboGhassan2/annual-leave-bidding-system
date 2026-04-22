@@ -5120,18 +5120,33 @@
                 if (!container) return;
 
                 const emp   = this.state.verifiedEmployee;
-                const dept  = emp?.department || '';
+                // dept: prefer department (L-code), fall back to position
+                const dept  = (emp?.department && emp.department !== 'Unassigned') ? emp.department : (emp?.position || '');
                 const caps  = this.state.slotCapacities;
                 const userBids = this.state.bids.filter(b => b.employeeId === emp?.id);
                 const isProcessed = this.state.isProcessed;
 
+                // Helper: robustly read enabled — handles boolean true, string "true", and
+                // backward-compat: if key is absent but dates ARE configured, treat as enabled
+                const isEnabled = (sid) => {
+                    const key = `cal-${dept}-${month}-${sid}-enabled`;
+                    const raw = caps[key];
+                    if (raw === undefined || raw === null) {
+                        // Backward compat: if dates were configured before the enabled toggle existed,
+                        // show the slot if both start and end are non-empty
+                        const hasStart = caps[`cal-${dept}-${month}-${sid}-start`];
+                        const hasEnd   = caps[`cal-${dept}-${month}-${sid}-end`];
+                        return !!(hasStart && hasEnd);
+                    }
+                    // Coerce string "true"/"false" safely
+                    if (typeof raw === 'string') return raw === 'true';
+                    return !!raw;
+                };
+
                 // Calculate remaining capacity for each slot considering current bids
-                const usedCap = {}; // slotId → count of bids placed against that slot in this dept+month
+                const usedCap = {};
                 this.state.bids.forEach(b => {
-                    if (b.department === dept) {
-                        // Match bid's slot to a slotId (SA/SB/SC)
-                        const key = `${b.slotType}-${b.startDate}`;
-                        // We count per configured slot window
+                    if (b.department === dept || b.department === emp?.position) {
                         ['SA','SB','SC'].forEach(sid => {
                             const s = caps[`cal-${dept}-${month}-${sid}-start`];
                             const e = caps[`cal-${dept}-${month}-${sid}-end`];
@@ -5144,14 +5159,13 @@
 
                 // Build slot definitions for this dept+month
                 const slotDefs = ['SA','SB','SC'].map(sid => {
-                    const enabled  = caps[`cal-${dept}-${month}-${sid}-enabled`];
+                    const enabled  = isEnabled(sid);
                     const start    = caps[`cal-${dept}-${month}-${sid}-start`];
                     const end      = caps[`cal-${dept}-${month}-${sid}-end`];
                     const capacity = parseInt(caps[`cal-${dept}-${month}-${sid}-capacity`]) || 1;
                     const used     = usedCap[sid] || 0;
                     const remaining = Math.max(0, capacity - used);
 
-                    // Calculate days between start and end
                     let days = 0;
                     if (start && end) {
                         days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
@@ -5170,10 +5184,13 @@
                 if (confirmBox) confirmBox.classList.add('hidden');
 
                 if (slotDefs.length === 0) {
+                    // Show diagnostic info to help troubleshoot mismatches
+                    const diagDept = dept || '(empty — no department on employee record)';
                     container.innerHTML = `
                         <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
                             <p class="text-yellow-700 font-semibold">📭 No slots configured for ${month}</p>
                             <p class="text-xs text-yellow-600 mt-1">The planner has not opened any slots for this month yet.</p>
+                            <p class="text-xs text-gray-400 mt-2">Dept lookup: <code>${diagDept}</code></p>
                         </div>`;
                     return;
                 }
@@ -5413,7 +5430,9 @@
                 }
 
                 // Check capacity for this configured slot
-                const dept = this.state.verifiedEmployee.department || '';
+                const dept = (this.state.verifiedEmployee.department && this.state.verifiedEmployee.department !== 'Unassigned')
+                    ? this.state.verifiedEmployee.department
+                    : (this.state.verifiedEmployee.position || '');
                 const caps = this.state.slotCapacities;
                 const capacity = parseInt(caps[`cal-${dept}-${month}-${slotTypeKey}-capacity`]) || 1;
                 const usedCount = this.state.bids.filter(b =>
