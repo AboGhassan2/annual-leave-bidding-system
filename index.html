@@ -2458,18 +2458,6 @@
                                 </div>
                             </div>
             
-                            <!-- Slot types summary -->
-                            <div class="border-t pt-4">
-                                <p class="font-semibold mb-2">Available Slot Types:</p>
-                                <div class="flex gap-4">
-                                    ${this.state.slotTypes.map(slot => `
-                                        <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
-                                            <p class="font-bold">${slot.name}</p>
-                                            <p class="text-sm">${slot.days} consecutive days</p>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
                         </div>
             
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2490,82 +2478,33 @@
                                 ` : ''}
                                 
                                 <!-- Month Selection -->
-                                <div class="mb-4">
+                                <div class="mb-5">
                                     <label class="block font-semibold mb-2">Select Month:</label>
-                                    <select id="selectedMonth" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg" onchange="app.updateMonthText()">
+                                    <select id="selectedMonth" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg" onchange="app.refreshAvailableSlots()">
                                         ${this.state.months.map(month => `
                                             <option value="${month}">${month} ${this.state.biddingYear}</option>
                                         `).join('')}
                                     </select>
                                 </div>
             
-                                <!-- Slot Selection -->
-                                <div class="mb-6">
-                                    <label class="block font-semibold mb-2">Select Slot Type:</label>
-                                    <div class="space-y-2">
-                                        ${this.state.slotTypes.map(slot => {
-                                            const hasBidForThisSlot = userBids.some(bid => bid.slotType === slot.id);
-                                            const isDisabled = hasBidForThisSlot || userBids.length >= 2 || this.state.isProcessed;
-                                            
-                                            return `
-                                                <button
-                                                    data-slot="${slot.id}"
-                                                    data-hasbid="${hasBidForThisSlot}"
-                                                    onclick="${!isDisabled ? `app.setSelectedSlot('${slot.id}')` : ''}"
-                                                    class="slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all ${isDisabled ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}"
-                                                    ${isDisabled ? 'disabled' : ''}
-                                                >
-                                                    ${slot.name} - ${slot.days} days
-                                                    ${hasBidForThisSlot ? '<span class="float-right">✓</span>' : ''}
-                                                </button>
-                                            `;
-                                        }).join('')}
+                                <!-- Available Slots for selected month (planner-configured) -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Available Slot:</label>
+                                    <div id="availableSlotCards" class="space-y-3">
+                                        <!-- Populated by refreshAvailableSlots() -->
                                     </div>
                                 </div>
-            
-                                <!-- Date Selection -->
-                                <div class="mb-6">
-                                    <label class="block font-semibold mb-2">Select dates within <span id="selectedMonthText">January ${this.state.biddingYear}</span>:</label>
-                                    
-                                    <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                                        <p class="font-semibold text-blue-800">
-                                            <span id="selectedSlotText">No slot selected</span> requires exactly 
-                                            <span id="selectedSlotDays">0</span> consecutive days
-                                        </p>
-                                    </div>
-            
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label class="block font-semibold mb-2">Start Date:</label>
-                                            <input
-                                                type="date"
-                                                id="startDate"
-                                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg"
-                                                min="${this.state.biddingYear}-01-01"
-                                                max="${this.state.biddingYear}-12-31"
-                                                onchange="app.updateEndDate()"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label class="block font-semibold mb-2">End Date (Auto-calculated):</label>
-                                            <input
-                                                type="date"
-                                                id="endDate"
-                                                class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg bg-gray-50"
-                                                readonly
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    <div id="dateInfo" class="hidden"></div>
-                                    
-                                    <p class="text-sm text-gray-600 mt-2">
-                                        End date is automatically calculated based on slot type
-                                    </p>
+
+                                <!-- Selected slot confirmation panel -->
+                                <div id="selectedSlotConfirm" class="hidden mb-5 p-4 rounded-xl border-2 border-blue-300 bg-blue-50">
+                                    <p class="font-semibold text-blue-800 mb-1">📌 Selected: <span id="confirmSlotName"></span></p>
+                                    <p class="text-sm text-blue-700">📅 <span id="confirmSlotDates"></span></p>
+                                    <p class="text-sm text-blue-700">⏱ <span id="confirmSlotDays"></span> days</p>
                                 </div>
             
                                 <!-- Submit Button -->
                                 <button
+                                    id="submitBidBtn"
                                     onclick="app.submitBid()"
                                     class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:opacity-50"
                                     ${this.state.isProcessed || userBids.length >= 2 ? 'disabled' : ''}
@@ -2623,20 +2562,11 @@
             
                 // Initialize selected slot if none selected
                 if (!window.selectedSlot && this.state.slotTypes.length > 0) {
-                    window.selectedSlot = this.state.slotTypes[0].id;
+                    window.selectedSlot = null;
                 }
                 
-                // Update UI elements
-                this.updateMonthText();
-                this.updateSlotText();
-                
-                // Initialize slot buttons
-                const buttons = document.querySelectorAll('.slot-btn');
-                buttons.forEach(btn => {
-                    if (btn.dataset.slot === window.selectedSlot) {
-                        btn.className = btn.className.replace('bg-gray-100', 'bg-blue-500 text-white');
-                    }
-                });
+                // Populate the slot cards for the default month
+                this.refreshAvailableSlots();
 
                 // Live countdown ticker
                 if (this.state.biddingDeadline) {
@@ -3732,12 +3662,15 @@
                                     <thead>
                                         <tr class="bg-gray-50">
                                             <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Month</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">A — On</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">B — On</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">C — On</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
@@ -3760,11 +3693,24 @@
                                                         const savedStart    = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`];
                                                         const savedEnd      = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`];
                                                         const savedCapacity = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`];
+                                                        const savedEnabled  = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-enabled`];
                                                         const startVal    = savedStart    !== undefined ? savedStart    : defaultStart;
                                                         const endVal      = savedEnd      !== undefined ? savedEnd      : defaultEnd;
                                                         const capacityVal = savedCapacity !== undefined ? savedCapacity : 1;
+                                                        // enabled defaults to false (planner must explicitly turn on)
+                                                        const enabledVal  = savedEnabled  !== undefined ? savedEnabled  : false;
+                                                        const rowOpacity  = enabledVal ? '' : 'opacity-40';
                                                         return `
-                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} text-center">
+                                                                <input type="checkbox"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="enabled"
+                                                                    class="cal-slot-input cal-slot-enabled w-4 h-4 accent-current cursor-pointer"
+                                                                    ${enabledVal ? 'checked' : ''}
+                                                                    onchange="app._toggleSlotRowOpacity(this)"
+                                                                    title="Enable Slot ${slotId.replace('S','')} for ${month}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
                                                                 <input type="date"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
                                                                     class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
@@ -3772,7 +3718,7 @@
                                                                     value="${startVal}"
                                                                 />
                                                             </td>
-                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
                                                                 <input type="date"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
                                                                     class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
@@ -3780,7 +3726,7 @@
                                                                     value="${endVal}"
                                                                 />
                                                             </td>
-                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]}">
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
                                                                 <input type="number" min="0" max="200"
                                                                     data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
                                                                     class="cal-slot-input slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
@@ -3809,7 +3755,8 @@
                             <p class="text-sm text-yellow-700">
                                 • Departments: ${departmentsToConfigure.length} department${departmentsToConfigure.length === 1 ? '' : 's'}<br>
                                 • Bid slots per department: 3 (Slot A, Slot B, Slot C) × 12 months<br>
-                                • Each slot: custom start date, end date, and max capacity<br>
+                                • Toggle <strong>On</strong> to make a slot visible to Operations Staff for that month<br>
+                                • Each enabled slot: fixed date range and max capacity seen by staff when bidding<br>
                                 • Total configurations: ${departmentsToConfigure.length * 3} bid slots × 12 months
                             </p>
                         </div>
@@ -3886,6 +3833,8 @@
                     if (field === 'capacity') {
                         value = parseInt(input.value);
                         if (isNaN(value)) value = 1; // default capacity = 1
+                    } else if (field === 'enabled') {
+                        value = input.checked; // boolean
                     } else {
                         value = input.value;
                     }
@@ -3908,6 +3857,19 @@
                 alert(`✅ Slot configurations saved!\n\n• ${savedCount} fields saved.\n• Each department now has Slot A, B, C configured per month (Jan–Dec).`);
                 
                 this.setActiveView('admin');
+            },
+
+            // Dims/undims the date+capacity cells when the enabled checkbox is toggled
+            _toggleSlotRowOpacity(checkbox) {
+                const row = checkbox.closest('tr');
+                if (!row) return;
+                const dept  = checkbox.dataset.dept;
+                const month = checkbox.dataset.month;
+                const slot  = checkbox.dataset.slot;
+                // Siblings: the 3 cells after this enabled-cell for this slot
+                row.querySelectorAll(`input[data-dept="${dept}"][data-month="${month}"][data-slot="${slot}"]:not([data-field="enabled"])`).forEach(inp => {
+                    inp.closest('td').style.opacity = checkbox.checked ? '1' : '0.35';
+                });
             },
 
             async refreshBidsFromSupabase(silent = false) {
@@ -5149,6 +5111,119 @@
             },
 
             // ==================== BIDDING FUNCTIONS ====================
+            // ── NEW: Populates the available-slot cards for the employee bidding view ──
+            refreshAvailableSlots() {
+                const monthSelect = document.getElementById('selectedMonth');
+                if (!monthSelect) return;
+                const month = monthSelect.value;
+                const container = document.getElementById('availableSlotCards');
+                if (!container) return;
+
+                const emp   = this.state.verifiedEmployee;
+                const dept  = emp?.department || '';
+                const caps  = this.state.slotCapacities;
+                const userBids = this.state.bids.filter(b => b.employeeId === emp?.id);
+                const isProcessed = this.state.isProcessed;
+
+                // Calculate remaining capacity for each slot considering current bids
+                const usedCap = {}; // slotId → count of bids placed against that slot in this dept+month
+                this.state.bids.forEach(b => {
+                    if (b.department === dept) {
+                        // Match bid's slot to a slotId (SA/SB/SC)
+                        const key = `${b.slotType}-${b.startDate}`;
+                        // We count per configured slot window
+                        ['SA','SB','SC'].forEach(sid => {
+                            const s = caps[`cal-${dept}-${month}-${sid}-start`];
+                            const e = caps[`cal-${dept}-${month}-${sid}-end`];
+                            if (s && e && b.startDate === s && b.endDate === e) {
+                                usedCap[sid] = (usedCap[sid] || 0) + 1;
+                            }
+                        });
+                    }
+                });
+
+                // Build slot definitions for this dept+month
+                const slotDefs = ['SA','SB','SC'].map(sid => {
+                    const enabled  = caps[`cal-${dept}-${month}-${sid}-enabled`];
+                    const start    = caps[`cal-${dept}-${month}-${sid}-start`];
+                    const end      = caps[`cal-${dept}-${month}-${sid}-end`];
+                    const capacity = parseInt(caps[`cal-${dept}-${month}-${sid}-capacity`]) || 1;
+                    const used     = usedCap[sid] || 0;
+                    const remaining = Math.max(0, capacity - used);
+
+                    // Calculate days between start and end
+                    let days = 0;
+                    if (start && end) {
+                        days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+                    }
+
+                    const colorMap = { SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
+                                       SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
+                                       SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' } };
+                    return { sid, enabled, start, end, capacity, used, remaining, days, colors: colorMap[sid] };
+                }).filter(s => s.enabled && s.start && s.end);
+
+                // Reset selected slot whenever month changes
+                window.selectedSlot    = null;
+                window.selectedSlotDef = null;
+                const confirmBox = document.getElementById('selectedSlotConfirm');
+                if (confirmBox) confirmBox.classList.add('hidden');
+
+                if (slotDefs.length === 0) {
+                    container.innerHTML = `
+                        <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                            <p class="text-yellow-700 font-semibold">📭 No slots configured for ${month}</p>
+                            <p class="text-xs text-yellow-600 mt-1">The planner has not opened any slots for this month yet.</p>
+                        </div>`;
+                    return;
+                }
+
+                container.innerHTML = slotDefs.map(s => {
+                    const alreadyBid   = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
+                    const noCapacity   = s.remaining <= 0;
+                    const disabled     = alreadyBid || noCapacity || userBids.length >= 2 || isProcessed;
+                    const isSelected   = window.selectedSlot === s.sid;
+
+                    let stateLabel = '';
+                    let cardClass  = `border-2 rounded-xl p-4 cursor-pointer transition-all ${s.colors.border} ${s.colors.bg}`;
+                    if (alreadyBid)       { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    else if (noCapacity)  { stateLabel = '<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded font-semibold ml-2">Full</span>'; cardClass = 'border-2 rounded-xl p-4 border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'; }
+                    else if (isSelected)  { cardClass = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
+
+                    return `
+                        <div class="${cardClass}" 
+                             onclick="${disabled ? '' : `app.selectConfiguredSlot('${s.sid}','${s.start}','${s.end}',${s.days},'${s.colors.label}')`}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-bold text-gray-800">${s.colors.label}${stateLabel}</span>
+                                <span class="text-xs px-2 py-1 rounded font-semibold ${s.remaining > 0 ? s.colors.badge + ' text-white' : 'bg-gray-300 text-gray-600'}">
+                                    ${s.remaining} / ${s.capacity} seats left
+                                </span>
+                            </div>
+                            <div class="text-sm ${s.colors.text}">
+                                📅 ${s.start} → ${s.end}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">⏱ ${s.days} days</div>
+                        </div>`;
+                }).join('');
+            },
+
+            selectConfiguredSlot(sid, start, end, days, label) {
+                window.selectedSlot    = sid;
+                window.selectedSlotDef = { sid, start, end, days, label };
+
+                // Highlight selected card
+                this.refreshAvailableSlots();
+
+                // Show confirmation panel
+                const box = document.getElementById('selectedSlotConfirm');
+                if (box) {
+                    document.getElementById('confirmSlotName').textContent  = label;
+                    document.getElementById('confirmSlotDates').textContent = `${start} → ${end}`;
+                    document.getElementById('confirmSlotDays').textContent  = days;
+                    box.classList.remove('hidden');
+                }
+            },
+
             setSelectedSlot(slotId) {
                 window.selectedSlot = slotId;
                 this.updateSlotText();
@@ -5270,47 +5345,33 @@
                     return;
                 }
 
-                const startDate = document.getElementById('startDate')?.value;
-                const endDate = document.getElementById('endDate')?.value;
+                // Use configured slot definition
+                const slotDef = window.selectedSlotDef;
+                if (!slotDef) {
+                    alert('Please select an available slot first.');
+                    return;
+                }
+
+                const startDate = slotDef.start;
+                const endDate   = slotDef.end;
+                const days      = slotDef.days;
                 const monthSelect = document.getElementById('selectedMonth');
                 const month = monthSelect ? monthSelect.value : this.state.months[0];
 
                 if (!startDate || !endDate) {
-                    alert('Please select both start and end dates');
+                    alert('Slot has no configured dates. Please contact the planner.');
                     return;
                 }
 
-                const slot = this.state.slotTypes.find(s => s.id === window.selectedSlot);
-                
-                const calculateDaysBetween = (start, end) => {
-                    const startD = new Date(start);
-                    const endD = new Date(end);
-                    const diffTime = Math.abs(endD - startD);
-                    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                };
-                
-                const days = calculateDaysBetween(startDate, endDate);
-
-                if (days !== slot.days) {
-                    alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.`);
-                    return;
-                }
-
-                const start = new Date(startDate);
-                const yearStart = new Date(this.state.biddingYear, 0, 1);
-                const yearEnd = new Date(this.state.biddingYear, 11, 31);
-
-                if (start < yearStart || start > yearEnd) {
-                    alert(`Start date must be within ${this.state.biddingYear}`);
-                    return;
-                }
+                // Use the configured slot's label as the slotType key (SA/SB/SC)
+                const slotTypeKey = slotDef.sid; // 'SA', 'SB', 'SC'
 
                 const existingBid = this.state.bids.find(
-                    bid => bid.employeeId === this.state.verifiedEmployee.id && bid.slotType === window.selectedSlot
+                    bid => bid.employeeId === this.state.verifiedEmployee.id && bid.startDate === startDate && bid.endDate === endDate
                 );
                 
                 if (existingBid) {
-                    alert(`You have already bid for ${slot.name}. You cannot bid for the same slot twice.`);
+                    alert(`You have already placed a bid for this slot (${startDate} to ${endDate}).`);
                     return;
                 }
 
@@ -5343,13 +5404,25 @@
                     return;
                 }
 
-                // Check for date overlaps
+                // Check for date overlaps with existing bids
                 for (const bid of userBids) {
                     if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
-                        const existingSlot = this.state.slotTypes.find(s => s.id === bid.slotType);
-                        alert(`Date overlap detected with your existing ${existingSlot?.name || 'slot'} bid (${bid.startDate} to ${bid.endDate})`);
+                        alert(`Date overlap detected with your existing bid (${bid.startDate} to ${bid.endDate})`);
                         return;
                     }
+                }
+
+                // Check capacity for this configured slot
+                const dept = this.state.verifiedEmployee.department || '';
+                const caps = this.state.slotCapacities;
+                const capacity = parseInt(caps[`cal-${dept}-${month}-${slotTypeKey}-capacity`]) || 1;
+                const usedCount = this.state.bids.filter(b =>
+                    b.department === dept && b.startDate === startDate && b.endDate === endDate
+                ).length;
+                if (usedCount >= capacity) {
+                    alert(`This slot is now full (${capacity} seats taken). Please select another slot.`);
+                    this.refreshAvailableSlots();
+                    return;
                 }
 
                 const newBid = {
@@ -5358,7 +5431,8 @@
                     seniorityDate: this.state.verifiedEmployee.seniorityDate,
                     position: this.state.verifiedEmployee.position || '',
                     department: this.state.verifiedEmployee.department,
-                    slotType: window.selectedSlot,
+                    slotType: slotTypeKey,
+                    month,
                     startDate,
                     endDate,
                     days,
@@ -5367,7 +5441,7 @@
 
                 this.state.bids.push(newBid);
                 this.saveState();
-                this.writeAuditLog('BID_PLACED', { slot: window.selectedSlot, start: startDate, end: endDate, days, department: newBid.department });
+                this.writeAuditLog('BID_PLACED', { slot: slotTypeKey, start: startDate, end: endDate, days, department: newBid.department });
 
                 // Save bid immediately to Supabase so it survives refresh
                 this.saveBidToSupabase(newBid).then(saved => {
@@ -5375,12 +5449,13 @@
                         console.log('✅ Bid saved to Supabase');
                     } else {
                         console.warn('⚠️ Bid saved locally only — Supabase unavailable');
-                        // Show warning so user knows the bid may not be visible to the planner
                         alert('⚠️ Your bid was recorded locally but could NOT be saved to the database.\n\nPlease check your internet connection and try submitting again, or contact the planner.');
                     }
                 });
 
-                alert(`✓ Bid placed successfully for ${slot.name} (${days} days)!`);
+                alert(`✓ Bid placed successfully for ${slotDef.label} (${days} days, ${startDate} → ${endDate})!`);
+                window.selectedSlotDef = null;
+                window.selectedSlot    = null;
                 
                 // Refresh view
                 this.renderEmployeeBiddingView();
