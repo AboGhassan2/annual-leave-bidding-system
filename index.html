@@ -2445,16 +2445,19 @@
                                     <p class="text-xs text-gray-500">${yearsOfService.toFixed(1)} years of service</p>
                                 </div>
                                 <div class="bg-green-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${userBids.length}/2</p>
-                                    <p class="text-sm text-gray-600">Bids Placed</p>
+                                    <p class="text-2xl font-bold">${userBids.length}</p>
+                                    <p class="text-sm text-gray-600">Preferences Submitted</p>
+                                    <p class="text-xs text-gray-500">Max 2 per month</p>
                                 </div>
                                 <div class="bg-yellow-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold">${totalBidDays}</p>
-                                    <p class="text-sm text-gray-600">Days Used</p>
+                                    <p class="text-sm text-gray-600">Days Requested</p>
+                                    <p class="text-xs text-gray-500">Across all preferences</p>
                                 </div>
                                 <div class="bg-purple-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${remainingLeave}</p>
-                                    <p class="text-sm text-gray-600">Days Remaining</p>
+                                    <p class="text-2xl font-bold">${entitlement}</p>
+                                    <p class="text-sm text-gray-600">Leave Entitlement</p>
+                                    <p class="text-xs text-gray-500">Final allocation by seniority</p>
                                 </div>
                             </div>
             
@@ -2472,8 +2475,9 @@
                                 ` : ''}
                                 
                                 ${userBids.length >= 2 ? `
-                                    <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
-                                        <p class="font-semibold">❌ Maximum of 2 bids reached.</p>
+                                    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <p class="font-semibold text-blue-800">ℹ️ You have submitted ${userBids.length} preference(s) total.</p>
+                                        <p class="text-sm text-blue-700 mt-1">You may still add preferences in other months — max 2 per month. Final allocation is based on seniority.</p>
                                     </div>
                                 ` : ''}
                                 
@@ -2507,7 +2511,7 @@
                                     id="submitBidBtn"
                                     onclick="app.submitBid()"
                                     class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:opacity-50"
-                                    ${this.state.isProcessed || userBids.length >= 2 ? 'disabled' : ''}
+                                    ${this.state.isProcessed ? 'disabled' : ''}
                                 >
                                     Submit Bid
                                 </button>
@@ -2560,9 +2564,10 @@
                                 <!-- Bid Summary -->
                                 <div class="mt-6 p-4 bg-gray-50 rounded-lg">
                                     <p class="font-semibold mb-2">Bid Summary:</p>
-                                    <p class="text-sm">Bids placed: ${userBids.length}/2</p>
-                                    <p class="text-sm">Days used: ${totalBidDays}/${entitlement}</p>
-                                    <p class="text-sm">Remaining leave: ${remainingLeave} days</p>
+                                    <p class="text-sm">Preferences submitted: ${userBids.length}</p>
+                                    <p class="text-sm text-gray-500">Limit: max 2 bids per month</p>
+                                    <p class="text-sm">Days requested: ${totalBidDays} days</p>
+                                    <p class="text-sm">Leave entitlement: ${entitlement} days (applied at allocation)</p>
                                 </div>
                             </div>
                         </div>
@@ -5287,14 +5292,18 @@
                 }
 
                 container.innerHTML = slotDefs.map(s => {
-                    const alreadyBid  = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
-                    const noCapacity  = s.remaining <= 0;
-                    const disabled    = alreadyBid || noCapacity || userBids.length >= 2 || isProcessed;
-                    const isSelected  = window.selectedSlot === s.sid;
+                    const alreadyBid      = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
+                    const noCapacity      = s.remaining <= 0;
+                    // Per-month cap: count bids for the currently selected month
+                    const bidsThisMonth   = userBids.filter(b => b.month === month).length;
+                    const monthLimitHit   = !alreadyBid && bidsThisMonth >= 2;
+                    const disabled        = alreadyBid || noCapacity || monthLimitHit || isProcessed;
+                    const isSelected      = window.selectedSlot === s.sid;
 
                     let stateLabel = '';
                     let cardClass  = `border-2 rounded-xl p-4 cursor-pointer transition-all ${s.colors.border} ${s.colors.bg}`;
-                    if (alreadyBid)      { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    if (alreadyBid)        { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    else if (monthLimitHit){ stateLabel = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded font-semibold ml-2">Month limit reached</span>'; cardClass = 'border-2 rounded-xl p-4 border-orange-200 bg-orange-50 opacity-50 cursor-not-allowed'; }
                     else if (noCapacity) { stateLabel = '<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded font-semibold ml-2">Full</span>'; cardClass = 'border-2 rounded-xl p-4 border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'; }
                     else if (isSelected) { cardClass = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
 
@@ -5500,17 +5509,17 @@
                 };
                 
                 const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
-                
-                if (userBids.length >= 2) {
-                    alert('You can only place 2 bids maximum.');
+
+                // Enforce max 2 bids per calendar month (no cap on total preferences)
+                const bidsThisMonth = userBids.filter(bid => bid.month === month);
+                if (bidsThisMonth.length >= 2) {
+                    alert(`You have already placed 2 bids for ${month}. Maximum of 2 bids are allowed per month.\n\nYou may still bid in other months.`);
                     return;
                 }
 
                 const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
-                if (totalBidDays + days > entitlement) {
-                    alert(`Your total leave days would exceed your entitlement of ${entitlement} days.\n\nCurrent bids: ${totalBidDays} days\nThis bid: ${days} days\nTotal: ${totalBidDays + days} days`);
-                    return;
-                }
+                // NOTE: No entitlement cap enforced here — bids are preferences only.
+                // Entitlement limits are applied by the planner during seniority-based allocation.
 
                 // Check for date overlaps with existing bids
                 for (const bid of userBids) {
