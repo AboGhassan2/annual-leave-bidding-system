@@ -2569,10 +2569,12 @@
                     </div>
                 `;
             
-                // Initialize selected slot if none selected
-                if (!window.selectedSlot && this.state.slotTypes.length > 0) {
-                    window.selectedSlot = null;
+                // Initialize selected slot state
+                if (!window.selectedSlot) {
+                    window.selectedSlot    = null;
+                    window.selectedSlotDef = null;
                 }
+                window._lastSlotMonth = null; // force reset on first render
                 
                 // Populate the slot cards for the default month
                 this.refreshAvailableSlots();
@@ -5263,11 +5265,15 @@
                     remaining: Math.max(0, s.capacity - (usedCap[s.sid] || 0))
                 }));
 
-                // Reset selected slot whenever month changes
-                window.selectedSlot    = null;
-                window.selectedSlotDef = null;
-                const confirmBox = document.getElementById('selectedSlotConfirm');
-                if (confirmBox) confirmBox.classList.add('hidden');
+                // Reset selected slot ONLY when the month has changed
+                const currentMonth = window._lastSlotMonth;
+                if (currentMonth !== month) {
+                    window.selectedSlot    = null;
+                    window.selectedSlotDef = null;
+                    const confirmBox = document.getElementById('selectedSlotConfirm');
+                    if (confirmBox) confirmBox.classList.add('hidden');
+                }
+                window._lastSlotMonth = month;
 
                 if (slotDefs.length === 0) {
                     const diagDept = deptCandidates.join(' / ') || '(no department on record)';
