@@ -2511,6 +2511,9 @@
                                 >
                                     Submit Bid
                                 </button>
+                                <div id="bidSuccessToast" class="hidden mt-4 p-3 bg-green-50 border border-green-300 rounded-xl text-center">
+                                    <p class="text-green-800 font-semibold text-sm" id="bidSuccessMsg"></p>
+                                </div>
                             </div>
             
                             <!-- Right: My Current Bids -->
@@ -2525,18 +2528,24 @@
                                 ` : `
                                     <div class="space-y-4">
                                         ${userBids.map(bid => {
-                                            const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                            const slotLabel = bid.slotType === 'SA' || bid.slotType === 'slotA' ? 'Slot A' :
+                                                              bid.slotType === 'SB' || bid.slotType === 'slotB' ? 'Slot B' :
+                                                              bid.slotType === 'SC' || bid.slotType === 'slotC' ? 'Slot C' :
+                                                              (this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType);
+                                            const badgeColor = (bid.slotType === 'SA' || bid.slotType === 'slotA') ? 'bg-green-100 text-green-800 border-green-300' :
+                                                               (bid.slotType === 'SB' || bid.slotType === 'slotB') ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                                               'bg-purple-100 text-purple-800 border-purple-300';
                                             return `
-                                                <div class="border border-gray-200 rounded p-4">
+                                                <div class="border border-gray-200 rounded-xl p-4">
                                                     <div class="flex justify-between items-start">
                                                         <div>
-                                                            <p class="font-bold">${slot?.name || 'Slot'}</p>
-                                                            <p class="text-sm text-gray-600">${bid.startDate} to ${bid.endDate}</p>
-                                                            <p class="text-sm font-semibold">${bid.days} days</p>
+                                                            <span class="inline-block px-2 py-0.5 rounded text-xs font-bold border ${badgeColor} mb-2">${slotLabel}</span>
+                                                            <p class="text-sm text-gray-700 font-semibold">📅 ${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-sm text-gray-500">⏱ ${bid.days} days</p>
                                                         </div>
                                                         <button
                                                             onclick="app.removeBid('${bid.employeeId}', '${bid.slotType}', '${bid.startDate}')"
-                                                            class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                                                            class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 font-semibold"
                                                             ${this.state.isProcessed ? 'disabled' : ''}
                                                         >
                                                             Remove
@@ -2567,6 +2576,18 @@
                 
                 // Populate the slot cards for the default month
                 this.refreshAvailableSlots();
+
+                // Show success toast if a bid was just submitted
+                if (this._lastBidSuccess) {
+                    const toast = document.getElementById('bidSuccessToast');
+                    const msg   = document.getElementById('bidSuccessMsg');
+                    if (toast && msg) {
+                        msg.textContent = this._lastBidSuccess;
+                        toast.classList.remove('hidden');
+                        setTimeout(() => toast.classList.add('hidden'), 5000);
+                    }
+                    this._lastBidSuccess = null;
+                }
 
                 // Live countdown ticker
                 if (this.state.biddingDeadline) {
@@ -4006,7 +4027,18 @@
                         const id   = (bid.employeeId || '').toLowerCase();
                         return name.includes(q) || id.includes(q);
                     });
-                const colorMap = { slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800' };
+                const colorMap = { 
+                    slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800',
+                    SA:    'bg-green-100 text-green-800', SB:    'bg-blue-100 text-blue-800', SC:    'bg-purple-100 text-purple-800'
+                };
+                const _slotLabel = (st) => {
+                    if (st === 'slotA' || st === 'SA') return 'Slot A';
+                    if (st === 'slotB' || st === 'SB') return 'Slot B';
+                    if (st === 'slotC' || st === 'SC') return 'Slot C';
+                    if (st === 'gcCustom') return '⭐ Custom';
+                    if (st === 'csCustom') return '🏢 Custom';
+                    return st || '—';
+                };
                 const noResults = sortedBids.length === 0 ? `
                     <div class="text-center py-8 text-gray-400">
                         <p class="text-3xl mb-2">🔍</p>
@@ -4053,7 +4085,7 @@
                                 ${sortedBids.map((bid, idx) => {
                                     const emp = this.state.employees.find(e => e.id === bid.employeeId);
                                     const slotColor = colorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
-                                    const slotDisplay = this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType;
+                                    const slotDisplay = bid.slotLabel || _slotLabel(bid.slotType);
                                     const submitted = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
                                     const safeId = encodeURIComponent(bid.employeeId);
                                     const safeSlot = encodeURIComponent(bid.slotType);
@@ -5120,62 +5152,116 @@
                 if (!container) return;
 
                 const emp   = this.state.verifiedEmployee;
-                // dept: prefer department (L-code), fall back to position
-                const dept  = (emp?.department && emp.department !== 'Unassigned') ? emp.department : (emp?.position || '');
                 const caps  = this.state.slotCapacities;
                 const userBids = this.state.bids.filter(b => b.employeeId === emp?.id);
                 const isProcessed = this.state.isProcessed;
 
-                // Helper: robustly read enabled — handles boolean true, string "true", and
-                // backward-compat: if key is absent but dates ARE configured, treat as enabled
-                const isEnabled = (sid) => {
-                    const key = `cal-${dept}-${month}-${sid}-enabled`;
-                    const raw = caps[key];
+                // Re-look up employee in the full employees array to get their stored dept
+                const fullEmp = this.state.employees.find(e => e.id === emp?.id) || emp || {};
+
+                // Build a prioritised list of dept candidates to try
+                const deptCandidates = [...new Set([
+                    fullEmp.department,
+                    fullEmp.position,
+                    emp?.department,
+                    emp?.position
+                ].filter(Boolean))];
+
+                // Helper: robustly coerce enabled value (boolean true OR string "true"),
+                // with backward-compat: absent key + dates present → treat as enabled
+                const isEnabled = (dept, sid) => {
+                    const raw = caps[`cal-${dept}-${month}-${sid}-enabled`];
                     if (raw === undefined || raw === null) {
-                        // Backward compat: if dates were configured before the enabled toggle existed,
-                        // show the slot if both start and end are non-empty
                         const hasStart = caps[`cal-${dept}-${month}-${sid}-start`];
                         const hasEnd   = caps[`cal-${dept}-${month}-${sid}-end`];
                         return !!(hasStart && hasEnd);
                     }
-                    // Coerce string "true"/"false" safely
                     if (typeof raw === 'string') return raw === 'true';
                     return !!raw;
                 };
 
-                // Calculate remaining capacity for each slot considering current bids
+                // Try each dept candidate until we find configured slots
+                let resolvedDept = null;
+                let slotDefs = [];
+
+                for (const deptTry of deptCandidates) {
+                    const defs = ['SA','SB','SC'].map(sid => {
+                        if (!isEnabled(deptTry, sid)) return null;
+                        const start    = caps[`cal-${deptTry}-${month}-${sid}-start`];
+                        const end      = caps[`cal-${deptTry}-${month}-${sid}-end`];
+                        if (!start || !end) return null;
+                        const capacity = parseInt(caps[`cal-${deptTry}-${month}-${sid}-capacity`]) || 1;
+                        const days     = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+                        const colorMap = {
+                            SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
+                            SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
+                            SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
+                        };
+                        return { sid, start, end, capacity, days, colors: colorMap[sid] };
+                    }).filter(Boolean);
+
+                    if (defs.length > 0) {
+                        resolvedDept = deptTry;
+                        slotDefs = defs;
+                        break;
+                    }
+                }
+
+                // Last-resort fallback: scan ALL slotCapacity keys for this month
+                // (handles cases where dept in employee record doesn't match key exactly)
+                if (slotDefs.length === 0) {
+                    const allKeys = Object.keys(caps);
+                    const monthPattern = new RegExp(`^cal-(.+)-${month}-(SA|SB|SC)-start$`);
+                    const foundDepts = new Set();
+                    allKeys.forEach(k => {
+                        const m = k.match(monthPattern);
+                        if (m) foundDepts.add(m[1]);
+                    });
+
+                    // Pick the first dept that has any enabled slot in this month
+                    for (const deptTry of foundDepts) {
+                        const defs = ['SA','SB','SC'].map(sid => {
+                            if (!isEnabled(deptTry, sid)) return null;
+                            const start    = caps[`cal-${deptTry}-${month}-${sid}-start`];
+                            const end      = caps[`cal-${deptTry}-${month}-${sid}-end`];
+                            if (!start || !end) return null;
+                            const capacity = parseInt(caps[`cal-${deptTry}-${month}-${sid}-capacity`]) || 1;
+                            const days     = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+                            const colorMap = {
+                                SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
+                                SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
+                                SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
+                            };
+                            return { sid, start, end, capacity, days, colors: colorMap[sid] };
+                        }).filter(Boolean);
+
+                        if (defs.length > 0) {
+                            resolvedDept = deptTry;
+                            slotDefs = defs;
+                            break;
+                        }
+                    }
+                }
+
+                // Calculate used capacity per slot using the resolved dept
                 const usedCap = {};
-                this.state.bids.forEach(b => {
-                    if (b.department === dept || b.department === emp?.position) {
+                if (resolvedDept) {
+                    this.state.bids.forEach(b => {
                         ['SA','SB','SC'].forEach(sid => {
-                            const s = caps[`cal-${dept}-${month}-${sid}-start`];
-                            const e = caps[`cal-${dept}-${month}-${sid}-end`];
+                            const s = caps[`cal-${resolvedDept}-${month}-${sid}-start`];
+                            const e = caps[`cal-${resolvedDept}-${month}-${sid}-end`];
                             if (s && e && b.startDate === s && b.endDate === e) {
                                 usedCap[sid] = (usedCap[sid] || 0) + 1;
                             }
                         });
-                    }
-                });
-
-                // Build slot definitions for this dept+month
-                const slotDefs = ['SA','SB','SC'].map(sid => {
-                    const enabled  = isEnabled(sid);
-                    const start    = caps[`cal-${dept}-${month}-${sid}-start`];
-                    const end      = caps[`cal-${dept}-${month}-${sid}-end`];
-                    const capacity = parseInt(caps[`cal-${dept}-${month}-${sid}-capacity`]) || 1;
-                    const used     = usedCap[sid] || 0;
-                    const remaining = Math.max(0, capacity - used);
-
-                    let days = 0;
-                    if (start && end) {
-                        days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
-                    }
-
-                    const colorMap = { SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
-                                       SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
-                                       SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' } };
-                    return { sid, enabled, start, end, capacity, used, remaining, days, colors: colorMap[sid] };
-                }).filter(s => s.enabled && s.start && s.end);
+                    });
+                }
+                // Apply remaining capacity
+                slotDefs = slotDefs.map(s => ({
+                    ...s,
+                    used:      usedCap[s.sid] || 0,
+                    remaining: Math.max(0, s.capacity - (usedCap[s.sid] || 0))
+                }));
 
                 // Reset selected slot whenever month changes
                 window.selectedSlot    = null;
@@ -5184,8 +5270,7 @@
                 if (confirmBox) confirmBox.classList.add('hidden');
 
                 if (slotDefs.length === 0) {
-                    // Show diagnostic info to help troubleshoot mismatches
-                    const diagDept = dept || '(empty — no department on employee record)';
+                    const diagDept = deptCandidates.join(' / ') || '(no department on record)';
                     container.innerHTML = `
                         <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
                             <p class="text-yellow-700 font-semibold">📭 No slots configured for ${month}</p>
@@ -5196,20 +5281,20 @@
                 }
 
                 container.innerHTML = slotDefs.map(s => {
-                    const alreadyBid   = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
-                    const noCapacity   = s.remaining <= 0;
-                    const disabled     = alreadyBid || noCapacity || userBids.length >= 2 || isProcessed;
-                    const isSelected   = window.selectedSlot === s.sid;
+                    const alreadyBid  = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
+                    const noCapacity  = s.remaining <= 0;
+                    const disabled    = alreadyBid || noCapacity || userBids.length >= 2 || isProcessed;
+                    const isSelected  = window.selectedSlot === s.sid;
 
                     let stateLabel = '';
                     let cardClass  = `border-2 rounded-xl p-4 cursor-pointer transition-all ${s.colors.border} ${s.colors.bg}`;
-                    if (alreadyBid)       { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
-                    else if (noCapacity)  { stateLabel = '<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded font-semibold ml-2">Full</span>'; cardClass = 'border-2 rounded-xl p-4 border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'; }
-                    else if (isSelected)  { cardClass = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
+                    if (alreadyBid)      { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    else if (noCapacity) { stateLabel = '<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded font-semibold ml-2">Full</span>'; cardClass = 'border-2 rounded-xl p-4 border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'; }
+                    else if (isSelected) { cardClass = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
 
                     return `
-                        <div class="${cardClass}" 
-                             onclick="${disabled ? '' : `app.selectConfiguredSlot('${s.sid}','${s.start}','${s.end}',${s.days},'${s.colors.label}')`}">
+                        <div class="${cardClass}"
+                             onclick="${disabled ? '' : `app.selectConfiguredSlot('${s.sid}','${s.start}','${s.end}',${s.days},'${s.colors.label}','${resolvedDept}')`}">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="font-bold text-gray-800">${s.colors.label}${stateLabel}</span>
                                 <span class="text-xs px-2 py-1 rounded font-semibold ${s.remaining > 0 ? s.colors.badge + ' text-white' : 'bg-gray-300 text-gray-600'}">
@@ -5224,9 +5309,9 @@
                 }).join('');
             },
 
-            selectConfiguredSlot(sid, start, end, days, label) {
+            selectConfiguredSlot(sid, start, end, days, label, resolvedDept) {
                 window.selectedSlot    = sid;
-                window.selectedSlotDef = { sid, start, end, days, label };
+                window.selectedSlotDef = { sid, start, end, days, label, resolvedDept };
 
                 // Highlight selected card
                 this.refreshAvailableSlots();
@@ -5429,10 +5514,11 @@
                     }
                 }
 
-                // Check capacity for this configured slot
-                const dept = (this.state.verifiedEmployee.department && this.state.verifiedEmployee.department !== 'Unassigned')
-                    ? this.state.verifiedEmployee.department
-                    : (this.state.verifiedEmployee.position || '');
+                // Check capacity for this configured slot using the resolved dept from slot selection
+                const dept = slotDef.resolvedDept || 
+                    ((this.state.verifiedEmployee.department && this.state.verifiedEmployee.department !== 'Unassigned')
+                        ? this.state.verifiedEmployee.department
+                        : (this.state.verifiedEmployee.position || ''));
                 const caps = this.state.slotCapacities;
                 const capacity = parseInt(caps[`cal-${dept}-${month}-${slotTypeKey}-capacity`]) || 1;
                 const usedCount = this.state.bids.filter(b =>
@@ -5449,8 +5535,9 @@
                     employeeName: this.state.verifiedEmployee.name,
                     seniorityDate: this.state.verifiedEmployee.seniorityDate,
                     position: this.state.verifiedEmployee.position || '',
-                    department: this.state.verifiedEmployee.department,
+                    department: dept, // use resolvedDept so planner sees correct dept
                     slotType: slotTypeKey,
+                    slotLabel: slotDef.label, // 'Slot A' / 'Slot B' / 'Slot C' for display
                     month,
                     startDate,
                     endDate,
@@ -5462,22 +5549,25 @@
                 this.saveState();
                 this.writeAuditLog('BID_PLACED', { slot: slotTypeKey, start: startDate, end: endDate, days, department: newBid.department });
 
-                // Save bid immediately to Supabase so it survives refresh
-                this.saveBidToSupabase(newBid).then(saved => {
-                    if (saved) {
-                        console.log('✅ Bid saved to Supabase');
-                    } else {
-                        console.warn('⚠️ Bid saved locally only — Supabase unavailable');
-                        alert('⚠️ Your bid was recorded locally but could NOT be saved to the database.\n\nPlease check your internet connection and try submitting again, or contact the planner.');
-                    }
-                });
+                // Store success message so re-rendered view can display it
+                this._lastBidSuccess = `✅ Bid placed: ${slotDef.label} — ${startDate} → ${endDate} (${days} days)`;
 
-                alert(`✓ Bid placed successfully for ${slotDef.label} (${days} days, ${startDate} → ${endDate})!`);
+                // Clear selection and refresh the view IMMEDIATELY (before async Supabase)
                 window.selectedSlotDef = null;
                 window.selectedSlot    = null;
-                
-                // Refresh view
                 this.renderEmployeeBiddingView();
+
+                // Save to Supabase in the background — UI already updated
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (!saved) {
+                        console.warn('⚠️ Bid saved locally only — Supabase unavailable');
+                        const statusEl = document.getElementById('systemStatus');
+                        if (statusEl) statusEl.textContent = '⚠️ Bid saved locally — database sync pending';
+                    } else {
+                        const statusEl = document.getElementById('systemStatus');
+                        if (statusEl) statusEl.textContent = '✅ Bid saved to database';
+                    }
+                });
             },
 
             async saveBidToSupabase(bid) {
@@ -5499,26 +5589,23 @@
                         created_at: bid.timestamp || new Date().toISOString()
                     };
 
-                    // Step 1: Delete any existing row for this employee+slot combo to avoid duplicates
-                    const { error: delError } = await this.supabase
+                    // Upsert: if a row with same employee_id + start_date already exists, update it.
+                    // This avoids the race condition from delete-then-insert.
+                    const { data, error: upsertError } = await this.supabase
                         .from('leave_requests')
-                        .delete()
-                        .eq('employee_id', bid.employeeId)
-                        .eq('slot_type', bid.slotType);
-
-                    if (delError) {
-                        console.warn('⚠️ Pre-delete warning (non-fatal):', delError.message);
-                    }
-
-                    // Step 2: Insert the new bid row fresh
-                    const { data, error: insertError } = await this.supabase
-                        .from('leave_requests')
-                        .insert(row)
+                        .upsert(row, { onConflict: 'employee_id,start_date' })
                         .select();
 
-                    if (insertError) {
-                        console.error('❌ Supabase bid insert error:', insertError.message, insertError);
-                        return false;
+                    if (upsertError) {
+                        // Fallback: try plain insert if upsert fails (e.g. constraint not set up)
+                        console.warn('⚠️ Upsert failed, trying insert:', upsertError.message);
+                        const { error: insertError } = await this.supabase
+                            .from('leave_requests')
+                            .insert(row);
+                        if (insertError) {
+                            console.error('❌ Supabase bid insert error:', insertError.message);
+                            return false;
+                        }
                     }
 
                     console.log('✅ Bid saved to Supabase:', data);
