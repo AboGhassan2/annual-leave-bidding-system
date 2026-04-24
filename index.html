@@ -4940,143 +4940,243 @@
                     if (!proceed) return;
                 }
 
-                // Process each employee by seniority (most senior first)
-                sortedEmployees.forEach((employee, index) => {
-                    const employeeBids = this.state.bids.filter(bid => bid.employeeId === employee.id);
-                    const entitlement  = getEmployeeEntitlement(employee);
-                    // Resolve employee department to the configured slot key (L3/L46/L5 code)
-                    const department   = resolveEmployeeDept(employee.department || 'Unassigned');
+                // ═══════════════════════════════════════════════════════════════════
+                // BID PROCESSING — CONFLICT-RESOLUTION MODEL
+                //
+                // The old sequential model decremented capacity as it processed each
+                // employee one by one, which meant Employee #2 would find the slot
+                // already "gone" even if capacity = 1.  The correct model is:
+                //
+                //  ROUND 1  — Collect every employee's 1st-choice bid.
+                //             Slot key = dept + month + slotType.
+                //             If only 1 employee wants a slot → award it.
+                //             If multiple employees want the same slot:
+                //               • Capacity ≥ number of requesters  → everyone gets it.
+                //               • Capacity < number of requesters  → most senior fills up
+                //                 to capacity; the rest are marked "unresolved" and their
+                //                 1st-choice bid is released back so it no longer blocks
+                //                 them from their 2nd-choice in Round 2.
+                //
+                //  ROUND 2  — For every employee still missing a slot, try their 2nd-
+                //             choice bid against the REMAINING capacity (already reduced
+                //             by Round 1 awards).  Same conflict resolution applies.
+                //
+                //  ROUND 3  — Auto-assign: employees who still have < 2 slots get the
+                //             next available slot in their dept (any month, any type)
+                //             that doesn't duplicate their existing slot or exceed their
+                //             entitlement.
+                //
+                // Within each conflict group seniority rank (oldest date = rank #1) is
+                // used to break ties — most senior wins.
+                // ═══════════════════════════════════════════════════════════════════
 
-                    const assignedSlots = [];
-                    let assignedDays    = 0;
+                // awarded[employeeId] = array of assignment objects (max 2)
+                const awarded = {};
+                sortedEmployees.forEach(e => { awarded[e.id] = []; });
 
-                    // ── PHASE 1: Award the employee's own bid choices in order ──
-                    // Bids are sorted by submission timestamp so bid 1 = first choice, bid 2 = second choice
-                    const sortedBids = [...employeeBids].sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                // Helper: build assignment object from a bid + resolved dates
+                const makeBidAssignment = (employee, bid, slotNumber) => {
+                    const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                    const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                    const month    = this.state.months[new Date(bid.startDate).getMonth()];
+                    const slotObj  = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                    const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
+                    const startDate = configuredDates?.start || bid.startDate;
+                    const endDate   = configuredDates?.end   || bid.endDate;
+                    const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+                    return {
+                        employeeId:     employee.id,
+                        employeeName:   employee.name,
+                        position:       employee.position || '',
+                        department:     bidDept,
+                        slotName:       slotObj ? slotObj.name : `Slot ${slotType}`,
+                        slotType:       `slot${slotType}`,
+                        slotNumber,
+                        startDate,
+                        endDate,
+                        days,
+                        month,
+                        year:           this.state.biddingYear,
+                        seniorityDate:  employee.seniorityDate,
+                        yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1),
+                        type:           'Bid Awarded',
+                        bidChoice:      slotNumber
+                    };
+                };
 
-                    for (const bid of sortedBids) {
-                        if (assignedSlots.length >= 2) break;
-
+                // Helper: resolve conflicts for a batch of (employee, bid) pairs against
+                // the live slotAvailability map.  Returns { won: [...], lost: [...] }
+                // where lost employees didn't fit within remaining capacity.
+                const resolveConflicts = (candidates) => {
+                    // Group by slot key
+                    const bySlot = {};
+                    candidates.forEach(({ employee, bid }) => {
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
                         const month    = this.state.months[new Date(bid.startDate).getMonth()];
-                        const slotType = bid.slotType.charAt(bid.slotType.length - 1); // 'A', 'B', or 'C'
-                        // ALWAYS resolve through the same resolver used to build slotAvailability
-                        // so the key actually exists in the availability map.
-                        const bidDept  = resolveEmployeeDept(bid.department || department);
+                        const key = `${bidDept}||${month}||${slotType}`;
+                        if (!bySlot[key]) bySlot[key] = { bidDept, month, slotType, contenders: [] };
+                        bySlot[key].contenders.push({ employee, bid });
+                    });
 
-                        const available =
-                            slotAvailability[month] &&
-                            slotAvailability[month][bidDept] &&
-                            slotAvailability[month][bidDept][slotType] > 0;
+                    const won  = []; // { employee, bid }
+                    const lost = []; // { employee, bid } — didn't get this choice
 
-                        if (available) {
-                            // Compute actual days from the configured slot dates (most accurate source)
-                            const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
-                            const slotObj = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
-                            let bidStartDate = bid.startDate;
-                            let bidEndDate   = bid.endDate;
-                            if (configuredDates?.start && configuredDates?.end) {
-                                bidStartDate = configuredDates.start;
-                                bidEndDate   = configuredDates.end;
-                            }
-                            const bidDays = Math.ceil(
-                                (new Date(bidEndDate) - new Date(bidStartDate)) / (1000 * 60 * 60 * 24)
-                            ) + 1;
+                    Object.values(bySlot).forEach(({ bidDept, month, slotType, contenders }) => {
+                        const cap = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
 
-                            // ── ENTITLEMENT CAP (Phase 1) ──
-                            // Never award a bid that would push the employee's total above their entitlement.
-                            // < 5 years of service → max 30 days | ≥ 5 years → max 35 days
-                            if (assignedDays + bidDays > entitlement) continue;
-
-                            const assignment = {
-                                employeeId:    employee.id,
-                                employeeName:  employee.name,
-                                position:      employee.position || '',
-                                department:    bidDept,
-                                slotName:      slotObj ? slotObj.name : `Slot ${slotType}`,
-                                slotType:      `slot${slotType}`,
-                                slotNumber:    assignedSlots.length + 1,
-                                startDate:     bidStartDate,
-                                endDate:       bidEndDate,
-                                days:          bidDays,
-                                month:         month,
-                                year:          this.state.biddingYear,
-                                seniorityDate: employee.seniorityDate,
-                                yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1),
-                                type:          'Bid Awarded',
-                                bidChoice:     assignedSlots.length + 1
-                            };
-                            assignedSlots.push(assignment);
-                            assignedDays += bidDays;
-                            slotAvailability[month][bidDept][slotType]--;
+                        if (cap <= 0) {
+                            // Slot has no capacity at all — everyone loses this choice
+                            contenders.forEach(c => lost.push(c));
+                            return;
                         }
-                        // If slot is full: seniority already handled by processing order —
-                        // we simply skip this bid and try the next preference below
-                    }
 
-                    // ── PHASE 2: If employee still needs slots, try remaining bid choices ──
-                    // (e.g. choice 1 was full → try choice 2 as first assigned slot)
-                    // Already handled above in the bid loop — we try all submitted bids in order.
-
-                    // ── PHASE 3: Auto-assign if employee still has fewer than 2 slots ──
-                    // Rules:
-                    //   1. Only use slots that still have capacity > 0 in the employee's own department.
-                    //   2. Never assign a slot whose exact start+end dates are already given to this employee.
-                    //   3. Total days across ALL assigned slots must not exceed the employee's entitlement.
-                    //   4. If no valid slot remains (all capacity exhausted), stop — do NOT force-assign.
-                    {
-                        const assignedDateKeys = new Set(assignedSlots.map(s => `${s.startDate}|${s.endDate}`));
-
-                        while (assignedSlots.length < 2) {
-                            let slotAssigned = false;
-
-                            for (const searchMonth of this.state.months) {
-                                if (slotAssigned) break;
-                                // Only assign within the employee's own resolved department
-                                const searchDept = department;
-                                if (!slotAvailability[searchMonth]?.[searchDept]) continue;
-
-                                for (const slotType of ['A', 'B', 'C']) {
-                                    if (slotAvailability[searchMonth][searchDept][slotType] <= 0) continue;
-
-                                    const potential = assignSlotToEmployee(employee, searchMonth, slotType, assignedSlots.length + 1);
-
-                                    // Skip duplicate date ranges
-                                    const dateKey = `${potential.startDate}|${potential.endDate}`;
-                                    if (assignedDateKeys.has(dateKey)) continue;
-
-                                    // Skip if adding this slot would exceed the entitlement
-                                    if (assignedDays + potential.days > entitlement) continue;
-
-                                    potential.type = 'Auto-Assigned';
-                                    potential.bidChoice = null;
-                                    assignedSlots.push(potential);
-                                    assignedDays += potential.days;
-                                    assignedDateKeys.add(dateKey);
-                                    slotAvailability[searchMonth][searchDept][slotType]--;
-                                    slotAssigned = true;
-                                    break;
-                                }
-                            }
-
-                            // No capacity left — stop rather than duplicating or exceeding entitlement
-                            if (!slotAssigned) break;
+                        if (cap >= contenders.length) {
+                            // Enough room for everyone — all win
+                            contenders.forEach(c => {
+                                won.push(c);
+                                slotAvailability[month][bidDept][slotType]--;
+                            });
+                            return;
                         }
-                    }
 
-                // Add all assignments to results
-                    assignedSlots.forEach((assignment, slotIndex) => {
-                        const deptInfo = deptRankMap[employee.id] || {};
+                        // Conflict: more contenders than capacity.
+                        // Sort contenders by seniority rank (lowest deptRank = most senior).
+                        const ranked = [...contenders].sort((a, b) => {
+                            const rankA = deptRankMap[a.employee.id]?.deptRank ?? 9999;
+                            const rankB = deptRankMap[b.employee.id]?.deptRank ?? 9999;
+                            return rankA - rankB;
+                        });
+
+                        ranked.forEach((c, i) => {
+                            if (i < cap) {
+                                won.push(c);
+                                slotAvailability[month][bidDept][slotType]--;
+                            } else {
+                                lost.push(c); // junior — goes to next choice / auto-assign
+                            }
+                        });
+                    });
+
+                    return { won, lost };
+                };
+
+                // ── PREFERENCE CASCADE (Rounds 1…N) ──────────────────────────────────────
+                // Employees may submit many preferences (ordered by submission timestamp).
+                // We run one round per preference position (1st choice, 2nd choice, 3rd…).
+                // Each round: collect all employees still needing slots who have a bid at
+                // that preference position, resolve conflicts by seniority, apply winners.
+                // Losers fall through to the next round automatically.
+                // After all preference rounds, auto-assign fills any remaining gaps.
+
+                // Find the maximum number of preferences any employee submitted
+                const maxPrefs = Math.max(0, ...sortedEmployees.map(emp =>
+                    this.state.bids.filter(b => b.employeeId === emp.id).length
+                ));
+
+                // Cache sorted bids per employee once
+                const sortedBidsById = {};
+                sortedEmployees.forEach(emp => {
+                    sortedBidsById[emp.id] = [...this.state.bids.filter(b => b.employeeId === emp.id)]
+                        .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                for (let prefIdx = 0; prefIdx < maxPrefs; prefIdx++) {
+                    const candidates = [];
+
+                    sortedEmployees.forEach(employee => {
+                        const bids          = sortedBidsById[employee.id];
+                        const alreadyCount  = awarded[employee.id].length;
+                        const assignedDays  = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                        const entitlement   = getEmployeeEntitlement(employee);
+
+                        if (alreadyCount >= 2)              return; // fully allocated
+                        if (assignedDays >= entitlement)    return; // entitlement exhausted
+                        if (prefIdx >= bids.length)         return; // no bid at this position
+
+                        const bid = bids[prefIdx];
+
+                        // Skip if this exact slot was already awarded to this employee
+                        const alreadyHasSlot = awarded[employee.id].some(
+                            a => a.startDate === bid.startDate && a.endDate === bid.endDate
+                        );
+                        if (alreadyHasSlot) return;
+
+                        candidates.push({ employee, bid });
+                    });
+
+                    if (candidates.length === 0) continue;
+
+                    const { won } = resolveConflicts(candidates);
+
+                    won.forEach(({ employee, bid }) => {
+                        const entitlement  = getEmployeeEntitlement(employee);
+                        const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                        const a = makeBidAssignment(employee, bid, awarded[employee.id].length + 1);
+                        if (assignedDays + a.days <= entitlement) {
+                            awarded[employee.id].push(a);
+                        }
+                    });
+                }
+
+                // ── AUTO-ASSIGN: fill remaining gaps after all preference rounds ──────────
+                // For each employee still needing slots, scan available capacity
+                // in their dept across all months/types and assign what fits.
+
+                sortedEmployees.forEach(employee => {
+                    const entitlement  = getEmployeeEntitlement(employee);
+                    const department   = resolveEmployeeDept(employee.department || 'Unassigned');
+                    const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                    const assignedDateKeys = new Set(awarded[employee.id].map(a => `${a.startDate}|${a.endDate}`));
+                    let localDays = assignedDays;
+
+                    while (awarded[employee.id].length < 2) {
+                        let slotAssigned = false;
+
+                        for (const searchMonth of this.state.months) {
+                            if (slotAssigned) break;
+                            if (!slotAvailability[searchMonth]?.[department]) continue;
+
+                            for (const slotType of ['A', 'B', 'C']) {
+                                if (slotAvailability[searchMonth][department][slotType] <= 0) continue;
+
+                                const potential = assignSlotToEmployee(employee, searchMonth, slotType, awarded[employee.id].length + 1);
+                                const dateKey = `${potential.startDate}|${potential.endDate}`;
+
+                                if (assignedDateKeys.has(dateKey)) continue;
+                                if (localDays + potential.days > entitlement) continue;
+
+                                potential.type      = 'Auto-Assigned';
+                                potential.bidChoice = null;
+                                awarded[employee.id].push(potential);
+                                localDays += potential.days;
+                                assignedDateKeys.add(dateKey);
+                                slotAvailability[searchMonth][department][slotType]--;
+                                slotAssigned = true;
+                                break;
+                            }
+                        }
+
+                        if (!slotAssigned) break; // no capacity left anywhere
+                    }
+                });
+
+                // ── Flatten results ──
+                slotAssignments.length = 0; // clear the array declared above
+                sortedEmployees.forEach((employee, index) => {
+                    const deptInfo = deptRankMap[employee.id] || {};
+                    const entitlement = getEmployeeEntitlement(employee);
+                    awarded[employee.id].forEach((assignment, slotIndex) => {
                         slotAssignments.push({
                             ...assignment,
-                            seniorityRank: deptInfo.deptRank || (index + 1),
-                            deptSeniorityRank: deptInfo.deptRank || (index + 1),
+                            seniorityRank:      deptInfo.deptRank || (index + 1),
+                            deptSeniorityRank:  deptInfo.deptRank || (index + 1),
                             totalEmployeeSlots: 2,
-                            slotOrder: slotIndex + 1,
+                            slotOrder:          slotIndex + 1,
                             entitlement
                         });
                     });
                 });
-                
                 // Save results
                 this.state.results = slotAssignments;
                 this.state.isProcessed = true;
@@ -5381,24 +5481,24 @@
                     }
                 }
 
-                // Calculate used capacity per slot using the resolved dept
-                const usedCap = {};
+                // Count bids per slot for display only — slots are NEVER blocked by bid count.
+                // Multiple employees may bid the same slot; allocation is resolved by seniority at processing time.
+                const bidCount = {};
                 if (resolvedDept) {
                     this.state.bids.forEach(b => {
                         ['SA','SB','SC'].forEach(sid => {
                             const s = caps[`cal-${resolvedDept}-${month}-${sid}-start`];
                             const e = caps[`cal-${resolvedDept}-${month}-${sid}-end`];
                             if (s && e && b.startDate === s && b.endDate === e) {
-                                usedCap[sid] = (usedCap[sid] || 0) + 1;
+                                bidCount[sid] = (bidCount[sid] || 0) + 1;
                             }
                         });
                     });
                 }
-                // Apply remaining capacity
+                // Attach bid counts; capacity is planner-set seats — used only during allocation, not bidding
                 slotDefs = slotDefs.map(s => ({
                     ...s,
-                    used:      usedCap[s.sid] || 0,
-                    remaining: Math.max(0, s.capacity - (usedCap[s.sid] || 0))
+                    bidsPlaced: bidCount[s.sid] || 0
                 }));
 
                 // Reset selected slot ONLY when the month has changed
@@ -5424,33 +5524,40 @@
 
                 container.innerHTML = slotDefs.map(s => {
                     const alreadyBid      = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
-                    const noCapacity      = s.remaining <= 0;
                     // Per-month cap: count bids for the currently selected month
                     const bidsThisMonth   = userBids.filter(b => b.month === month).length;
                     const monthLimitHit   = !alreadyBid && bidsThisMonth >= 2;
-                    const disabled        = alreadyBid || noCapacity || monthLimitHit || isProcessed;
+                    // Slots are NEVER blocked by how many others have bid — open preference model
+                    const disabled        = alreadyBid || monthLimitHit || isProcessed;
                     const isSelected      = window.selectedSlot === s.sid;
+                    const isCompetitive   = s.bidsPlaced >= s.capacity; // more bids than seats → seniority decides
 
                     let stateLabel = '';
                     let cardClass  = `border-2 rounded-xl p-4 cursor-pointer transition-all ${s.colors.border} ${s.colors.bg}`;
-                    if (alreadyBid)        { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>'; cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    if (alreadyBid)        { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>';           cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
                     else if (monthLimitHit){ stateLabel = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded font-semibold ml-2">Month limit reached</span>'; cardClass = 'border-2 rounded-xl p-4 border-orange-200 bg-orange-50 opacity-50 cursor-not-allowed'; }
-                    else if (noCapacity) { stateLabel = '<span class="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded font-semibold ml-2">Full</span>'; cardClass = 'border-2 rounded-xl p-4 border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'; }
-                    else if (isSelected) { cardClass = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
+                    else if (isSelected)   { cardClass  = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
+
+                    // Badge: show competitive warning if oversubscribed, otherwise show available seats
+                    const badge = isCompetitive
+                        ? `<span class="text-xs px-2 py-1 rounded font-semibold bg-orange-100 text-orange-700">⚡ ${s.bidsPlaced} bid${s.bidsPlaced !== 1 ? 's' : ''} · ${s.capacity} seat${s.capacity !== 1 ? 's' : ''}</span>`
+                        : `<span class="text-xs px-2 py-1 rounded font-semibold ${s.colors.badge} text-white">${s.capacity} seat${s.capacity !== 1 ? 's' : ''} available</span>`;
+
+                    const competitiveNote = isCompetitive && !alreadyBid && !monthLimitHit
+                        ? ' · <span class="text-orange-600 font-medium">Awarded by seniority</span>'
+                        : '';
 
                     return `
                         <div class="${cardClass}"
                              onclick="${disabled ? '' : `app.selectConfiguredSlot('${s.sid}','${s.start}','${s.end}',${s.days},'${s.colors.label}','${resolvedDept}')`}">
                             <div class="flex items-center justify-between mb-2">
                                 <span class="font-bold text-gray-800">${s.colors.label}${stateLabel}</span>
-                                <span class="text-xs px-2 py-1 rounded font-semibold ${s.remaining > 0 ? s.colors.badge + ' text-white' : 'bg-gray-300 text-gray-600'}">
-                                    ${s.remaining} / ${s.capacity} seats left
-                                </span>
+                                ${badge}
                             </div>
                             <div class="text-sm ${s.colors.text}">
                                 📅 ${s.start} → ${s.end}
                             </div>
-                            <div class="text-xs text-gray-500 mt-1">⏱ ${s.days} days</div>
+                            <div class="text-xs text-gray-500 mt-1">⏱ ${s.days} days${competitiveNote}</div>
                         </div>`;
                 }).join('');
             },
@@ -5866,9 +5973,8 @@
                     allSlots.forEach(slot => {
                         const isMyDept = slot.dept === dept;
                         const mapKey = `${slot.dept}||${slot.month}||${slot.slotLetter}`;
-                        const taken = bidCounts[mapKey] || 0;
-                        const remaining = Math.max(0, slot.capacity - taken);
-                        const isOversubscribed = taken >= slot.capacity;
+                        const taken  = bidCounts[mapKey] || 0;
+                        const isOversubscribed = taken > slot.capacity; // strictly more bids than seats
                         const c = colorMap[slot.slotLetter] || colorMap['A'];
                         const slotTypeDef = this.state.slotTypes.find(s => s.id === `slot${slot.slotLetter}`);
                         const days = slotTypeDef ? slotTypeDef.days : '?';
@@ -5887,7 +5993,7 @@
                                     </div>
                                     <div class="text-right">
                                         <p class="text-lg font-bold text-gray-800">${days} <span class="text-xs font-normal text-gray-500">days</span></p>
-                                        <p class="text-xs ${isOversubscribed ? 'text-orange-600' : 'text-green-600'} font-semibold">${taken} bid${taken !== 1 ? 's' : ''} / ${slot.capacity} seat${slot.capacity !== 1 ? 's' : ''}</p>
+                                        <p class="text-xs ${isOversubscribed ? 'text-orange-600 font-semibold' : 'text-green-600'}">${taken} bid${taken !== 1 ? 's' : ''} · ${slot.capacity} seat${slot.capacity !== 1 ? 's' : ''}</p>
                                     </div>
                                 </div>
                                 <p class="text-xs text-gray-600 mb-3 font-mono">${slot.start} → ${slot.end}</p>
