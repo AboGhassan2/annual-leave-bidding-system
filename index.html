@@ -4969,20 +4969,34 @@
                             slotAvailability[month][bidDept][slotType] > 0;
 
                         if (available) {
-                            // Use the bid's own dates and days so assigned days exactly match what was selected
-                            const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
-                            const bidDays = bid.days ||
-                                (slot ? slot.days : Math.ceil((new Date(bid.endDate) - new Date(bid.startDate)) / (1000 * 60 * 60 * 24)) + 1);
+                            // Compute actual days from the configured slot dates (most accurate source)
+                            const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
+                            const slotObj = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                            let bidStartDate = bid.startDate;
+                            let bidEndDate   = bid.endDate;
+                            if (configuredDates?.start && configuredDates?.end) {
+                                bidStartDate = configuredDates.start;
+                                bidEndDate   = configuredDates.end;
+                            }
+                            const bidDays = Math.ceil(
+                                (new Date(bidEndDate) - new Date(bidStartDate)) / (1000 * 60 * 60 * 24)
+                            ) + 1;
+
+                            // ── ENTITLEMENT CAP (Phase 1) ──
+                            // Never award a bid that would push the employee's total above their entitlement.
+                            // < 5 years of service → max 30 days | ≥ 5 years → max 35 days
+                            if (assignedDays + bidDays > entitlement) continue;
+
                             const assignment = {
                                 employeeId:    employee.id,
                                 employeeName:  employee.name,
                                 position:      employee.position || '',
                                 department:    bidDept,
-                                slotName:      slot ? slot.name : `Slot ${slotType}`,
+                                slotName:      slotObj ? slotObj.name : `Slot ${slotType}`,
                                 slotType:      `slot${slotType}`,
                                 slotNumber:    assignedSlots.length + 1,
-                                startDate:     bid.startDate,
-                                endDate:       bid.endDate,
+                                startDate:     bidStartDate,
+                                endDate:       bidEndDate,
                                 days:          bidDays,
                                 month:         month,
                                 year:          this.state.biddingYear,
@@ -6112,7 +6126,20 @@
                                                                 ${slot2?.type || 'N/A'}
                                                             </span>
                                                         </td>
-                                                        <td class="p-3 font-bold">${totalDays} days</td>
+                                                        <td class="p-3 font-bold">
+                                                            ${(() => {
+                                                                const empEntitlement = slot1?.entitlement ||
+                                                                    (parseFloat(slot1?.yearsOfService || 0) >= 5 ? 35 : 30);
+                                                                const overLimit = totalDays > empEntitlement;
+                                                                return `
+                                                                    <span class="${overLimit ? 'text-red-600' : 'text-gray-800'}">${totalDays} days</span>
+                                                                    <br>
+                                                                    <span class="text-xs font-normal ${overLimit ? 'text-red-500' : 'text-gray-400'}">
+                                                                        limit: ${empEntitlement} days
+                                                                    </span>
+                                                                `;
+                                                            })()}
+                                                        </td>
                                                         <td class="p-3">
                                                             <span class="px-2 py-1 rounded text-xs ${
                                                                 allAwarded ? 'bg-green-100 text-green-800' : 
