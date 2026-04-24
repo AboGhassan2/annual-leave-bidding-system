@@ -3690,15 +3690,54 @@
                                     <thead>
                                         <tr class="bg-gray-50">
                                             <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Month</th>
-                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">A — On</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>A — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot A months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-green-600"
+                                                            data-dept="${dept}" data-slot="SA"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot A months"
+                                                        />
+                                                        <span class="text-xs font-normal text-green-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
-                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">B — On</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>B — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot B months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-blue-600"
+                                                            data-dept="${dept}" data-slot="SB"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot B months"
+                                                        />
+                                                        <span class="text-xs font-normal text-blue-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
-                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">C — On</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>C — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot C months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-purple-600"
+                                                            data-dept="${dept}" data-slot="SC"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot C months"
+                                                        />
+                                                        <span class="text-xs font-normal text-purple-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
@@ -3894,9 +3933,56 @@
                 const dept  = checkbox.dataset.dept;
                 const month = checkbox.dataset.month;
                 const slot  = checkbox.dataset.slot;
-                // Siblings: the 3 cells after this enabled-cell for this slot
+                // Dims/undims the date+capacity cells for this slot in this row
                 row.querySelectorAll(`input[data-dept="${dept}"][data-month="${month}"][data-slot="${slot}"]:not([data-field="enabled"])`).forEach(inp => {
                     inp.closest('td').style.opacity = checkbox.checked ? '1' : '0.35';
+                });
+                // Keep the "All" header checkbox in sync
+                this._syncMarkAllState(dept, slot);
+            },
+
+            // Checks/unchecks all 12 month "enabled" checkboxes for a given dept+slot,
+            // and fires _toggleSlotRowOpacity on each so row dimming stays in sync.
+            _markAllSlot(masterCheckbox) {
+                const dept    = masterCheckbox.dataset.dept;
+                const slot    = masterCheckbox.dataset.slot;
+                const checked = masterCheckbox.checked;
+                const table   = masterCheckbox.closest('table');
+                if (!table) return;
+                table.querySelectorAll(
+                    `input.cal-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`
+                ).forEach(cb => {
+                    if (cb.checked !== checked) {
+                        cb.checked = checked;
+                        this._toggleSlotRowOpacity(cb);
+                    }
+                });
+                // Ensure master is not left indeterminate after clicking
+                masterCheckbox.indeterminate = false;
+                masterCheckbox.checked = checked;
+            },
+
+            // Syncs the "All" header checkbox: checked=all on, unchecked=all off, indeterminate=mixed.
+            _syncMarkAllState(dept, slot) {
+                const masterCbs = document.querySelectorAll(
+                    `input.mark-all-checkbox[data-dept="${dept}"][data-slot="${slot}"]`
+                );
+                masterCbs.forEach(masterCb => {
+                    const table = masterCb.closest('table');
+                    if (!table) return;
+                    const allMonthCbs  = [...table.querySelectorAll(
+                        `input.cal-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`
+                    )];
+                    const checkedCount = allMonthCbs.filter(cb => cb.checked).length;
+                    if (checkedCount === 0) {
+                        masterCb.indeterminate = false;
+                        masterCb.checked       = false;
+                    } else if (checkedCount === allMonthCbs.length) {
+                        masterCb.indeterminate = false;
+                        masterCb.checked       = true;
+                    } else {
+                        masterCb.indeterminate = true;
+                    }
                 });
             },
 
@@ -4661,77 +4747,120 @@
                 // so assignSlotToEmployee can use the real configured dates
                 const slotDates = {};
 
-                // Initialize slot availability from capacities
-                // New key format: cal-{dept}-{month}-{slotId}-{field}
+                // Initialize slot availability from capacities.
+                // Key format: cal-{dept}-{month}-{slotId}-{field}
                 // e.g. cal-L3-DEP-DC-January-SA-capacity  (dept may contain dashes!)
-                // We identify field as last segment, slotId as second-last, month as third-last,
-                // and dept as everything between "cal" and month.
+                //
+                // IMPORTANT: We do a TWO-PASS approach so the "enabled" flag is always
+                // evaluated before we write anything into slotAvailability.
+                // Disabled slots are NEVER loaded — they cannot be auto-assigned.
                 const months = this.state.months; // ['January','February',...]
-                Object.keys(this.state.slotCapacities).forEach(key => {
-                    if (!key.startsWith('cal-')) return;
-                    const withoutPrefix = key.slice(4); // remove leading "cal-"
-                    // Last segment is field (start / end / capacity)
+
+                // Helper to parse any "cal-..." key into its components
+                const parseCalKey = (key) => {
+                    if (!key.startsWith('cal-')) return null;
+                    const withoutPrefix = key.slice(4);
                     const lastDash = withoutPrefix.lastIndexOf('-');
                     const field = withoutPrefix.slice(lastDash + 1);
                     const withoutField = withoutPrefix.slice(0, lastDash);
-                    // Second-last segment is slotId (SA / SB / SC)
                     const slotIdDash = withoutField.lastIndexOf('-');
-                    const slotId = withoutField.slice(slotIdDash + 1); // e.g. "SA"
+                    const slotId = withoutField.slice(slotIdDash + 1);
                     const withoutSlot = withoutField.slice(0, slotIdDash);
-                    // Third-last segment is the month name
                     const monthDash = withoutSlot.lastIndexOf('-');
                     const month = withoutSlot.slice(monthDash + 1);
                     const dept = withoutSlot.slice(0, monthDash);
-
-                    if (!months.includes(month)) return; // skip malformed keys
-                    // Map SA→A, SB→B, SC→C for the availability object
+                    if (!months.includes(month)) return null;
                     const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : null;
-                    if (!slotLetter) return;
+                    if (!slotLetter) return null;
+                    return { dept, month, slotLetter, field };
+                };
 
-                    const value = this.state.slotCapacities[key];
-
-                    if (field === 'capacity') {
-                        const cap = parseInt(value) || 0;
-                        if (!slotAvailability[month]) slotAvailability[month] = {};
-                        if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0 };
-                        slotAvailability[month][dept][slotLetter] = cap;
-                    } else if (field === 'start' || field === 'end') {
-                        if (!slotDates[dept]) slotDates[dept] = {};
-                        if (!slotDates[dept][month]) slotDates[dept][month] = {};
-                        if (!slotDates[dept][month][slotLetter]) slotDates[dept][month][slotLetter] = {};
-                        slotDates[dept][month][slotLetter][field] = value;
+                // Pass 1 — collect every field for every slot bucket
+                const rawSlotData = {}; // "dept||month||slotLetter" → { dept, month, slotLetter, enabled, capacity, start, end }
+                Object.keys(this.state.slotCapacities).forEach(key => {
+                    const parsed = parseCalKey(key);
+                    if (!parsed) return;
+                    const { dept, month, slotLetter, field } = parsed;
+                    const bucketKey = `${dept}||${month}||${slotLetter}`;
+                    if (!rawSlotData[bucketKey]) {
+                        rawSlotData[bucketKey] = { dept, month, slotLetter, enabled: true, capacity: 0, start: null, end: null };
                     }
+                    const value = this.state.slotCapacities[key];
+                    if (field === 'enabled')   rawSlotData[bucketKey].enabled  = (value === true || value === 'true');
+                    else if (field === 'capacity') rawSlotData[bucketKey].capacity = parseInt(value) || 0;
+                    else if (field === 'start')    rawSlotData[bucketKey].start    = value;
+                    else if (field === 'end')      rawSlotData[bucketKey].end      = value;
+                });
+
+                // Pass 2 — only load ENABLED slots that have both start and end dates configured
+                Object.values(rawSlotData).forEach(({ dept, month, slotLetter, enabled, capacity, start, end }) => {
+                    if (!enabled)        return; // planner disabled this slot — skip entirely
+                    if (!start || !end)  return; // dates not configured — skip
+
+                    if (!slotAvailability[month]) slotAvailability[month] = {};
+                    if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0 };
+                    slotAvailability[month][dept][slotLetter] = capacity;
+
+                    if (!slotDates[dept]) slotDates[dept] = {};
+                    if (!slotDates[dept][month]) slotDates[dept][month] = {};
+                    if (!slotDates[dept][month][slotLetter]) slotDates[dept][month][slotLetter] = {};
+                    slotDates[dept][month][slotLetter].start = start;
+                    slotDates[dept][month][slotLetter].end   = end;
                 });
                 
-                // Helper function to assign slot to employee using real configured dates
+                // Build a dept resolver: maps an employee's department value to the
+                // best-matching key in slotAvailability (handles cases where the Excel
+                // 'Department' column has a display name like 'Depot Controller' instead
+                // of the L-code 'L3-DEP-DC' that was used when configuring slots).
+                // MUST be defined before assignSlotToEmployee which calls it.
+                const configuredDeptKeys = new Set(
+                    Object.values(slotAvailability).flatMap(monthObj => Object.keys(monthObj || {}))
+                );
+                const deptResolveCache = {};
+                const resolveEmployeeDept = (empDept) => {
+                    if (deptResolveCache[empDept] !== undefined) return deptResolveCache[empDept];
+                    if (configuredDeptKeys.has(empDept)) {
+                        deptResolveCache[empDept] = empDept;
+                        return empDept;
+                    }
+                    for (const key of configuredDeptKeys) {
+                        if (key.toLowerCase() === empDept.toLowerCase()) {
+                            deptResolveCache[empDept] = key;
+                            return key;
+                        }
+                    }
+                    deptResolveCache[empDept] = empDept;
+                    return empDept;
+                };
+
+                // Helper function to assign slot to employee using real configured dates.
+                // Requires resolveEmployeeDept (defined above).
                 const assignSlotToEmployee = (employee, month, slotType, slotNumber) => {
                     const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
-                    const dept = employee.department || 'Unassigned';
+                    // Use resolved dept so slotDates lookup matches the configured key
+                    const dept = resolveEmployeeDept(employee.department || 'Unassigned');
                     const year = this.state.biddingYear;
 
-                    // Use real configured dates if available
+                    // Use real configured dates — these are REQUIRED (disabled/unconfigured slots
+                    // are never put into slotAvailability, so we should always find dates here)
                     const configuredDates = slotDates[dept]?.[month]?.[slotType];
                     let startDateStr, endDateStr;
 
                     if (configuredDates?.start && configuredDates?.end) {
                         startDateStr = configuredDates.start;
-                        endDateStr = configuredDates.end;
+                        endDateStr   = configuredDates.end;
                     } else {
-                        // Fallback: calculate from month index
+                        // Should not happen for properly configured slots, but keep a safe fallback
                         const monthIndex = this.state.months.indexOf(month);
-                        let startDate = new Date(year, monthIndex, 1);
-                        if (slotNumber === 2) {
-                            if (slotType === 'A') startDate.setDate(16);
-                            if (slotType === 'B') startDate.setDate(16);
-                            if (slotType === 'C') startDate.setDate(11);
-                        }
-                        const endDate = new Date(startDate);
+                        const startDate = new Date(year, monthIndex, 1);
+                        const endDate   = new Date(startDate);
                         endDate.setDate(endDate.getDate() + (slot ? slot.days : 15) - 1);
                         startDateStr = startDate.toISOString().split('T')[0];
-                        endDateStr = endDate.toISOString().split('T')[0];
+                        endDateStr   = endDate.toISOString().split('T')[0];
                     }
 
-                    const days = slot ? slot.days : Math.ceil((new Date(endDateStr) - new Date(startDateStr)) / (1000 * 60 * 60 * 24)) + 1;
+                    // Always compute days from actual configured dates
+                    const days = Math.ceil((new Date(endDateStr) - new Date(startDateStr)) / (1000 * 60 * 60 * 24)) + 1;
 
                     return {
                         employeeId: employee.id,
@@ -4750,33 +4879,6 @@
                         yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1)
                     };
                 };
-                
-                // Build a dept resolver: maps an employee's department value to the
-                // best-matching key in slotAvailability (handles cases where the Excel
-                // 'Department' column has a display name like 'Depot Controller' instead
-                // of the L-code 'L3-DEP-DC' that was used when configuring slots).
-                const configuredDeptKeys = new Set(
-                    Object.values(slotAvailability).flatMap(monthObj => Object.keys(monthObj || {}))
-                );
-                const deptResolveCache = {};
-                const resolveEmployeeDept = (empDept) => {
-                    if (deptResolveCache[empDept] !== undefined) return deptResolveCache[empDept];
-                    // Exact match first
-                    if (configuredDeptKeys.has(empDept)) {
-                        deptResolveCache[empDept] = empDept;
-                        return empDept;
-                    }
-                    // Try case-insensitive exact match
-                    for (const key of configuredDeptKeys) {
-                        if (key.toLowerCase() === empDept.toLowerCase()) {
-                            deptResolveCache[empDept] = key;
-                            return key;
-                        }
-                    }
-                    // No match found — return original so warning logic catches it
-                    deptResolveCache[empDept] = empDept;
-                    return empDept;
-                };
 
                 // ── PER-DEPARTMENT SENIORITY ──
                 // Group employees by their resolved department, sort each group by seniority,
@@ -4789,31 +4891,38 @@
                     resolvedDept: resolveEmployeeDept(e.department || 'Unassigned')
                 }));
 
-                // Group by resolved department
-                const deptGroups = {};
+                // ── GROUP BY POSITION (SCHEDULING ROW) + DEPARTMENT ──
+                // Seniority bidding is run SEPARATELY for each unique
+                // position+department combination (i.e. each "scheduling row").
+                // Employees in "L5 SA" at dept X compete only among themselves;
+                // they do NOT compete with employees in "L5 SA" at dept Y, nor
+                // with any other position in their own department.
+                const positionGroups = {};
                 empWithDept.forEach(e => {
-                    if (!deptGroups[e.resolvedDept]) deptGroups[e.resolvedDept] = [];
-                    deptGroups[e.resolvedDept].push(e);
+                    // Key = position (scheduling row) + resolved department
+                    const pos = (e.position || 'Unassigned').trim();
+                    const groupKey = `${pos}||${e.resolvedDept}`;
+                    if (!positionGroups[groupKey]) positionGroups[groupKey] = [];
+                    positionGroups[groupKey].push(e);
                 });
 
-                // Sort each department group by seniority (oldest first = most senior)
-                Object.keys(deptGroups).forEach(dept => {
-                    deptGroups[dept].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                // Sort each position+department group by seniority (oldest first = most senior)
+                Object.keys(positionGroups).forEach(groupKey => {
+                    positionGroups[groupKey].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
                 });
 
-                // Build per-department sequential processing order:
-                // Process ALL employees in dept A (rank 1→N) before moving to dept B.
-                // This ensures each department is fully self-contained — L3-SAMB rank #1
-                // through #N are processed entirely before L3-DEP-DC rank #1 starts.
-                // Within each department, employees are ordered oldest seniority date first.
-                const sortedDeptKeys = Object.keys(deptGroups).sort();
+                // Build sequential processing order:
+                // All employees in position-group A are fully processed before position-group B.
+                // Within each group employees are ordered oldest seniority date first.
+                const sortedGroupKeys = Object.keys(positionGroups).sort();
                 const sortedEmployees = [];
                 const deptRankMap = {}; // employeeId → { dept, deptRank }
 
-                sortedDeptKeys.forEach(dept => {
-                    deptGroups[dept].forEach((emp, rankIdx) => {
+                sortedGroupKeys.forEach(groupKey => {
+                    positionGroups[groupKey].forEach((emp, rankIdx) => {
                         sortedEmployees.push(emp);
-                        deptRankMap[emp.id] = { dept, deptRank: rankIdx + 1 };
+                        // deptRank here is the rank within their position+dept group
+                        deptRankMap[emp.id] = { dept: emp.resolvedDept, deptRank: rankIdx + 1 };
                     });
                 });
 
@@ -4850,22 +4959,44 @@
 
                         const month    = this.state.months[new Date(bid.startDate).getMonth()];
                         const slotType = bid.slotType.charAt(bid.slotType.length - 1); // 'A', 'B', or 'C'
+                        // ALWAYS resolve through the same resolver used to build slotAvailability
+                        // so the key actually exists in the availability map.
+                        const bidDept  = resolveEmployeeDept(bid.department || department);
 
                         const available =
                             slotAvailability[month] &&
-                            slotAvailability[month][department] &&
-                            slotAvailability[month][department][slotType] > 0;
+                            slotAvailability[month][bidDept] &&
+                            slotAvailability[month][bidDept][slotType] > 0;
 
                         if (available) {
-                            const assignment = assignSlotToEmployee(employee, month, slotType, assignedSlots.length + 1);
-                            assignment.type  = 'Bid Awarded';
-                            assignment.bidChoice = assignedSlots.length + 1; // 1st or 2nd choice
+                            // Use the bid's own dates and days so assigned days exactly match what was selected
+                            const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                            const bidDays = bid.days ||
+                                (slot ? slot.days : Math.ceil((new Date(bid.endDate) - new Date(bid.startDate)) / (1000 * 60 * 60 * 24)) + 1);
+                            const assignment = {
+                                employeeId:    employee.id,
+                                employeeName:  employee.name,
+                                position:      employee.position || '',
+                                department:    bidDept,
+                                slotName:      slot ? slot.name : `Slot ${slotType}`,
+                                slotType:      `slot${slotType}`,
+                                slotNumber:    assignedSlots.length + 1,
+                                startDate:     bid.startDate,
+                                endDate:       bid.endDate,
+                                days:          bidDays,
+                                month:         month,
+                                year:          this.state.biddingYear,
+                                seniorityDate: employee.seniorityDate,
+                                yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1),
+                                type:          'Bid Awarded',
+                                bidChoice:     assignedSlots.length + 1
+                            };
                             assignedSlots.push(assignment);
-                            assignedDays += assignment.days;
-                            slotAvailability[month][department][slotType]--;
+                            assignedDays += bidDays;
+                            slotAvailability[month][bidDept][slotType]--;
                         }
                         // If slot is full: seniority already handled by processing order —
-                        // we simply skip this bid and try the next bid (choice 2) below
+                        // we simply skip this bid and try the next preference below
                     }
 
                     // ── PHASE 2: If employee still needs slots, try remaining bid choices ──
@@ -4873,69 +5004,48 @@
                     // Already handled above in the bid loop — we try all submitted bids in order.
 
                     // ── PHASE 3: Auto-assign if employee still has fewer than 2 slots ──
-                    while (assignedSlots.length < 2) {
-                        let slotAssigned = false;
+                    // Rules:
+                    //   1. Only use slots that still have capacity > 0 in the employee's own department.
+                    //   2. Never assign a slot whose exact start+end dates are already given to this employee.
+                    //   3. Total days across ALL assigned slots must not exceed the employee's entitlement.
+                    //   4. If no valid slot remains (all capacity exhausted), stop — do NOT force-assign.
+                    {
+                        const assignedDateKeys = new Set(assignedSlots.map(s => `${s.startDate}|${s.endDate}`));
 
-                        // Priority: prefer slot types that fit the entitlement perfectly
-                        const slotPriority = entitlement === 35 ? ['C', 'A', 'B'] : ['A', 'B', 'C'];
+                        while (assignedSlots.length < 2) {
+                            let slotAssigned = false;
 
-                        // First try employee's own department, then fall back to any dept with capacity
-                        const deptSearchOrder = [department, ...Object.keys(slotAvailability).flatMap(m => Object.keys(slotAvailability[m] || {})).filter(d => d !== department)];
-                        const uniqueDepts = [...new Set(deptSearchOrder)];
-
-                        for (const searchMonth of this.state.months) {
-                            if (slotAssigned) break;
-                            for (const searchDept of uniqueDepts) {
+                            for (const searchMonth of this.state.months) {
                                 if (slotAssigned) break;
+                                // Only assign within the employee's own resolved department
+                                const searchDept = department;
                                 if (!slotAvailability[searchMonth]?.[searchDept]) continue;
 
-                                for (const slotType of slotPriority) {
-                                    if (slotAvailability[searchMonth][searchDept][slotType] > 0) {
-                                        const potential = assignSlotToEmployee(employee, searchMonth, slotType, assignedSlots.length + 1);
+                                for (const slotType of ['A', 'B', 'C']) {
+                                    if (slotAvailability[searchMonth][searchDept][slotType] <= 0) continue;
 
-                                        if (assignedDays + potential.days <= entitlement) {
-                                            // For 35-day employees ensure the combo adds up correctly
-                                            if (entitlement === 35) {
-                                                const remaining = entitlement - (assignedDays + potential.days);
-                                                if (remaining === 15 || remaining === 20 || remaining === 0) {
-                                                    potential.type = 'Auto-Assigned';
-                                                    potential.bidChoice = null;
-                                                    assignedSlots.push(potential);
-                                                    assignedDays += potential.days;
-                                                    slotAvailability[searchMonth][searchDept][slotType]--;
-                                                    slotAssigned = true;
-                                                    break;
-                                                }
-                                            } else {
-                                                potential.type = 'Auto-Assigned';
-                                                potential.bidChoice = null;
-                                                assignedSlots.push(potential);
-                                                assignedDays += potential.days;
-                                                slotAvailability[searchMonth][searchDept][slotType]--;
-                                                slotAssigned = true;
-                                                break;
-                                            }
-                                        }
-                                    }
+                                    const potential = assignSlotToEmployee(employee, searchMonth, slotType, assignedSlots.length + 1);
+
+                                    // Skip duplicate date ranges
+                                    const dateKey = `${potential.startDate}|${potential.endDate}`;
+                                    if (assignedDateKeys.has(dateKey)) continue;
+
+                                    // Skip if adding this slot would exceed the entitlement
+                                    if (assignedDays + potential.days > entitlement) continue;
+
+                                    potential.type = 'Auto-Assigned';
+                                    potential.bidChoice = null;
+                                    assignedSlots.push(potential);
+                                    assignedDays += potential.days;
+                                    assignedDateKeys.add(dateKey);
+                                    slotAvailability[searchMonth][searchDept][slotType]--;
+                                    slotAssigned = true;
+                                    break;
                                 }
                             }
-                        }
 
-                        // Last resort: force-assign with no capacity check
-                        if (!slotAssigned) {
-                            const fallbackMonth    = this.state.months[assignedSlots.length % 12];
-                            const fallbackSlotType = entitlement === 35
-                                ? (assignedDays === 0 ? 'C' : 'A')
-                                : (assignedSlots.length % 3 === 0 ? 'A' : assignedSlots.length % 3 === 1 ? 'B' : 'C');
-
-                            const fallback = assignSlotToEmployee(employee, fallbackMonth, fallbackSlotType, assignedSlots.length + 1);
-                            fallback.type      = 'Auto-Assigned';
-                            fallback.bidChoice = null;
-                            assignedSlots.push(fallback);
-                            assignedDays += fallback.days;
-
-                            if (!slotAvailability[fallbackMonth]) slotAvailability[fallbackMonth] = {};
-                            if (!slotAvailability[fallbackMonth][department]) slotAvailability[fallbackMonth][department] = { A: 0, B: 0, C: 0 };
+                            // No capacity left — stop rather than duplicating or exceeding entitlement
+                            if (!slotAssigned) break;
                         }
                     }
 
@@ -4988,9 +5098,15 @@
                 
                 // Create Excel workbook
                 const wsData = [
-                    ['Seniority Rank', 'Employee ID', 'Employee Name', 'Position', 'Scheduling Row (Department)', 'Slot Type', 
-                     'Month', 'Start Date', 'End Date', 'Days', 'Assignment Type']
+                    ['Seniority Rank (within Position Group)', 'Employee ID', 'Employee Name', 'Position (Scheduling Row)', 'Department', 'Slot Type', 
+                     'Month', 'Start Date', 'End Date', 'Days', 'Assignment Type', 'Total Days (Employee)']
                 ];
+
+                // Group results by employee so we can compute total days per employee
+                const empTotalDays = {};
+                this.state.results.forEach(result => {
+                    empTotalDays[result.employeeId] = (empTotalDays[result.employeeId] || 0) + (result.days || 0);
+                });
                 
                 this.state.results.forEach(result => {
                     const emp = this.state.employees.find(e => e.id === result.employeeId);
@@ -5005,7 +5121,8 @@
                         result.startDate,
                         result.endDate,
                         result.days,
-                        result.type
+                        result.type,
+                        empTotalDays[result.employeeId] || result.days
                     ]);
                 });
                 
@@ -5529,21 +5646,11 @@
                     }
                 }
 
-                // Check capacity for this configured slot using the resolved dept from slot selection
+                // Resolve department for bid record (capacity is enforced at allocation time, not here)
                 const dept = slotDef.resolvedDept || 
                     ((this.state.verifiedEmployee.department && this.state.verifiedEmployee.department !== 'Unassigned')
                         ? this.state.verifiedEmployee.department
                         : (this.state.verifiedEmployee.position || ''));
-                const caps = this.state.slotCapacities;
-                const capacity = parseInt(caps[`cal-${dept}-${month}-${slotTypeKey}-capacity`]) || 1;
-                const usedCount = this.state.bids.filter(b =>
-                    b.department === dept && b.startDate === startDate && b.endDate === endDate
-                ).length;
-                if (usedCount >= capacity) {
-                    alert(`This slot is now full (${capacity} seats taken). Please select another slot.`);
-                    this.refreshAvailableSlots();
-                    return;
-                }
 
                 const newBid = {
                     employeeId: this.state.verifiedEmployee.id,
@@ -5747,33 +5854,33 @@
                         const mapKey = `${slot.dept}||${slot.month}||${slot.slotLetter}`;
                         const taken = bidCounts[mapKey] || 0;
                         const remaining = Math.max(0, slot.capacity - taken);
-                        const isFull = remaining === 0;
+                        const isOversubscribed = taken >= slot.capacity;
                         const c = colorMap[slot.slotLetter] || colorMap['A'];
                         const slotTypeDef = this.state.slotTypes.find(s => s.id === `slot${slot.slotLetter}`);
                         const days = slotTypeDef ? slotTypeDef.days : '?';
 
                         html += `
-                            <div class="border-2 ${isFull ? 'border-gray-200 bg-gray-50 opacity-60' : (isMyDept ? 'border-yellow-400 ' + c.bg : c.border + ' ' + c.bg)} rounded-lg p-4 transition hover:shadow-md">
+                            <div class="border-2 ${isOversubscribed ? 'border-orange-300 bg-orange-50' : (isMyDept ? 'border-yellow-400 ' + c.bg : c.border + ' ' + c.bg)} rounded-lg p-4 transition hover:shadow-md">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
                                         <div class="flex items-center gap-2 flex-wrap mb-1">
                                             <span class="px-2 py-0.5 rounded text-xs font-bold ${c.badge}">${c.label}</span>
                                             ${isMyDept ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-800">⭐ Your Dept</span>' : ''}
-                                            ${isFull ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">Full</span>' : ''}
+                                            ${isOversubscribed ? '<span class="px-2 py-0.5 rounded text-xs font-semibold bg-orange-100 text-orange-700">⚡ Competitive</span>' : ''}
                                         </div>
                                         <p class="font-semibold text-gray-800 text-sm">${slot.dept}</p>
                                         <p class="text-xs text-gray-500">${slot.month} ${this.state.biddingYear}</p>
                                     </div>
                                     <div class="text-right">
                                         <p class="text-lg font-bold text-gray-800">${days} <span class="text-xs font-normal text-gray-500">days</span></p>
-                                        <p class="text-xs ${isFull ? 'text-red-600' : 'text-green-600'} font-semibold">${remaining}/${slot.capacity} spots left</p>
+                                        <p class="text-xs ${isOversubscribed ? 'text-orange-600' : 'text-green-600'} font-semibold">${taken} bid${taken !== 1 ? 's' : ''} / ${slot.capacity} seat${slot.capacity !== 1 ? 's' : ''}</p>
                                     </div>
                                 </div>
                                 <p class="text-xs text-gray-600 mb-3 font-mono">${slot.start} → ${slot.end}</p>
                                 <div class="flex items-center justify-between">
-                                    <label class="flex items-center gap-2 cursor-pointer ${isFull ? 'opacity-40 cursor-not-allowed' : ''}">
-                                        <input type="checkbox" class="slot-checkbox w-4 h-4" value="${mapKey}" ${isFull ? 'disabled' : ''}>
-                                        <span class="text-sm text-gray-700">Select to bid</span>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" class="slot-checkbox w-4 h-4" value="${mapKey}">
+                                        <span class="text-sm text-gray-700">Select to bid${isOversubscribed ? ' <em style=\'font-style:normal;color:#c2410c;font-weight:600\'>(awarded by seniority)</em>' : ''}</span>
                                     </label>
                                     <span class="text-xs text-gray-400">${slot.start}</span>
                                 </div>
@@ -5964,9 +6071,9 @@
                                     <table class="w-full text-sm">
                                         <thead class="bg-gray-100">
                                             <tr>
-                                                <th class="p-3 text-left">Dept. Rank</th>
+                                                <th class="p-3 text-left">Position Rank</th>
                                                 <th class="p-3 text-left">Operation Staff</th>
-                                                <th class="p-3 text-left">Department</th>
+                                                <th class="p-3 text-left">Position / Dept</th>
                                                 <th class="p-3 text-left">Seniority</th>
                                                 <th class="p-3 text-left">Slot 1</th>
                                                 <th class="p-3 text-left">Slot 2</th>
@@ -5989,7 +6096,7 @@
                                                         <td class="p-3">${employee?.name || 'Unknown'}<br>
                                                             <span class="text-xs text-gray-500">${empId}</span>
                                                         </td>
-                                                        <td class="p-3 text-xs">${slot1?.department || employee?.department || '—'}</td>
+                                                        <td class="p-3 text-xs">${employee?.position || slot1?.position || '—'}<br><span class="text-gray-400">${slot1?.department || employee?.department || '—'}</span></td>
                                                         <td class="p-3">${slot1?.yearsOfService || 'N/A'} yrs</td>
                                                         <td class="p-3">
                                                             ${slot1?.slotName || 'N/A'}<br>
