@@ -8749,8 +8749,9 @@
                     if (!staff.length) return '<div class="lc-empty">No staff match the current filter.</div>';
 
                     var groups = [
-                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' },
-                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' }
+                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' },
+                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' }
+                        
                     ];
                     var html = '';
                     groups.forEach(function(g) {
