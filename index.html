@@ -8702,8 +8702,16 @@
                         });
                     }
                     // Sort by name
-                    staff.sort(function(a, b) { return a.name.localeCompare(b.name); });
-                    return staff;
+                    var customOrder = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1007071','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238']; // Kamrul, Luca, Finance Director
+
+                    staff.sort(function(a, b) {
+                        var idxA = customOrder.indexOf(a.id);
+                        var idxB = customOrder.indexOf(b.id);
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA !== -1) return -1;
+                        if (idxB !== -1) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
                 }
 
                 function lcDeptCls(group) {
@@ -8750,8 +8758,9 @@
                     if (!staff.length) return '<div class="lc-empty">No staff match the current filter.</div>';
 
                     var groups = [
-                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' },
-                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' }
+                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' },
+                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' }
+                        
                     ];
                     var html = '';
                     groups.forEach(function(g) {
