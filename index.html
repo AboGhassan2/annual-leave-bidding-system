@@ -2406,9 +2406,10 @@
             
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff are capped at 30 days regardless of seniority
+                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
                     const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    if (csIds.includes(employee.id)) return 30;
+                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
+                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -2628,7 +2629,7 @@
                 // Filter bids for THIS specific GC user
                 const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
                 const totalBidDays = gcBids.reduce((sum, bid) => sum + bid.days, 0);
-                const entitlement = 35; // Golden Command always gets 35 days
+                const entitlement = 30; // Golden Command entitlement
 
                 // Countdown
                 const deadlineCountdownGC = (() => {
@@ -4744,9 +4745,10 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff are capped at 30 days regardless of seniority
+                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
                     const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    if (csIds.includes(employee.id)) return 30;
+                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
+                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -5754,9 +5756,10 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff are capped at 30 days regardless of seniority
+                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
                     const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    if (csIds.includes(employee.id)) return 30;
+                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
+                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
