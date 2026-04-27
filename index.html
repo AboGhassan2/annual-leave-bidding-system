@@ -971,6 +971,9 @@
             <button onclick="app.setActiveView('auditLog')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🔍 Audit Log
             </button>
+            <button onclick="app.setActiveView('leaveDashboard')" class="px-4 py-2 rounded-lg font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-300">
+                &#128197; GC &amp; CS Leave Tracker
+            </button>
         </div>
 
         <!-- Employee Navigation -->
@@ -1950,6 +1953,9 @@
                         break;
                     case 'corporateStaff':
                         this.renderCorporateStaffBiddingView();
+                        break;
+                    case 'leaveDashboard':
+                        this.renderLeaveDashboardView();
                         break;
                 }
                 
@@ -8442,6 +8448,378 @@
                         });
                     } catch(e) { console.warn('Audit Supabase save failed', e); }
                 }
+            },
+
+            renderLeaveDashboardView() {
+                var self = this;
+                var content = document.getElementById('contentArea');
+
+                var lcCSS = [
+                    '#lcDash *{box-sizing:border-box;margin:0;padding:0;}',
+                    '#lcDash{font-family:Barlow,sans-serif;background:#0f1e2d;min-height:80vh;border-radius:12px;overflow:hidden;color:#d8eaf7;}',
+                    '#lcTopbar{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;background:rgba(12,24,38,.97);border-bottom:1px solid rgba(100,180,255,.2);flex-wrap:wrap;gap:8px;}',
+                    '.lc-logo{font-family:"Barlow Condensed",sans-serif;font-size:1.35rem;font-weight:800;color:#fff;letter-spacing:.08em;}',
+                    '.lc-logo span{color:#4eb0ff;}',
+                    '.lc-badge-yr{background:rgba(78,176,255,.18);border:1px solid rgba(78,176,255,.35);color:#4eb0ff;font-size:.68rem;font-weight:700;letter-spacing:.15em;padding:2px 10px;border-radius:20px;text-transform:uppercase;}',
+                    '.lc-tabs{display:flex;gap:6px;flex-wrap:wrap;}',
+                    '.lc-tab-btn{font-family:"Barlow Condensed",sans-serif;font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 13px;border-radius:7px;border:1px solid rgba(100,180,255,.2);background:transparent;color:rgba(200,225,255,.5);cursor:pointer;transition:all .15s;}',
+                    '.lc-tab-btn:hover{border-color:rgba(100,180,255,.45);color:#d8eaf7;}',
+                    '.lc-tab-btn.active{background:#4eb0ff;border-color:#4eb0ff;color:#fff;}',
+                    '.lc-month-nav{display:flex;align-items:center;gap:5px;}',
+                    '.lc-mnav-btn{background:rgba(78,176,255,.12);border:1px solid rgba(100,180,255,.22);color:#d8eaf7;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:.9rem;transition:all .15s;}',
+                    '.lc-mnav-btn:hover{background:rgba(78,176,255,.25);}',
+                    '.lc-mnav-label{font-family:"Barlow Condensed",sans-serif;font-size:1rem;font-weight:700;min-width:120px;text-align:center;color:#fff;}',
+                    '.lc-stats{display:flex;gap:12px;padding:10px 22px;background:#112033;border-bottom:1px solid rgba(100,180,255,.12);overflow-x:auto;flex-wrap:nowrap;}',
+                    '.lc-stat{display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border:1px solid rgba(100,180,255,.14);border-radius:10px;padding:7px 14px;white-space:nowrap;}',
+                    '.lc-stat .sv{font-size:1.3rem;font-weight:700;font-family:"Barlow Condensed",sans-serif;}',
+                    '.lc-stat .sl{font-size:.67rem;color:rgba(200,225,255,.45);text-transform:uppercase;letter-spacing:.1em;}',
+                    '.sv-blue{color:#4eb0ff;}.sv-red{color:#ff6b6b;}.sv-green{color:#2ecc9a;}.sv-amber{color:#ffc36b;}',
+                    '.lc-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+                    '.lc-search{position:relative;}',
+                    '.lc-search input{background:rgba(255,255,255,.07);border:1px solid rgba(100,180,255,.22);color:#d8eaf7;font-size:.8rem;padding:6px 10px 6px 28px;border-radius:8px;outline:none;width:160px;}',
+                    '.lc-search input:focus{border-color:#4eb0ff;}',
+                    '.lc-search::before{content:"\\1F50D";position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:.7rem;}',
+                    '.lc-export-btn,.lc-refresh-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(100,180,255,.3);background:transparent;color:#4eb0ff;cursor:pointer;transition:all .15s;}',
+                    '.lc-export-btn:hover,.lc-refresh-btn:hover{background:rgba(78,176,255,.15);}',
+                    '.lc-refresh-btn{color:#2ecc9a;border-color:rgba(46,204,154,.35);}',
+                    '.lc-live-badge{font-size:.65rem;background:rgba(46,204,154,.18);border:1px solid rgba(46,204,154,.35);color:#2ecc9a;padding:2px 8px;border-radius:10px;letter-spacing:.08em;}',
+                    '#lcGrid{overflow-x:auto;background:#0f1e2d;}',
+                    '#lcGrid::-webkit-scrollbar{height:5px;}',
+                    '#lcGrid::-webkit-scrollbar-track{background:#0f1e2d;}',
+                    '#lcGrid::-webkit-scrollbar-thumb{background:rgba(100,180,255,.25);border-radius:3px;}',
+                    '.lc-date-hdr{display:flex;position:sticky;top:0;z-index:50;background:#0f1e2d;border-bottom:1px solid rgba(100,180,255,.22);}',
+                    '.lc-hdr-row2{display:flex;position:sticky;top:37px;z-index:49;background:#0f1e2d;border-bottom:1px solid rgba(100,180,255,.2);}',
+                    '.lc-frozen-hdr{position:sticky;left:0;z-index:10;display:flex;background:#0f1e2d;border-right:1px solid rgba(100,180,255,.22);}',
+                    '.lc-fh-name{width:195px;padding:7px 11px;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:rgba(200,225,255,.4);font-weight:600;border-right:1px solid rgba(100,180,255,.1);}',
+                    '.lc-fh-meta{width:175px;padding:7px 11px;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:rgba(200,225,255,.4);font-weight:600;}',
+                    '.lc-date-cells{display:flex;}',
+                    '.lc-dc{width:30px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px 0;border-right:1px solid rgba(100,180,255,.08);cursor:default;}',
+                    '.lc-dc .dcd{font-size:.55rem;color:rgba(200,225,255,.35);text-transform:uppercase;}',
+                    '.lc-dc .dcn{font-family:"Barlow Condensed",sans-serif;font-size:.88rem;font-weight:700;color:#d8eaf7;}',
+                    '.lc-dc.wknd{background:rgba(100,140,200,.07);}',
+                    '.lc-dc.wknd .dcn{color:rgba(200,225,255,.38);}',
+                    '.lc-dc.td-col .dcn{color:#4eb0ff;}',
+                    '.lc-dc.td-col{background:rgba(78,176,255,.07);}',
+                    '.lc-dept-hdr{display:flex;align-items:center;gap:9px;padding:5px 13px 5px 383px;background:#152840;border-bottom:1px solid rgba(100,180,255,.2);border-top:1px solid rgba(100,180,255,.2);}',
+                    '.lc-dept-tag{font-family:"Barlow Condensed",sans-serif;font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:2px 10px;border-radius:5px;}',
+                    '.dt-exec{background:rgba(78,176,255,.2);color:#90ccff;border:1px solid rgba(78,176,255,.35);}',
+                    '.dt-pmo{background:rgba(170,120,255,.2);color:#caaeff;border:1px solid rgba(170,120,255,.35);}',
+                    '.dt-strat{background:rgba(46,204,154,.2);color:#7eedc8;border:1px solid rgba(46,204,154,.35);}',
+                    '.dt-hsqe{background:rgba(255,195,80,.2);color:#ffd98a;border:1px solid rgba(255,195,80,.35);}',
+                    '.dt-ops{background:rgba(255,107,107,.2);color:#ffaaaa;border:1px solid rgba(255,107,107,.35);}',
+                    '.lc-staff-row{display:flex;align-items:stretch;border-bottom:1px solid rgba(100,180,255,.08);}',
+                    '.lc-staff-row:hover{background:rgba(78,176,255,.04);}',
+                    '.lc-frozen-name{position:sticky;left:0;z-index:5;width:195px;padding:7px 11px;display:flex;flex-direction:column;justify-content:center;background:#112033;border-right:1px solid rgba(100,180,255,.1);flex-shrink:0;}',
+                    '.lc-sname{font-size:.8rem;font-weight:600;color:#e8f4ff;line-height:1.2;}',
+                    '.lc-sid{font-size:.62rem;color:rgba(200,225,255,.38);font-family:monospace;margin-top:2px;}',
+                    '.lc-frozen-meta{position:sticky;left:195px;z-index:5;width:175px;padding:7px 11px;display:flex;flex-direction:column;justify-content:center;background:#112033;border-right:1px solid rgba(100,180,255,.22);flex-shrink:0;}',
+                    '.lc-stitle{font-size:.67rem;color:rgba(200,225,255,.45);line-height:1.3;}',
+                    '.lc-lcount{margin-top:3px;font-size:.63rem;font-weight:700;font-family:"Barlow Condensed",sans-serif;display:flex;align-items:center;gap:4px;}',
+                    '.lc-lval{color:#ff6b6b;}.lc-llab{color:rgba(200,225,255,.38);text-transform:uppercase;letter-spacing:.08em;}',
+                    '.lc-leave-cells{display:flex;}',
+                    '.lc-c{width:30px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-right:1px solid rgba(100,180,255,.07);font-size:.65rem;font-weight:700;}',
+                    '.lc-c.leave{background:rgba(255,107,107,.22);color:#ff8080;}',
+                    '.lc-c.leave-start{background:rgba(255,107,107,.28);color:#ff8080;border-left:2px solid #ff6b6b;}',
+                    '.lc-c.wknd{background:rgba(100,140,200,.07);}',
+                    '.lc-c.td-c{background:rgba(78,176,255,.06);}',
+                    '.lc-c.leave.wknd{background:rgba(255,107,107,.14);}',
+                    '.lc-month-band{display:flex;align-items:center;background:rgba(78,176,255,.08);border-right:1px solid rgba(100,180,255,.22);padding:0 8px;font-family:"Barlow Condensed",sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4eb0ff;white-space:nowrap;}',
+                    '.lc-legend{display:flex;gap:14px;align-items:center;padding:9px 22px;border-top:1px solid rgba(100,180,255,.1);background:#112033;font-size:.67rem;color:rgba(200,225,255,.4);flex-wrap:wrap;}',
+                    '.lc-leg-item{display:flex;align-items:center;gap:5px;}',
+                    '.lc-leg-sw{width:13px;height:13px;border-radius:3px;}',
+                    '#lcTooltip{position:fixed;z-index:9999;background:#1c3450;border:1px solid rgba(100,180,255,.35);border-radius:8px;padding:8px 12px;font-size:.76rem;color:#d8eaf7;pointer-events:none;display:none;box-shadow:0 8px 24px rgba(0,0,0,.55);max-width:230px;line-height:1.5;}',
+                    '#lcTooltip strong{color:#4eb0ff;}',
+                    '.lc-empty{padding:55px;text-align:center;color:rgba(200,225,255,.35);font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;letter-spacing:.05em;}',
+                    '.lc-no-bids{padding:40px;text-align:center;background:#112033;border-radius:10px;margin:20px;color:rgba(200,225,255,.5);}',
+                    '.lc-no-bids .lc-nb-icon{font-size:2.5rem;margin-bottom:10px;}',
+                    '.lc-no-bids p{font-size:.9rem;}'
+                ].join('\n');
+
+                var lcHTML = '<div id="lcDash">'
+                    + '<style>' + lcCSS + '</style>'
+                    + '<div id="lcTopbar">'
+                    +   '<div style="display:flex;align-items:center;gap:10px;">'
+                    +     '<div class="lc-logo">FLOW <span>METRO</span></div>'
+                    +     '<div class="lc-badge-yr">GC &amp; CS Leave Tracker 2026</div>'
+                    +     '<span class="lc-live-badge">&#9679; LIVE</span>'
+                    +   '</div>'
+                    +   '<div class="lc-tabs">'
+                    +     '<button class="lc-tab-btn active" onclick="lcSetDept(\'all\')" id="lct-all">All</button>'
+                    +     '<button class="lc-tab-btn" onclick="lcSetDept(\'gc\')" id="lct-gc">Golden Command</button>'
+                    +     '<button class="lc-tab-btn" onclick="lcSetDept(\'cs\')" id="lct-cs">Corporate Staff</button>'
+                    +   '</div>'
+                    +   '<div class="lc-controls">'
+                    +     '<div class="lc-month-nav">'
+                    +       '<button class="lc-mnav-btn" onclick="lcPrevMonth()">&#8249;</button>'
+                    +       '<div class="lc-mnav-label" id="lcMonthLabel">April 2026</div>'
+                    +       '<button class="lc-mnav-btn" onclick="lcNextMonth()">&#8250;</button>'
+                    +       '<button class="lc-mnav-btn" onclick="lcShowAll()" style="font-size:.72rem;padding:4px 8px;">Full Year</button>'
+                    +     '</div>'
+                    +     '<div class="lc-search"><input type="text" id="lcSearch" placeholder="Search staff..." oninput="lcFilterStaff(this.value)"></div>'
+                    +     '<button class="lc-refresh-btn" onclick="lcRefresh()">&#8635; Refresh</button>'
+                    +     '<button class="lc-export-btn" onclick="lcExportCSV()">&#11015; CSV</button>'
+                    +   '</div>'
+                    + '</div>'
+                    + '<div class="lc-stats" id="lcStats"></div>'
+                    + '<div id="lcGrid"></div>'
+                    + '<div class="lc-legend">'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,107,107,.22);border:1px solid #ff6b6b;"></div>Leave / Absent</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(100,140,200,.1);border:1px solid rgba(100,140,200,.2);"></div>Fri / Sat</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(78,176,255,.08);border:1px solid #4eb0ff;"></div>Today</div>'
+                    +   '<div style="margin-left:auto;font-size:.62rem;">Connected to Admin &#8250; Bid Details &#8250; GC &amp; Corporate Staff</div>'
+                    + '</div>'
+                    + '<div id="lcTooltip"></div>'
+                    + '</div>';
+
+                content.innerHTML = lcHTML;
+
+                // ── Helpers ──────────────────────────────────────────────
+                var LC_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                var LC_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+                var lcViewMode = 'month';
+                var lcMonth    = new Date().getMonth();
+                var lcDeptFilter = 'all';
+                var lcQuery    = '';
+                var lcToday    = new Date();
+                var lcTodayStr = lcToday.getFullYear() + '-' + String(lcToday.getMonth()+1).padStart(2,'0') + '-' + String(lcToday.getDate()).padStart(2,'0');
+
+                function lcDK(dt) {
+                    return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                }
+                function lcIsWE(dt) { var d = dt.getDay(); return d === 5 || d === 6; }
+
+                function lcGetDates() {
+                    if (lcViewMode === 'full') {
+                        var r = [];
+                        for (var m = 0; m < 12; m++) {
+                            var daysInM = new Date(2026, m+1, 0).getDate();
+                            for (var d = 1; d <= daysInM; d++) r.push(new Date(2026, m, d));
+                        }
+                        return r;
+                    }
+                    var dIM2 = new Date(2026, lcMonth+1, 0).getDate(), r2 = [];
+                    for (var d2 = 1; d2 <= dIM2; d2++) r2.push(new Date(2026, lcMonth, d2));
+                    return r2;
+                }
+
+                // Build leave set from live bids
+                function lcBuildStaffFromBids() {
+                    var bids = self.state.bids || [];
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
+                    var gccsIds = gcIds.concat(csIds);
+
+                    // Only include the specific staff from the approved Excel list
+                    var ALLOWED_IDS = ['1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238'];
+
+                    // Filter to GC/CS AND in allowed list
+                    var gccs = bids.filter(function(b) { return gccsIds.indexOf(b.employeeId) > -1 && ALLOWED_IDS.indexOf(b.employeeId) > -1; });
+
+                    // Build per-staff map
+                    var staffMap = {};
+                    gccs.forEach(function(bid) {
+                        var id = bid.employeeId;
+                        if (!staffMap[id]) {
+                            var isGC = gcIds.indexOf(id) > -1;
+                            staffMap[id] = {
+                                id: id,
+                                name: bid.employeeName || id,
+                                title: bid.position || bid.department || (isGC ? 'Golden Command' : 'Corporate Staff'),
+                                group: isGC ? 'gc' : 'cs',
+                                dept: isGC ? 'Golden Command' : 'Corporate Staff',
+                                leaveSet: new Set(),
+                                totalDays: 0
+                            };
+                        }
+                        // Expand bid date range into individual days
+                        if (bid.startDate && bid.endDate) {
+                            var cur = new Date(bid.startDate + 'T00:00:00');
+                            var end = new Date(bid.endDate + 'T00:00:00');
+                            while (cur <= end) {
+                                staffMap[id].leaveSet.add(lcDK(cur));
+                                cur.setDate(cur.getDate() + 1);
+                            }
+                        } else if (bid.startDate) {
+                            staffMap[id].leaveSet.add(bid.startDate);
+                        }
+                        staffMap[id].totalDays = staffMap[id].leaveSet.size;
+                    });
+
+                    var staff = Object.values(staffMap);
+
+                    // Dept filter
+                    if (lcDeptFilter !== 'all') {
+                        staff = staff.filter(function(s) { return s.group === lcDeptFilter; });
+                    }
+                    // Search
+                    if (lcQuery) {
+                        var q = lcQuery.toLowerCase();
+                        staff = staff.filter(function(s) {
+                            return s.name.toLowerCase().indexOf(q) > -1 || s.id.indexOf(q) > -1;
+                        });
+                    }
+                    // Sort by name
+                    staff.sort(function(a, b) { return a.name.localeCompare(b.name); });
+                    return staff;
+                }
+
+                function lcDeptCls(group) {
+                    return group === 'gc' ? 'dt-exec' : 'dt-ops';
+                }
+
+                function lcBuildStats(staff, dates) {
+                    var totalLD = staff.reduce(function(a, s) {
+                        return a + (lcViewMode === 'full' ? s.totalDays : dates.filter(function(d) { return s.leaveSet.has(lcDK(d)); }).length);
+                    }, 0);
+                    var onToday = staff.filter(function(s) { return s.leaveSet.has(lcTodayStr); }).length;
+                    var gcCount = staff.filter(function(s) { return s.group === 'gc'; }).length;
+                    var csCount = staff.filter(function(s) { return s.group === 'cs'; }).length;
+                    return '<div class="lc-stat"><div class="sv sv-blue">' + staff.length + '</div><div class="sl">Staff on Leave</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-red">' + totalLD + '</div><div class="sl">Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
+                         + '<div class="lc-stat"><div class="sv ' + (onToday > 0 ? 'sv-red' : 'sv-green') + '">' + onToday + '</div><div class="sl">On Leave Today</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-amber">' + gcCount + '</div><div class="sl">GC Staff</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-blue">' + csCount + '</div><div class="sl">CS Staff</div></div>';
+                }
+
+                function lcBuildDateCells(dates) {
+                    return dates.map(function(d) {
+                        var dk = lcDK(d), we = lcIsWE(d), td = dk === lcTodayStr;
+                        var cls = 'lc-dc' + (we ? ' wknd' : '') + (td ? ' td-col' : '');
+                        return '<div class="' + cls + '"><div class="dcd">' + LC_DAYS[d.getDay()].slice(0,2) + '</div><div class="dcn">' + d.getDate() + '</div></div>';
+                    }).join('');
+                }
+
+                function lcBuildMonthBands(dates) {
+                    var html = '', cur = -1;
+                    dates.forEach(function(d, i) {
+                        var m = d.getMonth();
+                        if (m !== cur) {
+                            var dIM = new Date(2026, m+1, 0).getDate();
+                            var w = Math.min(dIM, dates.length - i);
+                            html += '<div class="lc-month-band" style="width:' + (w*30) + 'px;">' + LC_MONTHS[m].slice(0,3).toUpperCase() + '</div>';
+                            cur = m;
+                        }
+                    });
+                    return html;
+                }
+
+                function lcBuildRows(staff, dates) {
+                    if (!staff.length) return '<div class="lc-empty">No staff match the current filter.</div>';
+
+                    var groups = [
+                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' },
+                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' }
+                    ];
+                    var html = '';
+                    groups.forEach(function(g) {
+                        var members = staff.filter(function(s) { return s.group === g.key; });
+                        if (!members.length) return;
+                        html += '<div class="lc-dept-hdr"><span class="lc-dept-tag ' + g.cls + '">' + g.label + '</span>'
+                              + '<span style="font-size:.65rem;color:rgba(200,225,255,.35);">' + members.length + ' staff</span></div>';
+                        members.forEach(function(s) {
+                            var leaveInView = dates.filter(function(d) { return s.leaveSet.has(lcDK(d)); }).length;
+                            var cells = dates.map(function(d) {
+                                var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), td = dk === lcTodayStr;
+                                var cls = 'lc-c' + (lv ? ' leave' : '') + (we ? ' wknd' : '') + (td ? ' td-c' : '');
+                                return '<div class="' + cls + '" data-date="' + dk + '" data-name="' + s.name + '" data-leave="' + lv + '">' + (lv ? 'A' : '') + '</div>';
+                            }).join('');
+                            var yrNote = (s.totalDays !== leaveInView) ? '<span style="color:rgba(200,225,255,.3);font-size:.58rem;">(' + s.totalDays + ' yr)</span>' : '';
+                            html += '<div class="lc-staff-row">'
+                                  + '<div class="lc-frozen-name"><div class="lc-sname">' + s.name + '</div><div class="lc-sid">' + s.id + '</div></div>'
+                                  + '<div class="lc-frozen-meta"><div class="lc-stitle">' + s.title + '</div>'
+                                  + '<div class="lc-lcount"><span class="lc-lval">' + leaveInView + '</span><span class="lc-llab"> days off</span>' + yrNote + '</div></div>'
+                                  + '<div class="lc-leave-cells">' + cells + '</div>'
+                                  + '</div>';
+                        });
+                    });
+                    return html;
+                }
+
+                function lcRender() {
+                    var dates = lcGetDates();
+                    var staff = lcBuildStaffFromBids();
+
+                    var lbl = document.getElementById('lcMonthLabel');
+                    if (lbl) lbl.textContent = lcViewMode === 'full' ? 'Full Year 2026' : LC_MONTHS[lcMonth] + ' 2026';
+
+                    var statsEl = document.getElementById('lcStats');
+                    if (statsEl) statsEl.innerHTML = lcBuildStats(staff, dates);
+
+                    var gridEl = document.getElementById('lcGrid');
+                    if (!gridEl) return;
+
+                    var bids = self.state.bids || [];
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
+                    var hasAnyGccs = bids.some(function(b) { return gcIds.concat(csIds).indexOf(b.employeeId) > -1; });
+
+                    if (!hasAnyGccs) {
+                        gridEl.innerHTML = '<div class="lc-no-bids"><div class="lc-nb-icon">&#128203;</div><p><strong>No GC &amp; Corporate Staff bids yet.</strong></p><p style="margin-top:6px;font-size:.82rem;">Bids submitted under Admin &rsaquo; Bid Details will appear here automatically.</p></div>';
+                        return;
+                    }
+
+                    var dhCells = lcBuildDateCells(dates);
+                    var monthBands = lcViewMode === 'full'
+                        ? '<div style="display:flex;">' + lcBuildMonthBands(dates) + '</div>'
+                        : '<div class="lc-date-cells">' + dhCells + '</div>';
+                    var row2 = lcViewMode === 'full'
+                        ? '<div class="lc-hdr-row2"><div class="lc-frozen-hdr"><div class="lc-fh-name"></div><div class="lc-fh-meta"></div></div><div class="lc-date-cells">' + dhCells + '</div></div>'
+                        : '';
+
+                    gridEl.innerHTML = '<div class="lc-date-hdr">'
+                        + '<div class="lc-frozen-hdr"><div class="lc-fh-name">Name / ID</div><div class="lc-fh-meta">Role / Days Off</div></div>'
+                        + monthBands + '</div>'
+                        + row2
+                        + lcBuildRows(staff, dates);
+
+                    gridEl.querySelectorAll('.lc-c[data-leave="true"]').forEach(function(el) {
+                        el.addEventListener('mouseenter', lcShowTip);
+                        el.addEventListener('mouseleave', lcHideTip);
+                    });
+                }
+
+                function lcShowTip(e) {
+                    var el = e.currentTarget, name = el.dataset.name, dk = el.dataset.date;
+                    var d = new Date(dk + 'T00:00:00');
+                    var fmt = d.toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+                    var tip = document.getElementById('lcTooltip');
+                    if (tip) { tip.innerHTML = '<strong>' + name + '</strong><br>' + fmt; tip.style.display = 'block'; }
+                    lcMoveTip(e);
+                }
+                function lcHideTip() { var t = document.getElementById('lcTooltip'); if (t) t.style.display = 'none'; }
+                function lcMoveTip(e) { var t = document.getElementById('lcTooltip'); if (t && t.style.display !== 'none') { t.style.left = (e.clientX + 14) + 'px'; t.style.top = (e.clientY - 30) + 'px'; } }
+                document.addEventListener('mousemove', lcMoveTip);
+
+                window.lcPrevMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth - 1 + 12) % 12; lcRender(); };
+                window.lcNextMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth + 1) % 12; lcRender(); };
+                window.lcShowAll     = function() { lcViewMode = 'full'; lcRender(); };
+                window.lcRefresh     = function() { lcRender(); };
+                window.lcSetDept     = function(d) {
+                    lcDeptFilter = d;
+                    document.querySelectorAll('.lc-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+                    var el = document.getElementById('lct-' + d);
+                    if (el) el.classList.add('active');
+                    lcRender();
+                };
+                window.lcFilterStaff = function(q) { lcQuery = q; lcRender(); };
+                window.lcExportCSV   = function() {
+                    var staff = lcBuildStaffFromBids();
+                    var dates = lcGetDates();
+                    var rows = [['Employee ID','Name','Group','Role','Date','Leave']];
+                    staff.forEach(function(s) {
+                        dates.forEach(function(d) {
+                            var dk = lcDK(d);
+                            if (s.leaveSet.has(dk)) rows.push([s.id, s.name, s.group.toUpperCase(), s.title, dk, 'A']);
+                        });
+                    });
+                    var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+                    a.download = 'GC_CS_Leave_2026.csv'; a.click();
+                };
+
+                lcRender();
             },
 
             async renderAuditLogView() {
