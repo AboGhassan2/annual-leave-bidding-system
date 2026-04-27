@@ -2406,6 +2406,9 @@
             
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
+                    // Corporate Staff are capped at 30 days regardless of seniority
+                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
+                    if (csIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -3157,7 +3160,7 @@
 
                 const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
                 const totalBidDays = csBids.reduce((sum, bid) => sum + bid.days, 0);
-                const entitlement = 35; // Corporate Staff entitlement
+                const entitlement = 30; // Corporate Staff entitlement
 
                 // Countdown
                 const deadlineCountdownCS = (() => {
@@ -4741,6 +4744,9 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
+                    // Corporate Staff are capped at 30 days regardless of seniority
+                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
+                    if (csIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -5748,6 +5754,9 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
+                    // Corporate Staff are capped at 30 days regardless of seniority
+                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
+                    if (csIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
