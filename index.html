@@ -1067,6 +1067,7 @@
                 l456InmUsers: [],
                 l3InmUsers: [],
                 l3TsmUsers: [],
+                hseqUsers: [],
                 results: [],
 
                 // On-Call dates per employee (extracted from Director_On-Call.xlsx)
@@ -1358,6 +1359,7 @@
                         { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
                         { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
                         { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                        { table: 'hseq_users',     stateKey: 'hseqUsers'     },
                     ];
                     const _dbg = (msg) => { const el = document.getElementById('_dbgLog'); if(el) el.innerHTML += msg + '<br>'; };
                     for (const sg of subGroups) {
@@ -1394,6 +1396,38 @@
                     this.updateSystemStatus('⚠️ Could not load from database');
                     return false;
                 }
+            },
+
+            // XSS-safe HTML escaping — always wrap user-supplied strings before innerHTML
+            _escHtml(s) {
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            },
+
+            // Non-blocking toast — replaces alert() for notifications (level: 'success'|'error'|'warn'|'info')
+            showToast(message, level = 'info', duration = 4000) {
+                const colors = {
+                    success: { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46', icon: '✅' },
+                    error:   { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', icon: '❌' },
+                    warn:    { bg: '#fef3c7', border: '#fcd34d', text: '#92400e', icon: '⚠️' },
+                    info:    { bg: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', icon: 'ℹ️' },
+                };
+                const c = colors[level] || colors.info;
+                const el = document.createElement('div');
+                el.setAttribute('role', 'status');
+                el.setAttribute('aria-live', 'polite');
+                el.style.cssText = `position:fixed;bottom:84px;right:24px;z-index:9999;max-width:360px;padding:12px 16px;border-radius:12px;border:1.5px solid ${c.border};background:${c.bg};color:${c.text};font-size:0.875rem;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.12);opacity:0;transform:translateY(8px);transition:opacity 0.2s,transform 0.2s;white-space:pre-wrap;`;
+                el.textContent = `${c.icon}  ${message}`;
+                document.body.appendChild(el);
+                requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+                setTimeout(() => {
+                    el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
+                    setTimeout(() => el.remove(), 250);
+                }, duration);
             },
 
             async publishToSupabase() {
@@ -1549,6 +1583,7 @@
                     localStorage.setItem('l456InmUsers', JSON.stringify(this.state.l456InmUsers || []));
                     localStorage.setItem('l3InmUsers', JSON.stringify(this.state.l3InmUsers || []));
                     localStorage.setItem('l3TsmUsers', JSON.stringify(this.state.l3TsmUsers || []));
+                    localStorage.setItem('hseqUsers', JSON.stringify(this.state.hseqUsers || []));
                     localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
                 } catch (e) {
                     console.error('Error saving state:', e);
@@ -1574,6 +1609,7 @@
                         this.state.l456InmUsers = JSON.parse(localStorage.getItem('l456InmUsers') || '[]');
                         this.state.l3InmUsers = JSON.parse(localStorage.getItem('l3InmUsers') || '[]');
                         this.state.l3TsmUsers = JSON.parse(localStorage.getItem('l3TsmUsers') || '[]');
+                        this.state.hseqUsers  = JSON.parse(localStorage.getItem('hseqUsers')  || '[]');
                         this.state.onCallDates = JSON.parse(localStorage.getItem('onCallDates') || '{}');
                         return true;
                     }
@@ -1686,9 +1722,9 @@
                         
                         this.renderView();
                         this.writeAuditLog('LOGIN', { role: 'planner' });
-                        alert('✅ Welcome, Planner!');
+                        this.showToast('Welcome, Planner!', 'success');
                     } else {
-                        alert('❌ Incorrect planner password.');
+                        this.showToast('Incorrect planner password.', 'error');
                     }
                 } else if (this.state.loginType === 'goldencommand') {
                     // Use _pendingLogin values if set by card button (avoids DOM ID conflicts)
@@ -1697,21 +1733,21 @@
                     this._pendingLogin = null;
                     
                     if (!gcId || !password) {
-                        alert('⚠️ Please enter both GC ID and password');
+                        this.showToast('Please enter both GC ID and password.', 'warn');
                         return;
                     }
-                    
+
                     const gcUsers = this.state.goldenCommandUsers || [];
                     const gcUser = gcUsers.find(u => u.id === gcId);
-                    
+
                     if (!gcUser) {
-                        alert('❌ Golden Command ID not found. Please contact the planner.');
+                        this.showToast('Golden Command ID not found. Please contact the planner.', 'error');
                         return;
                     }
-                    
+
                     const storedPass = gcUser.password || gcUser.id;
                     if (password !== storedPass) {
-                        alert(`❌ Incorrect password.`);
+                        this.showToast('Incorrect password.', 'error');
                         return;
                     }
                     
@@ -1733,7 +1769,7 @@
                     
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
-                    alert(`✅ Welcome, ${gcUser.name}!`);
+                    this.showToast(`Welcome, ${gcUser.name}!`, 'success');
                 } else if (this.state.loginType === 'corporatestaff') {
                     const csIdInput = document.getElementById('csLoginId');
                     const passInput = document.getElementById('csLoginPwd') || document.getElementById('loginPassword');
@@ -1741,7 +1777,7 @@
                     const password = passInput ? passInput.value : '';
 
                     if (!csId || !password) {
-                        alert('⚠️ Please enter both Staff ID and password');
+                        this.showToast('Please enter both Staff ID and password.', 'warn');
                         return;
                     }
 
@@ -1749,13 +1785,13 @@
                     const csUser = csUsers.find(u => u.id === csId);
 
                     if (!csUser) {
-                        alert('❌ Corporate Staff ID not found. Please contact the planner.');
+                        this.showToast('Corporate Staff ID not found. Please contact the planner.', 'error');
                         return;
                     }
 
                     const storedPass = csUser.password || csUser.id;
                     if (password !== storedPass) {
-                        alert('❌ Incorrect password.');
+                        this.showToast('Incorrect password.', 'error');
                         return;
                     }
 
@@ -1777,7 +1813,7 @@
 
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
-                    alert(`✅ Welcome, ${csUser.name}!`);
+                    this.showToast(`Welcome, ${csUser.name}!`, 'success');
                 } else {
                     // Employee login — use _pendingLogin if set by card button, else read from DOM
                     const id = (this._pendingLogin?.empId) ?? (document.getElementById('empLoginId')?.value?.trim() || document.getElementById('loginId')?.value?.trim() || '');
@@ -1785,13 +1821,13 @@
                     this._pendingLogin = null;
                     
                     if (!id || !password) {
-                        alert('⚠️ Please enter both ID and password');
+                        this.showToast('Please enter both ID and password.', 'warn');
                         return;
                     }
-                    
+
                     const employee = this.state.employees.find(e => e.id === id);
                     if (!employee) {
-                        alert('❌ Operation Staff ID not found. Please upload data first.');
+                        this.showToast('Operation Staff ID not found. Please upload data first.', 'error');
                         return;
                     }
                     
@@ -1815,9 +1851,9 @@
                         
                         this.renderView();
                         this.writeAuditLog('LOGIN', { name: employee.name, id: employee.id, department: employee.department });
-                        alert(`✅ Welcome, ${employee.name}!`);
+                        this.showToast(`Welcome, ${employee.name}!`, 'success');
                     } else {
-                        alert(`❌ Incorrect password.`);
+                        this.showToast('Incorrect password.', 'error');
                     }
                 }
             },
@@ -1852,6 +1888,13 @@
                     if (el) el.value = '';
                 });
 
+                // Clear all running timers to prevent interval leaks
+                clearInterval(window._countdownInterval);   window._countdownInterval = null;
+                clearInterval(window._gcCountdownInterval); window._gcCountdownInterval = null;
+                clearInterval(window._csCountdownTimer);    window._csCountdownTimer = null;
+                clearInterval(window._dashInterval);        window._dashInterval = null;
+                this.stopAdminPolling();
+
                 // Re-sync only user lists from Supabase so dropdowns are fresh on next login
                 if (this.supabase) {
                     try {
@@ -1867,6 +1910,7 @@
                             { table:'l456inm_users', key:'l456InmUsers' },
                             { table:'l3inm_users',   key:'l3InmUsers'   },
                             { table:'l3tsm_users',   key:'l3TsmUsers'   },
+                            { table:'hseq_users',    key:'hseqUsers'    },
                         ]) {
                             const { data: rows } = await this.supabase
                                 .from(sg.table).select('id,name,password,email').eq('tenant_id', this._tid());
@@ -2224,12 +2268,19 @@
             handleFileUpload(event) {
                 const file = event.target.files[0];
                 if (!file) return;
-                
+
                 if (!file.name.match(/\.(xlsx|xls)$/)) {
                     alert('Please upload a valid Excel file (.xlsx or .xls)');
                     return;
                 }
-                
+
+                if (this.state.employees.length > 0) {
+                    const ok = confirm(
+                        `⚠️ This will replace all ${this.state.employees.length} existing employee records and clear their passwords.\n\nAre you sure you want to continue?`
+                    );
+                    if (!ok) { event.target.value = ''; return; }
+                }
+
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     try {
@@ -2317,8 +2368,15 @@
                                         const jsDate = new Date(excelEpoch.getTime() + dateVal * 24 * 60 * 60 * 1000);
                                         seniorityDate = jsDate.toISOString();
                                     } else {
-                                        // String date
-                                        const jsDate = new Date(dateVal);
+                                        // String date — try DD/MM/YYYY and DD-MM-YYYY before falling back
+                                        // to new Date() which is locale-sensitive and silently wrong
+                                        const dmyMatch = String(dateVal).match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+                                        let jsDate;
+                                        if (dmyMatch) {
+                                            jsDate = new Date(`${dmyMatch[3]}-${dmyMatch[2].padStart(2,'0')}-${dmyMatch[1].padStart(2,'0')}`);
+                                        } else {
+                                            jsDate = new Date(dateVal);
+                                        }
                                         if (!isNaN(jsDate.getTime())) {
                                             seniorityDate = jsDate.toISOString();
                                         }
@@ -3192,6 +3250,7 @@
                                     { key: 'l456inm::' + uid, label: '📋 L456 INM' },
                                     { key: 'l3inm::' + uid,   label: '📋 L3 INM' },
                                     { key: 'l3tsm::' + uid,   label: '📋 L3 TSM' },
+                                    { key: 'hseq::' + uid,    label: '🔰 HSEQ' },
                                 ].filter(g => (this.state.onCallDates[g.key] || []).length > 0);
 
                                 if (deptGroups.length === 0) return '';
@@ -3443,6 +3502,7 @@
                     ...(this.state.onCallDates['l456inm::' + uid] || []),
                     ...(this.state.onCallDates['l3inm::' + uid] || []),
                     ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates['hseq::' + uid] || []),
                 ];
                 const onCallSet = new Set(allOnCall);
                 const startVal = document.getElementById('csStartDate')?.value;
@@ -3508,6 +3568,7 @@
                     ...(this.state.onCallDates['l456inm::' + uid] || []),
                     ...(this.state.onCallDates['l3inm::' + uid] || []),
                     ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates['hseq::' + uid] || []),
                 ]);
                 const onCallDatesForCS = allOnCallForCS;
                 if (onCallDatesForCS.size > 0) {
@@ -3909,7 +3970,7 @@
                     let value;
                     if (field === 'capacity') {
                         value = parseInt(input.value);
-                        if (isNaN(value)) value = 1; // default capacity = 1
+                        if (isNaN(value) || value < 0) value = 0; // clamp invalid/negative to 0
                     } else if (field === 'enabled') {
                         value = input.checked; // boolean
                     } else {
@@ -4078,7 +4139,8 @@
                 const l456   = (this.state.l456InmUsers        || []).map(u => u.id);
                 const l3Inm  = (this.state.l3InmUsers          || []).map(u => u.id);
                 const l3Tsm  = (this.state.l3TsmUsers          || []).map(u => u.id);
-                const allSpecial = [...gcIds, ...csIds, ...l456, ...l3Inm, ...l3Tsm];
+                const hseq   = (this.state.hseqUsers           || []).map(u => u.id);
+                const allSpecial = [...gcIds, ...csIds, ...l456, ...l3Inm, ...l3Tsm, ...hseq];
                 return allSpecial.includes(employeeId);
             },
 
@@ -4196,14 +4258,14 @@
                                     return `
                                         <tr class="${idx % 2 === 0 ? '' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors">
                                             <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
-                                            <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${bid.employeeId}</td>
-                                            <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${bid.employeeName || emp?.name || 'Unknown'}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${bid.position || emp?.position || bid.department || emp?.department || 'Unassigned'}</td>
-                                            <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${slotDisplay}</span></td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.startDate || '—'}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${bid.endDate || '—'}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${bid.days || '—'}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${submitted}</td>
+                                            <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(bid.employeeId)}</td>
+                                            <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(bid.position || emp?.position || bid.department || emp?.department || 'Unassigned')}</td>
+                                            <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${this._escHtml(slotDisplay)}</span></td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${this._escHtml(bid.startDate || '—')}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${this._escHtml(bid.endDate || '—')}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${this._escHtml(String(bid.days || '—'))}</td>
+                                            <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${this._escHtml(submitted)}</td>
                                             <td class="border border-gray-200 px-3 py-2 text-center">
                                                 <button onclick="app.adminDeleteBid('${safeId}','${safeSlot}','${safeStart}')"
                                                     class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold hover:bg-red-200">
@@ -4598,7 +4660,32 @@
                 if (confirm(`Remove L3 TSM user "${user.name}" (${user.id})?`)) {
                     this.state.l3TsmUsers.splice(index, 1);
                     this.saveState();
-                    this.saveSubGroupUsersToSupabase('l3tsm'); // persist to Supabase
+                    this.saveSubGroupUsersToSupabase('l3tsm');
+                    this.renderUploadView();
+                }
+            },
+
+            addHseqUser() {
+                const id = document.getElementById('newHseqId')?.value?.trim();
+                const name = document.getElementById('newHseqName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.hseqUsers) this.state.hseqUsers = [];
+                if (this.state.hseqUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.hseqUsers.push({ id, name });
+                this.saveState();
+                this.saveSubGroupUsersToSupabase('hseq');
+                alert(`✅ HSEQ user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeHseqUser(index) {
+                const users = this.state.hseqUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove HSEQ user "${user.name}" (${user.id})?`)) {
+                    this.state.hseqUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveSubGroupUsersToSupabase('hseq');
                     this.renderUploadView();
                 }
             },
@@ -4689,6 +4776,7 @@
                     { key: 'l456inm', table: 'l456inm_users', stateKey: 'l456InmUsers' },
                     { key: 'l3inm',   table: 'l3inm_users',   stateKey: 'l3InmUsers'   },
                     { key: 'l3tsm',   table: 'l3tsm_users',   stateKey: 'l3TsmUsers'   },
+                    { key: 'hseq',    table: 'hseq_users',    stateKey: 'hseqUsers'    },
                 ];
                 const toSave = groupKey
                     ? allGroups.filter(g => g.key === groupKey)
@@ -6476,6 +6564,15 @@
                     <div class="max-w-6xl mx-auto space-y-6">
                         <h2 class="text-2xl font-bold text-gray-800">📊 Planner Dashboard — ${this.state.biddingYear}</h2>
 
+                        ${this.state.plannerPassword === 'admin123' ? `
+                        <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;">
+                            <span style="font-size:1.25rem;">⚠️</span>
+                            <p style="margin:0;color:#92400e;font-size:0.875rem;font-weight:500;">
+                                <strong>Security warning:</strong> You are using the default planner password (<code>admin123</code>).
+                                Please change it in <strong>Admin → Security Settings</strong> before going live.
+                            </p>
+                        </div>` : ''}
+
                         <!-- Top KPI Cards -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="bg-white rounded-xl shadow p-5 border-t-4 border-blue-500">
@@ -6901,6 +6998,10 @@
                       headColor:'#134e4a', rowBg:'#f0fdfa', borderColor:'#5eead4', badgeBg:'#ccfbf1',
                       formBg:'#f0fdfa', btnColor:'#14b8a6',
                       idPlaceholder:'L3TSM-001', namePlaceholder:'Sam Lee' },
+                    { key:'hseq',    stateKey:'hseqUsers',           label:'HSEQ',            icon:'🔰',
+                      headColor:'#881337', rowBg:'#fff1f2', borderColor:'#fda4af', badgeBg:'#ffe4e6',
+                      formBg:'#fff1f2', btnColor:'#f43f5e',
+                      idPlaceholder:'HSEQ-001', namePlaceholder:'Jordan Lee' },
                 ];
 
                 const tabs = groups.map(g => `
@@ -6937,7 +7038,7 @@
                 const pw     = pwEl?.value?.trim();
                 if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
 
-                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers' };
+                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers', hseq:'hseqUsers' };
                 const stateKey = stateKeyMap[groupKey];
                 if (!stateKey) return;
 
@@ -6957,7 +7058,7 @@
 
             // Remove a user from a group from the Manage Users view
             _muRemoveUser(groupKey, index) {
-                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers' };
+                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers', hseq:'hseqUsers' };
                 const stateKey = stateKeyMap[groupKey];
                 if (!stateKey) return;
                 const users = this.state[stateKey] || [];
@@ -6982,6 +7083,7 @@
                 const l456InmUsers = this.state.l456InmUsers || [];
                 const l3InmUsers   = this.state.l3InmUsers   || [];
                 const l3TsmUsers   = this.state.l3TsmUsers   || [];
+                const hseqUsers    = this.state.hseqUsers    || [];
 
                 if (!window._ocTab) window._ocTab = 'gc';
 
@@ -6991,6 +7093,7 @@
                     const l456 = l456InmUsers.find(u => u.id === id); if (l456) return l456.name;
                     const l3inm = l3InmUsers.find(u => u.id === id); if (l3inm) return l3inm.name;
                     const l3tsm = l3TsmUsers.find(u => u.id === id); if (l3tsm) return l3tsm.name;
+                    const hseqU = hseqUsers.find(u => u.id === id); if (hseqU) return hseqU.name;
                     const emp = (this.state.employees || []).find(e => e.id === id); if (emp) return emp.name;
                     return id;
                 };
@@ -7070,31 +7173,37 @@
                                     : colorTheme === 'orange' ? 'bg-orange-50 border-orange-300 text-orange-800'
                                     : colorTheme === 'purple' ? 'bg-purple-50 border-purple-300 text-purple-800'
                                     : colorTheme === 'teal'   ? 'bg-teal-50 border-teal-300 text-teal-800'
+                                    : colorTheme === 'rose'   ? 'bg-rose-50 border-rose-300 text-rose-800'
                                     : 'bg-blue-50 border-blue-300 text-blue-800';
                     const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600'
                                     : colorTheme === 'orange' ? 'bg-orange-500 hover:bg-orange-600'
                                     : colorTheme === 'purple' ? 'bg-purple-500 hover:bg-purple-600'
                                     : colorTheme === 'teal'   ? 'bg-teal-500 hover:bg-teal-600'
+                                    : colorTheme === 'rose'   ? 'bg-rose-500 hover:bg-rose-600'
                                     : 'bg-blue-600 hover:bg-blue-700';
                     const inputBdr  = isGCPanel ? 'border-yellow-300 focus:border-yellow-500'
                                     : colorTheme === 'orange' ? 'border-orange-300 focus:border-orange-500'
                                     : colorTheme === 'purple' ? 'border-purple-300 focus:border-purple-500'
                                     : colorTheme === 'teal'   ? 'border-teal-300 focus:border-teal-500'
+                                    : colorTheme === 'rose'   ? 'border-rose-300 focus:border-rose-500'
                                     : 'border-blue-300 focus:border-blue-500';
                     const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-200'
                                     : colorTheme === 'orange' ? 'bg-orange-100 border-orange-200'
                                     : colorTheme === 'purple' ? 'bg-purple-100 border-purple-200'
                                     : colorTheme === 'teal'   ? 'bg-teal-100 border-teal-200'
+                                    : colorTheme === 'rose'   ? 'bg-rose-100 border-rose-200'
                                     : 'bg-blue-100 border-blue-200';
                     const cardBorder = isGCPanel ? 'border-yellow-200'
                                     : colorTheme === 'orange' ? 'border-orange-200'
                                     : colorTheme === 'purple' ? 'border-purple-200'
                                     : colorTheme === 'teal'   ? 'border-teal-200'
+                                    : colorTheme === 'rose'   ? 'border-rose-200'
                                     : 'border-blue-200';
                     const pfx       = isGCPanel ? 'gc'
                                     : colorTheme === 'orange' ? 'l456inm'
                                     : colorTheme === 'purple' ? 'l3inm'
                                     : colorTheme === 'teal'   ? 'l3tsm'
+                                    : colorTheme === 'rose'   ? 'hseq'
                                     : 'cs';
                     const dateChips = dates.length === 0
                         ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
@@ -7298,11 +7407,13 @@
                 const l456Ids  = new Set([...l456InmUsers.map(u => u.id),  ...Object.keys(onCallDates).filter(k => k.startsWith('l456inm::')).map(k => k.split('::')[1])]);
                 const l3InmIds = new Set([...l3InmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3inm::')).map(k => k.split('::')[1])]);
                 const l3TsmIds = new Set([...l3TsmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3tsm::')).map(k => k.split('::')[1])]);
+                const hseqIds  = new Set([...hseqUsers.map(u => u.id),     ...Object.keys(onCallDates).filter(k => k.startsWith('hseq::')).map(k => k.split('::')[1])]);
                 const gcAudit    = buildAudit([...gcIds]);
                 const csAudit    = buildAudit([...csIds]);
                 const l456Audit  = buildAudit([...l456Ids],  'l456inm');
                 const l3InmAudit = buildAudit([...l3InmIds], 'l3inm');
                 const l3TsmAudit = buildAudit([...l3TsmIds], 'l3tsm');
+                const hseqAudit  = buildAudit([...hseqIds],  'hseq');
                 const isGC = window._ocTab === 'gc';
 
                 content.innerHTML = `
@@ -7401,6 +7512,22 @@
                                 ${l3TsmIds.size === 0
                                     ? '<p class="text-center text-gray-400 py-8">No L3 TSM users. Add them in 👥 Manage Users first.</p>'
                                     : [...l3TsmIds].filter(id => (onCallDates['l3tsm::'+id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- HSEQ group — separate On-Call schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-rose-200">
+                                <span class="text-xl">🔰</span>
+                                <h3 class="text-lg font-bold text-rose-800">HSEQ</h3>
+                            </div>
+                            ${renderAuditBanner(hseqAudit)}
+                            ${renderDeptPanel('hseq', hseqUsers, false, 'HSEQ', '🔰', hseqAudit)}
+                            <div id="onCallStaffList-hseq">
+                                ${hseqIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No HSEQ users. Add them in 👥 Manage Users first.</p>'
+                                    : [...hseqIds].filter(id => (onCallDates['hseq::'+id]||[]).length > 0).map(id => renderCard(id, hseqAudit.dateOwners, false, 'rose', 'hseq')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
                                 }
                             </div>
                         </div>
@@ -7529,7 +7656,7 @@
             removeFromOnCallList(ocKey, pfx) {
                 const empId = ocKey.includes('::') ? ocKey.split('::')[1] : ocKey;
                 const name = [...(this.state.goldenCommandUsers||[]), ...(this.state.corporateStaffUsers||[])].find(u => u.id === empId)?.name || empId;
-                const deptLabel = pfx==='gc' ? 'Golden Command' : pfx==='cs' ? 'Corporate Staff' : pfx==='l456inm' ? 'L456 INM' : pfx==='l3inm' ? 'L3 INM' : 'L3 TSM';
+                const deptLabel = pfx==='gc' ? 'Golden Command' : pfx==='cs' ? 'Corporate Staff' : pfx==='l456inm' ? 'L456 INM' : pfx==='l3inm' ? 'L3 INM' : pfx==='l3tsm' ? 'L3 TSM' : pfx==='hseq' ? 'HSEQ' : pfx;
                 if (!confirm(`Clear all On-Call dates for "${name}" in ${deptLabel}?\n\nThis only removes their schedule for this department.`)) return;
                 delete this.state.onCallDates[ocKey];
                 this.saveOnCallDatesToSupabase();
@@ -8087,6 +8214,7 @@
                     { list: this.state.l456InmUsers,        role: 'l456inm'        },
                     { list: this.state.l3InmUsers,          role: 'l3inm'          },
                     { list: this.state.l3TsmUsers,          role: 'l3tsm'          },
+                    { list: this.state.hseqUsers,           role: 'hseq'           },
                 ];
                 for (const pool of pools) {
                     const u = (pool.list || []).find(u => u.id === id);
@@ -8109,6 +8237,7 @@
                     { list: this.state.l456InmUsers,        role: 'l456inm'        },
                     { list: this.state.l3InmUsers,          role: 'l3inm'          },
                     { list: this.state.l3TsmUsers,          role: 'l3tsm'          },
+                    { list: this.state.hseqUsers,           role: 'hseq'           },
                 ];
                 for (const pool of pools) {
                     const u = (pool.list || []).find(u => u.email && u.email.toLowerCase() === e);
@@ -8236,7 +8365,7 @@
                 const masked = target.email.replace(/(.{2})(.+?)(@.+)$/, (_, a, b, c) => a + '*'.repeat(Math.min(b.length, 5)) + c);
                 document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${masked}</strong>.<br>Check your inbox and spam. Expires in 10 minutes.`;
                 document.getElementById('fpNewPwdLabel').textContent =
-                    (role === 'employee' || role === 'l456inm' || role === 'l3inm' || role === 'l3tsm')
+                    (role === 'employee' || role === 'l456inm' || role === 'l3inm' || role === 'l3tsm' || role === 'hseq')
                     ? 'New Password (leave blank to reset to Operation Staff ID)' : 'New Password';
             },
 
@@ -8623,11 +8752,10 @@
                     var gccsIds = gcIds.concat(csIds);
 
                     // Only include the specific staff from the approved Excel list
-                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238'];
+                    var ALLOWED_IDS = ['1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238'];
 
                     // Canonical job titles from approved staff list
                     var STAFF_TITLES = {
-                        '1000888': 'Project Director',
                         '1000008': 'Senior Executive Finance Director',
                         '1000027': 'Senior Executive Human Resource Director',
                         '1000124': 'Senior Executive Director Stakeholder & Communication',
@@ -8749,9 +8877,8 @@
                     if (!staff.length) return '<div class="lc-empty">No staff match the current filter.</div>';
 
                     var groups = [
-                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' },
-                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' }
-                        
+                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' },
+                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' }
                     ];
                     var html = '';
                     groups.forEach(function(g) {
