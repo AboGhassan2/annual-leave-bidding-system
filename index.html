@@ -298,6 +298,14 @@
             box-shadow: 0 8px 32px rgba(0,0,0,0.25);
             animation: cardReveal 0.7s cubic-bezier(0.16,1,0.3,1) both;
             color: #1a2e22;
+            display: flex;
+            flex-direction: column;
+        }
+        .lp-login-card .lp-card-body {
+            flex: 1;
+        }
+        .lp-login-card .lp-sign-btn {
+            margin-top: auto;
         }
         .lp-login-card.gc-card {
             background: rgba(240,232,210,0.92);
@@ -310,12 +318,25 @@
 
         .lp-card-header {
             display: flex; align-items: center; gap: 10px;
+            min-height: 64px;
             margin-bottom: 18px;
         }
-        .lp-card-icon { font-size: 1.6rem; }
+        .lp-card-icon { font-size: 1.6rem; flex-shrink: 0; }
         .lp-card-title { font-family: 'Barlow Condensed', sans-serif; font-size: 1.3rem; font-weight: 700; color: #1a2e22; }
         .lp-card-subtitle { font-size: 0.78rem; color: #5a7a66; margin-top: 1px; }
         .lp-card-check { margin-left: auto; color: #2d9f5f; font-size: 1.1rem; }
+
+        /* GC card: stack badge + sub-label vertically inside the same 64px header zone */
+        .gc-card .lp-card-header {
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 6px;
+        }
+        .gc-card-sub {
+            font-size: 0.88rem; font-weight: 600; color: #1a2e22;
+            margin: 0;
+        }
 
         .gc-badge {
             background: linear-gradient(135deg, #8b6914, #d4a017);
@@ -326,10 +347,6 @@
             color: #fff;
             text-transform: uppercase;
             display: flex; align-items: center; gap: 8px;
-        }
-        .gc-card-sub {
-            font-size: 0.88rem; font-weight: 600; color: #1a2e22;
-            margin-bottom: 18px;
         }
 
         .lp-input-wrap {
@@ -381,7 +398,64 @@
             transition: all 0.2s;
             box-shadow: 0 4px 16px rgba(27,67,50,0.35);
         }
-        .lp-sign-btn:hover { background: linear-gradient(135deg, #2d6a4f, #40916c); transform: translateY(-1px); }
+        .lp-nav-tab {
+            padding: 7px 14px;
+            font-size: 0.8rem; font-weight: 600;
+            border: none; border-radius: 8px;
+            cursor: pointer;
+            color: rgba(255,255,255,0.6);
+            background: transparent;
+            transition: all 0.18s;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+        .lp-nav-tab:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .lp-nav-tab.active { background: rgba(255,255,255,0.15); color: #fff; border-bottom: 2px solid #52b788; }
+        .lp-nav-tab.planner-tab { color: rgba(180,140,60,0.9); }
+        .lp-nav-tab.planner-tab:hover, .lp-nav-tab.planner-tab.active { background: rgba(180,140,20,0.15); color: #d4a017; border-bottom-color: #d4a017; }
+
+        /* Planner sign-in modal */
+        #plannerSignInModal {
+            display: none; position: fixed; inset: 0; z-index: 200;
+            align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+        }
+        .planner-modal-box {
+            background: #1b4332; border: 1px solid rgba(82,183,136,0.3);
+            border-radius: 18px; padding: 36px 32px;
+            width: 340px; box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+            color: #d8f3dc; position: relative;
+        }
+        .planner-modal-box h3 {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 1.4rem; font-weight: 700; margin-bottom: 6px;
+        }
+        .planner-modal-box p { font-size: 0.82rem; color: rgba(216,243,220,0.6); margin-bottom: 20px; }
+        .planner-modal-close {
+            position: absolute; top: 14px; right: 16px;
+            background: none; border: none; color: rgba(216,243,220,0.5);
+            font-size: 1.4rem; cursor: pointer; line-height: 1;
+        }
+        .planner-modal-close:hover { color: #fff; }
+        .planner-modal-input {
+            width: 100%; padding: 12px 14px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(82,183,136,0.3);
+            border-radius: 10px; color: #d8f3dc; font-size: 0.95rem; outline: none;
+            margin-bottom: 16px;
+        }
+        .planner-modal-input:focus { border-color: #52b788; background: rgba(255,255,255,0.12); }
+        .planner-modal-input::placeholder { color: rgba(216,243,220,0.35); }
+        .planner-modal-btn {
+            width: 100%; padding: 12px;
+            background: linear-gradient(135deg,#1b4332,#2d6a4f);
+            border: none; border-radius: 10px; color: #fff;
+            font-family: 'Barlow Condensed',sans-serif;
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.08em;
+            cursor: pointer; box-shadow: 0 4px 16px rgba(27,67,50,0.35);
+        }
+        .planner-modal-btn:hover { background: linear-gradient(135deg,#2d6a4f,#40916c); }
+
+
 
         .gc-sign-btn {
             background: linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);
@@ -638,7 +712,7 @@
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(82,183,136,0.15);
             padding: 10px 20px;
-            display: flex;
+            /* display intentionally omitted — controlled by Tailwind hidden/flex classes */
             align-items: center;
             justify-content: space-between;
             position: sticky;
@@ -713,16 +787,18 @@
                     <div class="lp-nav-divider"></div>
                     <div class="lp-nav-title">Annual Leave System</div>
                 </div>
-                <div class="lp-navbar-center">
-                    <span style="padding:8px 12px;font-size:0.9rem;">🔧</span>
-                    <div class="lp-select-wrap">
-                        <select class="lp-role-select" onchange="app.setLoginType(this.value)" id="navRoleSelect">
-                            <option value="employee">Operation Staff</option>
-                            <option value="planner" selected>Planner</option>
-                            <option value="goldencommand">GC</option>
-                            <option value="corporatestaff">Corp Staff</option>
-                        </select>
-                    </div>
+                <div class="lp-navbar-center" style="background:transparent;border:none;gap:4px;">
+                    <button class="lp-nav-tab active" data-role="employee" onclick="app._highlightNavTab(this,'employee')">Operation Staff</button>
+                    <button class="lp-nav-tab" data-role="corporatestaff" onclick="app._highlightNavTab(this,'corporatestaff')">Corp Staff</button>
+                    <button class="lp-nav-tab" data-role="goldencommand" onclick="app._highlightNavTab(this,'goldencommand')">⭐ GC</button>
+                    <button class="lp-nav-tab" data-role="maintenancestaff" onclick="app._highlightNavTab(this,'maintenancestaff')">🔧 Maintenance Staff</button>
+                    <button class="lp-nav-tab planner-tab" data-role="planner" onclick="
+                        app.state.loginType='planner';
+                        const pw=document.getElementById('plannerLoginPwd')?.value||'';
+                        if(pw){app._pendingPlannerPw=pw;}
+                        document.getElementById('plannerSignInModal').style.display='flex';
+                        setTimeout(()=>document.getElementById('plannerModalPwd')?.focus(),50);
+                    ">🛠️ Planner</button>
                 </div>
                 <div class="lp-navbar-right">
                     <button class="lp-theme-btn" title="Toggle theme">🌙</button>
@@ -795,27 +871,29 @@
                 <!-- Bottom row: 4 login cards -->
                 <div class="lp-cards-grid" style="grid-template-columns: repeat(4, 1fr); max-width: 1100px;">
 
-                    <!-- 1. Employee Card -->
+                    <!-- 1. Operation Staff Card -->
                     <div class="lp-login-card" style="animation-delay:0.1s">
-                        <div class="lp-card-header">
-                            <span class="lp-card-icon">👤</span>
-                            <div>
-                                <div class="lp-card-title">Operation Staff</div>
-                                <div class="lp-card-subtitle">Submit leave</div>
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <span class="lp-card-icon">👤</span>
+                                <div>
+                                    <div class="lp-card-title">Operation Staff</div>
+                                    <div class="lp-card-subtitle">Submit leave</div>
+                                </div>
+                                <span class="lp-card-check">✔</span>
                             </div>
-                            <span class="lp-card-check">✔</span>
-                        </div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">👤</span>
-                            <input class="lp-input" type="text" placeholder="Operation Staff ID" id="empLoginId" autocomplete="username" />
-                        </div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">🔒</span>
-                            <input class="lp-input" type="password" placeholder="Password" id="empLoginPwd" autocomplete="current-password" />
-                        </div>
-                        <div class="lp-card-footer">
-                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
-                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="Operation Staff ID" id="empLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="empLoginPwd" autocomplete="current-password" />
+                            </div>
+                            <div class="lp-card-footer">
+                                <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                                <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            </div>
                         </div>
                         <button class="lp-sign-btn" onclick="
                             const _empId = document.getElementById('empLoginId').value;
@@ -828,25 +906,26 @@
 
                     <!-- 2. Corp Staff Card -->
                     <div class="lp-login-card" style="animation-delay:0.2s">
-                        <div class="lp-card-header">
-                            <span class="lp-card-icon">🏢</span>
-                            <div>
-                                <div class="lp-card-title">Corp Staff</div>
-                                <div class="lp-card-subtitle">Oversight &amp; reporting</div>
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <span class="lp-card-icon">🏢</span>
+                                <div>
+                                    <div class="lp-card-title">Corp Staff</div>
+                                    <div class="lp-card-subtitle">Oversight &amp; reporting</div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">👤</span>
-                            <!-- Must use id="csLoginId" — matches what handleLogin reads for corporatestaff -->
-                            <input class="lp-input" type="text" placeholder="Staff ID" id="csLoginId" autocomplete="username" />
-                        </div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">🔒</span>
-                            <input class="lp-input" type="password" placeholder="Password" id="csLoginPwd" autocomplete="current-password" />
-                        </div>
-                        <div class="lp-card-footer">
-                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
-                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="Staff ID" id="csLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="csLoginPwd" autocomplete="current-password" />
+                            </div>
+                            <div class="lp-card-footer">
+                                <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                                <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            </div>
                         </div>
                         <button class="lp-sign-btn" onclick="
                             app.setLoginType('corporatestaff');
@@ -855,49 +934,25 @@
                         ">Sign In</button>
                     </div>
 
-                    <!-- 3. Planner Card -->
-                    <div class="lp-login-card" style="animation-delay:0.3s">
-                        <div class="lp-card-header">
-                            <span class="lp-card-icon">🛠️</span>
-                            <div>
-                                <div class="lp-card-title">Planner</div>
-                                <div class="lp-card-subtitle">Schedule &amp; configure</div>
+                    <!-- 3. Golden Command Card (gold) -->
+                    <div class="lp-login-card gc-card" style="animation-delay:0.3s">
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <div class="gc-badge">⭐ Golden Command</div>
+                                <div class="gc-card-sub">Sign in to your account</div>
                             </div>
-                        </div>
-                        <!-- Planner login only needs a password, no ID -->
-                        <div class="lp-input-wrap" style="margin-top:8px;">
-                            <span class="lp-input-icon">🔒</span>
-                            <input class="lp-input" type="password" placeholder="Planner Password" id="plannerLoginPwd" autocomplete="current-password" />
-                        </div>
-                        <div class="lp-card-footer" style="margin-top:8px;">
-                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
-                            <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
-                        </div>
-                        <button class="lp-sign-btn" style="margin-top:4px;" onclick="
-                            app.setLoginType('planner');
-                            document.getElementById('loginPassword').value = document.getElementById('plannerLoginPwd').value;
-                            app.handleLogin();
-                        ">Sign In</button>
-                    </div>
-
-                    <!-- 4. Golden Command Card (gold) -->
-                    <div class="lp-login-card gc-card" style="animation-delay:0.4s">
-                        <div class="lp-card-header">
-                            <div class="gc-badge">⭐ Golden Command</div>
-                        </div>
-                        <div class="gc-card-sub">Sign in to your account</div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">👤</span>
-                            <!-- Must use id="gcLoginId" — matches what handleLogin reads for goldencommand -->
-                            <input class="lp-input" type="text" placeholder="GC Employee ID" id="gcLoginId" autocomplete="username" />
-                        </div>
-                        <div class="lp-input-wrap">
-                            <span class="lp-input-icon">🔒</span>
-                            <input class="lp-input" type="password" placeholder="Password" id="gcLoginPwd" autocomplete="current-password" />
-                        </div>
-                        <div class="lp-card-footer">
-                            <label class="lp-remember"><input type="checkbox"> Remember me</label>
-                            <button class="lp-forgot" style="color:#b8860b;" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="GC Employee ID" id="gcLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="gcLoginPwd" autocomplete="current-password" />
+                            </div>
+                            <div class="lp-card-footer">
+                                <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                                <button class="lp-forgot" style="color:#b8860b;" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            </div>
                         </div>
                         <button class="lp-sign-btn gc-sign-btn" onclick="
                             const _gcId = document.getElementById('gcLoginId')?.value || '';
@@ -908,6 +963,60 @@
                         ">Sign In</button>
                     </div>
 
+                    <!-- 4. Maintenance Staff Card -->
+                    <div class="lp-login-card" style="animation-delay:0.4s; border-top: 3px solid #c0392b;">
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <span class="lp-card-icon">🔧</span>
+                                <div>
+                                    <div class="lp-card-title">Maintenance Staff</div>
+                                    <div class="lp-card-subtitle">Submit leave</div>
+                                </div>
+                                <span class="lp-card-check">✔</span>
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="Maintenance Staff ID" id="maintLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="maintLoginPwd" autocomplete="current-password" />
+                            </div>
+                            <div class="lp-card-footer">
+                                <label class="lp-remember"><input type="checkbox"> Remember me</label>
+                                <button class="lp-forgot" onclick="app.renderForgotPasswordView()">Forgot password?</button>
+                            </div>
+                        </div>
+                        <button class="lp-sign-btn" style="background:linear-gradient(135deg,#922b21,#c0392b);box-shadow:0 4px 16px rgba(192,57,43,0.35);" onclick="
+                            const _mId = document.getElementById('maintLoginId').value;
+                            const _mPw = document.getElementById('maintLoginPwd').value;
+                            app.state.loginType = 'maintenancestaff';
+                            app._pendingLogin = { maintId: _mId, maintPw: _mPw };
+                            app.handleLogin();
+                        ">Sign In</button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Planner Sign-In Modal (overlay) — fixed position, outside all flow elements -->
+            <div id="plannerSignInModal">
+                <div class="planner-modal-box">
+                    <button class="planner-modal-close" onclick="document.getElementById('plannerSignInModal').style.display='none'">✕</button>
+                    <h3>🛠️ Planner Sign In</h3>
+                    <p>Schedule &amp; configure the leave bidding system</p>
+                    <input class="planner-modal-input" type="password" id="plannerModalPwd" placeholder="Enter planner password" autocomplete="current-password"
+                        onkeydown="if(event.key==='Enter'){app.state.loginType='planner';app._pendingPlannerPw=this.value;app.handleLogin();document.getElementById('plannerSignInModal').style.display='none';}" />
+                    <button class="planner-modal-btn" onclick="
+                        const _pw = document.getElementById('plannerModalPwd').value;
+                        if (!_pw) { app.showToast('Please enter the planner password.','warn'); return; }
+                        app.state.loginType = 'planner';
+                        app._pendingPlannerPw = _pw;
+                        app.handleLogin();
+                        if (app.state.userType === 'planner') {
+                            document.getElementById('plannerSignInModal').style.display = 'none';
+                        }
+                    ">Sign In as Planner</button>
                 </div>
             </div>
 
@@ -934,6 +1043,7 @@
             <!-- Hidden legacy inputs for app.js compatibility -->
             <input type="hidden" id="loginId" />
             <input type="hidden" id="loginPassword" />
+            <input type="hidden" id="plannerLoginPwd" />
             <div id="loginForm" style="display:none"></div>
             <div id="liveDate" style="display:none"></div>
 
@@ -949,6 +1059,9 @@
             </button>
             <button onclick="app.setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 ⚙️ Configure Slots
+            </button>
+            <button onclick="app.setActiveView('configureMaintSlots')" class="px-4 py-2 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-300">
+                🔧 Configure Maint Slots
             </button>
             <button onclick="app.setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 🛠️ Admin Panel
@@ -1048,6 +1161,7 @@
                 biddingDeadline: '',
                 biddingYear: 2026,
                 isProcessed: false,
+                isMaintProcessed: false,
                 activeView: 'login',
                 selectedEmployeeId: '',
                 verifiedEmployee: null,
@@ -1064,19 +1178,23 @@
                     { id: 'GC002', name: 'Golden Command 2', password: 'GC002' }
                 ],
                 corporateStaffUsers: [],
+                maintenanceStaffUsers: [],
+                maintenanceStaffPasswords: {},
                 l456InmUsers: [],
                 l3InmUsers: [],
                 l3TsmUsers: [],
                 hseqUsers: [],
                 results: [],
+                maintResults: [],
 
                 // On-Call dates per employee (extracted from Director_On-Call.xlsx)
                 // Keyed by Employee ID → array of 'YYYY-MM-DD' strings (loaded from Supabase)
                 onCallDates: {},
                 selectedDepartment: 'all',
                 slotCapacities: {},
+                maintSlotCapacities: {},
                 
-                // Complete departments list (only L3, L46, L5 prefixes)
+                // OPS-only departments list (L3/L46/L5 groups — maintenance positions are separate)
                 departments: [
                     'L3-DEP-DC', 'L3-DEP-TC', 'L3-DEP-DM', 'L3-DEP- LTSS/TSS',
                     'L3-DEP-EFC', 'L3-DEP-GSM', 'L3-TA-T', 'L3-DS', 'L3-P&R',
@@ -1270,6 +1388,9 @@
                         this.state.plannerPassword = config.planner_password || 'admin123';
                         this.state.plannerEmail    = config.planner_email    || 'a_abdulqader@outlook.com';
                         this.state.slotCapacities = config.slot_capacities || {};
+                        this.state.maintSlotCapacities = config.maint_slot_capacities || {};
+                        this.state.maintResults     = config.maint_results || [];
+                        this.state.isMaintProcessed = config.is_maint_processed || false;
                         this.state.results = config.results || [];
                         // Load EmailJS keys from Supabase into localStorage so OTP works on any device
                         if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
@@ -1387,7 +1508,47 @@
                     this.saveState();
                     _dbg(`✅ saveState done. l456: state=${(this.state.l456InmUsers||[]).length} localStorage=${JSON.parse(localStorage.getItem('l456InmUsers')||'[]').length}`);
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
-                    this.renderLoginForm();
+                    // ===== MAINTENANCE STAFF DATA (loaded from Supabase) =====
+                    let allMaintStaff = [];
+                    let maintFrom = 0;
+                    let maintHasMore = true;
+                    while (maintHasMore) {
+                        const { data: maintBatch, error: maintError } = await this.supabase
+                            .from('maintenance_employees')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .range(maintFrom, maintFrom + batchSize - 1);
+                        if (maintError) {
+                            console.warn('⚠️ Could not load maintenance_employees:', maintError.message);
+                            maintHasMore = false;
+                        } else if (maintBatch && maintBatch.length > 0) {
+                            allMaintStaff = [...allMaintStaff, ...maintBatch];
+                            maintHasMore = maintBatch.length === batchSize;
+                            maintFrom += batchSize;
+                        } else {
+                            maintHasMore = false;
+                        }
+                    }
+                    // Map Supabase columns → internal shape used throughout the app
+                    app.state.maintenanceStaffUsers = allMaintStaff.map(u => ({
+                        id:           String(u.id),
+                        name:         u.name         || '',
+                        department:   u.department   || '',
+                        position:     u.position     || '',
+                        role:         u.role         || '',
+                        nationality:  u.nationality  || '',
+                        gender:       u.gender       || '',
+                        seniorityDate: u.seniority_date || '',
+                        totalLeaveDays: u.total_leave_days ?? 25,
+                        usedLeaveDays:  u.used_leave_days  ?? 0,
+                    }));
+                    // Default password = employee ID (same as before)
+                    const maintPwds = {};
+                    app.state.maintenanceStaffUsers.forEach(u => { maintPwds[u.id] = u.id; });
+                    app.state.maintenanceStaffPasswords = maintPwds;
+                    console.log(`✅ Maintenance staff loaded from Supabase: ${app.state.maintenanceStaffUsers.length} records`);
+
+                this.renderLoginForm();
                     this._updateLandingStats();
                     return true;
                     
@@ -1493,6 +1654,7 @@
                             planner_password: this.state.plannerPassword,
                             planner_email:    this.state.plannerEmail,
                             slot_capacities:  this.state.slotCapacities,
+                            maint_slot_capacities: this.state.maintSlotCapacities || {},
                             results: this.state.results,
                             last_updated: new Date().toISOString()
                             // on_call_dates intentionally omitted — stored in oncall_dates table
@@ -1578,6 +1740,7 @@
                     localStorage.setItem('plannerEmail',    this.state.plannerEmail || 'a_abdulqader@outlook.com');
                     localStorage.setItem('results', JSON.stringify(this.state.results));
                     localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
+                    localStorage.setItem('maintSlotCapacities', JSON.stringify(this.state.maintSlotCapacities || {}));
                     localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
                     localStorage.setItem('corporateStaffUsers', JSON.stringify(this.state.corporateStaffUsers || []));
                     localStorage.setItem('l456InmUsers', JSON.stringify(this.state.l456InmUsers || []));
@@ -1601,9 +1764,11 @@
                         this.state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
                         this.state.isProcessed = JSON.parse(localStorage.getItem('isProcessed') || 'false');
                         this.state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
+                        if (!this.state.plannerPassword) this.state.plannerPassword = 'admin123';
                         this.state.plannerEmail    = localStorage.getItem('plannerEmail')    || 'a_abdulqader@outlook.com';
                         this.state.results = JSON.parse(localStorage.getItem('results') || '[]');
                         this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
+                        this.state.maintSlotCapacities = JSON.parse(localStorage.getItem('maintSlotCapacities') || '{}');
                         this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
                         this.state.corporateStaffUsers = JSON.parse(localStorage.getItem('corporateStaffUsers') || '[]');
                         this.state.l456InmUsers = JSON.parse(localStorage.getItem('l456InmUsers') || '[]');
@@ -1703,7 +1868,8 @@
             handleLogin() {
                 if (this.state.loginType === 'planner') {
                     const input = document.getElementById('plannerLoginPwd') || document.getElementById('metro-plannerPwd') || document.getElementById('loginPassword');
-                    const password = input ? input.value : '';
+                    const password = this._pendingPlannerPw ?? (input ? input.value : '');
+                    this._pendingPlannerPw = null;
                     
                     if (password === this.state.plannerPassword) {
                         this.state.currentUser = { name: 'Planner Admin' };
@@ -1719,6 +1885,10 @@
                         document.getElementById('currentUserName').textContent = 'Planner Admin';
                         document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
+                        
+                        // Clear the modal password field immediately after login
+                        const modalPwdEl = document.getElementById('plannerModalPwd');
+                        if (modalPwdEl) modalPwdEl.value = '';
                         
                         this.renderView();
                         this.writeAuditLog('LOGIN', { role: 'planner' });
@@ -1814,6 +1984,55 @@
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
                     this.showToast(`Welcome, ${csUser.name}!`, 'success');
+                } else if (this.state.loginType === 'maintenancestaff') {
+                    // Maintenance Staff login — use _pendingLogin if set by card button
+                    const id = (this._pendingLogin?.maintId) ?? (document.getElementById('maintLoginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.maintPw) ?? (document.getElementById('maintLoginPwd')?.value || '');
+                    this._pendingLogin = null;
+
+                    if (!id || !password) {
+                        this.showToast('Please enter both ID and password.', 'warn');
+                        return;
+                    }
+
+                    const maintUsers = this.state.maintenanceStaffUsers || [];
+                    const maintUser = maintUsers.find(u => String(u.id) === String(id));
+                    if (!maintUser) {
+                        this.showToast('Maintenance Staff ID not found. Please contact the planner.', 'error');
+                        return;
+                    }
+
+                    const storedPass = this.state.maintenanceStaffPasswords[String(id)] || String(id);
+                    if (password !== storedPass) {
+                        this.showToast('Incorrect password.', 'error');
+                        return;
+                    }
+
+                    this.state.currentUser = maintUser;
+                    this.state.userType = 'maintenancestaff';
+                    this.state.verifiedEmployee = {
+                        id: maintUser.id,
+                        name: maintUser.name,
+                        department: maintUser.department,
+                        position: maintUser.position,
+                        seniorityDate: maintUser.seniorityDate || '2020-01-01'
+                    };
+                    this.state.activeView = 'employee'; // reuse employee view for leave bidding
+
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const maintUi = document.getElementById('userInfo');
+                    maintUi.style.display = 'flex'; maintUi.classList.remove('hidden');
+                    document.getElementById('employeeNav').classList.remove('hidden');
+                    document.getElementById('currentUserName').textContent = maintUser.name;
+                    document.getElementById('userTypeBadge').textContent = '🔧 Maintenance Staff';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-800';
+
+                    this.renderView();
+                    this.writeAuditLog('LOGIN', { name: maintUser.name, id: maintUser.id, department: maintUser.department, role: 'maintenancestaff' });
+                    this.showToast(`Welcome, ${maintUser.name}!`, 'success');
                 } else {
                     // Employee login — use _pendingLogin if set by card button, else read from DOM
                     const id = (this._pendingLogin?.empId) ?? (document.getElementById('empLoginId')?.value?.trim() || document.getElementById('loginId')?.value?.trim() || '');
@@ -1882,7 +2101,8 @@
 
                 // Clear all login card inputs so credentials don't persist
                 ['empLoginId','empLoginPwd','csLoginId','csLoginPwd',
-                 'plannerLoginPwd','gcLoginId','gcLoginPwd',
+                 'plannerLoginPwd','plannerModalPwd','gcLoginId','gcLoginPwd',
+                 'maintLoginId','maintLoginPwd',
                  'loginId','loginPassword'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
@@ -1958,6 +2178,9 @@
                         break;
                     case 'configureSlots':
                         this.renderConfigureSlotsView();
+                        break;
+                    case 'configureMaintSlots':
+                        this.renderConfigureMaintSlotsView();
                         break;
                     case 'admin':
                         this.renderAdminView();
@@ -3683,11 +3906,252 @@
             filterDepartments() {
                 const filter = document.getElementById('deptFilter').value;
                 const configArea = document.getElementById('configArea');
-                
                 if (configArea) {
                     configArea.innerHTML = this.renderDeptConfig(filter);
                 }
             },
+
+            // ===== MAINTENANCE SLOT CONFIGURATION =====
+            renderConfigureMaintSlotsView() {
+                const content = document.getElementById('contentArea');
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const maintDepts = [...new Set(maintUsers.map(u => u.position || 'Unassigned'))].sort();
+                const allDepts = ['all', ...maintDepts];
+
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center gap-3 mb-2">
+                                <span style="font-size:1.8rem;">🔧</span>
+                                <h2 class="text-2xl font-bold">Configure Bid Slot Calendar — Maintenance Staff (${this.state.biddingYear})</h2>
+                            </div>
+                            <p class="text-gray-600 mb-6">
+                                Define date ranges and capacities for Slot A, B, and C per Maintenance roster group per month.
+                            </p>
+
+                            <div class="mb-6 p-4 bg-red-50 rounded-lg border-2 border-red-200">
+                                <label class="block font-semibold mb-2 text-red-800">Filter by Roster Group:</label>
+                                <select
+                                    id="maintDeptFilter"
+                                    class="w-full px-4 py-3 border-2 border-red-300 rounded-lg text-lg font-semibold"
+                                    onchange="app.filterMaintDepartments()"
+                                >
+                                    ${allDepts.map(d => `<option value="${d}">${d === 'all' ? 'All Roster Groups' : d}</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <div id="maintConfigArea">
+                                ${this.renderMaintDeptConfig('all')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            filterMaintDepartments() {
+                const filter = document.getElementById('maintDeptFilter').value;
+                const area = document.getElementById('maintConfigArea');
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filter);
+            },
+
+            renderMaintDeptConfig(filter) {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const allDepts = [...new Set(maintUsers.map(u => u.position || 'Unassigned'))].sort();
+                const deptsToConfigure = filter === 'all' ? allDepts : [filter];
+
+                if (deptsToConfigure.length === 0) {
+                    return `<div class="bg-yellow-50 border border-yellow-200 rounded p-6 text-center">
+                        <p class="text-lg font-semibold">No maintenance roster groups found.</p>
+                    </div>`;
+                }
+
+                let html = filter === 'all'
+                    ? `<div class="mb-6 p-4 bg-red-50 border border-red-300 rounded">
+                        <h3 class="text-xl font-semibold text-red-800 mb-2">🔧 Maintenance Slot Configuration — All Roster Groups</h3>
+                        <p class="text-red-700">Configure date ranges for each bid slot across ${deptsToConfigure.length} maintenance roster groups.</p>
+                       </div>`
+                    : `<div class="mb-6 p-4 bg-red-50 border border-red-300 rounded">
+                        <h3 class="text-xl font-semibold text-red-800 mb-2">🔧 Maintenance Slot Configuration — ${filter}</h3>
+                       </div>`;
+
+                html += `<div class="space-y-8">`;
+
+                deptsToConfigure.forEach(dept => {
+                    const empCount = maintUsers.filter(u => (u.position || 'Unassigned') === dept).length;
+                    html += `
+                        <div class="border border-red-200 rounded-lg overflow-hidden">
+                            <div class="bg-red-50 p-4 border-b border-red-200 flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-xl font-bold text-red-900">${dept}</h3>
+                                    <span class="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">${empCount} maintenance staff</span>
+                                </div>
+                                <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
+                            </div>
+                            <div class="p-4 overflow-x-auto">
+                                <table class="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50">
+                                            <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Month</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">
+                                                <div class="flex flex-col items-center gap-1"><span>A — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-green-600" data-dept="${dept}" data-slot="SA" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-green-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">
+                                                <div class="flex flex-col items-center gap-1"><span>B — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-blue-600" data-dept="${dept}" data-slot="SB" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-blue-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">
+                                                <div class="flex flex-col items-center gap-1"><span>C — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-purple-600" data-dept="${dept}" data-slot="SC" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-purple-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${this.state.months.map((month, monthIdx) => {
+                                            const year = this.state.biddingYear;
+                                            const pad = n => String(n).padStart(2,'0');
+                                            const lastDay = new Date(year, monthIdx+1, 0).getDate();
+                                            const defaultStart = `${year}-${pad(monthIdx+1)}-01`;
+                                            const defaultEnd = `${year}-${pad(monthIdx+1)}-${pad(lastDay)}`;
+                                            return `<tr class="hover:bg-gray-50">
+                                                <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
+                                                ${['SA','SB','SC'].map((slotId, si) => {
+                                                    const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500'];
+                                                    const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50'];
+                                                    const savedStart = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-start`];
+                                                    const savedEnd = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-end`];
+                                                    const savedCap = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-capacity`];
+                                                    const savedEnabled = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-enabled`];
+                                                    const startVal = savedStart !== undefined ? savedStart : defaultStart;
+                                                    const endVal = savedEnd !== undefined ? savedEnd : defaultEnd;
+                                                    const capVal = savedCap !== undefined ? savedCap : 1;
+                                                    const enabledVal = savedEnabled !== undefined ? savedEnabled : false;
+                                                    const opacity = enabledVal ? '' : 'opacity-40';
+                                                    return `
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} text-center">
+                                                            <input type="checkbox"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="enabled"
+                                                                class="maint-slot-input maint-slot-enabled w-4 h-4 accent-current cursor-pointer"
+                                                                ${enabledVal ? 'checked' : ''}
+                                                                onchange="app._toggleMaintSlotOpacity(this)"
+                                                            />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="date"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                min="${year}-01-01" max="${year}-12-31" value="${startVal}" />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="date"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                min="${year}-01-01" max="${year}-12-31" value="${endVal}" />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="number" min="0" max="200"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
+                                                                placeholder="1" value="${capVal}" />
+                                                        </td>
+                                                    `;
+                                                }).join('')}
+                                            </tr>`;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+                html += `
+                    <div class="mt-8">
+                        <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
+                            <p class="font-semibold text-red-800 mb-2">📋 Maintenance Slot Configuration Summary:</p>
+                            <p class="text-sm text-red-700">
+                                • Roster groups: ${deptsToConfigure.length}<br>
+                                • Bid slots per group: 3 (Slot A, Slot B, Slot C) × 12 months<br>
+                                • Toggle <strong>On</strong> to make a slot visible to Maintenance Staff for that month
+                            </p>
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="app.saveMaintSlotConfiguration()" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700">
+                                💾 Save All Maintenance Slot Configurations
+                            </button>
+                            <button onclick="app.setActiveView('admin')" class="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600">
+                                ← Back
+                            </button>
+                        </div>
+                    </div>
+                `;
+                return html;
+            },
+
+            _toggleMaintSlotOpacity(checkbox) {
+                const row = checkbox.closest('tr');
+                if (!row) return;
+                const { dept, month, slot } = checkbox.dataset;
+                row.querySelectorAll(`input[data-dept="${dept}"][data-month="${month}"][data-slot="${slot}"]:not([data-field="enabled"])`).forEach(inp => {
+                    inp.closest('td').style.opacity = checkbox.checked ? '1' : '0.35';
+                });
+            },
+
+            _markAllMaintSlot(headerCb) {
+                const { dept, slot } = headerCb.dataset;
+                document.querySelectorAll(`.maint-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`).forEach(cb => {
+                    cb.checked = headerCb.checked;
+                    app._toggleMaintSlotOpacity(cb);
+                });
+            },
+
+            async saveMaintSlotConfiguration() {
+                const inputs = document.querySelectorAll('.maint-slot-input');
+                let savedCount = 0;
+                inputs.forEach(input => {
+                    const { dept, month, slot, field } = input.dataset;
+                    let value;
+                    if (field === 'capacity') {
+                        value = parseInt(input.value);
+                        if (isNaN(value) || value < 0) value = 0;
+                    } else if (field === 'enabled') {
+                        value = input.checked;
+                    } else {
+                        value = input.value;
+                    }
+                    if (dept && slot && field) {
+                        const key = month ? `cal-maint-${dept}-${month}-${slot}-${field}` : `cal-maint-${dept}-${slot}-${field}`;
+                        this.state.maintSlotCapacities[key] = value;
+                        savedCount++;
+                    }
+                });
+                await this.saveConfigToSupabase();
+                alert(`✅ Maintenance slot configurations saved!\\n\\n• ${savedCount} fields saved.`);
+                this.setActiveView('admin');
+            },
+
             
             renderDeptConfig(filter) {
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
@@ -4130,6 +4594,8 @@
                 const currentQuery = document.getElementById('bidSearchInput')?.value || '';
                 const activeTab = tableContainer?.dataset.activeTab || 'employees';
                 if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML(currentQuery, activeTab);
+                // FIX: keep the GC/CS Leave Tracker in sync after any bid change
+                if (typeof window.lcRender === 'function') window.lcRender();
             },
 
             _isGcOrCs(employeeId) {
@@ -4144,19 +4610,21 @@
                 return allSpecial.includes(employeeId);
             },
 
+            _isMaintStaff(employeeId) {
+                const ids = (this.state.maintenanceStaffUsers || []).map(u => u.id);
+                return ids.includes(employeeId);
+            },
+
             _switchBidTab(tab) {
-                // Update button styles
-                const empBtn  = document.getElementById('bidTabEmp');
-                const gccsBtn = document.getElementById('bidTabGcCs');
-                if (empBtn && gccsBtn) {
-                    if (tab === 'employees') {
-                        empBtn.style.background  = '#4f46e5'; empBtn.style.color  = '#fff';
-                        gccsBtn.style.background = '#f3f4f6'; gccsBtn.style.color = '#374151';
-                    } else {
-                        gccsBtn.style.background = '#4f46e5'; gccsBtn.style.color = '#fff';
-                        empBtn.style.background  = '#f3f4f6'; empBtn.style.color  = '#374151';
-                    }
-                }
+                const empBtn   = document.getElementById('bidTabEmp');
+                const gccsBtn  = document.getElementById('bidTabGcCs');
+                const maintBtn = document.getElementById('bidTabMaint');
+                [empBtn, gccsBtn, maintBtn].forEach(btn => {
+                    if (!btn) return;
+                    btn.style.background = '#f3f4f6'; btn.style.color = '#374151';
+                });
+                const target = tab === 'employees' ? empBtn : tab === 'gccs' ? gccsBtn : maintBtn;
+                if (target) { target.style.background = '#4f46e5'; target.style.color = '#fff'; }
                 const container = document.getElementById('adminBidsTableContainer');
                 if (container) {
                     const currentQuery = document.getElementById('bidSearchInput')?.value || '';
@@ -4184,8 +4652,10 @@
                     .filter(bid => {
                         // Tab filter
                         const isSpecial = this._isGcOrCs(bid.employeeId);
-                        if (tabFilter === 'employees' && isSpecial)  return false;
-                        if (tabFilter === 'gccs'      && !isSpecial) return false;
+                        const isMaint   = this._isMaintStaff(bid.employeeId);
+                        if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
+                        if (tabFilter === 'gccs'      && (!isSpecial || isMaint)) return false;
+                        if (tabFilter === 'maint'     && !isMaint) return false;
                         // Search filter
                         if (!q) return true;
                         const name = (bid.employeeName || this.state.employees.find(e => e.id === bid.employeeId)?.name || '').toLowerCase();
@@ -4453,6 +4923,53 @@
                                 <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
                                     🔄 Reset System
                                 </button>
+
+                                <div style="margin-top:12px;background:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%);border:2px solid #fb923c;border-radius:12px;padding:16px;">
+                                    <!-- Section header -->
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #fed7aa;">
+                                        <div style="width:32px;height:32px;background:#ea580c;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                                        </div>
+                                        <div>
+                                            <p style="font-size:0.85rem;font-weight:700;color:#9a3412;margin:0;line-height:1.2;">Maintenance Staff Processing</p>
+                                            <p style="font-size:0.7rem;color:#c2410c;margin:0;">
+                                                ${(this.state.maintenanceStaffUsers || []).length} staff loaded &bull; ${Object.keys(this.state.maintSlotCapacities || {}).length} slot keys
+                                            </p>
+                                        </div>
+                                        <div style="margin-left:auto;background:${this.state.isMaintProcessed ? '#dcfce7' : '#fee2e2'};color:${this.state.isMaintProcessed ? '#166534' : '#991b1b'};font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;">
+                                            ${this.state.isMaintProcessed ? '✅ DONE' : '⏳ PENDING'}
+                                        </div>
+                                    </div>
+                                    <!-- Buttons -->
+                                    <div style="display:flex;flex-direction:column;gap:8px;">
+                                        <button
+                                            onclick="app.processMaintBids()"
+                                            ${this.state.isMaintProcessed ? 'disabled' : ''}
+                                            style="width:100%;padding:10px 16px;background:${this.state.isMaintProcessed ? '#fdba74' : '#ea580c'};color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:${this.state.isMaintProcessed ? 'not-allowed' : 'pointer'};opacity:${this.state.isMaintProcessed ? '0.6' : '1'};transition:background 0.2s;"
+                                            onmouseover="if(!this.disabled)this.style.background='#c2410c'"
+                                            onmouseout="if(!this.disabled)this.style.background='#ea580c'"
+                                        >
+                                            ${this.state.isMaintProcessed ? '✅ Maintenance Bids Already Processed' : '🔧 Process Maintenance Bids'}
+                                        </button>
+                                        ${this.state.isMaintProcessed ? `
+                                            <button onclick="app.renderMaintResultsView()"
+                                                style="width:100%;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
+                                                📋 View Maintenance Results
+                                            </button>
+                                            <button onclick="app.exportMaintResults()"
+                                                style="width:100%;padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
+                                                📊 Export Maintenance Results to Excel
+                                            </button>
+                                            <button onclick="app.resetMaintProcessing()"
+                                                style="width:100%;padding:10px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">
+                                                ↩️ Reset Maintenance Processing
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="bg-gray-50 p-4 rounded-lg">
@@ -4478,12 +4995,12 @@
                                     </span>
                                 </div>
                                 <!-- Tab switcher -->
-                                <div class="flex gap-2">
+                                <div class="flex gap-2 flex-wrap">
                                     <button id="bidTabEmp" onclick="app._switchBidTab('employees')"
                                         style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#4f46e5;color:#fff;">
                                         👤 Employees
                                         <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
-                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId)).length}
+                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId)).length}
                                         </span>
                                     </button>
                                     <button id="bidTabGcCs" onclick="app._switchBidTab('gccs')"
@@ -4491,6 +5008,13 @@
                                         ⭐ GC & Corporate Staff
                                         <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
                                             ${this.state.bids.filter(b => this._isGcOrCs(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabMaint" onclick="app._switchBidTab('maint')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        🔧 Maintenance Staff
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isMaintStaff(b.employeeId)).length}
                                         </span>
                                     </button>
                                 </div>
@@ -5306,6 +5830,326 @@
                 
                 this.renderAdminView();
             },
+            async processMaintBids() {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                if (maintUsers.length === 0) {
+                    alert('No maintenance staff found.');
+                    return;
+                }
+                if (Object.keys(this.state.maintSlotCapacities || {}).length === 0) {
+                    alert('Please configure maintenance slot capacities first.');
+                    return;
+                }
+                const calculateYearsOfService = (d) => (new Date() - new Date(d)) / (1000 * 60 * 60 * 24 * 365.25);
+                const months = this.state.months;
+                const maintCaps = this.state.maintSlotCapacities;
+
+                // Parse cal-maint-{position}-{month}-{SA|SB|SC}-{field} keys
+                const rawSlotData = {};
+                Object.keys(maintCaps).forEach(key => {
+                    if (!key.startsWith('cal-maint-')) return;
+                    const rest = key.slice('cal-maint-'.length);
+                    const parts = rest.split('-');
+                    // field is last, slotId second-to-last, month is one of the known months
+                    const field = parts.pop();
+                    const slotId = parts.pop();
+                    if (!['SA','SB','SC'].includes(slotId)) return;
+                    // remaining parts: position tokens + month
+                    const monthIdx = parts.lastIndexOf(parts.find(p => months.includes(p)));
+                    // find month from right
+                    let monthFound = null, monthPos = -1;
+                    for (let i = parts.length - 1; i >= 0; i--) {
+                        if (months.includes(parts[i])) { monthFound = parts[i]; monthPos = i; break; }
+                    }
+                    if (!monthFound) return;
+                    const position = parts.slice(0, monthPos).join('-');
+                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : 'C';
+                    const bk = position + '||' + monthFound + '||' + slotLetter;
+                    if (!rawSlotData[bk]) rawSlotData[bk] = { position, month: monthFound, slotLetter, enabled: true, capacity: 0, start: null, end: null };
+                    const v = maintCaps[key];
+                    if (field === 'enabled')   rawSlotData[bk].enabled   = (v === true || v === 'true');
+                    else if (field === 'capacity') rawSlotData[bk].capacity = parseInt(v) || 0;
+                    else if (field === 'start')    rawSlotData[bk].start    = v;
+                    else if (field === 'end')      rawSlotData[bk].end      = v;
+                });
+
+                const slotAvailability = {}, slotDates = {};
+                Object.values(rawSlotData).forEach(({ position, month, slotLetter, enabled, capacity, start, end }) => {
+                    if (!enabled || !start || !end) return;
+                    if (!slotAvailability[month]) slotAvailability[month] = {};
+                    if (!slotAvailability[month][position]) slotAvailability[month][position] = { A: 0, B: 0, C: 0 };
+                    slotAvailability[month][position][slotLetter] = capacity;
+                    if (!slotDates[position]) slotDates[position] = {};
+                    if (!slotDates[position][month]) slotDates[position][month] = {};
+                    slotDates[position][month][slotLetter] = { start, end };
+                });
+
+                const configuredPositions = new Set(Object.values(slotAvailability).flatMap(m => Object.keys(m)));
+                const posCache = {};
+                const resolvePos = (pos) => {
+                    if (posCache[pos] !== undefined) return posCache[pos];
+                    if (configuredPositions.has(pos)) return (posCache[pos] = pos);
+                    for (const k of configuredPositions) {
+                        if (k.toLowerCase() === pos.toLowerCase()) return (posCache[pos] = k);
+                    }
+                    return (posCache[pos] = pos);
+                };
+
+                const positionGroups = {};
+                maintUsers.forEach(u => {
+                    const pos = resolvePos(u.position || 'Unassigned');
+                    if (!positionGroups[pos]) positionGroups[pos] = [];
+                    positionGroups[pos].push({ ...u, resolvedPosition: pos });
+                });
+                Object.keys(positionGroups).forEach(pos => {
+                    positionGroups[pos].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                });
+
+                const posRankMap = {};
+                const sortedMaintUsers = [];
+                Object.keys(positionGroups).sort().forEach(pos => {
+                    positionGroups[pos].forEach((u, i) => {
+                        sortedMaintUsers.push(u);
+                        posRankMap[u.id] = { position: pos, posRank: i + 1 };
+                    });
+                });
+
+                const awarded = {};
+                sortedMaintUsers.forEach(u => { awarded[u.id] = []; });
+
+                const makeAssignment = (user, startDate, endDate, slotLetter, slotNumber, type) => {
+                    const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+                    const month = months[new Date(startDate).getMonth()];
+                    return {
+                        employeeId: user.id, employeeName: user.name,
+                        position: user.position || '', department: user.department || '',
+                        slotType: 'slot' + slotLetter, slotName: 'Slot ' + slotLetter,
+                        slotNumber, startDate, endDate, days, month,
+                        year: this.state.biddingYear,
+                        seniorityDate: user.seniorityDate,
+                        yearsOfService: calculateYearsOfService(user.seniorityDate).toFixed(1),
+                        type, bidChoice: type === 'Bid Awarded' ? slotNumber : null
+                    };
+                };
+
+                const resolveConflicts = (candidates) => {
+                    const bySlot = {};
+                    candidates.forEach(({ user, startDate, endDate, slotLetter }) => {
+                        const pos = resolvePos(user.position || 'Unassigned');
+                        const month = months[new Date(startDate).getMonth()];
+                        const key = pos + '||' + month + '||' + slotLetter;
+                        if (!bySlot[key]) bySlot[key] = { pos, month, slotLetter, contenders: [] };
+                        bySlot[key].contenders.push({ user, startDate, endDate, slotLetter });
+                    });
+                    const won = [], lost = [];
+                    Object.values(bySlot).forEach(({ pos, month, slotLetter, contenders }) => {
+                        const cap = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
+                        if (cap <= 0) { contenders.forEach(c => lost.push(c)); return; }
+                        const ranked = [...contenders].sort((a, b) =>
+                            (posRankMap[a.user.id]?.posRank ?? 9999) - (posRankMap[b.user.id]?.posRank ?? 9999));
+                        ranked.forEach((c, i) => {
+                            if (i < cap) { won.push(c); slotAvailability[month][pos][slotLetter]--; }
+                            else lost.push(c);
+                        });
+                    });
+                    return { won, lost };
+                };
+
+                const sortedBidsById = {};
+                sortedMaintUsers.forEach(u => {
+                    sortedBidsById[u.id] = [...this.state.bids.filter(b => b.employeeId === u.id)]
+                        .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                const maxPrefs = Math.max(0, ...sortedMaintUsers.map(u => sortedBidsById[u.id].length));
+                for (let pi = 0; pi < maxPrefs; pi++) {
+                    const candidates = [];
+                    sortedMaintUsers.forEach(user => {
+                        const bids = sortedBidsById[user.id];
+                        if (awarded[user.id].length >= 2 || pi >= bids.length) return;
+                        const bid = bids[pi];
+                        const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
+                        const alreadyHas = awarded[user.id].some(a => a.startDate === bid.startDate && a.endDate === bid.endDate);
+                        if (!alreadyHas) candidates.push({ user, startDate: bid.startDate, endDate: bid.endDate, slotLetter });
+                    });
+                    if (!candidates.length) continue;
+                    const { won } = resolveConflicts(candidates);
+                    won.forEach(({ user, startDate, endDate, slotLetter }) => {
+                        const a = makeAssignment(user, startDate, endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded');
+                        const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
+                        if (usedDays + a.days <= 30) awarded[user.id].push(a);
+                    });
+                }
+
+                sortedMaintUsers.forEach(user => {
+                    const pos = resolvePos(user.position || 'Unassigned');
+                    const assignedKeys = new Set(awarded[user.id].map(a => a.startDate + '|' + a.endDate));
+                    while (awarded[user.id].length < 2) {
+                        let found = false;
+                        for (const month of months) {
+                            if (found) break;
+                            if (!slotAvailability[month]?.[pos]) continue;
+                            for (const letter of ['A', 'B', 'C']) {
+                                if (slotAvailability[month][pos][letter] <= 0) continue;
+                                const dates = slotDates[pos]?.[month]?.[letter];
+                                if (!dates) continue;
+                                const dk = dates.start + '|' + dates.end;
+                                if (assignedKeys.has(dk)) continue;
+                                const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
+                                const days = Math.ceil((new Date(dates.end) - new Date(dates.start)) / 86400000) + 1;
+                                if (usedDays + days > 30) continue;
+                                const a = makeAssignment(user, dates.start, dates.end, letter, awarded[user.id].length + 1, 'Auto-Assigned');
+                                awarded[user.id].push(a);
+                                assignedKeys.add(dk);
+                                slotAvailability[month][pos][letter]--;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) break;
+                    }
+                });
+
+                const maintResults = [];
+                sortedMaintUsers.forEach((user, idx) => {
+                    const rank = posRankMap[user.id]?.posRank || (idx + 1);
+                    awarded[user.id].forEach((a, si) => {
+                        maintResults.push({ ...a, seniorityRank: rank, positionSeniorityRank: rank, slotOrder: si + 1, entitlement: 30 });
+                    });
+                });
+
+                this.state.maintResults = maintResults;
+                this.state.isMaintProcessed = true;
+                await this.saveConfigToSupabase();
+
+                const bidAwarded = maintResults.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = maintResults.filter(r => r.type === 'Auto-Assigned').length;
+                alert('Successfully processed ' + sortedMaintUsers.length + ' maintenance staff!\n\n'
+                    + 'Total slots assigned: ' + maintResults.length + '\n'
+                    + 'Bid Awards: ' + bidAwarded + '\n'
+                    + 'Auto-Assigned: ' + autoAssigned + '\n'
+                    + 'Total leave days: ' + maintResults.reduce((s, r) => s + r.days, 0));
+                this.renderAdminView();
+            },
+
+            exportMaintResults() {
+                const maintResults = this.state.maintResults || [];
+                if (!maintResults.length) { alert('No maintenance results to export. Process maintenance bids first.'); return; }
+                const empTotalDays = {};
+                maintResults.forEach(r => { empTotalDays[r.employeeId] = (empTotalDays[r.employeeId] || 0) + (r.days || 0); });
+                const wsData = [['Rank','Staff ID','Name','Position','Department','Slot','Month','Start','End','Days','Type','Total Days']];
+                maintResults.forEach(r => wsData.push([
+                    r.positionSeniorityRank || r.seniorityRank || '',
+                    r.employeeId, r.employeeName, r.position || '', r.department || '',
+                    r.slotName || '', r.month || '', r.startDate || '', r.endDate || '',
+                    r.days || 0, r.type || '', empTotalDays[r.employeeId] || 0
+                ]));
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Maintenance Results');
+                XLSX.writeFile(wb, 'maintenance_bid_results_' + this.state.biddingYear + '.xlsx');
+            },
+
+            async resetMaintProcessing() {
+                if (!confirm('Reset maintenance processing? This will clear all maintenance results.')) return;
+                this.state.maintResults = [];
+                this.state.isMaintProcessed = false;
+                await this.saveConfigToSupabase();
+                this.renderAdminView();
+            },
+
+            renderMaintResultsView() {
+                const contentEl = document.getElementById('contentArea');
+                const maintResults = this.state.maintResults || [];
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const getUserInfo = (id) => maintUsers.find(u => u.id === id) || {};
+
+                const byEmployee = {};
+                maintResults.forEach(r => {
+                    if (!byEmployee[r.employeeId]) byEmployee[r.employeeId] = [];
+                    byEmployee[r.employeeId].push(r);
+                });
+
+                const slotCell = (s) => {
+                    if (!s) return '<span class="text-gray-300">&#8212;</span>';
+                    const tc = s.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600';
+                    return '<span class="font-semibold">' + (s.slotName || '') + '</span><br>'
+                         + '<span class="text-xs text-gray-500">' + (s.month || '') + ': ' + (s.startDate || '') + ' &#8594; ' + (s.endDate || '') + '</span><br>'
+                         + '<span class="text-xs font-semibold ' + tc + '">' + (s.type || '') + '</span>'
+                         + ' <span class="text-xs text-gray-400">(' + (s.days || 0) + 'd)</span>';
+                };
+
+                let rows = '';
+                Object.entries(byEmployee).forEach(([empId, slots], rowIdx) => {
+                    const user  = getUserInfo(empId);
+                    const slot1 = slots.find(s => s.slotOrder === 1);
+                    const slot2 = slots.find(s => s.slotOrder === 2);
+                    const total = slots.reduce((s, r) => s + r.days, 0);
+                    const rowBg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-orange-50';
+                    const tc    = total > 30 ? 'text-red-600' : 'text-gray-800';
+                    const rank  = slot1 ? (slot1.positionSeniorityRank || slot1.seniorityRank || '&#8212;') : '&#8212;';
+                    rows += '<tr class="' + rowBg + ' hover:bg-yellow-50 border-b border-gray-100">'
+                          + '<td class="p-3 text-center font-mono text-gray-500">#' + rank + '</td>'
+                          + '<td class="p-3 font-mono text-xs text-gray-600">' + empId + '</td>'
+                          + '<td class="p-3 font-semibold text-gray-800">' + (user.name || (slot1 && slot1.employeeName) || 'Unknown') + '</td>'
+                          + '<td class="p-3 text-xs text-gray-600">' + (user.position || (slot1 && slot1.position) || '&#8212;')
+                          + '<br><span class="text-gray-400">' + (user.department || (slot1 && slot1.department) || '') + '</span></td>'
+                          + '<td class="p-3 text-xs text-gray-600">' + ((slot1 && slot1.yearsOfService) || '&#8212;') + ' yrs</td>'
+                          + '<td class="p-3 text-xs">' + slotCell(slot1) + '</td>'
+                          + '<td class="p-3 text-xs">' + slotCell(slot2) + '</td>'
+                          + '<td class="p-3 font-bold text-center ' + tc + '">' + total + 'd'
+                          + '<br><span class="text-xs font-normal text-gray-400">/ 30</span></td>'
+                          + '</tr>';
+                });
+
+                const totalStaff   = Object.keys(byEmployee).length;
+                const bidAwarded   = maintResults.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = maintResults.filter(r => r.type === 'Auto-Assigned').length;
+                const totalDays    = maintResults.reduce((s, r) => s + r.days, 0);
+
+                const emptyHtml =
+                    '<div class="text-center py-12">'
+                    + '<p class="text-gray-600 font-semibold text-xl mb-2">No maintenance results yet</p>'
+                    + '<p class="text-gray-400 text-sm">Process maintenance bids from the Admin panel first.</p>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold">Go to Admin Panel</button>'
+                    + '</div>';
+
+                const statsHtml =
+                    '<div class="mb-4 flex flex-wrap gap-3 text-sm">'
+                    + '<span class="bg-orange-50 border border-orange-200 px-3 py-1 rounded-full">' + totalStaff + ' staff</span>'
+                    + '<span class="bg-green-50 border border-green-200 px-3 py-1 rounded-full">&#10003; ' + bidAwarded + ' bid awards</span>'
+                    + '<span class="bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">' + autoAssigned + ' auto-assigned</span>'
+                    + '<span class="bg-gray-50 border border-gray-200 px-3 py-1 rounded-full">' + totalDays + ' total days</span>'
+                    + '</div>';
+
+                const tableHtml =
+                    statsHtml
+                    + '<div class="overflow-x-auto"><table class="w-full text-sm border-collapse">'
+                    + '<thead class="bg-orange-50"><tr>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Rank</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Staff ID</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Name</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Position</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Seniority</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Slot 1</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Slot 2</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Total Days</th>'
+                    + '</tr></thead>'
+                    + '<tbody>' + rows + '</tbody>'
+                    + '</table></div>';
+
+                contentEl.innerHTML =
+                    '<div class="max-w-7xl mx-auto"><div class="bg-white rounded-xl shadow-xl p-6">'
+                    + '<div class="flex items-center justify-between mb-6">'
+                    + '<div><h2 class="text-2xl font-bold">Maintenance Staff Leave Assignments ' + this.state.biddingYear + '</h2>'
+                    + '<p class="text-gray-500 text-sm mt-1">Seniority-based per position group. Entitlement: 30 days.</p></div>'
+                    + '<div class="flex gap-2">'
+                    + '<button onclick="app.exportMaintResults()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">Export to Excel</button>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-300">Back to Admin</button>'
+                    + '</div></div>'
+                    + (maintResults.length === 0 ? emptyHtml : tableHtml)
+                    + '</div></div>';
+            },
+
             exportResults() {
                 if (this.state.results.length === 0) {
                     alert('No results to export');
@@ -5492,108 +6336,113 @@
                 if (!container) return;
 
                 const emp   = this.state.verifiedEmployee;
-                const caps  = this.state.slotCapacities;
                 const userBids = this.state.bids.filter(b => b.employeeId === emp?.id);
                 const isProcessed = this.state.isProcessed;
+                // Route to the correct store based on user type
+                const isMaint = this.state.userType === 'maintenancestaff';
+                const storeOptions = isMaint
+                    ? [{ caps: this.state.maintSlotCapacities, prefix: 'cal-maint-' }]
+                    : [{ caps: this.state.slotCapacities,      prefix: 'cal-' }];
+                let caps        = storeOptions[0].caps;
+                let activePrefix = storeOptions[0].prefix;
 
-                // Re-look up employee in the full employees array to get their stored dept
                 const fullEmp = this.state.employees.find(e => e.id === emp?.id) || emp || {};
 
-                // Build a prioritised list of dept candidates to try
-                const deptCandidates = [...new Set([
-                    fullEmp.department,
-                    fullEmp.position,
-                    emp?.department,
-                    emp?.position
-                ].filter(Boolean))];
+                const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const normalizeDept = (d) => {
+                    if (!d) return '';
+                    return d.replace(/\.\d+(\s*\(.*?\))?$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                };
+                const rawCandidates = [fullEmp.department, fullEmp.position, emp?.department, emp?.position].filter(Boolean);
+                const normalizedCandidates = rawCandidates.map(d =>
+                    d.replace(/\.\d+(\s*\(.*?\))?$/, '').replace(/\s+/g, ' ').trim()
+                );
+                const deptCandidates = [...new Set([...rawCandidates, ...normalizedCandidates].filter(Boolean))];
 
-                // Helper: robustly coerce enabled value (boolean true OR string "true"),
-                // with backward-compat: absent key + dates present → treat as enabled
-                const isEnabled = (dept, sid) => {
-                    const raw = caps[`cal-${dept}-${month}-${sid}-enabled`];
-                    if (raw === undefined || raw === null) {
-                        const hasStart = caps[`cal-${dept}-${month}-${sid}-start`];
-                        const hasEnd   = caps[`cal-${dept}-${month}-${sid}-end`];
-                        return !!(hasStart && hasEnd);
-                    }
-                    if (typeof raw === 'string') return raw === 'true';
-                    return !!raw;
+                const colorMap = {
+                    SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
+                    SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
+                    SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
                 };
 
-                // Try each dept candidate until we find configured slots
-                let resolvedDept = null;
-                let slotDefs = [];
+                const isEnabledIn = (store, prefix, dept, sid) => {
+                    const raw = store[prefix + dept + '-' + month + '-' + sid + '-enabled'];
+                    if (raw === undefined || raw === null)
+                        return !!(store[prefix + dept + '-' + month + '-' + sid + '-start'] &&
+                                  store[prefix + dept + '-' + month + '-' + sid + '-end']);
+                    return typeof raw === 'string' ? raw === 'true' : !!raw;
+                };
 
-                for (const deptTry of deptCandidates) {
-                    const defs = ['SA','SB','SC'].map(sid => {
-                        if (!isEnabled(deptTry, sid)) return null;
-                        const start    = caps[`cal-${deptTry}-${month}-${sid}-start`];
-                        const end      = caps[`cal-${deptTry}-${month}-${sid}-end`];
+                const buildSlotDefsIn = (store, prefix, deptKey) => {
+                    return ['SA','SB','SC'].map(sid => {
+                        if (!isEnabledIn(store, prefix, deptKey, sid)) return null;
+                        const start = store[prefix + deptKey + '-' + month + '-' + sid + '-start'];
+                        const end   = store[prefix + deptKey + '-' + month + '-' + sid + '-end'];
                         if (!start || !end) return null;
-                        const capacity = parseInt(caps[`cal-${deptTry}-${month}-${sid}-capacity`]) || 1;
-                        const days     = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
-                        const colorMap = {
-                            SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
-                            SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
-                            SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
-                        };
+                        const capacity = parseInt(store[prefix + deptKey + '-' + month + '-' + sid + '-capacity']) || 1;
+                        const days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
                         return { sid, start, end, capacity, days, colors: colorMap[sid] };
                     }).filter(Boolean);
+                };
 
-                    if (defs.length > 0) {
-                        resolvedDept = deptTry;
-                        slotDefs = defs;
-                        break;
-                    }
-                }
-
-                // Last-resort fallback: scan ALL slotCapacity keys for this month
-                // (handles cases where dept in employee record doesn't match key exactly)
-                if (slotDefs.length === 0) {
-                    const allKeys = Object.keys(caps);
-                    const monthPattern = new RegExp(`^cal-(.+)-${month}-(SA|SB|SC)-start$`);
-                    const foundDepts = new Set();
-                    allKeys.forEach(k => {
-                        const m = k.match(monthPattern);
-                        if (m) foundDepts.add(m[1]);
-                    });
-
-                    // Pick the first dept that has any enabled slot in this month
-                    for (const deptTry of foundDepts) {
-                        const defs = ['SA','SB','SC'].map(sid => {
-                            if (!isEnabled(deptTry, sid)) return null;
-                            const start    = caps[`cal-${deptTry}-${month}-${sid}-start`];
-                            const end      = caps[`cal-${deptTry}-${month}-${sid}-end`];
-                            if (!start || !end) return null;
-                            const capacity = parseInt(caps[`cal-${deptTry}-${month}-${sid}-capacity`]) || 1;
-                            const days     = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
-                            const colorMap = {
-                                SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
-                                SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
-                                SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
-                            };
-                            return { sid, start, end, capacity, days, colors: colorMap[sid] };
-                        }).filter(Boolean);
-
+                // Pass 1: exact key lookup
+                let resolvedDept = null;
+                let slotDefs = [];
+                outer1: for (const { caps: store, prefix } of storeOptions) {
+                    for (const deptTry of deptCandidates) {
+                        const defs = buildSlotDefsIn(store, prefix, deptTry);
                         if (defs.length > 0) {
-                            resolvedDept = deptTry;
-                            slotDefs = defs;
-                            break;
+                            caps = store; activePrefix = prefix;
+                            resolvedDept = deptTry; slotDefs = defs;
+                            break outer1;
                         }
                     }
                 }
 
-                // Count bids per slot for display only — slots are NEVER blocked by bid count.
-                // Multiple employees may bid the same slot; allocation is resolved by seniority at processing time.
+                // Pass 2: full key scan with scoring
+                if (slotDefs.length === 0) {
+                    const suffix = '-' + month + '-';
+                    const empNorms = [...new Set([...rawCandidates, ...normalizedCandidates].map(normalizeDept).filter(Boolean))];
+                    const scoreMatch = (dk) => {
+                        const dn = normalizeDept(dk);
+                        for (const c of empNorms) {
+                            if (dn === c) return 3;
+                            if (c.startsWith(dn)) return 2;
+                            if (dn.startsWith(c)) return 1;
+                        }
+                        return 0;
+                    };
+                    outer2: for (const { caps: store, prefix } of storeOptions) {
+                        const foundDepts = new Set();
+                        Object.keys(store).forEach(k => {
+                            if (!k.startsWith(prefix)) return;
+                            const mid = k.indexOf(suffix);
+                            if (mid === -1) return;
+                            if (!/^(SA|SB|SC)-start$/.test(k.slice(mid + suffix.length))) return;
+                            const dp = k.slice(prefix.length, mid);
+                            if (dp) foundDepts.add(dp);
+                        });
+                        const ranked = [...foundDepts].map(d => ({ d, score: scoreMatch(d) }))
+                            .filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+                        for (const { d: deptTry } of ranked) {
+                            const defs = buildSlotDefsIn(store, prefix, deptTry);
+                            if (defs.length > 0) {
+                                caps = store; activePrefix = prefix;
+                                resolvedDept = deptTry; slotDefs = defs;
+                                break outer2;
+                            }
+                        }
+                    }
+                }
+
                 const bidCount = {};
                 if (resolvedDept) {
                     this.state.bids.forEach(b => {
                         ['SA','SB','SC'].forEach(sid => {
-                            const s = caps[`cal-${resolvedDept}-${month}-${sid}-start`];
-                            const e = caps[`cal-${resolvedDept}-${month}-${sid}-end`];
-                            if (s && e && b.startDate === s && b.endDate === e) {
+                            const s = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-start'];
+                            const e = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-end'];
+                            if (s && e && b.startDate === s && b.endDate === e)
                                 bidCount[sid] = (bidCount[sid] || 0) + 1;
-                            }
                         });
                     });
                 }
@@ -5615,12 +6464,22 @@
 
                 if (slotDefs.length === 0) {
                     const diagDept = deptCandidates.join(' / ') || '(no department on record)';
-                    container.innerHTML = `
-                        <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
-                            <p class="text-yellow-700 font-semibold">📭 No slots configured for ${month}</p>
-                            <p class="text-xs text-yellow-600 mt-1">The planner has not opened any slots for this month yet.</p>
-                            <p class="text-xs text-gray-400 mt-2">Dept lookup: <code>${diagDept}</code></p>
-                        </div>`;
+                    const monthKeys = Object.keys(caps).filter(k => k.includes('-' + month + '-') && k.endsWith('-start'));
+                    const diagKeys = monthKeys.length > 0
+                        ? [...new Set(monthKeys.map(k => k.replace('-' + month + '-SA-start','').replace('-' + month + '-SB-start','').replace('-' + month + '-SC-start','').replace(/^cal-maint-/,'').replace(/^cal-/,'')))].join(', ')
+                        : 'none';
+                    const allStartKeys = Object.keys(caps).filter(k => /-(SA|SB|SC)-start$/.test(k));
+                    const allConfigDepts = [...new Set(allStartKeys.map(k => k.replace(/^cal-maint-/,'').replace(/^cal-/,'').replace(/-(SA|SB|SC)-start$/,'').replace(/-(January|February|March|April|May|June|July|August|September|October|November|December)-/,' -> ')))].slice(0,20);
+                    const allDeptsHtml = allConfigDepts.length > 0 ? allConfigDepts.join('<br>') : 'No slots configured anywhere yet';
+                    container.innerHTML =
+                        '<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">'
+                        + '<p class="text-yellow-700 font-semibold">No slots configured for ' + month + '</p>'
+                        + '<p class="text-xs text-yellow-600 mt-1">The planner has not opened any slots for this month yet.</p>'
+                        + '<p class="text-xs text-gray-400 mt-2">Dept lookup tried: <code>' + diagDept + '</code></p>'
+                        + '<p class="text-xs text-gray-400 mt-1">Configured depts for ' + month + ': <code>' + diagKeys + '</code></p>'
+                        + '<details class="mt-2 text-left"><summary class="text-xs text-gray-400 cursor-pointer">All configured dept/month combinations (' + allConfigDepts.length + ')</summary>'
+                        + '<div class="mt-1 text-xs text-gray-500 font-mono bg-white border rounded p-2 max-h-32 overflow-y-auto">' + allDeptsHtml + '</div></details>'
+                        + '</div>';
                     return;
                 }
 
@@ -5925,6 +6784,11 @@
                     return false;
                 }
                 try {
+                    // Route maintenance staff to their own table
+                    const table = this.state.userType === 'maintenancestaff'
+                        ? 'maint_leave_requests'
+                        : 'leave_requests';
+
                     const row = {
                         tenant_id: this._tid(),
                         employee_id: bid.employeeId,
@@ -5941,7 +6805,7 @@
                     // Upsert: if a row with same employee_id + start_date already exists, update it.
                     // This avoids the race condition from delete-then-insert.
                     const { data, error: upsertError } = await this.supabase
-                        .from('leave_requests')
+                        .from(table)
                         .upsert(row, { onConflict: 'employee_id,start_date' })
                         .select();
 
@@ -5949,7 +6813,7 @@
                         // Fallback: try plain insert if upsert fails (e.g. constraint not set up)
                         console.warn('⚠️ Upsert failed, trying insert:', upsertError.message);
                         const { error: insertError } = await this.supabase
-                            .from('leave_requests')
+                            .from(table)
                             .insert(row);
                         if (insertError) {
                             console.error('❌ Supabase bid insert error:', insertError.message);
@@ -5957,7 +6821,7 @@
                         }
                     }
 
-                    console.log('✅ Bid saved to Supabase:', data);
+                    console.log(`✅ Bid saved to Supabase [${table}]:`, data);
                     return true;
                 } catch (e) {
                     console.error('❌ Supabase bid save exception:', e.message);
@@ -5980,18 +6844,21 @@
                     this.saveState();
                     this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
 
-                    // Delete from Supabase immediately
+                    // Delete from Supabase immediately — route by user type
                     if (this.supabase) {
+                        const table = this.state.userType === 'maintenancestaff'
+                            ? 'maint_leave_requests'
+                            : 'leave_requests';
                         this.supabase
-                            .from('leave_requests')
+                            .from(table)
                             .delete()
                             .eq('tenant_id', this._tid())
                             .eq('employee_id', employeeId)
                             .eq('slot_type', slotType)
                             .eq('start_date', startDate)
                             .then(({ error }) => {
-                                if (error) console.warn('⚠️ Could not delete bid from Supabase:', error.message);
-                                else console.log('✅ Bid deleted from Supabase');
+                                if (error) console.warn(`⚠️ Could not delete bid from ${table}:`, error.message);
+                                else console.log(`✅ Bid deleted from ${table}`);
                             });
                     }
 
@@ -7887,6 +8754,8 @@
                         is_processed: this.state.isProcessed,
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
+                        maint_results: this.state.maintResults || [],
+                        is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
                         last_updated: new Date().toISOString()
                     };
@@ -8801,10 +9670,11 @@
                                 group: isGC ? 'gc' : 'cs',
                                 dept: isGC ? 'Golden Command' : 'Corporate Staff',
                                 leaveSet: new Set(),
+                                bids: [],
                                 totalDays: 0
                             };
                         }
-                        // Expand bid date range into individual days
+                        // Expand bid date range into individual days (for calendar cell highlighting only)
                         if (bid.startDate && bid.endDate) {
                             var cur = new Date(bid.startDate + 'T00:00:00');
                             var end = new Date(bid.endDate + 'T00:00:00');
@@ -8815,7 +9685,9 @@
                         } else if (bid.startDate) {
                             staffMap[id].leaveSet.add(bid.startDate);
                         }
-                        staffMap[id].totalDays = staffMap[id].leaveSet.size;
+                        // Store raw bid and accumulate totalDays from bid.days (not leaveSet.size)
+                        staffMap[id].bids.push(bid);
+                        staffMap[id].totalDays += (bid.days || 0);
                     });
 
                     var staff = Object.values(staffMap);
@@ -8841,8 +9713,25 @@
                 }
 
                 function lcBuildStats(staff, dates) {
+                    var monthStart = dates.length ? dates[0] : null;
+                    var monthEnd   = dates.length ? dates[dates.length - 1] : null;
                     var totalLD = staff.reduce(function(a, s) {
-                        return a + (lcViewMode === 'full' ? s.totalDays : dates.filter(function(d) { return s.leaveSet.has(lcDK(d)); }).length);
+                        if (lcViewMode === 'full') return a + s.totalDays;
+                        // Proportional bid.days overlap for month view
+                        var mDays = 0;
+                        (s.bids || []).forEach(function(bid) {
+                            if (!bid.startDate || !monthStart) return;
+                            var bs = new Date(bid.startDate + 'T00:00:00');
+                            var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
+                            var overlapStart = bs < monthStart ? monthStart : bs;
+                            var overlapEnd   = be > monthEnd   ? monthEnd   : be;
+                            if (overlapStart > overlapEnd) return;
+                            var totalCalDays   = Math.round((be - bs) / 86400000) + 1;
+                            var overlapCalDays = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+                            var proportion = totalCalDays > 0 ? overlapCalDays / totalCalDays : 0;
+                            mDays += Math.round((bid.days || 0) * proportion);
+                        });
+                        return a + mDays;
                     }, 0);
                     var onToday = staff.filter(function(s) { return s.leaveSet.has(lcTodayStr); }).length;
                     var gcCount = staff.filter(function(s) { return s.group === 'gc'; }).length;
@@ -8894,7 +9783,29 @@
                               + '</div>'
                               + '</div>';
                         members.forEach(function(s) {
-                            var leaveInView = dates.filter(function(d) { return s.leaveSet.has(lcDK(d)); }).length;
+                            // Compute days-in-view from bid.days proportionally (avoids weekend inflation)
+                            var leaveInView;
+                            if (lcViewMode === 'full') {
+                                leaveInView = s.totalDays;
+                            } else {
+                                var monthStart = dates.length ? dates[0] : null;
+                                var monthEnd   = dates.length ? dates[dates.length - 1] : null;
+                                leaveInView = 0;
+                                if (monthStart && monthEnd) {
+                                    (s.bids || []).forEach(function(bid) {
+                                        if (!bid.startDate) return;
+                                        var bs = new Date(bid.startDate + 'T00:00:00');
+                                        var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
+                                        var overlapStart = bs < monthStart ? monthStart : bs;
+                                        var overlapEnd   = be > monthEnd   ? monthEnd   : be;
+                                        if (overlapStart > overlapEnd) return;
+                                        var totalCalDays  = Math.round((be - bs) / 86400000) + 1;
+                                        var overlapCalDays = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+                                        var proportion = totalCalDays > 0 ? overlapCalDays / totalCalDays : 0;
+                                        leaveInView += Math.round((bid.days || 0) * proportion);
+                                    });
+                                }
+                            }
                             var cells = dates.map(function(d) {
                                 var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), td = dk === lcTodayStr;
                                 var cls = 'lc-c' + (lv ? ' leave' : '') + (we ? ' wknd' : '') + (td ? ' td-c' : '');
@@ -9159,13 +10070,26 @@
                 this.filterAuditLog();
             },
 
+            _highlightNavTab(btn, role) {
+                document.querySelectorAll('.lp-nav-tab').forEach(t => t.classList.remove('active'));
+                btn.classList.add('active');
+                app.setLoginType(role);
+            },
+
             _updateLandingStats() {
-                const count = this.state.employees ? this.state.employees.length : 0;
-                const countStr = count > 0 ? count.toLocaleString() : '—';
+                const opsCount = this.state.employees ? this.state.employees.length : 0;
+                const maintCount = this.state.maintenanceStaffUsers ? this.state.maintenanceStaffUsers.length : 0;
+                const totalCount = opsCount + maintCount;
+                const countStr = totalCount > 0 ? totalCount.toLocaleString() : '—';
                 ['statsEmpCount','statsEmpBadge','statsEmpStatus'].forEach(id => {
                     const el = document.getElementById(id);
-                    if (el) el.textContent = count > 0 ? countStr : '—';
+                    if (el) el.textContent = totalCount > 0 ? countStr : '—';
                 });
+                // Update label to reflect both staff types
+                const labelEl = document.querySelector('.lp-stat-label');
+                if (labelEl && maintCount > 0) {
+                    labelEl.textContent = `👥 Total Staff (Ops: ${opsCount} | Maint: ${maintCount})`;
+                }
             },
 
             _startClock() {
@@ -9240,6 +10164,12 @@
                             this._pendingLogin = {
                                 gcId: document.getElementById('gcLoginId')?.value?.trim() || '',
                                 gcPw: document.getElementById('gcLoginPwd')?.value || ''
+                            };
+                        } else if (id === 'maintLoginId' || id === 'maintLoginPwd') {
+                            this.state.loginType = 'maintenancestaff';
+                            this._pendingLogin = {
+                                maintId: document.getElementById('maintLoginId')?.value?.trim() || '',
+                                maintPw: document.getElementById('maintLoginPwd')?.value || ''
                             };
                         }
                     }
