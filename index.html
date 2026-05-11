@@ -788,10 +788,6 @@
                     <div class="lp-nav-title">Annual Leave System</div>
                 </div>
                 <div class="lp-navbar-center" style="background:transparent;border:none;gap:4px;">
-                    <button class="lp-nav-tab active" data-role="employee" onclick="app._highlightNavTab(this,'employee')">Operation Staff</button>
-                    <button class="lp-nav-tab" data-role="corporatestaff" onclick="app._highlightNavTab(this,'corporatestaff')">Corp Staff</button>
-                    <button class="lp-nav-tab" data-role="goldencommand" onclick="app._highlightNavTab(this,'goldencommand')">⭐ GC</button>
-                    <button class="lp-nav-tab" data-role="maintenancestaff" onclick="app._highlightNavTab(this,'maintenancestaff')">🔧 Maintenance Staff</button>
                     <button class="lp-nav-tab planner-tab" data-role="planner" onclick="
                         app.state.loginType='planner';
                         const pw=document.getElementById('plannerLoginPwd')?.value||'';
@@ -799,6 +795,10 @@
                         document.getElementById('plannerSignInModal').style.display='flex';
                         setTimeout(()=>document.getElementById('plannerModalPwd')?.focus(),50);
                     ">🛠️ Planner</button>
+                    <button class="lp-nav-tab" data-role="corporatestaff" onclick="app._highlightNavTab(this,'corporatestaff')">Corp Staff</button>
+                    <button class="lp-nav-tab" data-role="goldencommand" onclick="app._highlightNavTab(this,'goldencommand')">⭐ GC</button>
+                    <button class="lp-nav-tab" data-role="maintenancestaff" onclick="app._highlightNavTab(this,'maintenancestaff')">🔧 Maintenance Staff</button>
+
                 </div>
                 <div class="lp-navbar-right">
                     <button class="lp-theme-btn" title="Toggle theme">🌙</button>
@@ -903,6 +903,7 @@
                             app.handleLogin();
                         ">Sign In</button>
                     </div>
+
 
                     <!-- 2. Corp Staff Card -->
                     <div class="lp-login-card" style="animation-delay:0.2s">
@@ -1293,31 +1294,31 @@
                         }
                     }
                     
-                    // Load bids (leave_requests)
-                    let allBids = [];
-                    from = 0;
-                    hasMore = true;
-                    
-                    while (hasMore) {
-                        const { data: bidsBatch, error: bidsError } = await this.supabase
-                            .from('leave_requests')
-                            .select('*')
-                            .eq('tenant_id', this._tid())
-                            .range(from, from + batchSize - 1);
-                        
-                        if (bidsError) {
-                            if (bidsError.code !== 'PGRST116') {
-                                console.warn('No bids found or error:', bidsError);
-                            }
-                            hasMore = false;
-                        } else if (bidsBatch && bidsBatch.length > 0) {
-                            allBids = [...allBids, ...bidsBatch];
-                            hasMore = bidsBatch.length === batchSize;
-                            from += batchSize;
-                        } else {
-                            hasMore = false;
+                    // Load bids from BOTH leave_requests and maint_leave_requests
+                    const _fetchBidTable = async (tableName) => {
+                        let rows = [], pg = 0, more = true;
+                        while (more) {
+                            const { data: batch, error: err } = await this.supabase
+                                .from(tableName).select('*')
+                                .eq('tenant_id', this._tid())
+                                .range(pg, pg + batchSize - 1);
+                            if (err) {
+                                if (err.code !== 'PGRST116') console.warn(`No bids / error [${tableName}]:`, err);
+                                more = false;
+                            } else if (batch && batch.length > 0) {
+                                rows = [...rows, ...batch];
+                                more = batch.length === batchSize;
+                                pg += batchSize;
+                            } else { more = false; }
                         }
-                    }
+                        return rows;
+                    };
+                    const [regularBids, maintBids] = await Promise.all([
+                        _fetchBidTable('leave_requests'),
+                        _fetchBidTable('maint_leave_requests')
+                    ]);
+                    let allBids = [...regularBids, ...maintBids];
+                    console.log(`✅ Initial load: ${regularBids.length} regular + ${maintBids.length} maintenance bids`);
                     
                     // Load system config
                     const { data: config, error: configError } = await this.supabase
@@ -1354,18 +1355,23 @@
                     }
                     
                     // Load bids — Supabase is source of truth
-                    // Map Supabase rows to app bid format
-                    const supabaseBids = (allBids || []).map(bid => ({
-                        employeeId: bid.employee_id,
-                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
-                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
-                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
-                        slotType: bid.slot_type || 'slotA',
-                        startDate: bid.start_date,
-                        endDate: bid.end_date,
-                        days: bid.days_requested,
-                        timestamp: bid.created_at
-                    }));
+                    // Map Supabase rows to app bid format (look up name/dept from both employee and maintenance lists)
+                    const supabaseBids = (allBids || []).map(bid => {
+                        const emp  = this.state.employees.find(e => e.id === bid.employee_id);
+                        const mEmp = (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id);
+                        return {
+                            employeeId:   bid.employee_id,
+                            employeeName: bid.employee_name || emp?.name || mEmp?.name || '',
+                            seniorityDate: emp?.seniorityDate || mEmp?.seniorityDate || '',
+                            department:   bid.department || emp?.department || mEmp?.department || '',
+                            position:     emp?.position  || mEmp?.position  || '',
+                            slotType:     bid.slot_type || 'slotA',
+                            startDate:    bid.start_date,
+                            endDate:      bid.end_date,
+                            days:         bid.days_requested,
+                            timestamp:    bid.created_at
+                        };
+                    });
 
                     // Also grab any locally-stored bids not yet in Supabase (safety net)
                     const localBids = JSON.parse(localStorage.getItem('bids') || '[]');
@@ -4528,36 +4534,51 @@
                 }
                 if (!silent) this.updateSystemStatus('Refreshing bids...');
                 try {
-                    let allBids = [];
-                    let from = 0;
-                    const batchSize = 1000;
+                    // Helper: paginate-fetch all rows from a given table
+                    const fetchAllFromTable = async (tableName) => {
+                        let rows = [], from = 0;
+                        const batchSize = 1000;
+                        while (true) {
+                            const { data: batch, error } = await this.supabase
+                                .from(tableName)
+                                .select('*')
+                                .range(from, from + batchSize - 1);
+                            if (error) { console.error(`❌ Bids fetch error [${tableName}]:`, error.message); break; }
+                            if (!batch || batch.length === 0) break;
+                            rows = [...rows, ...batch];
+                            if (batch.length < batchSize) break;
+                            from += batchSize;
+                        }
+                        return rows;
+                    };
 
-                    while (true) {
-                        const { data: batch, error } = await this.supabase
-                            .from('leave_requests')
-                            .select('*')
-                            .range(from, from + batchSize - 1);
-                        if (error) { console.error('❌ Bids fetch error:', error.message); break; }
-                        if (!batch || batch.length === 0) break;
-                        allBids = [...allBids, ...batch];
-                        if (batch.length < batchSize) break;
-                        from += batchSize;
-                    }
+                    // Fetch both regular AND maintenance bids in parallel
+                    const [regularRows, maintRows] = await Promise.all([
+                        fetchAllFromTable('leave_requests'),
+                        fetchAllFromTable('maint_leave_requests')
+                    ]);
 
-                    console.log(`✅ Fetched ${allBids.length} bids from Supabase`);
+                    const allBids = [...regularRows, ...maintRows];
+                    console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance bids from Supabase`);
 
-                    this.state.bids = allBids.map(bid => ({
+                    const mapBid = bid => ({
                         employeeId: bid.employee_id,
-                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name || '',
-                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate || '',
-                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department || '',
-                        position: this.state.employees.find(e => e.id === bid.employee_id)?.position || '',
+                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name ||
+                                      (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.name || '',
+                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate ||
+                                       (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department ||
+                                    (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.department || '',
+                        position: this.state.employees.find(e => e.id === bid.employee_id)?.position ||
+                                  (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.position || '',
                         slotType: bid.slot_type || 'slotA',
                         startDate: bid.start_date,
                         endDate: bid.end_date,
                         days: bid.days_requested,
                         timestamp: bid.created_at
-                    }));
+                    });
+
+                    this.state.bids = allBids.map(mapBid);
 
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
@@ -4763,16 +4784,17 @@
                 );
                 this.saveState();
 
-                // Delete from Supabase
+                // Delete from Supabase — route to correct table
                 if (this.supabase) {
+                    const table = this._isMaintStaff(employeeId) ? 'maint_leave_requests' : 'leave_requests';
                     const { error } = await this.supabase
-                        .from('leave_requests')
+                        .from(table)
                         .delete()
                         .eq('employee_id', employeeId)
                         .eq('slot_type', slotType)
                         .eq('start_date', startDate);
-                    if (error) console.warn('⚠️ Supabase delete error:', error.message);
-                    else console.log('✅ Bid deleted from Supabase');
+                    if (error) console.warn(`⚠️ Supabase delete error [${table}]:`, error.message);
+                    else console.log(`✅ Bid deleted from ${table}`);
                 }
 
                 this._liveUpdateAdminPanel();
@@ -4794,12 +4816,14 @@
                 this.saveState();
 
                 if (this.supabase) {
-                    const { error } = await this.supabase
-                        .from('leave_requests')
-                        .delete()
-                        .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all rows
-                    if (error) console.warn('⚠️ Supabase delete all error:', error.message);
-                    else console.log('✅ All bids deleted from Supabase');
+                    // Delete from both regular and maintenance tables
+                    const [r1, r2] = await Promise.all([
+                        this.supabase.from('leave_requests').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                        this.supabase.from('maint_leave_requests').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+                    ]);
+                    if (r1.error) console.warn('⚠️ Supabase delete all error [leave_requests]:', r1.error.message);
+                    if (r2.error) console.warn('⚠️ Supabase delete all error [maint_leave_requests]:', r2.error.message);
+                    if (!r1.error && !r2.error) console.log('✅ All bids deleted from both tables');
                 }
 
                 this._liveUpdateAdminPanel();
