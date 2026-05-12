@@ -4542,6 +4542,7 @@
                             const { data: batch, error } = await this.supabase
                                 .from(tableName)
                                 .select('*')
+                                .eq('tenant_id', this._tid())
                                 .range(from, from + batchSize - 1);
                             if (error) { console.error(`❌ Bids fetch error [${tableName}]:`, error.message); break; }
                             if (!batch || batch.length === 0) break;
@@ -4855,19 +4856,21 @@
 
                 if (this.supabase) {
                     if (tabFilter === 'maint') {
-                        // Only delete from maintenance table
+                        // Only delete from maint_leave_requests, scoped to this tenant
                         const { error } = await this.supabase
                             .from('maint_leave_requests')
-                            .delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                            .delete()
+                            .eq('tenant_id', this._tid());
                         if (error) console.warn('⚠️ Supabase delete all maint error:', error.message);
                         else console.log('✅ All maintenance bids deleted');
                     } else {
-                        // Employees and GC/CS both live in leave_requests — delete only their specific IDs
+                        // Employees and GC/CS both live in leave_requests
+                        // Delete only the specific employee IDs for this tab, scoped to this tenant
                         const idsToDelete = tabBids.map(b => b.employeeId);
-                        // Supabase .in() filter: delete rows whose employee_id is in the list
                         const { error } = await this.supabase
                             .from('leave_requests')
                             .delete()
+                            .eq('tenant_id', this._tid())
                             .in('employee_id', idsToDelete);
                         if (error) console.warn(`⚠️ Supabase delete all [${tabFilter}] error:`, error.message);
                         else console.log(`✅ All ${sectionName} bids deleted from leave_requests`);
@@ -4889,8 +4892,8 @@
 
                 if (this.supabase) {
                     const [r1, r2] = await Promise.all([
-                        this.supabase.from('leave_requests').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                        this.supabase.from('maint_leave_requests').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+                        this.supabase.from('leave_requests').delete().eq('tenant_id', this._tid()),
+                        this.supabase.from('maint_leave_requests').delete().eq('tenant_id', this._tid())
                     ]);
                     if (r1.error) console.warn('⚠️ Supabase delete all error [leave_requests]:', r1.error.message);
                     if (r2.error) console.warn('⚠️ Supabase delete all error [maint_leave_requests]:', r2.error.message);
