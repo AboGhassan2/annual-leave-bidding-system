@@ -4562,7 +4562,7 @@
                     const allBids = [...regularRows, ...maintRows];
                     console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance bids from Supabase`);
 
-                    const mapBid = bid => ({
+                    const mapBid = (bid, sourceTable) => ({
                         employeeId: bid.employee_id,
                         employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name ||
                                       (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.name || '',
@@ -4576,10 +4576,14 @@
                         startDate: bid.start_date,
                         endDate: bid.end_date,
                         days: bid.days_requested,
-                        timestamp: bid.created_at
+                        timestamp: bid.created_at,
+                        _sourceTable: sourceTable
                     });
 
-                    this.state.bids = allBids.map(mapBid);
+                    this.state.bids = [
+                        ...regularRows.map(b => mapBid(b, 'leave_requests')),
+                        ...maintRows.map(b => mapBid(b, 'maint_leave_requests'))
+                    ];
 
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
@@ -4632,9 +4636,15 @@
                 return allSpecial.includes(employeeId);
             },
 
-            _isMaintStaff(employeeId) {
+            _isMaintStaff(employeeId, bid) {
+                // Prefer the source table tag set at fetch time — reliable even when
+                // maintenanceStaffUsers list is not loaded in the admin session
+                if (bid && bid._sourceTable) return bid._sourceTable === 'maint_leave_requests';
+                // Fallback: check against loaded maintenance staff users list
                 const ids = (this.state.maintenanceStaffUsers || []).map(u => u.id);
-                return ids.includes(employeeId);
+                if (ids.length > 0) return ids.includes(employeeId);
+                // Last resort: check if any bid in state has this employeeId tagged as maint
+                return this.state.bids.some(b => b.employeeId === employeeId && b._sourceTable === 'maint_leave_requests');
             },
 
             _switchBidTab(tab) {
@@ -4674,7 +4684,7 @@
                     .filter(bid => {
                         // Tab filter
                         const isSpecial = this._isGcOrCs(bid.employeeId);
-                        const isMaint   = this._isMaintStaff(bid.employeeId);
+                        const isMaint   = this._isMaintStaff(bid.employeeId, bid);
                         if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
                         if (tabFilter === 'gccs'      && (!isSpecial || isMaint)) return false;
                         if (tabFilter === 'maint'     && !isMaint) return false;
@@ -4792,7 +4802,8 @@
 
                 // Delete from Supabase — route to correct table, await completion
                 if (this.supabase) {
-                    const table = this._isMaintStaff(employeeId) ? 'maint_leave_requests' : 'leave_requests';
+                    const bid = this.state.bids.find(b => b.employeeId === employeeId);
+                    const table = this._isMaintStaff(employeeId, bid) ? 'maint_leave_requests' : 'leave_requests';
                     const { error } = await this.supabase
                         .from(table)
                         .delete()
@@ -4822,7 +4833,7 @@
                 // Determine which bids belong to this tab
                 const tabBids = this.state.bids.filter(bid => {
                     const isSpecial = this._isGcOrCs(bid.employeeId);
-                    const isMaint   = this._isMaintStaff(bid.employeeId);
+                    const isMaint   = this._isMaintStaff(bid.employeeId, bid);
                     if (tabFilter === 'employees') return !isSpecial && !isMaint;
                     if (tabFilter === 'gccs')      return isSpecial && !isMaint;
                     if (tabFilter === 'maint')     return isMaint;
@@ -4846,7 +4857,7 @@
                 // Remove only the matching bids from local state
                 this.state.bids = this.state.bids.filter(bid => {
                     const isSpecial = this._isGcOrCs(bid.employeeId);
-                    const isMaint   = this._isMaintStaff(bid.employeeId);
+                    const isMaint   = this._isMaintStaff(bid.employeeId, bid);
                     if (tabFilter === 'employees') return isSpecial || isMaint;   // keep non-employee bids
                     if (tabFilter === 'gccs')      return !isSpecial || isMaint;  // keep non-gccs bids
                     if (tabFilter === 'maint')     return !isMaint;               // keep non-maint bids
@@ -5099,7 +5110,7 @@
                                         style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#4f46e5;color:#fff;">
                                         👤 Employees
                                         <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
-                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId)).length}
+                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId, b)).length}
                                         </span>
                                     </button>
                                     <button id="bidTabGcCs" onclick="app._switchBidTab('gccs')"
@@ -5113,7 +5124,7 @@
                                         style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
                                         🔧 Maintenance Staff
                                         <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
-                                            ${this.state.bids.filter(b => this._isMaintStaff(b.employeeId)).length}
+                                            ${this.state.bids.filter(b => this._isMaintStaff(b.employeeId, b)).length}
                                         </span>
                                     </button>
                                 </div>
