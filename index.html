@@ -4785,6 +4785,10 @@
                 const employeeId = decodeURIComponent(encodedId);
                 const slotType   = decodeURIComponent(encodedSlot);
                 const startDate  = decodeURIComponent(encodedStart);
+
+                // ✅ FIX: Look up the bid BEFORE removing it from state,
+                // so we can correctly determine the table and pass it to _isMaintStaff.
+                // Previously this lookup happened AFTER state removal, returning undefined.
                 const bid = this.state.bids.find(b => b.employeeId === employeeId && b.slotType === slotType && b.startDate === startDate);
                 const name = bid?.employeeName || employeeId;
                 if (!confirm(`Delete bid for ${name} (${slotType}, ${startDate})?\n\nThis cannot be undone.`)) return;
@@ -4802,14 +4806,16 @@
 
                 // Delete from Supabase — route to correct table, await completion
                 if (this.supabase) {
-                    const bid = this.state.bids.find(b => b.employeeId === employeeId);
+                    // ✅ FIX: Use the bid looked up above (before state removal), not a stale re-lookup.
+                    // Also added .eq('tenant_id') for safe scoping, consistent with bulk-delete functions.
                     const table = this._isMaintStaff(employeeId, bid) ? 'maint_leave_requests' : 'leave_requests';
                     const { error } = await this.supabase
                         .from(table)
                         .delete()
                         .eq('employee_id', employeeId)
                         .eq('slot_type', slotType)
-                        .eq('start_date', startDate);
+                        .eq('start_date', startDate)
+                        .eq('tenant_id', this._tid());
                     if (error) console.warn(`⚠️ Supabase delete error [${table}]:`, error.message);
                     else console.log(`✅ Bid deleted from ${table}`);
                 }
