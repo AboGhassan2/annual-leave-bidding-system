@@ -4037,9 +4037,10 @@
                                         ${this.state.months.map((month, monthIdx) => {
                                             const year = this.state.biddingYear;
                                             const pad = n => String(n).padStart(2,'0');
-                                            const lastDay = new Date(year, monthIdx+1, 0).getDate();
-                                            const defaultStart = `${year}-${pad(monthIdx+1)}-01`;
-                                            const defaultEnd = `${year}-${pad(monthIdx+1)}-${pad(lastDay)}`;
+                                            const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                            // 360-day calendar: each "month" is a fixed 30-day block (Jan1=day1)
+                                            const defaultStart = toDateStr(new Date(year, 0, monthIdx*30 + 1));
+                                            const defaultEnd = toDateStr(new Date(year, 0, (monthIdx+1)*30));
                                             return `<tr class="hover:bg-gray-50">
                                                 <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
                                                 ${['SA','SB','SC'].map((slotId, si) => {
@@ -4287,11 +4288,11 @@
                                     <tbody>
                                         ${this.state.months.map((month, monthIdx) => {
                                             const year = this.state.biddingYear;
-                                            // Default start = 1st of month, end = last day of month
+                                            // Default dates follow the 360-day calendar (30-day blocks per month, Jan1=day1)
                                             const pad = n => String(n).padStart(2, '0');
-                                            const lastDay = new Date(year, monthIdx + 1, 0).getDate();
-                                            const defaultStart = `${year}-${pad(monthIdx + 1)}-01`;
-                                            const defaultEnd   = `${year}-${pad(monthIdx + 1)}-${pad(lastDay)}`;
+                                            const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                            const defaultStart = toDateStr(new Date(year, 0, monthIdx*30 + 1));
+                                            const defaultEnd   = toDateStr(new Date(year, 0, (monthIdx+1)*30));
                                             return `
                                                 <tr class="hover:bg-gray-50">
                                                     <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
