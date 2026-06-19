@@ -8904,20 +8904,12 @@
                         last_updated: new Date().toISOString()
                     };
                     // Try UPDATE first (row already exists for this tenant)
-                    const { error: updateErr, data: updateData } = await this.supabase
+                    const { error } = await this.supabase
                         .from('system_config')
-                        .update(ejsPayload)
-                        .eq('tenant_id', this._tid())
-                        .select('id')
-                        .single();
-                    let error = null;
-                    if (updateErr || !updateData) {
-                        // Row doesn't exist yet — INSERT
-                        const { error: insertErr } = await this.supabase
-                            .from('system_config')
-                            .insert({ ...ejsPayload, tenant_id: this._tid() });
-                        error = insertErr;
-                    }
+                        .upsert(
+                            { id: 1, tenant_id: this._tid(), ...ejsPayload },
+                            { onConflict: 'id' }
+                        );
                     if (error) {
                         console.error('❌ Could not save config to Supabase:', error.message);
                         this.updateSystemStatus('⚠️ Save failed — data saved locally only');
