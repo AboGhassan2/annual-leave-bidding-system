@@ -2808,7 +2808,7 @@
                                     id="submitBidBtn"
                                     onclick="app.submitBid()"
                                     class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:opacity-50"
-                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}
                                 >
                                     Submit Bid
                                 </button>
@@ -3090,7 +3090,7 @@
                                 <button
                                     onclick="app.submitGCBid()"
                                     class="w-full px-6 py-3 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 transition-colors shadow-sm"
-                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}
                                 >
                                     ⭐ Submit Golden Command Bid
                                 </button>
@@ -3310,6 +3310,11 @@
             submitGCBid() {
                 if (this.state.isProcessed) {
                     alert('Bidding has been processed. No more bids allowed.');
+                    return;
+                }
+
+                if (this.isBiddingClosed()) {
+                    alert('⛔ The bidding deadline has passed. You can no longer submit bids.');
                     return;
                 }
 
@@ -3620,8 +3625,8 @@
                                 </div>
 
                                 <button onclick="app.submitCSBid()"
-                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
-                                    ${this.state.isProcessed ? 'disabled' : ''}>
+                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${(this.state.isProcessed || this.isBiddingClosed()) ? 'opacity-50 cursor-not-allowed' : ''}"
+                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}>
                                     🏢 Submit Corporate Staff Bid
                                 </button>
                             </div>
@@ -3758,6 +3763,7 @@
 
             submitCSBid() {
                 if (this.state.isProcessed) { alert('Bidding has been processed. No more bids.'); return; }
+                if (this.isBiddingClosed()) { alert('⛔ The bidding deadline has passed. You can no longer submit bids.'); return; }
                 const csUser = this.state.verifiedEmployee;
                 if (!csUser) return;
                 if (!window.csSelectedSlot) { alert('⚠️ Please select a slot type first.'); return; }
@@ -4970,7 +4976,7 @@
                                     id="biddingDeadline"
                                     value="${this.state.biddingDeadline}"
                                     class="w-full px-4 py-2 border-2 border-blue-300 rounded-lg"
-                                    onchange="app.state.biddingDeadline = this.value; app.saveConfigToSupabase()"
+                                    onchange="app.setBiddingDeadline(this.value)"
                                 />
                             </div>
 
@@ -6767,6 +6773,22 @@
                 return (start1 <= end2 && end1 >= start2);
             },
 
+            // Centralized deadline check — used to gate bid submission everywhere
+            isBiddingClosed() {
+                if (!this.state.biddingDeadline) return false;
+                return (new Date(this.state.biddingDeadline) - new Date()) <= 0;
+            },
+
+            // Sets the bidding deadline, ensuring a date-only pick (defaults to 00:00)
+            // closes at the END of that day rather than the very start of it.
+            setBiddingDeadline(val) {
+                if (val && /T00:00(:00)?$/.test(val)) {
+                    val = val.slice(0, 10) + 'T23:59';
+                }
+                this.state.biddingDeadline = val;
+                this.saveConfigToSupabase();
+            },
+
             submitBid() {
                 if (!this.state.verifiedEmployee) {
                     alert('Please login first');
@@ -6775,6 +6797,11 @@
 
                 if (this.state.isProcessed) {
                     alert('Bidding has been processed. No more bids allowed.');
+                    return;
+                }
+
+                if (this.isBiddingClosed()) {
+                    alert('⛔ The bidding deadline has passed. You can no longer submit bids.');
                     return;
                 }
 
