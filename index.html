@@ -3420,37 +3420,42 @@
                 this.renderGoldenCommandBiddingView();
             },
 
-            removeGCBid(slotType, startDate) {
+            async removeGCBid(slotType, startDate) {
                 if (this.state.isProcessed) {
                     alert('Cannot remove bids after processing.');
                     return;
                 }
+                if (!confirm('Remove this Golden Command bid?')) return;
                 const gcUser = this.state.verifiedEmployee;
-                if (confirm('Remove this Golden Command bid?')) {
-                    // Remove the first matching bid (slotType + startDate)
-                    const idx = this.state.bids.findIndex(bid =>
-                        bid.employeeId === gcUser.id && bid.slotType === slotType && bid.startDate === startDate
-                    );
-                    if (idx !== -1) this.state.bids.splice(idx, 1);
-                    this.saveState();
 
-                    // Delete from Supabase immediately
-                    if (this.supabase) {
-                        this.supabase
-                            .from('leave_requests')
-                            .delete()
-                            .eq('tenant_id', this._tid())
-                            .eq('employee_id', gcUser.id)
-                            .eq('slot_type', slotType)
-                            .eq('start_date', startDate)
-                            .then(({ error }) => {
-                                if (error) console.warn('⚠️ Could not delete GC bid from Supabase:', error.message);
-                                else console.log('✅ GC Bid deleted from Supabase');
-                            });
-                    }
+                // 1. Optimistically remove from local state and persist immediately
+                const idx = this.state.bids.findIndex(bid =>
+                    bid.employeeId === gcUser.id && bid.slotType === slotType && bid.startDate === startDate
+                );
+                if (idx !== -1) this.state.bids.splice(idx, 1);
+                this.saveState();
+                this.renderGoldenCommandBiddingView();
 
-                    this.renderGoldenCommandBiddingView();
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
+                    this.writeAuditLog('BID_REMOVED', { employee_id: gcUser.id, slot_type: slotType, start_date: startDate, section: 'golden_command' });
+                    return;
                 }
+                const { error } = await this.supabase
+                    .from('leave_requests')
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', gcUser.id)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error('❌ GC Bid delete failed:', error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log('✅ GC Bid deleted from Supabase');
+                this.writeAuditLog('BID_REMOVED', { employee_id: gcUser.id, slot_type: slotType, start_date: startDate, section: 'golden_command' });
             },
 
             // ==================== CORPORATE STAFF BIDDING ====================
@@ -3857,28 +3862,39 @@
                 this.renderCorporateStaffBiddingView();
             },
 
-            removeCSBid(slotType, startDate) {
+            async removeCSBid(slotType, startDate) {
                 if (this.state.isProcessed) { alert('Cannot remove bids after processing.'); return; }
+                if (!confirm('Remove this Corporate Staff bid?')) return;
                 const csUser = this.state.verifiedEmployee;
-                if (confirm('Remove this Corporate Staff bid?')) {
-                    const idx = this.state.bids.findIndex(bid =>
-                        bid.employeeId === csUser.id && bid.slotType === slotType && bid.startDate === startDate
-                    );
-                    if (idx !== -1) this.state.bids.splice(idx, 1);
-                    this.saveState();
-                    if (this.supabase) {
-                        this.supabase.from('leave_requests').delete()
-                            .eq('tenant_id', this._tid())
-                            .eq('employee_id', csUser.id)
-                            .eq('slot_type', slotType)
-                            .eq('start_date', startDate)
-                            .then(({ error }) => {
-                                if (error) console.warn('⚠️ Could not delete CS bid from Supabase:', error.message);
-                                else console.log('✅ CS Bid deleted from Supabase');
-                            });
-                    }
-                    this.renderCorporateStaffBiddingView();
+
+                // 1. Optimistically remove from local state and persist immediately
+                const idx = this.state.bids.findIndex(bid =>
+                    bid.employeeId === csUser.id && bid.slotType === slotType && bid.startDate === startDate
+                );
+                if (idx !== -1) this.state.bids.splice(idx, 1);
+                this.saveState();
+                this.renderCorporateStaffBiddingView();
+
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
+                    this.writeAuditLog('BID_REMOVED', { employee_id: csUser.id, slot_type: slotType, start_date: startDate, section: 'corporate_staff' });
+                    return;
                 }
+                const { error } = await this.supabase
+                    .from('leave_requests')
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', csUser.id)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error('❌ CS Bid delete failed:', error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log('✅ CS Bid deleted from Supabase');
+                this.writeAuditLog('BID_REMOVED', { employee_id: csUser.id, slot_type: slotType, start_date: startDate, section: 'corporate_staff' });
             },
 
             renderConfigureSlotsView() {
