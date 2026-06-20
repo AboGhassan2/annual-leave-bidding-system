@@ -2127,7 +2127,7 @@
                 clearInterval(window._gcCountdownInterval); window._gcCountdownInterval = null;
                 clearInterval(window._csCountdownTimer);    window._csCountdownTimer = null;
                 clearInterval(window._dashInterval);        window._dashInterval = null;
-                this.stopAdminPolling();
+                this._stopAdminLive();
 
                 // Re-sync only user lists from Supabase so dropdowns are fresh on next login
                 if (this.supabase) {
@@ -2159,11 +2159,11 @@
             setActiveView(view) {
                 console.log('Setting view to:', view);
                 // Stop any existing admin polling when navigating away
-                if (view !== 'admin') this.stopAdminPolling();
+                if (view !== 'admin') this._stopAdminLive();
                 this.state.activeView = view;
                 // Auto-refresh bids from Supabase when planner opens Admin Panel
                 if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
-                    this.refreshBidsFromSupabase(false).then(() => this.startAdminPolling());
+                    this.refreshBidsFromSupabase(false).then(() => this._startAdminLive());
                 } else {
                     this.renderView();
                 }
@@ -4593,27 +4593,9 @@
                     const allBids = [...regularRows, ...maintRows];
                     console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance bids from Supabase`);
 
-                    const mapBid = (bid, sourceTable) => ({
-                        employeeId: bid.employee_id,
-                        employeeName: bid.employee_name || this.state.employees.find(e => e.id === bid.employee_id)?.name ||
-                                      (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.name || '',
-                        seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate ||
-                                       (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.seniorityDate || '',
-                        department: bid.department || this.state.employees.find(e => e.id === bid.employee_id)?.department ||
-                                    (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.department || '',
-                        position: this.state.employees.find(e => e.id === bid.employee_id)?.position ||
-                                  (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.position || '',
-                        slotType: bid.slot_type || 'slotA',
-                        startDate: bid.start_date,
-                        endDate: bid.end_date,
-                        days: bid.days_requested,
-                        timestamp: bid.created_at,
-                        _sourceTable: sourceTable
-                    });
-
                     this.state.bids = [
-                        ...regularRows.map(b => mapBid(b, 'leave_requests')),
-                        ...maintRows.map(b => mapBid(b, 'maint_leave_requests'))
+                        ...regularRows.map(b => this._mapRemoteBid(b, 'leave_requests')),
+                        ...maintRows.map(b => this._mapRemoteBid(b, 'maint_leave_requests'))
                     ];
 
                     this.saveState();
@@ -4827,7 +4809,7 @@
                 // Pause polling during delete to avoid race condition where the
                 // 15-second auto-refresh fetches from Supabase before the delete completes
                 // and overwrites local state — causing the bid to reappear.
-                this.stopAdminPolling();
+                this._stopAdminLive();
 
                 // Remove from local state immediately
                 this.state.bids = this.state.bids.filter(b =>
@@ -4853,8 +4835,8 @@
 
                 this._liveUpdateAdminPanel();
 
-                // Resume polling only after Supabase delete is confirmed done
-                this.startAdminPolling();
+                // Resume realtime subscription only after Supabase delete is confirmed done
+                this._startAdminLive();
             },
 
             _filterBidsTable(query) {
@@ -4889,7 +4871,7 @@
                 if (!confirm(`⚠️ Delete ALL ${tabBids.length} ${sectionName} bids?\n\nBids in other sections will NOT be affected.\nThis cannot be undone.`)) return;
 
                 // Pause polling to avoid race condition
-                this.stopAdminPolling();
+                this._stopAdminLive();
 
                 // Remove only the matching bids from local state
                 this.state.bids = this.state.bids.filter(bid => {
@@ -4926,15 +4908,15 @@
                 }
 
                 this._liveUpdateAdminPanel();
-                // Resume polling after delete is confirmed done
-                this.startAdminPolling();
+                // Resume realtime subscription after delete is confirmed done
+                this._startAdminLive();
                 alert(`✅ All ${sectionName} bids have been deleted.`);
             },
 
             async deleteAllBids() {
                 if (!confirm(`⚠️ Delete ALL ${this.state.bids.length} bids?\n\nThis will permanently remove every bid from the database and cannot be undone.`)) return;
 
-                this.stopAdminPolling();
+                this._stopAdminLive();
                 this.state.bids = [];
                 this.saveState();
 
@@ -4949,7 +4931,7 @@
                 }
 
                 this._liveUpdateAdminPanel();
-                this.startAdminPolling();
+                this._startAdminLive();
                 alert('✅ All bids have been deleted.');
             },
 
@@ -4973,6 +4955,124 @@
                 }
             },
 
+            // ==================== ADMIN REALTIME (Supabase postgres_changes) ====================
+            // Replaces the 15-second polling loop with push-based updates. Falls back
+            // to a 30-second poll if Realtime disconnects, so the admin view still
+            // refreshes. Used by the planner/admin view only — employee/GC/CS/maintenance
+            // bidding views are unchanged.
+
+            _mapRemoteBid(bid, sourceTable) {
+                return {
+                    employeeId: bid.employee_id,
+                    employeeName: bid.employee_name ||
+                        this.state.employees.find(e => e.id === bid.employee_id)?.name ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.name || '',
+                    seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                    department: bid.department ||
+                        this.state.employees.find(e => e.id === bid.employee_id)?.department ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.department || '',
+                    position: this.state.employees.find(e => e.id === bid.employee_id)?.position ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.position || '',
+                    slotType: bid.slot_type || 'slotA',
+                    startDate: bid.start_date,
+                    endDate: bid.end_date,
+                    days: bid.days_requested,
+                    timestamp: bid.created_at,
+                    _sourceTable: sourceTable
+                };
+            },
+
+            startAdminRealtime() {
+                if (!this.supabase || this._adminRealtimeChannel) return;
+
+                const applyChange = (payload, sourceTable) => {
+                    if (!payload?.new && !payload?.old) return;
+
+                    if (payload.eventType === 'DELETE') {
+                        const old = payload.old;
+                        this.state.bids = this.state.bids.filter(b =>
+                            !(b.employeeId === old.employee_id &&
+                              b.slotType   === old.slot_type   &&
+                              b.startDate  === old.start_date  &&
+                              b._sourceTable === sourceTable)
+                        );
+                    } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const row = payload.new;
+                        const mapped = this._mapRemoteBid(row, sourceTable);
+                        this.state.bids = [
+                            ...this.state.bids.filter(b =>
+                                !(b.employeeId === mapped.employeeId &&
+                                  b.slotType   === mapped.slotType   &&
+                                  b.startDate  === mapped.startDate  &&
+                                  b._sourceTable === sourceTable)),
+                            mapped
+                        ];
+                    }
+                    this._liveUpdateAdminPanel();
+                    this._setAdminStatus('live');
+                };
+
+                this._adminRealtimeChannel = this.supabase
+                    .channel('admin-bids')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'leave_requests' },
+                        payload => applyChange(payload, 'leave_requests'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'maint_leave_requests' },
+                        payload => applyChange(payload, 'maint_leave_requests'))
+                    .subscribe(status => {
+                        console.log('🔌 Admin Realtime status:', status);
+                        if (status === 'SUBSCRIBED') this._setAdminStatus('live');
+                        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            this._setAdminStatus('reconnecting');
+                        }
+                    });
+            },
+
+            stopAdminRealtime() {
+                if (this._adminRealtimeChannel && this.supabase) {
+                    this.supabase.removeChannel(this._adminRealtimeChannel);
+                    this._adminRealtimeChannel = null;
+                    console.log('⏹ Admin Realtime stopped');
+                }
+            },
+
+            _setAdminStatus(state) {
+                const el = document.getElementById('adminLiveBadge');
+                if (!el) return;
+                if (state === 'live') {
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                    Live &mdash; realtime updates
+                                    &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>`;
+                } else if (state === 'reconnecting') {
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
+                                    Reconnecting &mdash; fallback polling every 30s`;
+                }
+            },
+
+            _startAdminLive() {
+                this.stopAdminPolling();
+                this.startAdminRealtime();
+                // Fallback poll every 30s while realtime is active — only fires if
+                // realtime events stop arriving for any reason (network drop, server hiccup).
+                if (this._adminFallbackTimer) clearInterval(this._adminFallbackTimer);
+                this._adminFallbackTimer = setInterval(() => {
+                    if (this.state.activeView === 'admin' && this.state.userType === 'planner') {
+                        this.refreshBidsFromSupabase(true);
+                    }
+                }, 30000);
+            },
+
+            _stopAdminLive() {
+                this.stopAdminRealtime();
+                this.stopAdminPolling();
+                if (this._adminFallbackTimer) {
+                    clearInterval(this._adminFallbackTimer);
+                    this._adminFallbackTimer = null;
+                }
+            },
+
             renderAdminView() {
                 const content = document.getElementById('contentArea');
                 // Use exact same department list as Configure Slots (L3/L46/L5 codes only)
@@ -4987,7 +5087,7 @@
                         <div class="bg-white rounded-xl shadow-xl p-6">
                             <div class="flex items-center justify-between mb-6">
                                 <h2 class="text-2xl font-bold">Admin Panel</h2>
-                                <div class="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg text-sm text-green-700">
+                                <div id="adminLiveBadge" class="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg text-sm text-green-700">
                                     <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                                     Live &mdash; auto-refreshes every 15s &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>
                                 </div>
