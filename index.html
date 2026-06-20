@@ -1378,14 +1378,22 @@
                     const supabaseKeys = new Set(supabaseBids.map(b => `${b.employeeId}|${b.slotType}|${b.startDate}`));
                     const localOnly = localBids.filter(b => !supabaseKeys.has(`${b.employeeId}|${b.slotType}|${b.startDate}`));
 
-                    // Push any local-only bids up to Supabase now
-                    if (localOnly.length > 0) {
-                        console.log(`ℹ️ Found ${localOnly.length} local bid(s) not yet in Supabase — pushing now...`);
-                        localOnly.forEach(bid => this.saveBidToSupabase(bid));
+                    // Only re-push bids created within the last 60 seconds — older
+                    // entries in localStorage are either already synced or were
+                    // intentionally deleted, so we must NOT resurrect them.
+                    const freshLocalOnly = localOnly.filter(b => {
+                        const ts = new Date(b.timestamp || 0).getTime();
+                        return Date.now() - ts < 60_000;
+                    });
+
+                    if (freshLocalOnly.length > 0) {
+                        console.log(`ℹ️ Found ${freshLocalOnly.length} recent local bid(s) not yet in Supabase — pushing now...`);
+                        freshLocalOnly.forEach(bid => this.saveBidToSupabase(bid));
                     }
 
-                    this.state.bids = [...supabaseBids, ...localOnly];
-                    console.log(`✅ Loaded ${supabaseBids.length} bids from Supabase + ${localOnly.length} local-only bid(s)`);
+                    this.state.bids = [...supabaseBids, ...freshLocalOnly];
+                    console.log(`✅ Loaded ${supabaseBids.length} bids from Supabase + ${freshLocalOnly.length} recent local-only bid(s)`);
+                    this.saveState();
                     
                     if (config) {
                         this.state.biddingDeadline = config.bidding_deadline || '';
@@ -6973,41 +6981,45 @@
                 }
             },
 
-            removeBid(employeeId, slotType, startDate) {
+            async removeBid(employeeId, slotType, startDate) {
                 if (this.state.isProcessed) {
                     alert('Cannot remove bids after processing');
                     return;
                 }
-                
-                if (confirm('Are you sure you want to remove this bid?')) {
-                    this.state.bids = this.state.bids.filter(bid => 
-                        !(bid.employeeId === employeeId && 
-                          bid.slotType === slotType && 
-                          bid.startDate === startDate)
-                    );
-                    this.saveState();
+                if (!confirm('Are you sure you want to remove this bid?')) return;
+
+                // 1. Optimistically remove from local state and persist immediately
+                this.state.bids = this.state.bids.filter(bid =>
+                    !(bid.employeeId === employeeId &&
+                      bid.slotType === slotType &&
+                      bid.startDate === startDate)
+                );
+                this.saveState();
+                this.renderEmployeeBiddingView();
+
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
                     this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
-
-                    // Delete from Supabase immediately — route by user type
-                    if (this.supabase) {
-                        const table = this.state.userType === 'maintenancestaff'
-                            ? 'maint_leave_requests'
-                            : 'leave_requests';
-                        this.supabase
-                            .from(table)
-                            .delete()
-                            .eq('tenant_id', this._tid())
-                            .eq('employee_id', employeeId)
-                            .eq('slot_type', slotType)
-                            .eq('start_date', startDate)
-                            .then(({ error }) => {
-                                if (error) console.warn(`⚠️ Could not delete bid from ${table}:`, error.message);
-                                else console.log(`✅ Bid deleted from ${table}`);
-                            });
-                    }
-
-                    this.renderEmployeeBiddingView();
+                    return;
                 }
+                const table = this.state.userType === 'maintenancestaff'
+                    ? 'maint_leave_requests'
+                    : 'leave_requests';
+                const { error } = await this.supabase
+                    .from(table)
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', employeeId)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error(`❌ Delete failed [${table}]:`, error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log(`✅ Bid deleted from ${table}`);
+                this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
             },
                
             async loadAvailableSlots() {
