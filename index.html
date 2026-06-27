@@ -2160,6 +2160,8 @@
                 console.log('Setting view to:', view);
                 // Stop any existing admin polling when navigating away
                 if (view !== 'admin') this._stopAdminLive();
+                // Stop Leave Dashboard realtime when navigating away
+                if (view !== 'leaveDashboard') this.stopLcRealtime();
                 this.state.activeView = view;
                 // Auto-refresh bids from Supabase when planner opens Admin Panel
                 if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
@@ -5035,6 +5037,93 @@
                     this.supabase.removeChannel(this._adminRealtimeChannel);
                     this._adminRealtimeChannel = null;
                     console.log('⏹ Admin Realtime stopped');
+                }
+            },
+
+            startLcRealtime() {
+                if (!this.supabase || this._lcRealtimeChannel) return;
+
+                const applyLcChange = (payload, sourceTable) => {
+                    if (!payload?.new && !payload?.old) return;
+
+                    if (payload.eventType === 'DELETE') {
+                        const old = payload.old;
+                        this.state.bids = this.state.bids.filter(b =>
+                            !(b.employeeId === old.employee_id &&
+                              b.slotType   === old.slot_type   &&
+                              b.startDate  === old.start_date  &&
+                              b._sourceTable === sourceTable)
+                        );
+                    } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const row = payload.new;
+                        const mapped = this._mapRemoteBid(row, sourceTable);
+                        this.state.bids = [
+                            ...this.state.bids.filter(b =>
+                                !(b.employeeId === mapped.employeeId &&
+                                  b.slotType   === mapped.slotType   &&
+                                  b.startDate  === mapped.startDate  &&
+                                  b._sourceTable === sourceTable)),
+                            mapped
+                        ];
+                    }
+                    // Re-render the tracker and update the live badge timestamp
+                    if (typeof window.lcRender === 'function') window.lcRender();
+                    this._setLcStatus('live');
+                };
+
+                this._lcRealtimeChannel = this.supabase
+                    .channel('lc-tracker-bids')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'leave_requests' },
+                        payload => applyLcChange(payload, 'leave_requests'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'golden_command_users' },
+                        () => { if (typeof window.lcRender === 'function') window.lcRender(); })
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'corporate_staff_users' },
+                        () => { if (typeof window.lcRender === 'function') window.lcRender(); })
+                    .subscribe(status => {
+                        console.log('🔌 LC Tracker Realtime:', status);
+                        if (status === 'SUBSCRIBED') this._setLcStatus('live');
+                        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            this._setLcStatus('reconnecting');
+                            // Retry after 5s
+                            setTimeout(() => {
+                                if (this.state.activeView === 'leaveDashboard') {
+                                    this.supabase.removeChannel(this._lcRealtimeChannel);
+                                    this._lcRealtimeChannel = null;
+                                    this.startLcRealtime();
+                                }
+                            }, 5000);
+                        }
+                    });
+            },
+
+            stopLcRealtime() {
+                if (this._lcRealtimeChannel && this.supabase) {
+                    this.supabase.removeChannel(this._lcRealtimeChannel);
+                    this._lcRealtimeChannel = null;
+                    console.log('⏹ LC Tracker Realtime stopped');
+                }
+                if (this._lcFallbackTimer) {
+                    clearInterval(this._lcFallbackTimer);
+                    this._lcFallbackTimer = null;
+                }
+            },
+
+            _setLcStatus(state) {
+                const badge = document.getElementById('lcLiveBadge');
+                if (!badge) return;
+                if (state === 'live') {
+                    badge.innerHTML = '&#9679; LIVE &mdash; <span id="lcLastRefresh">' + new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) + '</span>';
+                    badge.style.background = 'rgba(46,204,154,.25)';
+                    badge.style.borderColor = 'rgba(46,204,154,.6)';
+                    badge.style.color = '#7eedc8';
+                } else if (state === 'reconnecting') {
+                    badge.innerHTML = '&#9679; Reconnecting…';
+                    badge.style.background = 'rgba(255,195,80,.2)';
+                    badge.style.borderColor = 'rgba(255,195,80,.5)';
+                    badge.style.color = '#ffd98a';
                 }
             },
 
@@ -9827,7 +9916,32 @@
                     '.lc-empty{padding:55px;text-align:center;color:rgba(200,225,255,.35);font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;letter-spacing:.05em;}',
                     '.lc-no-bids{padding:40px;text-align:center;background:#f0f7ff;border-radius:10px;margin:20px;color:rgba(30,60,100,.4);}',
                     '.lc-no-bids .lc-nb-icon{font-size:2.5rem;margin-bottom:10px;}',
-                    '.lc-no-bids p{font-size:.9rem;}'
+                    '.lc-no-bids p{font-size:.9rem;}',
+                    '.lc-sf-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(255,210,80,.7);background:rgba(255,193,7,.2);color:#ffe082;cursor:pointer;transition:all .15s;}',
+                    '.lc-sf-btn:hover{background:rgba(255,193,7,.35);border-color:#ffe082;color:#fff;}',
+                    '#lcSfModal{display:none;position:fixed;inset:0;z-index:10000;background:rgba(10,20,40,.72);align-items:center;justify-content:center;}',
+                    '#lcSfModal.open{display:flex;}',
+                    '#lcSfBox{background:#0d1b2e;border:1px solid rgba(100,180,255,.25);border-radius:14px;padding:26px 28px;width:560px;max-width:95vw;box-shadow:0 24px 60px rgba(0,0,0,.7);color:#d8eaf7;font-family:Barlow,sans-serif;}',
+                    '#lcSfBox h3{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:800;letter-spacing:.08em;color:#4eb0ff;margin-bottom:4px;}',
+                    '#lcSfBox p.lc-sf-sub{font-size:.73rem;color:rgba(200,225,255,.45);margin-bottom:14px;line-height:1.5;}',
+                    '#lcSfBox label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:rgba(200,225,255,.5);display:block;margin-bottom:5px;}',
+                    '#lcSfBox textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(100,180,255,.22);border-radius:8px;color:#d8eaf7;font-size:.76rem;font-family:monospace;padding:10px;resize:vertical;min-height:130px;outline:none;}',
+                    '#lcSfBox textarea:focus{border-color:rgba(100,180,255,.5);}',
+                    '.lc-sf-row{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;}',
+                    '.lc-sf-run{font-family:"Barlow Condensed",sans-serif;font-size:.82rem;font-weight:700;letter-spacing:.08em;padding:8px 18px;border-radius:8px;background:#1565c0;border:1px solid #4eb0ff;color:#fff;cursor:pointer;transition:all .15s;}',
+                    '.lc-sf-run:hover{background:#1976d2;}',
+                    '.lc-sf-run:disabled{opacity:.45;cursor:not-allowed;}',
+                    '.lc-sf-cancel{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:600;padding:8px 14px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(200,225,255,.6);cursor:pointer;}',
+                    '.lc-sf-cancel:hover{background:rgba(255,255,255,.12);}',
+                    '#lcSfStatus{flex:1;font-size:.73rem;color:rgba(200,225,255,.5);min-width:160px;}',
+                    '#lcSfStatus.ok{color:#2ecc9a;}',
+                    '#lcSfStatus.err{color:#ff6b6b;}',
+                    '#lcSfStatus.warn{color:#ffc36b;}',
+                    '.lc-sf-preview{margin-top:12px;background:rgba(255,255,255,.04);border:1px solid rgba(100,180,255,.12);border-radius:8px;padding:10px;max-height:180px;overflow-y:auto;font-size:.7rem;font-family:monospace;color:rgba(200,225,255,.6);display:none;}',
+                    '.lc-sf-preview.show{display:block;}',
+                    '.lc-sf-row2{display:flex;gap:8px;margin-top:10px;align-items:center;}',
+                    '.lc-sf-filebtn{font-size:.72rem;padding:6px 12px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);color:rgba(200,225,255,.7);cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.06em;}',
+                    '.lc-sf-filebtn:hover{background:rgba(255,255,255,.14);}'
                 ].join('\n');
 
                 var lcHTML = '<div id="lcDash">'
@@ -9836,7 +9950,7 @@
                     +   '<div style="display:flex;align-items:center;gap:10px;">'
                     +     '<div class="lc-logo">FLOW <span>METRO</span></div>'
                     +     '<div class="lc-badge-yr">GC &amp; CS Leave Tracker 2026</div>'
-                    +     '<span class="lc-live-badge">&#9679; LIVE</span>'
+                    +     '<span class="lc-live-badge" id="lcLiveBadge">&#9679; LIVE</span>'
                     +   '</div>'
                     +   '<div class="lc-tabs">'
                     +     '<button class="lc-tab-btn active" onclick="lcSetDept(\'all\')" id="lct-all">All</button>'
@@ -9852,6 +9966,7 @@
                     +     '</div>'
                     +     '<div class="lc-search"><input type="text" id="lcSearch" placeholder="Search staff..." oninput="lcFilterStaff(this.value)"></div>'
                     +     '<button class="lc-refresh-btn" onclick="lcRefresh()">&#8635; Refresh</button>'
+                    +     '<button class="lc-sf-btn" onclick="lcOpenSfSync()">&#8645; SF Sync</button>'
                     +     '<button class="lc-export-btn" onclick="lcExportCSV()">&#11015; CSV</button>'
                     +   '</div>'
                     + '</div>'
@@ -9864,6 +9979,25 @@
                     +   '<div style="margin-left:auto;font-size:.62rem;">Connected to Admin &#8250; Bid Details &#8250; GC &amp; Corporate Staff</div>'
                     + '</div>'
                     + '<div id="lcTooltip"></div>'
+                    + '<div id="lcSfModal">'
+                    +   '<div id="lcSfBox">'
+                    +     '<h3>&#8645; SAP SuccessFactors &mdash; Leave Sync</h3>'
+                    +     '<p class="lc-sf-sub">Paste the exported SF leave data (CSV or tab-separated). <strong style="color:#ffe082;">Only employees listed in this dashboard will be imported.</strong> Any request from an employee not in the tracker is silently excluded.</p>'
+                    +     '<div class="lc-sf-row2">'
+                    +       '<label style="margin:0;cursor:pointer;" class="lc-sf-filebtn" for="lcSfFileInput">&#128196; Upload CSV / TSV</label>'
+                    +       '<input type="file" id="lcSfFileInput" accept=".csv,.tsv,.txt" style="display:none;" onchange="lcSfLoadFile(this)">'
+                    +       '<span id="lcSfFileName" style="font-size:.7rem;color:rgba(200,225,255,.4);"></span>'
+                    +     '</div>'
+                    +     '<label style="margin-top:10px;">Or paste raw data (CSV / tab-separated)</label>'
+                    +     '<textarea id="lcSfRaw" placeholder="employee_id, employee_name, leave_type, start_date, end_date, days&#10;1000888, Ahmed Al-Rashidi, Annual Leave, 2026-03-01, 2026-03-10, 10&#10;&#10;Header row is auto-detected and skipped. Dates must be YYYY-MM-DD."></textarea>'
+                    +     '<div class="lc-sf-preview" id="lcSfPreview"></div>'
+                    +     '<div class="lc-sf-row">'
+                    +       '<button class="lc-sf-run" id="lcSfRunBtn" onclick="lcRunSfSync()">&#9654; Run Sync</button>'
+                    +       '<button class="lc-sf-cancel" onclick="lcCloseSfSync()">Cancel</button>'
+                    +       '<div id="lcSfStatus"></div>'
+                    +     '</div>'
+                    +   '</div>'
+                    + '</div>'
                     + '</div>';
 
                 content.innerHTML = lcHTML;
@@ -9906,7 +10040,7 @@
                     var gccsIds = gcIds.concat(csIds);
 
                     // Only include the specific staff from the approved Excel list
-                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1006467','1007071'];
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
 
                     // Canonical job titles from approved staff list
                     var STAFF_TITLES = {
@@ -10193,6 +10327,344 @@
                 };
 
                 lcRender();
+
+                // ── Start realtime subscription for the Leave Tracker ─────────
+                // Expose lcRender on window so the realtime callback can call it
+                window.lcRender = lcRender;
+                self.startLcRealtime();
+
+                // Fallback poll every 30s in case realtime events stop arriving
+                if (self._lcFallbackTimer) clearInterval(self._lcFallbackTimer);
+                self._lcFallbackTimer = setInterval(function() {
+                    if (self.state.activeView === 'leaveDashboard') {
+                        lcRender();
+                        self._setLcStatus('live');
+                    }
+                }, 30000);
+                // Build the whitelist once: only IDs that appear in BOTH the
+                // ALLOWED_IDS hardcoded list AND the live GC/CS user roster.
+                function lcSfWhitelist() {
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
+                    var gccsIds = gcIds.concat(csIds);
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
+                    var set = new Set();
+                    gccsIds.forEach(function(id) { if (ALLOWED_IDS.indexOf(id) > -1) set.add(id); });
+                    return set;
+                }
+
+                // Detect delimiter: tab wins if more tabs than commas in first line
+                function lcSfDetectDelim(text) {
+                    var first = text.split('\n')[0] || '';
+                    return (first.split('\t').length > first.split(',').length) ? '\t' : ',';
+                }
+
+                // Parse raw text → array of row objects
+                // Expected columns (flexible order, detected by header):
+                //   employee_id | employee_name | leave_type | start_date | end_date | days
+                // Falls back to positional (col 0=id, 1=name, 2=type, 3=start, 4=end, 5=days)
+                function lcSfParseRows(text) {
+                    var delim = lcSfDetectDelim(text);
+                    var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+                    if (!lines.length) return [];
+
+                    var COL_ALIASES = {
+                        employee_id:     ['employee_id','employeeid','emp_id','empid','id','userid','user_id','personnel_number','personnel id','employee number'],
+                        employee_name:   ['employee_name','employeename','name','full_name','fullname','employee name'],
+                        leave_type:      ['leave_type','leavetype','type','leave type','absence type','absencetype','time type','timetype'],
+                        start_date:      ['start_date','startdate','from','from_date','start date','leave start','begin_date'],
+                        end_date:        ['end_date','enddate','to','to_date','end date','leave end','return_date'],
+                        days:            ['days','no_of_days','num_days','duration','calendar days','working days','days_requested','quantity'],
+                        approval_status: ['approval_status','approvalstatus','status','wf_status','wfstatus','workflow status','leave status','request status','approvalStatus']
+                    };
+
+                    var colIdx = { employee_id:-1, employee_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
+                    var dataStart = 0;
+
+                    // Try first line as header
+                    var firstCols = lines[0].split(delim).map(function(c){ return c.replace(/^["'\s]+|["'\s]+$/g,'').toLowerCase(); });
+                    var headerDetected = false;
+                    Object.keys(COL_ALIASES).forEach(function(key) {
+                        firstCols.forEach(function(col, i) {
+                            if (COL_ALIASES[key].indexOf(col) > -1 && colIdx[key] === -1) {
+                                colIdx[key] = i;
+                                headerDetected = true;
+                            }
+                        });
+                    });
+                    if (headerDetected) { dataStart = 1; }
+                    // Positional fallback (approval_status has no positional default — only header-detected)
+                    if (colIdx.employee_id   === -1) colIdx.employee_id   = 0;
+                    if (colIdx.employee_name === -1) colIdx.employee_name = 1;
+                    if (colIdx.leave_type    === -1) colIdx.leave_type    = 2;
+                    if (colIdx.start_date    === -1) colIdx.start_date    = 3;
+                    if (colIdx.end_date      === -1) colIdx.end_date      = 4;
+                    if (colIdx.days          === -1) colIdx.days          = 5;
+                    // If no status column found, we treat all rows as approved (manual export assumed pre-filtered)
+                    var hasStatusCol = colIdx.approval_status !== -1;
+
+                    // SF uses various strings for approved status — normalise them all
+                    var APPROVED_VALUES = ['approved','approve','appr','completed','active','taken','confirmed','1','true'];
+
+                    function clean(val) { return (val || '').replace(/^["'\s]+|["'\s]+$/g,'').trim(); }
+                    function parseDate(val) {
+                        var v = clean(val);
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+                        var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                        if (m) return m[3] + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0');
+                        var d = new Date(v);
+                        if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                        return null;
+                    }
+
+                    var rows = [];
+                    var skippedStatus = 0;
+                    for (var i = dataStart; i < lines.length; i++) {
+                        var parts = lines[i].split(delim);
+                        var id    = clean(parts[colIdx.employee_id]);
+                        if (!id) continue;
+
+                        // ── Approval status gate ──────────────────────────────
+                        if (hasStatusCol) {
+                            var statusRaw = clean(parts[colIdx.approval_status]).toLowerCase();
+                            if (APPROVED_VALUES.indexOf(statusRaw) === -1) {
+                                skippedStatus++;
+                                continue;   // not approved — skip silently
+                            }
+                        }
+
+                        var name  = clean(parts[colIdx.employee_name]);
+                        var ltype = clean(parts[colIdx.leave_type]) || 'Annual Leave';
+                        var start = parseDate(parts[colIdx.start_date]);
+                        var end   = parseDate(parts[colIdx.end_date]);
+                        var days  = parseInt(clean(parts[colIdx.days]), 10);
+                        if (!start) continue;
+                        if (!end) end = start;
+                        if (isNaN(days) || days < 1) {
+                            var ms = new Date(end+'T00:00:00') - new Date(start+'T00:00:00');
+                            days = Math.max(1, Math.round(ms / 86400000) + 1);
+                        }
+                        rows.push({ id: id, name: name, leaveType: ltype, startDate: start, endDate: end, days: days });
+                    }
+                    // Attach skipped count so the preview/status message can report it
+                    rows._skippedStatus = skippedStatus;
+                    rows._hasStatusCol  = hasStatusCol;
+                    return rows;
+                }
+
+                window.lcOpenSfSync = function() {
+                    var modal = document.getElementById('lcSfModal');
+                    if (modal) { modal.classList.add('open'); }
+                    var ta = document.getElementById('lcSfRaw');
+                    if (ta) ta.value = '';
+                    var st = document.getElementById('lcSfStatus');
+                    if (st) { st.textContent = ''; st.className = ''; }
+                    var prev = document.getElementById('lcSfPreview');
+                    if (prev) { prev.textContent = ''; prev.classList.remove('show'); }
+                    var fn = document.getElementById('lcSfFileName');
+                    if (fn) fn.textContent = '';
+                };
+                window.lcCloseSfSync = function() {
+                    var modal = document.getElementById('lcSfModal');
+                    if (modal) modal.classList.remove('open');
+                };
+                // Close on backdrop click
+                var sfModal = document.getElementById('lcSfModal');
+                if (sfModal) sfModal.addEventListener('click', function(e) { if (e.target === sfModal) lcCloseSfSync(); });
+
+                window.lcSfLoadFile = function(input) {
+                    var file = input.files && input.files[0];
+                    if (!file) return;
+                    var fn = document.getElementById('lcSfFileName');
+                    if (fn) fn.textContent = file.name;
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        var ta = document.getElementById('lcSfRaw');
+                        if (ta) ta.value = e.target.result;
+                        var rows = lcSfParseRows(e.target.result);
+                        var whitelist = lcSfWhitelist();
+                        var matched = rows.filter(function(r){ return whitelist.has(r.id); });
+                        var prev = document.getElementById('lcSfPreview');
+                        if (prev) {
+                            var msg = 'Detected ' + (rows.length + (rows._skippedStatus||0)) + ' rows — ';
+                            if (rows._hasStatusCol) msg += (rows._skippedStatus||0) + ' non-approved skipped, ';
+                            msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees.';
+                            if (!rows._hasStatusCol) msg += ' ⚠ No status column detected — export should be pre-filtered to Approved only.';
+                            prev.textContent = msg;
+                            prev.classList.add('show');
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+
+                window.lcRunSfSync = async function() {
+                    var raw = (document.getElementById('lcSfRaw') || {}).value || '';
+                    var st  = document.getElementById('lcSfStatus');
+                    var btn = document.getElementById('lcSfRunBtn');
+
+                    function setStatus(msg, cls) {
+                        if (st) { st.textContent = msg; st.className = cls || ''; }
+                    }
+
+                    if (!raw.trim()) { setStatus('⚠ No data to import.', 'warn'); return; }
+
+                    var rows = lcSfParseRows(raw);
+                    if (!rows.length) { setStatus('⚠ Could not parse any rows. Check format.', 'err'); return; }
+
+                    var whitelist = lcSfWhitelist();
+
+                    // Split: matched (allowed) vs excluded
+                    var matched  = rows.filter(function(r){ return whitelist.has(r.id); });
+                    var excluded = rows.filter(function(r){ return !whitelist.has(r.id); });
+
+                    if (!matched.length) {
+                        setStatus('⚠ None of the ' + rows.length + ' rows belong to dashboard employees. Sync cancelled.', 'warn');
+                        return;
+                    }
+
+                    if (btn) btn.disabled = true;
+                    setStatus('⏳ Syncing ' + matched.length + ' record(s)…');
+
+                    var tid = self._tid ? self._tid() : (self.state && self.state.tenantId) || 'default';
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var STAFF_TITLES = {
+                        '1000888':'Project Director','1000008':'Senior Executive Finance Director',
+                        '1000027':'Senior Executive Human Resource Director','1000124':'Senior Executive Director Stakeholder & Communication',
+                        '1001118':'Head of Major Services Management','1002997':'Contract Director',
+                        '1003591':'ICT Manager','1003592':'Head of Cyber Security','1003752':'INM Director',
+                        '1006024':'Security Director','1006939':'Rail Safety Manager','1007066':'Operations Director',
+                        '10015':'TSM L456 Director','10020':'TSM L3 Director','1000555':'Executive Assistant Project Director',
+                        '1000136':'CMMS Manager','1000225':'Performance Manager','1000352':'Planning and Reporting Specialist',
+                        '1000759':'KPI & Reporting Specialist','1000043':'Quality And Audit Manager','1000830':'Risk Manager',
+                        '1000284':'Rail Safety Officer','1000330':'Executive Assistant','1000231':'Line Standards Manager',
+                        '1000238':'Line Standards Manager','1005385':'Operation Manager L-46','1007071':'Operation Manager L-5','1006467':'Operation Manager L-3'
+                    };
+
+                    var inserted = 0, updated = 0, errors = 0, errDetails = [];
+
+                    for (var i = 0; i < matched.length; i++) {
+                        var r = matched[i];
+                        var isGC = gcIds.indexOf(r.id) > -1;
+                        var dept = isGC ? 'Golden Command' : 'Corporate Staff';
+                        var position = STAFF_TITLES[r.id] || dept;
+                        var slotType = (r.days || 0) > 15 ? 'slotC' : 'slotA';
+
+                        // Only columns that exist in leave_requests (matches the real schema)
+                        var record = {
+                            tenant_id:      tid,
+                            employee_id:    r.id,
+                            employee_name:  r.name || r.id,
+                            department:     dept,
+                            slot_type:      slotType,
+                            start_date:     r.startDate,
+                            end_date:       r.endDate,
+                            days_requested: r.days,
+                            status:         'approved',
+                            created_at:     new Date().toISOString()
+                        };
+
+                        if (self.supabase) {
+                            try {
+                                // Step 1 — check if a record already exists for this employee+slot+start
+                                var { data: existing, error: selErr } = await self.supabase
+                                    .from('leave_requests')
+                                    .select('id')
+                                    .eq('tenant_id',    tid)
+                                    .eq('employee_id',  r.id)
+                                    .eq('slot_type',    slotType)
+                                    .eq('start_date',   r.startDate)
+                                    .maybeSingle();
+
+                                var opErr = null;
+                                if (existing && existing.id) {
+                                    // UPDATE existing row by id
+                                    var { error: updErr } = await self.supabase
+                                        .from('leave_requests')
+                                        .update({
+                                            end_date:       record.end_date,
+                                            days_requested: record.days_requested,
+                                            employee_name:  record.employee_name,
+                                            status:         'approved'
+                                        })
+                                        .eq('id', existing.id);
+                                    opErr = updErr;
+                                    if (!updErr) updated++;
+                                } else {
+                                    // INSERT new row
+                                    var { error: insErr } = await self.supabase
+                                        .from('leave_requests')
+                                        .insert(record);
+                                    opErr = insErr;
+                                    if (!insErr) inserted++;
+                                }
+
+                                if (opErr) {
+                                    errors++;
+                                    errDetails.push(r.id + ': ' + (opErr.message || opErr.code || JSON.stringify(opErr)));
+                                    console.warn('SF sync error for', r.id, opErr);
+                                }
+                            } catch(ex) {
+                                errors++;
+                                errDetails.push(r.id + ': ' + ex.message);
+                                console.warn('SF sync exception', ex);
+                            }
+                        } else {
+                            // Offline — inject directly into state.bids
+                            var bid = {
+                                employeeId:   r.id,
+                                employeeName: r.name || r.id,
+                                department:   dept,
+                                position:     position,
+                                slotType:     slotType,
+                                startDate:    r.startDate,
+                                endDate:      r.endDate,
+                                days:         r.days,
+                                timestamp:    new Date().toISOString(),
+                                _sourceTable: 'leave_requests',
+                                _importSource:'SAP_SF'
+                            };
+                            var existIdx = (self.state.bids || []).findIndex(function(b){
+                                return b.employeeId === r.id && b.startDate === r.startDate && b.slotType === slotType;
+                            });
+                            if (existIdx > -1) { self.state.bids[existIdx] = bid; updated++; }
+                            else { self.state.bids.push(bid); inserted++; }
+                        }
+                    }
+
+                    // Reload bids from Supabase so state is fresh
+                    if (self.supabase) {
+                        try {
+                            var allBids = [], pg2 = 0, more2 = true, bs2 = 1000;
+                            while (more2) {
+                                var { data: batch2, error: err2 } = await self.supabase
+                                    .from('leave_requests').select('*')
+                                    .eq('tenant_id', tid).range(pg2, pg2 + bs2 - 1);
+                                if (err2 || !batch2 || !batch2.length) { more2 = false; }
+                                else { allBids = allBids.concat(batch2); more2 = batch2.length === bs2; pg2 += bs2; }
+                            }
+                            self.state.bids = self.state.bids.filter(function(b){ return b._sourceTable === 'maint_leave_requests'; });
+                            allBids.forEach(function(row) { self.state.bids.push(self._mapRemoteBid(row, 'leave_requests')); });
+                        } catch(ex2) { console.warn('Post-sync reload failed', ex2); }
+                    }
+
+                    // Refresh the tracker
+                    lcRender();
+                    if (btn) btn.disabled = false;
+
+                    var msg = '✅ Sync complete — ' + (inserted + updated) + ' record(s) applied';
+                    if (rows._skippedStatus) msg += ', ' + rows._skippedStatus + ' non-approved skipped';
+                    if (excluded.length) msg += ', ' + excluded.length + ' excluded (not in dashboard)';
+                    if (errors) msg += ' ⚠ ' + errors + ' error(s): ' + errDetails.slice(0,2).join('; ');
+                    setStatus(msg, errors ? (inserted + updated > 0 ? 'warn' : 'err') : 'ok');
+
+                    // Write audit entry
+                    if (self.writeAuditLog) {
+                        self.writeAuditLog('SF_SYNC', { imported: inserted + updated, excluded: excluded.length, errors: errors });
+                    }
+
+                    // Auto-close on full success after 3 s
+                    if (!errors) setTimeout(function(){ lcCloseSfSync(); }, 3000);
+                };
             },
 
             async renderAuditLogView() {
@@ -10224,6 +10696,7 @@
                                     <option value="MANUAL_OVERRIDE">Manual Override</option>
                                     <option value="DATA_UPLOADED">Data Uploaded</option>
                                     <option value="SYSTEM_RESET">System Reset</option>
+                                    <option value="SF_SYNC">SF Sync</option>
                                 </select>
                                 <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
                                     <option value="all">All Roles</option>
