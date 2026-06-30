@@ -2710,10 +2710,6 @@
             
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
-                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
-                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -5932,10 +5928,6 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
-                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
-                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
@@ -7353,10 +7345,6 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    // Corporate Staff and Golden Command are capped at 30 days regardless of seniority
-                    const csIds = (this.state.corporateStaffUsers || []).map(u => u.id);
-                    const gcIds = (this.state.goldenCommandUsers  || []).map(u => u.id);
-                    if (csIds.includes(employee.id) || gcIds.includes(employee.id)) return 30;
                     const yearsOfService = calculateYearsOfService(employee.seniorityDate);
                     return yearsOfService >= 5 ? 35 : 30;
                 };
