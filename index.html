@@ -1061,6 +1061,9 @@
             <button onclick="app.setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
                 ⚙️ Configure Slots
             </button>
+            <button onclick="app.setActiveView('seniorityReport')" class="px-4 py-2 rounded-lg font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300">
+                📋 Seniority Report
+            </button>
             <button onclick="app.setActiveView('configureMaintSlots')" class="px-4 py-2 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-300">
                 🔧 Configure Maint Slots
             </button>
@@ -1211,7 +1214,8 @@
                 slotTypes: [
                     { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
                     { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
-                    { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' }
+                    { id: 'slotC', name: 'Slot C', days: 20, color: 'purple' },
+                    { id: 'slotD', name: 'Slot D', days: 20, color: 'orange' }
                 ],
                 
                 months: [
@@ -2195,6 +2199,9 @@
                     case 'configureSlots':
                         this.renderConfigureSlotsView();
                         break;
+                    case 'seniorityReport':
+                        this.renderSeniorityReportView();
+                        break;
                     case 'configureMaintSlots':
                         this.renderConfigureMaintSlotsView();
                         break;
@@ -2842,9 +2849,11 @@
                                             const slotLabel = bid.slotType === 'SA' || bid.slotType === 'slotA' ? 'Slot A' :
                                                               bid.slotType === 'SB' || bid.slotType === 'slotB' ? 'Slot B' :
                                                               bid.slotType === 'SC' || bid.slotType === 'slotC' ? 'Slot C' :
+                                                              bid.slotType === 'SD' || bid.slotType === 'slotD' ? 'Slot D' :
                                                               (this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType);
                                             const badgeColor = (bid.slotType === 'SA' || bid.slotType === 'slotA') ? 'bg-green-100 text-green-800 border-green-300' :
                                                                (bid.slotType === 'SB' || bid.slotType === 'slotB') ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                                               (bid.slotType === 'SD' || bid.slotType === 'slotD') ? 'bg-orange-100 text-orange-800 border-orange-300' :
                                                                'bg-purple-100 text-purple-800 border-purple-300';
                                             return `
                                                 <div class="border border-gray-200 rounded-xl p-4">
@@ -4238,11 +4247,13 @@
                     const hasEmployees = employeeDepts.includes(dept);
                     const employeeCount = this.state.employees.filter(e => (e.department || 'Unassigned') === dept).length;
                     
-                    // Calendar slots: Slot A, Slot B, Slot C (date range based)
+                    // Calendar slots: Slot A, Slot B, Slot C, Slot D (date range based)
+                    // A/B = staff with ≤5 years service · C/D = staff with >5 years service
                     const periods = [
                         { id: 'SA', label: 'Slot A', colorClass: 'green', borderColor: 'border-green-400', bgColor: 'bg-green-50' },
                         { id: 'SB', label: 'Slot B', colorClass: 'blue', borderColor: 'border-blue-400', bgColor: 'bg-blue-50' },
-                        { id: 'SC', label: 'Slot C', colorClass: 'purple', borderColor: 'border-purple-400', bgColor: 'bg-purple-50' }
+                        { id: 'SC', label: 'Slot C', colorClass: 'purple', borderColor: 'border-purple-400', bgColor: 'bg-purple-50' },
+                        { id: 'SD', label: 'Slot D', colorClass: 'orange', borderColor: 'border-orange-400', bgColor: 'bg-orange-50' }
                     ];
                     
                     html += `
@@ -4315,6 +4326,23 @@
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
                                             <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-orange-700 bg-orange-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>D — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot D months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-orange-600"
+                                                            data-dept="${dept}" data-slot="SD"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot D months"
+                                                        />
+                                                        <span class="text-xs font-normal text-orange-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — Max</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -4328,9 +4356,9 @@
                                             return `
                                                 <tr class="hover:bg-gray-50">
                                                     <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${month}</td>
-                                                    ${['SA','SB','SC'].map((slotId, si) => {
-                                                        const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500'];
-                                                        const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50'];
+                                                    ${['SA','SB','SC','SD'].map((slotId, si) => {
+                                                        const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500','border-orange-300 focus:border-orange-500'];
+                                                        const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50','bg-orange-50'];
                                                         const savedStart    = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`];
                                                         const savedEnd      = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`];
                                                         const savedCapacity = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`];
@@ -4395,10 +4423,12 @@
                             <p class="font-semibold text-yellow-800 mb-2">📋 Calendar Configuration Summary:</p>
                             <p class="text-sm text-yellow-700">
                                 • Departments: ${departmentsToConfigure.length} department${departmentsToConfigure.length === 1 ? '' : 's'}<br>
-                                • Bid slots per department: 3 (Slot A, Slot B, Slot C) × 12 months<br>
+                                • Bid slots per department: 4 (Slot A, Slot B, Slot C, Slot D) × 12 months<br>
+                                • Slot A &amp; B are visible to staff with ≤5 years of service<br>
+                                • Slot C &amp; D are visible to staff with &gt;5 years of service<br>
                                 • Toggle <strong>On</strong> to make a slot visible to Operations Staff for that month<br>
                                 • Each enabled slot: fixed date range and max capacity seen by staff when bidding<br>
-                                • Total configurations: ${departmentsToConfigure.length * 3} bid slots × 12 months
+                                • Total configurations: ${departmentsToConfigure.length * 4} bid slots × 12 months
                             </p>
                         </div>
                         
@@ -4416,6 +4446,183 @@
                 return html;
             },
             
+            // ===== SENIORITY DATE REPORT (OPS Staff only — excludes Maintenance) =====
+            renderSeniorityReportView() {
+                const content = document.getElementById('contentArea');
+
+                const calcYears = (seniorityDate) => {
+                    if (!seniorityDate) return 0;
+                    const joinDate = new Date(seniorityDate);
+                    if (isNaN(joinDate.getTime())) return 0;
+                    return (new Date() - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+
+                // OPS staff = this.state.employees (Maintenance staff live in a separate
+                // maintenanceStaffUsers array and are intentionally excluded from this report)
+                const rows = (this.state.employees || []).map(e => {
+                    const years = calcYears(e.seniorityDate);
+                    return {
+                        id: e.id,
+                        name: e.name || '—',
+                        department: e.department || 'Unassigned',
+                        position: e.position || '—',
+                        seniorityDate: e.seniorityDate || '',
+                        years,
+                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B'
+                    };
+                });
+
+                // Sort: most senior (earliest date) first
+                rows.sort((a, b) => {
+                    const da = a.seniorityDate ? new Date(a.seniorityDate) : new Date('9999-12-31');
+                    const db = b.seniorityDate ? new Date(b.seniorityDate) : new Date('9999-12-31');
+                    return da - db;
+                });
+
+                const seniorCount = rows.filter(r => r.years > 5).length;
+                const juniorCount = rows.length - seniorCount;
+                const missingCount = rows.filter(r => !r.seniorityDate).length;
+
+                // Filters
+                const deptOptions = [...new Set(rows.map(r => r.department))].sort();
+
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                                <div>
+                                    <h2 class="text-2xl font-bold">📋 Seniority Date Report</h2>
+                                    <p class="text-sm text-gray-500 mt-1">All Operations Staff — Maintenance Staff are excluded from this report</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="app.exportSeniorityReportCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">
+                                        ⬇ Export Excel
+                                    </button>
+                                    <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm font-semibold hover:bg-gray-600">
+                                        ← Back
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-gray-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${rows.length}</p>
+                                    <p class="text-sm text-gray-600">Total OPS Staff</p>
+                                </div>
+                                <div class="bg-orange-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-orange-700">${seniorCount}</p>
+                                    <p class="text-sm text-gray-600">&gt;5 yrs — Slot C/D</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-green-700">${juniorCount}</p>
+                                    <p class="text-sm text-gray-600">≤5 yrs — Slot A/B</p>
+                                </div>
+                                <div class="bg-red-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-red-700">${missingCount}</p>
+                                    <p class="text-sm text-gray-600">Missing Seniority Date</p>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-3 mb-4">
+                                <input type="text" id="seniorityReportSearch" placeholder="Search by name or ID…"
+                                    oninput="app._filterSeniorityReport()"
+                                    class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm flex-1 min-w-[200px]" />
+                                <select id="seniorityReportDeptFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                    <option value="all">All Departments</option>
+                                    ${deptOptions.map(d => `<option value="${this._escHtml(d)}">${this._escHtml(d)}</option>`).join('')}
+                                </select>
+                                <select id="seniorityReportEligFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                    <option value="all">All Eligibility</option>
+                                    <option value="senior">&gt;5 yrs — Slot C/D</option>
+                                    <option value="junior">≤5 yrs — Slot A/B</option>
+                                </select>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm border-collapse" id="seniorityReportTable">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-left">
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Staff ID</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Seniority Date</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Years of Service</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Eligible Slots</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="seniorityReportBody">
+                                        ${rows.map((r, idx) => this._seniorityReportRow(r, idx)).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-3">Showing <span id="seniorityReportCount">${rows.length}</span> of ${rows.length} staff. Sorted by seniority date (most senior first).</p>
+                        </div>
+                    </div>
+                `;
+
+                // Cache rows on window for the filter/export functions to reuse without re-deriving
+                window._seniorityReportRows = rows;
+            },
+
+            _seniorityReportRow(r, idx) {
+                const badgeClass = r.years > 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800';
+                const missingClass = !r.seniorityDate ? 'bg-red-50' : (idx % 2 === 0 ? '' : 'bg-gray-50');
+                return `
+                    <tr class="${missingClass} hover:bg-indigo-50 transition-colors" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
+                        <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                        <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(r.id)}</td>
+                        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${this._escHtml(r.name)}</td>
+                        <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.department)}</td>
+                        <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.position)}</td>
+                        <td class="border border-gray-200 px-3 py-2 text-gray-700">${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0,10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
+                        <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${r.years.toFixed(1)}</td>
+                        <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${badgeClass}">${r.eligibleSlots}</span></td>
+                    </tr>`;
+            },
+
+            _filterSeniorityReport() {
+                const q = (document.getElementById('seniorityReportSearch')?.value || '').toLowerCase().trim();
+                const dept = document.getElementById('seniorityReportDeptFilter')?.value || 'all';
+                const elig = document.getElementById('seniorityReportEligFilter')?.value || 'all';
+                const rowsEls = document.querySelectorAll('#seniorityReportBody tr');
+                let visible = 0;
+                rowsEls.forEach(tr => {
+                    const matchesQ    = !q || (tr.dataset.search || '').includes(q);
+                    const matchesDept = dept === 'all' || tr.dataset.dept === dept;
+                    const matchesElig = elig === 'all' || tr.dataset.elig === elig;
+                    const show = matchesQ && matchesDept && matchesElig;
+                    tr.style.display = show ? '' : 'none';
+                    if (show) visible++;
+                });
+                const countEl = document.getElementById('seniorityReportCount');
+                if (countEl) countEl.textContent = visible;
+            },
+
+            exportSeniorityReportCSV() {
+                const rows = window._seniorityReportRows || [];
+                if (rows.length === 0) {
+                    alert('No OPS staff data to export.');
+                    return;
+                }
+                const wsData = [
+                    ['Staff ID', 'Name', 'Department', 'Position', 'Seniority Date', 'Years of Service', 'Eligible Slots']
+                ];
+                rows.forEach(r => {
+                    wsData.push([
+                        r.id, r.name, r.department, r.position,
+                        r.seniorityDate ? r.seniorityDate.slice(0, 10) : 'Missing',
+                        r.years.toFixed(1),
+                        r.eligibleSlots
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Seniority Report');
+                XLSX.writeFile(wb, `OPS_Seniority_Report_${this.state.biddingYear}.xlsx`);
+            },
+
             async copyToAllMonths() {
                 const filter = document.getElementById('deptFilter')?.value || 'all';
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
@@ -4432,7 +4639,7 @@
                 const januaryValues = {};
                 
                 departmentsToCopy.forEach(dept => {
-                    ['A', 'B', 'C'].forEach(slot => {
+                    ['A', 'B', 'C', 'D'].forEach(slot => {
                         const key = `January-${dept}-${slot}`;
                         januaryValues[`${dept}-${slot}`] = this.state.slotCapacities[key] || 1;
                     });
@@ -4443,7 +4650,7 @@
                     if (month === 'January') return; // Skip January since it's our source
                     
                     departmentsToCopy.forEach(dept => {
-                        ['A', 'B', 'C'].forEach(slot => {
+                        ['A', 'B', 'C', 'D'].forEach(slot => {
                             const key = `${month}-${dept}-${slot}`;
                             this.state.slotCapacities[key] = januaryValues[`${dept}-${slot}`];
                         });
@@ -4710,13 +4917,14 @@
                         return name.includes(q) || id.includes(q);
                     });
                 const colorMap = { 
-                    slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800',
-                    SA:    'bg-green-100 text-green-800', SB:    'bg-blue-100 text-blue-800', SC:    'bg-purple-100 text-purple-800'
+                    slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800', slotD: 'bg-orange-100 text-orange-800',
+                    SA:    'bg-green-100 text-green-800', SB:    'bg-blue-100 text-blue-800', SC:    'bg-purple-100 text-purple-800', SD:    'bg-orange-100 text-orange-800'
                 };
                 const _slotLabel = (st) => {
                     if (st === 'slotA' || st === 'SA') return 'Slot A';
                     if (st === 'slotB' || st === 'SB') return 'Slot B';
                     if (st === 'slotC' || st === 'SC') return 'Slot C';
+                    if (st === 'slotD' || st === 'SD') return 'Slot D';
                     if (st === 'gcCustom') return '⭐ Custom';
                     if (st === 'csCustom') return '🏢 Custom';
                     return st || '—';
@@ -5732,7 +5940,7 @@
                     const month = withoutSlot.slice(monthDash + 1);
                     const dept = withoutSlot.slice(0, monthDash);
                     if (!months.includes(month)) return null;
-                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : null;
+                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : slotId === 'SD' ? 'D' : null;
                     if (!slotLetter) return null;
                     return { dept, month, slotLetter, field };
                 };
@@ -5760,7 +5968,7 @@
                     if (!start || !end)  return; // dates not configured — skip
 
                     if (!slotAvailability[month]) slotAvailability[month] = {};
-                    if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0 };
+                    if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0, D: 0 };
                     slotAvailability[month][dept][slotLetter] = capacity;
 
                     if (!slotDates[dept]) slotDates[dept] = {};
@@ -6092,6 +6300,13 @@
                     const assignedDateKeys = new Set(awarded[employee.id].map(a => `${a.startDate}|${a.endDate}`));
                     let localDays = assignedDays;
 
+                    // Seniority gate: ≤5 years → only Slot A/B eligible for auto-assignment.
+                    // >5 years → only Slot C/D eligible. Mirrors the bidding-time restriction.
+                    const empYearsForAssign = employee.seniorityDate
+                        ? (new Date() - new Date(employee.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
+                        : 0;
+                    const eligibleSlotTypes = empYearsForAssign > 5 ? ['C', 'D'] : ['A', 'B'];
+
                     while (awarded[employee.id].length < 2) {
                         let slotAssigned = false;
 
@@ -6099,7 +6314,7 @@
                             if (slotAssigned) break;
                             if (!slotAvailability[searchMonth]?.[department]) continue;
 
-                            for (const slotType of ['A', 'B', 'C']) {
+                            for (const slotType of eligibleSlotTypes) {
                                 if (slotAvailability[searchMonth][department][slotType] <= 0) continue;
 
                                 const potential = assignSlotToEmployee(employee, searchMonth, slotType, awarded[employee.id].length + 1);
@@ -6698,7 +6913,8 @@
                 const colorMap = {
                     SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
                     SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
-                    SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' }
+                    SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' },
+                    SD: { border:'border-orange-400',bg:'bg-orange-50',badge:'bg-orange-600',text:'text-orange-800',label:'Slot D' }
                 };
 
                 const isEnabledIn = (store, prefix, dept, sid) => {
@@ -6710,7 +6926,7 @@
                 };
 
                 const buildSlotDefsIn = (store, prefix, deptKey) => {
-                    return ['SA','SB','SC'].map(sid => {
+                    return ['SA','SB','SC','SD'].map(sid => {
                         if (!isEnabledIn(store, prefix, deptKey, sid)) return null;
                         const start = store[prefix + deptKey + '-' + month + '-' + sid + '-start'];
                         const end   = store[prefix + deptKey + '-' + month + '-' + sid + '-end'];
@@ -6774,7 +6990,7 @@
                 const bidCount = {};
                 if (resolvedDept) {
                     this.state.bids.forEach(b => {
-                        ['SA','SB','SC'].forEach(sid => {
+                        ['SA','SB','SC','SD'].forEach(sid => {
                             const s = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-start'];
                             const e = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-end'];
                             if (s && e && b.startDate === s && b.endDate === e)
@@ -6788,13 +7004,20 @@
                     bidsPlaced: bidCount[s.sid] || 0
                 }));
 
-                // Slot C is restricted to employees with more than 5 years of service.
-                // Remove it from the visible options for ineligible staff.
-                const empYears = emp?.seniorityDate
-                    ? (new Date() - new Date(emp.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
-                    : 0;
-                if (empYears <= 5) {
-                    slotDefs = slotDefs.filter(s => s.sid !== 'SC');
+                // Seniority gate (OPS staff only — Maintenance is unaffected):
+                //   ≤5 years of service → can only see/bid Slot A & Slot B
+                //   >5 years of service → can only see/bid Slot C & Slot D
+                const slotDefsBeforeGate = slotDefs;
+                let empYearsForGate = 0;
+                if (!isMaint) {
+                    empYearsForGate = emp?.seniorityDate
+                        ? (new Date() - new Date(emp.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
+                        : 0;
+                    if (empYearsForGate > 5) {
+                        slotDefs = slotDefs.filter(s => s.sid === 'SC' || s.sid === 'SD');
+                    } else {
+                        slotDefs = slotDefs.filter(s => s.sid === 'SA' || s.sid === 'SB');
+                    }
                 }
 
                 // Reset selected slot ONLY when the month has changed
@@ -6808,13 +7031,24 @@
                 window._lastSlotMonth = month;
 
                 if (slotDefs.length === 0) {
+                    if (!isMaint && slotDefsBeforeGate.length > 0) {
+                        const eligibleLabel = empYearsForGate > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B';
+                        const ineligibleLabel = empYearsForGate > 5 ? 'Slot A / Slot B' : 'Slot C / Slot D';
+                        container.innerHTML =
+                            '<div class="p-4 bg-orange-50 border border-orange-200 rounded-lg text-center">'
+                            + '<p class="text-orange-700 font-semibold">No ' + eligibleLabel + ' configured for ' + month + '</p>'
+                            + '<p class="text-xs text-orange-600 mt-1">Based on ' + empYearsForGate.toFixed(1) + ' years of service, you can only bid into ' + eligibleLabel + '. '
+                            + 'The planner has configured ' + ineligibleLabel + ' for this month, but not ' + eligibleLabel + '.</p>'
+                            + '</div>';
+                        return;
+                    }
                     const diagDept = deptCandidates.join(' / ') || '(no department on record)';
                     const monthKeys = Object.keys(caps).filter(k => k.includes('-' + month + '-') && k.endsWith('-start'));
                     const diagKeys = monthKeys.length > 0
-                        ? [...new Set(monthKeys.map(k => k.replace('-' + month + '-SA-start','').replace('-' + month + '-SB-start','').replace('-' + month + '-SC-start','').replace(/^cal-maint-/,'').replace(/^cal-/,'')))].join(', ')
+                        ? [...new Set(monthKeys.map(k => k.replace('-' + month + '-SA-start','').replace('-' + month + '-SB-start','').replace('-' + month + '-SC-start','').replace('-' + month + '-SD-start','').replace(/^cal-maint-/,'').replace(/^cal-/,'')))].join(', ')
                         : 'none';
-                    const allStartKeys = Object.keys(caps).filter(k => /-(SA|SB|SC)-start$/.test(k));
-                    const allConfigDepts = [...new Set(allStartKeys.map(k => k.replace(/^cal-maint-/,'').replace(/^cal-/,'').replace(/-(SA|SB|SC)-start$/,'').replace(/-(January|February|March|April|May|June|July|August|September|October|November|December)-/,' -> ')))].slice(0,20);
+                    const allStartKeys = Object.keys(caps).filter(k => /-(SA|SB|SC|SD)-start$/.test(k));
+                    const allConfigDepts = [...new Set(allStartKeys.map(k => k.replace(/^cal-maint-/,'').replace(/^cal-/,'').replace(/-(SA|SB|SC|SD)-start$/,'').replace(/-(January|February|March|April|May|June|July|August|September|October|November|December)-/,' -> ')))].slice(0,20);
                     const allDeptsHtml = allConfigDepts.length > 0 ? allConfigDepts.join('<br>') : 'No slots configured anywhere yet';
                     container.innerHTML =
                         '<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">'
@@ -7045,17 +7279,24 @@
                     return;
                 }
 
-                // Use the configured slot's label as the slotType key (SA/SB/SC)
-                const slotTypeKey = slotDef.sid; // 'SA', 'SB', 'SC'
+                // Use the configured slot's label as the slotType key (SA/SB/SC/SD)
+                const slotTypeKey = slotDef.sid; // 'SA', 'SB', 'SC', 'SD'
 
-                // Slot C is restricted to staff with more than 5 years of service.
-                if (slotTypeKey === 'SC') {
+                // Seniority gate (OPS staff only): ≤5 years → Slot A/B only, >5 years → Slot C/D only.
+                // Maintenance staff are routed through a different bidding flow and are unaffected.
+                if (this.state.userType !== 'maintenancestaff') {
                     const empForGuard = this.state.employees.find(e => e.id === this.state.verifiedEmployee?.id) || this.state.verifiedEmployee;
                     const guardYears = empForGuard?.seniorityDate
                         ? (new Date() - new Date(empForGuard.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
                         : 0;
-                    if (guardYears <= 5) {
-                        alert('⛔ Slot C is only available to staff with more than 5 years of service.');
+                    const isSeniorSlot = (slotTypeKey === 'SC' || slotTypeKey === 'SD');
+                    const isJuniorSlot = (slotTypeKey === 'SA' || slotTypeKey === 'SB');
+                    if (isSeniorSlot && guardYears <= 5) {
+                        alert('⛔ Slot C and Slot D are only available to staff with more than 5 years of service.');
+                        return;
+                    }
+                    if (isJuniorSlot && guardYears > 5) {
+                        alert('⛔ Slot A and Slot B are only available to staff with 5 years of service or less. Staff with more than 5 years should bid into Slot C or Slot D.');
                         return;
                     }
                 }
@@ -7278,7 +7519,7 @@
                         const deptKey = withoutSlot.slice(0, monthDash);
 
                         if (!months.includes(month)) return;
-                        const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : null;
+                        const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : slotId === 'SD' ? 'D' : null;
                         if (!slotLetter) return;
 
                         const mapKey = `${deptKey}||${month}||${slotLetter}`;
@@ -7315,14 +7556,14 @@
                     this.state.bids.forEach(bid => {
                         const bDept = bid.department || '';
                         const bMonth = bid.startDate ? months[new Date(bid.startDate).getMonth()] : '';
-                        const bSlotLetter = bid.slotType === 'slotA' ? 'A' : bid.slotType === 'slotB' ? 'B' : bid.slotType === 'slotC' ? 'C' : '';
+                        const bSlotLetter = bid.slotType === 'slotA' ? 'A' : bid.slotType === 'slotB' ? 'B' : bid.slotType === 'slotC' ? 'C' : bid.slotType === 'slotD' ? 'D' : '';
                         if (bDept && bMonth && bSlotLetter) {
                             const k = `${bDept}||${bMonth}||${bSlotLetter}`;
                             bidCounts[k] = (bidCounts[k] || 0) + 1;
                         }
                     });
 
-                    const colorMap = { A: { bg: 'bg-green-50', border: 'border-green-300', badge: 'bg-green-100 text-green-800', label: 'Slot A' }, B: { bg: 'bg-blue-50', border: 'border-blue-300', badge: 'bg-blue-100 text-blue-800', label: 'Slot B' }, C: { bg: 'bg-purple-50', border: 'border-purple-300', badge: 'bg-purple-100 text-purple-800', label: 'Slot C' } };
+                    const colorMap = { A: { bg: 'bg-green-50', border: 'border-green-300', badge: 'bg-green-100 text-green-800', label: 'Slot A' }, B: { bg: 'bg-blue-50', border: 'border-blue-300', badge: 'bg-blue-100 text-blue-800', label: 'Slot B' }, C: { bg: 'bg-purple-50', border: 'border-purple-300', badge: 'bg-purple-100 text-purple-800', label: 'Slot C' }, D: { bg: 'bg-orange-50', border: 'border-orange-300', badge: 'bg-orange-100 text-orange-800', label: 'Slot D' } };
 
                     let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
                     allSlots.forEach(slot => {
