@@ -4457,9 +4457,9 @@
                     return (new Date() - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
                 };
 
-                // OPS staff = this.state.employees (Maintenance staff live in a separate
-                // maintenanceStaffUsers array and are intentionally excluded from this report)
-                const rows = (this.state.employees || []).map(e => {
+                // OPS staff = this.state.employees, plus Maintenance staff from the
+                // separate maintenanceStaffUsers array (tagged with isMaintenance for filtering/export)
+                const opsRows = (this.state.employees || []).map(e => {
                     const years = calcYears(e.seniorityDate);
                     return {
                         id: e.id,
@@ -4468,9 +4468,26 @@
                         position: e.position || '—',
                         seniorityDate: e.seniorityDate || '',
                         years,
-                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B'
+                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B',
+                        isMaintenance: false
                     };
                 });
+
+                const maintRows = (this.state.maintenanceStaffUsers || []).map(e => {
+                    const years = calcYears(e.seniorityDate);
+                    return {
+                        id: e.id,
+                        name: e.name || '—',
+                        department: e.department || 'Maintenance',
+                        position: e.position || '—',
+                        seniorityDate: e.seniorityDate || '',
+                        years,
+                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B',
+                        isMaintenance: true
+                    };
+                });
+
+                const rows = [...opsRows, ...maintRows];
 
                 // Sort: most senior (earliest date) first
                 rows.sort((a, b) => {
@@ -4492,7 +4509,7 @@
                             <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
                                 <div>
                                     <h2 class="text-2xl font-bold">📋 Seniority Date Report</h2>
-                                    <p class="text-sm text-gray-500 mt-1">All Operations Staff — Maintenance Staff are excluded from this report</p>
+                                    <p class="text-sm text-gray-500 mt-1">All Operations Staff and Maintenance Staff</p>
                                 </div>
                                 <div class="flex gap-2">
                                     <button onclick="app.exportSeniorityReportCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">
@@ -4504,10 +4521,14 @@
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                                 <div class="bg-gray-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold">${rows.length}</p>
-                                    <p class="text-sm text-gray-600">Total OPS Staff</p>
+                                    <p class="text-sm text-gray-600">Total Staff</p>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-blue-700">${rows.filter(r => r.isMaintenance).length}</p>
+                                    <p class="text-sm text-gray-600">Maintenance Staff</p>
                                 </div>
                                 <div class="bg-orange-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold text-orange-700">${seniorCount}</p>
@@ -4536,6 +4557,11 @@
                                     <option value="senior">&gt;5 yrs — Slot C/D</option>
                                     <option value="junior">≤5 yrs — Slot A/B</option>
                                 </select>
+                                <select id="seniorityReportTypeFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                    <option value="all">All Staff Types</option>
+                                    <option value="ops">Operations Staff</option>
+                                    <option value="maintenance">Maintenance Staff</option>
+                                </select>
                             </div>
 
                             <div class="overflow-x-auto">
@@ -4547,6 +4573,7 @@
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
+                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Type</th>
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Seniority Date</th>
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Years of Service</th>
                                             <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Eligible Slots</th>
@@ -4570,12 +4597,13 @@
                 const badgeClass = r.years > 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800';
                 const missingClass = !r.seniorityDate ? 'bg-red-50' : (idx % 2 === 0 ? '' : 'bg-gray-50');
                 return `
-                    <tr class="${missingClass} hover:bg-indigo-50 transition-colors" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
+                    <tr class="${missingClass} hover:bg-indigo-50 transition-colors" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-type="${r.isMaintenance ? 'maintenance' : 'ops'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
                         <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
                         <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(r.id)}</td>
                         <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${this._escHtml(r.name)}</td>
                         <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.department)}</td>
                         <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.position)}</td>
+                        <td class="border border-gray-200 px-3 py-2">${r.isMaintenance ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">Maintenance</span>' : '<span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">Operations</span>'}</td>
                         <td class="border border-gray-200 px-3 py-2 text-gray-700">${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0,10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
                         <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${r.years.toFixed(1)}</td>
                         <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${badgeClass}">${r.eligibleSlots}</span></td>
@@ -4586,13 +4614,15 @@
                 const q = (document.getElementById('seniorityReportSearch')?.value || '').toLowerCase().trim();
                 const dept = document.getElementById('seniorityReportDeptFilter')?.value || 'all';
                 const elig = document.getElementById('seniorityReportEligFilter')?.value || 'all';
+                const type = document.getElementById('seniorityReportTypeFilter')?.value || 'all';
                 const rowsEls = document.querySelectorAll('#seniorityReportBody tr');
                 let visible = 0;
                 rowsEls.forEach(tr => {
                     const matchesQ    = !q || (tr.dataset.search || '').includes(q);
                     const matchesDept = dept === 'all' || tr.dataset.dept === dept;
                     const matchesElig = elig === 'all' || tr.dataset.elig === elig;
-                    const show = matchesQ && matchesDept && matchesElig;
+                    const matchesType = type === 'all' || tr.dataset.type === type;
+                    const show = matchesQ && matchesDept && matchesElig && matchesType;
                     tr.style.display = show ? '' : 'none';
                     if (show) visible++;
                 });
@@ -4603,15 +4633,16 @@
             exportSeniorityReportCSV() {
                 const rows = window._seniorityReportRows || [];
                 if (rows.length === 0) {
-                    alert('No OPS staff data to export.');
+                    alert('No staff data to export.');
                     return;
                 }
                 const wsData = [
-                    ['Staff ID', 'Name', 'Department', 'Position', 'Seniority Date', 'Years of Service', 'Eligible Slots']
+                    ['Staff ID', 'Name', 'Department', 'Position', 'Staff Type', 'Seniority Date', 'Years of Service', 'Eligible Slots']
                 ];
                 rows.forEach(r => {
                     wsData.push([
                         r.id, r.name, r.department, r.position,
+                        r.isMaintenance ? 'Maintenance' : 'Operations',
                         r.seniorityDate ? r.seniorityDate.slice(0, 10) : 'Missing',
                         r.years.toFixed(1),
                         r.eligibleSlots
@@ -4620,7 +4651,7 @@
                 const ws = XLSX.utils.aoa_to_sheet(wsData);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Seniority Report');
-                XLSX.writeFile(wb, `OPS_Seniority_Report_${this.state.biddingYear}.xlsx`);
+                XLSX.writeFile(wb, `Seniority_Report_${this.state.biddingYear}.xlsx`);
             },
 
             async copyToAllMonths() {
