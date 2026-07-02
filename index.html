@@ -4305,7 +4305,10 @@
                                         }
                                     </div>
                                 </div>
-                                <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
+                                    <button onclick="app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                </div>
                             </div>
                             <div class="px-4 pt-3">
                                 <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
@@ -4752,6 +4755,31 @@
                 await this.saveConfigToSupabase();
             },
             
+            // Clears all saved date/capacity/on-off overrides for one department, restoring
+            // the auto-computed default dates (30-day blocks) that show when nothing is saved.
+            async resetDeptSlotsToDefault(dept) {
+                const prefix = `cal-${dept}-`;
+                const keysToRemove = Object.keys(this.state.slotCapacities).filter(k => k.startsWith(prefix));
+
+                if (keysToRemove.length === 0) {
+                    alert(`No saved slot configuration found for "${dept}" — it's already showing default dates.`);
+                    return;
+                }
+
+                if (!confirm(`Reset "${dept}" to default dates?\n\nThis will clear ${keysToRemove.length} saved field(s) (dates, capacities, on/off toggles) for all 12 months. This cannot be undone once saved.`)) {
+                    return;
+                }
+
+                keysToRemove.forEach(k => delete this.state.slotCapacities[k]);
+                await this.saveConfigToSupabase();
+
+                const filterVal = document.getElementById('deptFilter')?.value || 'all';
+                const configArea = document.getElementById('configArea');
+                if (configArea) configArea.innerHTML = this.renderDeptConfig(filterVal);
+
+                alert(`✅ "${dept}" reset to default dates.`);
+            },
+
             // Parses pasted rows (tab or comma separated) into slotCapacities for one department,
             // then saves to Supabase in a single call — avoids re-typing every field by hand.
             async bulkImportDeptSlots(dept) {
@@ -7007,14 +7035,13 @@
 
             // ==================== RESET SYSTEM ====================
             async resetSystem() {
-                if (confirm('⚠️ WARNING: This will reset ALL data including employees, bids, and results. Continue?')) {
+                if (confirm('⚠️ WARNING: This will reset employees, bids, results, and on-call dates. Slot configuration (calendar dates) is NOT affected — use "Reset to Default Dates" on a department if you need to clear that separately. Continue?')) {
                     this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
                     localStorage.clear();
                     this.state.employees = [];
                     this.state.bids = [];
                     this.state.results = [];
                     this.state.isProcessed = false;
-                    this.state.slotCapacities = {};
                     this.state.onCallDates = {};
                     this.state.currentUser = null;
                     this.state.userType = null;
