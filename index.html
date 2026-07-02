@@ -4069,7 +4069,27 @@
                                     <h3 class="text-xl font-bold text-red-900">${dept}</h3>
                                     <span class="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">${empCount} maintenance staff</span>
                                 </div>
-                                <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
+                                    <button onclick="app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                </div>
+                            </div>
+                            <div class="px-4 pt-3">
+                                <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
+                                    <summary class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
+                                    <div class="p-3 pt-1">
+                                        <p class="text-xs text-indigo-700 mb-2">
+                                            One row per month, columns tab- or comma-separated, dates as DD/MM/YYYY, "on" as 1 or 0:<br>
+                                            <code>Month, SA-Start, SA-End, SA-Max, SA-On, SB-Start, SB-End, SB-Max, SB-On, SC-Start, SC-End, SC-Max, SC-On</code>
+                                        </p>
+                                        <textarea id="bulkImportMaint-${dept}" rows="4" placeholder="January\t01/01/2027\t15/01/2027\t4\t1\t16/01/2027\t30/01/2027\t4\t1\t01/01/2027\t15/01/2027\t1\t1"
+                                            class="w-full text-xs font-mono border border-indigo-300 rounded p-2"></textarea>
+                                        <div class="flex gap-2 mt-2">
+                                            <button onclick="app.bulkImportMaintDeptSlots('${dept}')" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Import &amp; Save</button>
+                                            <span id="bulkImportMaintMsg-${dept}" class="text-xs self-center"></span>
+                                        </div>
+                                    </div>
+                                </details>
                             </div>
                             <div class="p-4 overflow-x-auto">
                                 <table class="w-full text-sm border-collapse">
@@ -4235,6 +4255,97 @@
                 await this.saveConfigToSupabase();
                 alert(`✅ Maintenance slot configurations saved!\\n\\n• ${savedCount} fields saved.`);
                 this.setActiveView('admin');
+            },
+
+            // Clears all saved date/capacity/on-off overrides for one maintenance roster group,
+            // restoring the auto-computed default dates (30-day blocks) shown when nothing is saved.
+            async resetMaintDeptSlotsToDefault(dept) {
+                const prefix = `cal-maint-${dept}-`;
+                const keysToRemove = Object.keys(this.state.maintSlotCapacities).filter(k => k.startsWith(prefix));
+
+                if (keysToRemove.length === 0) {
+                    alert(`No saved slot configuration found for "${dept}" — it's already showing default dates.`);
+                    return;
+                }
+
+                if (!confirm(`Reset "${dept}" to default dates?\n\nThis will clear ${keysToRemove.length} saved field(s) (dates, capacities, on/off toggles) for all 12 months. This cannot be undone once saved.`)) {
+                    return;
+                }
+
+                keysToRemove.forEach(k => delete this.state.maintSlotCapacities[k]);
+                await this.saveConfigToSupabase();
+
+                const area = document.getElementById('maintConfigArea');
+                const filterVal = document.getElementById('maintDeptFilter')?.value || 'all';
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filterVal);
+
+                alert(`✅ "${dept}" reset to default dates.`);
+            },
+
+            // Parses pasted rows (tab or comma separated) into maintSlotCapacities for one roster
+            // group (3 slots: SA/SB/SC), then saves to Supabase in a single call.
+            async bulkImportMaintDeptSlots(dept) {
+                const ta = document.getElementById(`bulkImportMaint-${dept}`);
+                const msgEl = document.getElementById(`bulkImportMaintMsg-${dept}`);
+                if (!ta || !ta.value.trim()) {
+                    if (msgEl) { msgEl.textContent = '⚠️ Paste some rows first.'; msgEl.className = 'text-xs self-center text-red-600'; }
+                    return;
+                }
+
+                const ddmmyyyyToIso = (s) => {
+                    s = (s || '').trim();
+                    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                    if (!m) return null;
+                    const [, d, mo, y] = m;
+                    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                };
+                const toBool = (s) => ['1', 'true', 'yes', 'y', 'on'].includes((s || '').trim().toLowerCase());
+
+                const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
+                let rowsImported = 0, fieldsImported = 0;
+                const errors = [];
+
+                lines.forEach((line, idx) => {
+                    const cols = line.includes('\t') ? line.split('\t') : line.split(',');
+                    const cols_ = cols.map(c => c.trim());
+                    if (cols_.length < 13) {
+                        errors.push(`Row ${idx + 1}: expected 13 columns, found ${cols_.length}`);
+                        return;
+                    }
+                    const [month, ...rest] = cols_;
+                    if (!this.state.months.includes(month)) {
+                        errors.push(`Row ${idx + 1}: "${month}" is not a valid month name`);
+                        return;
+                    }
+                    const slots = ['SA', 'SB', 'SC'];
+                    slots.forEach((slotId, si) => {
+                        const [startRaw, endRaw, maxRaw, onRaw] = rest.slice(si * 4, si * 4 + 4);
+                        const startIso = ddmmyyyyToIso(startRaw);
+                        const endIso = ddmmyyyyToIso(endRaw);
+                        if (startRaw && !startIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad start date "${startRaw}"`); return; }
+                        if (endRaw && !endIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad end date "${endRaw}"`); return; }
+                        if (startIso) { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-start`] = startIso; fieldsImported++; }
+                        if (endIso) { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-end`] = endIso; fieldsImported++; }
+                        if (maxRaw !== undefined && maxRaw !== '') { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-capacity`] = parseInt(maxRaw) || 0; fieldsImported++; }
+                        this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-enabled`] = toBool(onRaw);
+                        fieldsImported++;
+                    });
+                    rowsImported++;
+                });
+
+                if (errors.length > 0) {
+                    if (msgEl) { msgEl.textContent = `⚠️ ${errors.length} issue(s) — see console.`; msgEl.className = 'text-xs self-center text-red-600'; }
+                    console.warn('Bulk import issues:', errors);
+                    if (rowsImported === 0) return;
+                }
+
+                await this.saveConfigToSupabase();
+
+                const area = document.getElementById('maintConfigArea');
+                const filterVal = document.getElementById('maintDeptFilter')?.value || 'all';
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filterVal);
+
+                if (msgEl) { msgEl.textContent = `✅ Imported ${rowsImported} month(s), ${fieldsImported} fields saved.`; msgEl.className = 'text-xs self-center text-green-700'; }
             },
 
             
@@ -9556,6 +9667,7 @@
                         is_processed: this.state.isProcessed,
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
+                        maint_slot_capacities: this.state.maintSlotCapacities || {},
                         maint_results: this.state.maintResults || [],
                         is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
