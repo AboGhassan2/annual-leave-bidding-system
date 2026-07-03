@@ -1091,6 +1091,9 @@
             <button onclick="app.setActiveView('leaveDashboard')" class="px-4 py-2 rounded-lg font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-300">
                 &#128197; GC &amp; CS Leave Tracker
             </button>
+            <button onclick="app.setActiveView('hrCorpDashboard')" class="px-4 py-2 rounded-lg font-semibold bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-300">
+                &#127970; HR Corporate Dashboard
+            </button>
         </div>
 
         <!-- Employee Navigation -->
@@ -1145,6 +1148,9 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
     <!-- EmailJS -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <!-- Chart.js (used by HR Corporate Dashboard) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     
     <script>
         // ==================== SUPABASE CONFIG ====================
@@ -1166,6 +1172,9 @@
                 biddingYear: 2026,
                 isProcessed: false,
                 isMaintProcessed: false,
+                biddingDeadlineCorp: '',
+                biddingYearCorp: 2026,
+                isProcessedCorp: false,
                 activeView: 'login',
                 selectedEmployeeId: '',
                 verifiedEmployee: null,
@@ -1326,10 +1335,22 @@
                     
                     // Load system config
                     const { data: config, error: configError } = await this.supabase
+                        .from('system_config_82')
+                        .select('*')
+                        .eq('tenant_id', this._tid())
+                        .single();
+
+                    // Load Corporate/GC config from its own dedicated table (isolated
+                    // from Ops/Maintenance settings, which live in system_config_82)
+                    const { data: configCorp, error: configCorpError } = await this.supabase
                         .from('system_config')
                         .select('*')
                         .eq('tenant_id', this._tid())
                         .single();
+
+                    if (configCorpError && configCorpError.code !== 'PGRST116') {
+                        console.warn('Corp config error:', configCorpError);
+                    }
                     
                     if (configError && configError.code !== 'PGRST116') {
                         console.warn('Config error:', configError);
@@ -1416,6 +1437,15 @@
                         if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
                         if (config.planner_email){ this.state.plannerEmail  = config.planner_email; localStorage.setItem('ejs_planner_email', config.planner_email); }
                         console.log('✅ Loaded system config from Supabase — ejs_service:', config.ejs_service || '(empty)', '| ejs_template:', config.ejs_template || '(empty)', '| ejs_pubkey:', config.ejs_pubkey ? config.ejs_pubkey.substring(0,6)+'…' : '(empty)');
+                    }
+
+                    // Corporate/GC settings live in their own table (system_config),
+                    // completely separate from Ops/Maintenance (system_config_82)
+                    if (configCorp) {
+                        this.state.biddingDeadlineCorp = configCorp.bidding_deadline || '';
+                        this.state.biddingYearCorp = configCorp.bidding_year || 2026;
+                        this.state.isProcessedCorp = configCorp.is_processed || false;
+                        console.log('✅ Loaded Corporate/GC config from system_config table');
                     }
 
                     // Load on-call dates from dedicated oncall_dates table
@@ -1679,10 +1709,10 @@
                         this.updateSystemStatus(`Saving employees (${saved}/${empTotal})...`);
                     }
 
-                    // ── 2. Save system config ──
+                    // ── 2. Save system config (Ops/Maintenance) ──
                     this.updateSystemStatus('Saving system config...');
                     const { error: configError } = await this.supabase
-                        .from('system_config')
+                        .from('system_config_82')
                         .upsert({
                             id: 1,
                             tenant_id: this._tid(),
@@ -1699,6 +1729,21 @@
                         }, { onConflict: 'id' });
 
                     if (configError) console.warn('Config save warning:', configError.message);
+
+                    // ── 2b. Save Corporate/GC system config to its own dedicated table ──
+                    this.updateSystemStatus('Saving Corporate/GC config...');
+                    const { error: configCorpError } = await this.supabase
+                        .from('system_config')
+                        .upsert({
+                            id: 1,
+                            tenant_id: this._tid(),
+                            bidding_deadline: this.state.biddingDeadlineCorp,
+                            bidding_year: this.state.biddingYearCorp,
+                            is_processed: this.state.isProcessedCorp,
+                            last_updated: new Date().toISOString()
+                        }, { onConflict: 'id' });
+
+                    if (configCorpError) console.warn('Corp config save warning:', configCorpError.message);
 
                     // ── 2b. Save on-call dates to dedicated table ──
                     this.updateSystemStatus('Saving on-call dates...');
@@ -1774,6 +1819,9 @@
                     localStorage.setItem('biddingDeadline', this.state.biddingDeadline);
                     localStorage.setItem('biddingYear', this.state.biddingYear.toString());
                     localStorage.setItem('isProcessed', JSON.stringify(this.state.isProcessed));
+                    localStorage.setItem('biddingDeadlineCorp', this.state.biddingDeadlineCorp);
+                    localStorage.setItem('biddingYearCorp', this.state.biddingYearCorp.toString());
+                    localStorage.setItem('isProcessedCorp', JSON.stringify(this.state.isProcessedCorp));
                     localStorage.setItem('plannerPassword', this.state.plannerPassword);
                     localStorage.setItem('plannerEmail',    this.state.plannerEmail || 'a_abdulqader@outlook.com');
                     localStorage.setItem('results', JSON.stringify(this.state.results));
@@ -1801,6 +1849,9 @@
                         this.state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
                         this.state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
                         this.state.isProcessed = JSON.parse(localStorage.getItem('isProcessed') || 'false');
+                        this.state.biddingDeadlineCorp = localStorage.getItem('biddingDeadlineCorp') || '';
+                        this.state.biddingYearCorp = parseInt(localStorage.getItem('biddingYearCorp')) || 2026;
+                        this.state.isProcessedCorp = JSON.parse(localStorage.getItem('isProcessedCorp') || 'false');
                         this.state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
                         if (!this.state.plannerPassword) this.state.plannerPassword = 'admin123';
                         this.state.plannerEmail    = localStorage.getItem('plannerEmail')    || 'a_abdulqader@outlook.com';
@@ -2005,7 +2056,13 @@
 
                     this.state.currentUser = csUser;
                     this.state.userType = 'corporatestaff';
-                    this.state.verifiedEmployee = { id: csUser.id, name: csUser.name, department: 'Corporate Staff', seniorityDate: '2000-01-01' };
+                    this.state.verifiedEmployee = {
+                        id: csUser.id,
+                        name: csUser.name,
+                        department: csUser.department || 'Corporate Staff',
+                        position: csUser.position || '',
+                        seniorityDate: csUser.seniorityDate || '2000-01-01'
+                    };
                     this.state.activeView = 'corporateStaff';
 
                     // Hide login, show app
@@ -2156,24 +2213,18 @@
                 // Re-sync only user lists from Supabase so dropdowns are fresh on next login
                 if (this.supabase) {
                     try {
-                        // Reload CS users
+                        // Reload CS roster
                         const { data: csRows } = await this.supabase
                             .from('corporate_staff_employees').select('*')
                             .eq('tenant_id', this._tid());
                         if (csRows && csRows.length > 0)
                             this.state.corporateStaffUsers = csRows.map(u => ({
-                                id:            String(u.id),
-                                name:          u.name         || '',
-                                department:    u.department   || 'Corporate Staff',
-                                position:      u.position     || '',
-                                role:          u.role         || '',
-                                nationality:   u.nationality  || '',
-                                gender:        u.gender       || '',
+                                id: String(u.id), name: u.name || '',
+                                department: u.department || 'Corporate Staff', position: u.position || '',
+                                role: u.role || '', nationality: u.nationality || '', gender: u.gender || '',
                                 seniorityDate: u.seniority_date || '2000-01-01',
-                                totalLeaveDays: u.total_leave_days ?? 30,
-                                usedLeaveDays:  u.used_leave_days  ?? 0,
-                                password:      u.password || String(u.id),
-                                email:         u.email || ''
+                                totalLeaveDays: u.total_leave_days ?? 30, usedLeaveDays: u.used_leave_days ?? 0,
+                                password: u.password || String(u.id), email: u.email || ''
                             }));
 
                         // Reload sub-group users
@@ -2279,6 +2330,9 @@
                         break;
                     case 'leaveDashboard':
                         this.renderLeaveDashboardView();
+                        break;
+                    case 'hrCorpDashboard':
+                        this.renderHrCorpDashboardView();
                         break;
                 }
                 
@@ -2399,6 +2453,8 @@
                                         <div class="flex items-center gap-3 flex-wrap">
                                             <span class="font-semibold text-blue-900">🏢 ${u.name}</span>
                                             <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-mono border border-blue-300">ID: ${u.id}</span>
+                                            ${u.department && !['Corporate Staff', 'Human Resource', 'Human Resources'].includes(u.department) ? `<span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">${u.department}</span>` : ''}
+                                            ${u.position ? `<span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">${u.position}</span>` : ''}
                                             <span class="text-xs text-gray-400">Password: ${u.password || u.id}</span>
                                         </div>
                                         <button onclick="app.removeCSUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
@@ -2968,8 +3024,8 @@
 
                 // Countdown
                 const deadlineCountdownGC = (() => {
-                    if (!this.state.biddingDeadline) return '';
-                    const dl = new Date(this.state.biddingDeadline);
+                    if (!this.state.biddingDeadlineCorp) return '';
+                    const dl = new Date(this.state.biddingDeadlineCorp);
                     const diff = dl - new Date();
                     if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
                     const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
@@ -2984,7 +3040,7 @@
                         <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-yellow-400">
                             <div class="flex items-center gap-3 mb-4">
                                 <span class="text-3xl">⭐</span>
-                                <h2 class="text-2xl font-bold">Golden Command — ${gcUser.name} — Leave Bidding ${this.state.biddingYear}</h2>
+                                <h2 class="text-2xl font-bold">Golden Command — ${gcUser.name} — Leave Bidding ${this.state.biddingYearCorp}</h2>
                             </div>
                             
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -3033,7 +3089,7 @@
                             <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-yellow-400">
                                 <h3 class="text-xl font-bold mb-4">⭐ Place New GC Bid</h3>
                                 
-                                ${this.state.isProcessed ? `
+                                ${this.state.isProcessedCorp ? `
                                     <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
                                         <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
                                     </div>
@@ -3051,8 +3107,8 @@
                                                 <button
                                                     data-slot="${slot.id}"
                                                     onclick="app.setGCSelectedSlot('${slot.id}')"
-                                                    class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessed ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (isActive ? (activeMap[slot.color] || 'bg-yellow-400 text-yellow-900 border-yellow-500') : (colorMap[slot.color] || 'bg-yellow-50 hover:bg-yellow-100 text-gray-800 border-yellow-300'))}"
-                                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                                    class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessedCorp ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (isActive ? (activeMap[slot.color] || 'bg-yellow-400 text-yellow-900 border-yellow-500') : (colorMap[slot.color] || 'bg-yellow-50 hover:bg-yellow-100 text-gray-800 border-yellow-300'))}"
+                                                    ${this.state.isProcessedCorp ? 'disabled' : ''}
                                                 >
                                                     ${slot.name} — ${slot.days} consecutive days
                                                     ${isActive ? '<span class="float-right">✓ Selected</span>' : ''}
@@ -3063,8 +3119,8 @@
                                         <button
                                             data-slot="gcCustom"
                                             onclick="app.setGCSelectedSlot('gcCustom')"
-                                            class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessed ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (window.gcSelectedSlot === 'gcCustom' ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : 'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-400')}"
-                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                            class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessedCorp ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (window.gcSelectedSlot === 'gcCustom' ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : 'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-400')}"
+                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
                                         >
                                             ⭐ Custom — Choose any start &amp; end date freely
                                             ${window.gcSelectedSlot === 'gcCustom' ? '<span class="float-right">✓ Selected</span>' : ''}
@@ -3113,8 +3169,8 @@
                                                 type="date"
                                                 id="gcStartDate"
                                                 class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
-                                                min="${this.state.biddingYear}-01-01"
-                                                max="${this.state.biddingYear}-12-31"
+                                                min="${this.state.biddingYearCorp}-01-01"
+                                                max="${this.state.biddingYearCorp}-12-31"
                                                 onchange="app.updateGCEndDate()"
                                             />
                                         </div>
@@ -3124,8 +3180,8 @@
                                                 type="date"
                                                 id="gcEndDate"
                                                 class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
-                                                min="${this.state.biddingYear}-01-01"
-                                                max="${this.state.biddingYear}-12-31"
+                                                min="${this.state.biddingYearCorp}-01-01"
+                                                max="${this.state.biddingYearCorp}-12-31"
                                                 onchange="app.updateGCDateInfo()"
                                             />
                                         </div>
@@ -3138,7 +3194,7 @@
                                 <button
                                     onclick="app.submitGCBid()"
                                     class="w-full px-6 py-3 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 transition-colors shadow-sm"
-                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}
+                                    ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'disabled' : ''}
                                 >
                                     ⭐ Submit Golden Command Bid
                                 </button>
@@ -3177,7 +3233,7 @@
                                                         <button
                                                             onclick="app.removeGCBid('${bid.slotType}', '${bid.startDate}')"
                                                             class="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-                                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
                                                         >
                                                             ✕ Remove
                                                         </button>
@@ -3208,12 +3264,12 @@
                 }
 
                 // Live countdown ticker for GC
-                if (this.state.biddingDeadline) {
+                if (this.state.biddingDeadlineCorp) {
                     clearInterval(window._gcCountdownInterval);
                     window._gcCountdownInterval = setInterval(() => {
                         const el = document.getElementById('gcCountdownTimer');
                         if (!el) { clearInterval(window._gcCountdownInterval); return; }
-                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        const diff = new Date(this.state.biddingDeadlineCorp) - new Date();
                         if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._gcCountdownInterval); return; }
                         const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
                         el.textContent = `${d}d ${h}h ${m}m ${s}s`;
@@ -3228,7 +3284,7 @@
                 const buttons = document.querySelectorAll('.gc-slot-btn');
                 buttons.forEach(btn => {
                     const isSelected = btn.dataset.slot === slotId;
-                    if (this.state.isProcessed) {
+                    if (this.state.isProcessedCorp) {
                         btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-gray-200 text-gray-500 cursor-not-allowed';
                     } else if (isSelected) {
                         btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-yellow-400 text-yellow-900 border-yellow-500';
@@ -3278,7 +3334,7 @@
                 const monthSelect = document.getElementById('gcSelectedMonth');
                 if (monthSelect) {
                     const monthText = document.getElementById('gcSelectedMonthText');
-                    if (monthText) monthText.textContent = monthSelect.value + ' ' + this.state.biddingYear;
+                    if (monthText) monthText.textContent = monthSelect.value + ' ' + this.state.biddingYearCorp;
                 }
             },
 
@@ -3356,12 +3412,12 @@
             },
 
             submitGCBid() {
-                if (this.state.isProcessed) {
+                if (this.state.isProcessedCorp) {
                     alert('Bidding has been processed. No more bids allowed.');
                     return;
                 }
 
-                if (this.isBiddingClosed()) {
+                if (this.isBiddingClosedCorp()) {
                     alert('⛔ The bidding deadline has passed. You can no longer submit bids.');
                     return;
                 }
@@ -3461,7 +3517,7 @@
             },
 
             async removeGCBid(slotType, startDate) {
-                if (this.state.isProcessed) {
+                if (this.state.isProcessedCorp) {
                     alert('Cannot remove bids after processing.');
                     return;
                 }
@@ -3518,8 +3574,8 @@
 
                 // Countdown
                 const deadlineCountdownCS = (() => {
-                    if (!this.state.biddingDeadline) return '';
-                    const dl = new Date(this.state.biddingDeadline);
+                    if (!this.state.biddingDeadlineCorp) return '';
+                    const dl = new Date(this.state.biddingDeadlineCorp);
                     const diff = dl - new Date();
                     if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
                     const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
@@ -3534,7 +3590,7 @@
                         <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-blue-500">
                             <div class="flex items-center gap-3 mb-4">
                                 <span class="text-3xl">🏢</span>
-                                <h2 class="text-2xl font-bold">Corporate Staff — ${csUser.name} — Leave Bidding ${this.state.biddingYear}</h2>
+                                <h2 class="text-2xl font-bold">Corporate Staff — ${csUser.name} — Leave Bidding ${this.state.biddingYearCorp}</h2>
                             </div>
 
                             ${(() => {
@@ -3630,7 +3686,7 @@
                             <!-- Left: Place New Bid -->
                             <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-blue-500">
                                 <h3 class="text-xl font-bold mb-4">🏢 Place New Corporate Staff Bid</h3>
-                                ${this.state.isProcessed ? `
+                                ${this.state.isProcessedCorp ? `
                                     <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
                                         <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
                                     </div>` : ''}
@@ -3643,8 +3699,8 @@
                                             <button
                                                 onclick="app.csSetSelectedSlot('${slot.id}')"
                                                 data-csslot="${slot.id}"
-                                                class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800 ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
-                                                ${this.state.isProcessed ? 'disabled' : ''}
+                                                class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800 ${this.state.isProcessedCorp ? 'opacity-50 cursor-not-allowed' : ''}"
+                                                ${this.state.isProcessedCorp ? 'disabled' : ''}
                                             >
                                                 ${slot.name} — ${slot.days} consecutive days
                                             </button>
@@ -3652,8 +3708,8 @@
                                         <button
                                             onclick="app.csSetSelectedSlot('csCustom')"
                                             data-csslot="csCustom"
-                                            class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-50 border border-blue-300 hover:bg-blue-100 text-blue-800 ${this.state.isProcessed ? 'opacity-50 cursor-not-allowed' : ''}"
-                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                            class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-50 border border-blue-300 hover:bg-blue-100 text-blue-800 ${this.state.isProcessedCorp ? 'opacity-50 cursor-not-allowed' : ''}"
+                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
                                         >
                                             🏢 Custom — Any date range (free choice)
                                         </button>
@@ -3671,7 +3727,7 @@
                                             <label class="block text-sm font-semibold mb-1">Start Date</label>
                                             <input type="date" id="csStartDate"
                                                 class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                                                min="${this.state.biddingYear}-01-01" max="${this.state.biddingYear}-12-31"
+                                                min="${this.state.biddingYearCorp}-01-01" max="${this.state.biddingYearCorp}-12-31"
                                                 onchange="app.csUpdateEndDate()" />
                                         </div>
                                         <div>
@@ -3686,8 +3742,8 @@
                                 </div>
 
                                 <button onclick="app.submitCSBid()"
-                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${(this.state.isProcessed || this.isBiddingClosed()) ? 'opacity-50 cursor-not-allowed' : ''}"
-                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}>
+                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'opacity-50 cursor-not-allowed' : ''}"
+                                    ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'disabled' : ''}>
                                     🏢 Submit Corporate Staff Bid
                                 </button>
                             </div>
@@ -3733,7 +3789,7 @@
                 window._csCountdownTimer = setInterval(() => {
                     const el = document.getElementById('csCountdownTimer');
                     if (!el) { clearInterval(window._csCountdownTimer); return; }
-                    const diff = new Date(this.state.biddingDeadline) - new Date();
+                    const diff = new Date(this.state.biddingDeadlineCorp) - new Date();
                     if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._csCountdownTimer); return; }
                     const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
                     el.textContent = `${d}d ${h}h ${m}m ${s}s`;
@@ -3823,8 +3879,8 @@
             },
 
             submitCSBid() {
-                if (this.state.isProcessed) { alert('Bidding has been processed. No more bids.'); return; }
-                if (this.isBiddingClosed()) { alert('⛔ The bidding deadline has passed. You can no longer submit bids.'); return; }
+                if (this.state.isProcessedCorp) { alert('Bidding has been processed. No more bids.'); return; }
+                if (this.isBiddingClosedCorp()) { alert('⛔ The bidding deadline has passed. You can no longer submit bids.'); return; }
                 const csUser = this.state.verifiedEmployee;
                 if (!csUser) return;
                 if (!window.csSelectedSlot) { alert('⚠️ Please select a slot type first.'); return; }
@@ -3911,7 +3967,7 @@
             },
 
             async removeCSBid(slotType, startDate) {
-                if (this.state.isProcessed) { alert('Cannot remove bids after processing.'); return; }
+                if (this.state.isProcessedCorp) { alert('Cannot remove bids after processing.'); return; }
                 if (!confirm('Remove this Corporate Staff bid?')) return;
                 const csUser = this.state.verifiedEmployee;
 
@@ -4257,8 +4313,8 @@
                 this.setActiveView('admin');
             },
 
-            // Clears all saved date/capacity/on-off overrides for one maintenance roster group,
-            // restoring the auto-computed default dates (30-day blocks) shown when nothing is saved.
+            // Clears all saved date/capacity/on-off overrides for one roster group, restoring
+            // the auto-computed default dates (30-day blocks) that show when nothing is saved.
             async resetMaintDeptSlotsToDefault(dept) {
                 const prefix = `cal-maint-${dept}-`;
                 const keysToRemove = Object.keys(this.state.maintSlotCapacities).filter(k => k.startsWith(prefix));
@@ -4865,7 +4921,7 @@
                 
                 await this.saveConfigToSupabase();
             },
-            
+
             // Clears all saved date/capacity/on-off overrides for one department, restoring
             // the auto-computed default dates (30-day blocks) that show when nothing is saved.
             async resetDeptSlotsToDefault(dept) {
@@ -4956,7 +5012,7 @@
 
                 if (msgEl) { msgEl.textContent = `✅ Imported ${rowsImported} month(s), ${fieldsImported} fields saved.`; msgEl.className = 'text-xs self-center text-green-700'; }
             },
-
+            
             async saveSlotConfiguration() {
                 // Save calendar-based slot inputs (new format: cal-dept-month-slotId-field)
                 const calInputs = document.querySelectorAll('.cal-slot-input');
@@ -5148,6 +5204,18 @@
                 return allSpecial.includes(employeeId);
             },
 
+            // Fixed roster of Staff IDs that belong to the "HR Corporate" bid section.
+            // Sourced from the corporate_staff_employees_rows.csv upload — any other
+            // Corporate Staff records (added later / not on this list) remain grouped
+            // under the general "GC & Corporate Staff" tab.
+            _HR_CORPORATE_IDS: ['1000027','1000052','1000060','1000072','1000081','1000092','1000095','1000104','1000123','1000129','1000160','1000167','1000181','1000215','1000228','1000278','1000285','1000307','1000399','1000442','1000516','1000547','1000565','1000604','1000617','1000664','1000675','1000743','1000769','1000775','1000784','1000804','1000834','1000847','1000945','1000956','1001236','1002247','1002280','1002438','1002885','1003687','1004522','1004831','1004962','1005101','1005263','1005708','1006476','1006806','1006807','1006869','1006894','1006895','1006912','1006938','1006959','1007062','1007063','1007064','1007088','1007113','1007114','1007115','1007116','1007117','1007122','1007134','1007135','1007151'],
+
+            _isHrCorporate(employeeId) {
+                // Returns true only for the specific staff IDs on the HR Corporate list
+                // (not the entire Corporate Staff roster).
+                return this._HR_CORPORATE_IDS.includes(String(employeeId));
+            },
+
             _isMaintStaff(employeeId, bid) {
                 // Prefer the source table tag set at fetch time — reliable even when
                 // maintenanceStaffUsers list is not loaded in the admin session
@@ -5162,12 +5230,13 @@
             _switchBidTab(tab) {
                 const empBtn   = document.getElementById('bidTabEmp');
                 const gccsBtn  = document.getElementById('bidTabGcCs');
+                const hrBtn    = document.getElementById('bidTabHr');
                 const maintBtn = document.getElementById('bidTabMaint');
-                [empBtn, gccsBtn, maintBtn].forEach(btn => {
+                [empBtn, gccsBtn, hrBtn, maintBtn].forEach(btn => {
                     if (!btn) return;
                     btn.style.background = '#f3f4f6'; btn.style.color = '#374151';
                 });
-                const target = tab === 'employees' ? empBtn : tab === 'gccs' ? gccsBtn : maintBtn;
+                const target = tab === 'employees' ? empBtn : tab === 'gccs' ? gccsBtn : tab === 'hrcorp' ? hrBtn : maintBtn;
                 if (target) { target.style.background = '#4f46e5'; target.style.color = '#fff'; }
                 const container = document.getElementById('adminBidsTableContainer');
                 if (container) {
@@ -5196,9 +5265,11 @@
                     .filter(bid => {
                         // Tab filter
                         const isSpecial = this._isGcOrCs(bid.employeeId);
+                        const isHr      = this._isHrCorporate(bid.employeeId);
                         const isMaint   = this._isMaintStaff(bid.employeeId, bid);
                         if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
-                        if (tabFilter === 'gccs'      && (!isSpecial || isMaint)) return false;
+                        if (tabFilter === 'gccs'      && (!isSpecial || isHr || isMaint)) return false;
+                        if (tabFilter === 'hrcorp'    && (!isHr || isMaint)) return false;
                         if (tabFilter === 'maint'     && !isMaint) return false;
                         // Search filter
                         if (!q) return true;
@@ -5240,7 +5311,7 @@
                         <div class="flex items-center gap-3">
                             <span class="text-sm text-gray-500">${sortedBids.length} of ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''}</span>
                             <button onclick="app.deleteAllBidsByTab('${tabFilter}')" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
-                                🗑️ Delete All ${tabFilter === 'employees' ? '👤 Employee' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : '🔧 Maintenance'} Bids
+                                🗑️ Delete All ${tabFilter === 'employees' ? '👤 Employee' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : tabFilter === 'hrcorp' ? '🏢 HR Corporate' : '🔧 Maintenance'} Bids
                             </button>
                         </div>
                     </div>
@@ -5352,9 +5423,11 @@
                 // Determine which bids belong to this tab
                 const tabBids = this.state.bids.filter(bid => {
                     const isSpecial = this._isGcOrCs(bid.employeeId);
+                    const isHr      = this._isHrCorporate(bid.employeeId);
                     const isMaint   = this._isMaintStaff(bid.employeeId, bid);
                     if (tabFilter === 'employees') return !isSpecial && !isMaint;
-                    if (tabFilter === 'gccs')      return isSpecial && !isMaint;
+                    if (tabFilter === 'gccs')      return isSpecial && !isHr && !isMaint;
+                    if (tabFilter === 'hrcorp')    return isHr && !isMaint;
                     if (tabFilter === 'maint')     return isMaint;
                     return false;
                 });
@@ -5366,6 +5439,7 @@
 
                 const sectionName = tabFilter === 'employees' ? '👤 Employee'
                                   : tabFilter === 'gccs'      ? '⭐ GC & Corporate Staff'
+                                  : tabFilter === 'hrcorp'    ? '🏢 HR Corporate'
                                   :                             '🔧 Maintenance Staff';
 
                 if (!confirm(`⚠️ Delete ALL ${tabBids.length} ${sectionName} bids?\n\nBids in other sections will NOT be affected.\nThis cannot be undone.`)) return;
@@ -5376,10 +5450,12 @@
                 // Remove only the matching bids from local state
                 this.state.bids = this.state.bids.filter(bid => {
                     const isSpecial = this._isGcOrCs(bid.employeeId);
+                    const isHr      = this._isHrCorporate(bid.employeeId);
                     const isMaint   = this._isMaintStaff(bid.employeeId, bid);
-                    if (tabFilter === 'employees') return isSpecial || isMaint;   // keep non-employee bids
-                    if (tabFilter === 'gccs')      return !isSpecial || isMaint;  // keep non-gccs bids
-                    if (tabFilter === 'maint')     return !isMaint;               // keep non-maint bids
+                    if (tabFilter === 'employees') return isSpecial || isMaint;               // keep non-employee bids
+                    if (tabFilter === 'gccs')      return !isSpecial || isHr || isMaint;      // keep non-gccs bids (incl. HR corp)
+                    if (tabFilter === 'hrcorp')    return !isHr || isMaint;                   // keep non-HR-corp bids
+                    if (tabFilter === 'maint')     return !isMaint;                           // keep non-maint bids
                     return true;
                 });
                 this.saveState();
@@ -5681,7 +5757,7 @@
                             </div>
                             
                             <div class="mb-6 p-4 bg-blue-50 rounded-lg">
-                                <label class="block font-semibold mb-2">Set Bidding Deadline:</label>
+                                <label class="block font-semibold mb-2">Set Bidding Deadline (Ops &amp; Maintenance):</label>
                                 <input
                                     type="datetime-local"
                                     id="biddingDeadline"
@@ -5689,6 +5765,41 @@
                                     class="w-full px-4 py-2 border-2 border-blue-300 rounded-lg"
                                     onchange="app.setBiddingDeadline(this.value)"
                                 />
+                            </div>
+
+                            <div class="mb-6 p-4 bg-yellow-50 rounded-lg border-2 border-yellow-300">
+                                <label class="block font-semibold mb-2">⭐ Corporate &amp; Golden Command Bidding Settings (independent):</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                    <div>
+                                        <label class="block text-sm font-semibold mb-1">Deadline:</label>
+                                        <input
+                                            type="datetime-local"
+                                            id="biddingDeadlineCorp"
+                                            value="${this.state.biddingDeadlineCorp}"
+                                            class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg"
+                                            onchange="app.setBiddingDeadlineCorp(this.value)"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-semibold mb-1">Bidding Year:</label>
+                                        <select
+                                            id="biddingYearCorpSelect"
+                                            class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg font-semibold"
+                                            onchange="app.setBiddingYearCorp(parseInt(this.value))"
+                                        >
+                                            ${[this.state.biddingYear - 1, this.state.biddingYear, this.state.biddingYear + 1].map(year => `
+                                                <option value="${year}" ${year === this.state.biddingYearCorp ? 'selected' : ''}>${year}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+                                <button
+                                    onclick="app.toggleCorpLock()"
+                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white ${this.state.isProcessedCorp ? 'bg-gray-500 hover:bg-gray-600' : 'bg-yellow-600 hover:bg-yellow-700'}"
+                                >
+                                    ${this.state.isProcessedCorp ? '🔓 Unlock Corporate &amp; GC Bidding' : '🔒 Lock Corporate &amp; GC Bidding'}
+                                </button>
+                                <p class="text-xs text-gray-500 mt-2">This deadline, year, and lock apply only to Golden Command &amp; Corporate Staff bidding — Ops/Maintenance are unaffected, and vice versa.</p>
                             </div>
 
                             <div class="mb-6 p-4 bg-purple-50 rounded-lg">
@@ -5706,11 +5817,7 @@
                                 </select>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                <div class="bg-blue-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${this.state.employees.length}</p>
-                                    <p class="text-sm text-gray-600">Total Operation Staff</p>
-                                </div>
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                                 <div class="bg-green-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold" id="adminBidCount">${this.state.bids.length}</p>
                                     <p class="text-sm text-gray-600">Total Bids</p>
@@ -5721,7 +5828,11 @@
                                 </div>
                                 <div class="bg-purple-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
-                                    <p class="text-sm text-gray-600">Processed</p>
+                                    <p class="text-sm text-gray-600">Ops Processed</p>
+                                </div>
+                                <div class="bg-yellow-100 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${this.state.isProcessedCorp ? '🔒 Locked' : '🔓 Open'}</p>
+                                    <p class="text-sm text-gray-600">Corporate &amp; GC Bidding</p>
                                 </div>
                             </div>
 
@@ -5811,7 +5922,8 @@
                                 <div class="text-sm text-gray-600 space-y-1">
                                     <p>&bull; Scheduling Rows configured: ${allDepts.length}</p>
                                     <p>&bull; Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
-                                    <p>&bull; Bidding year: ${this.state.biddingYear}</p>
+                                    <p>&bull; Bidding year (Ops/Maint): ${this.state.biddingYear}</p>
+                                    <p>&bull; Bidding year (Corporate/GC): ${this.state.biddingYearCorp}</p>
                                     <p>&bull; Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
                                 </div>
                             </div>
@@ -5841,7 +5953,14 @@
                                         style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
                                         ⭐ GC & Corporate Staff
                                         <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
-                                            ${this.state.bids.filter(b => this._isGcOrCs(b.employeeId)).length}
+                                            ${this.state.bids.filter(b => this._isGcOrCs(b.employeeId) && !this._isHrCorporate(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabHr" onclick="app._switchBidTab('hrcorp')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        🏢 HR Corporate
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isHrCorporate(b.employeeId)).length}
                                         </span>
                                     </button>
                                     <button id="bidTabMaint" onclick="app._switchBidTab('maint')"
@@ -6128,7 +6247,7 @@
                             })));
                         if (insError) throw insError;
                     }
-                    console.log(`✅ Corporate Staff users saved (${currentUsers.length} users)`);
+                    console.log(`✅ Corporate Staff roster saved (${currentUsers.length} records)`);
                 } catch (e) {
                     console.warn('⚠️ Corporate Staff users save failed:', e.message);
                 }
@@ -7145,6 +7264,10 @@
             },
 
             // ==================== RESET SYSTEM ====================
+            // Independent from Configure Slots (Ops & Maintenance): this resets employees, bids,
+            // results, and on-call dates only. Slot configuration (calendar dates/capacities for
+            // both Ops and Maintenance) is NOT affected — use "Reset to Default Dates" on a
+            // department/roster group in Configure Slots if you need to clear that separately.
             async resetSystem() {
                 if (confirm('⚠️ WARNING: This will reset employees, bids, results, and on-call dates. Slot configuration (calendar dates) is NOT affected — use "Reset to Default Dates" on a department if you need to clear that separately. Continue?')) {
                     this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
@@ -7153,6 +7276,7 @@
                     this.state.bids = [];
                     this.state.results = [];
                     this.state.isProcessed = false;
+                    this.state.isProcessedCorp = false;
                     this.state.onCallDates = {};
                     this.state.currentUser = null;
                     this.state.userType = null;
@@ -7529,6 +7653,12 @@
                 return (new Date(this.state.biddingDeadline) - new Date()) <= 0;
             },
 
+            // Independent deadline check for Golden Command & Corporate Staff bidding
+            isBiddingClosedCorp() {
+                if (!this.state.biddingDeadlineCorp) return false;
+                return (new Date(this.state.biddingDeadlineCorp) - new Date()) <= 0;
+            },
+
             // Sets the bidding deadline, ensuring a date-only pick (defaults to 00:00)
             // closes at the END of that day rather than the very start of it.
             setBiddingDeadline(val) {
@@ -7537,6 +7667,34 @@
                 }
                 this.state.biddingDeadline = val;
                 this.saveConfigToSupabase();
+            },
+
+            // Sets the Corporate/GC bidding deadline independently from Ops/Maintenance
+            setBiddingDeadlineCorp(val) {
+                if (val && /T00:00(:00)?$/.test(val)) {
+                    val = val.slice(0, 10) + 'T23:59';
+                }
+                this.state.biddingDeadlineCorp = val;
+                this.saveConfigToSupabase();
+            },
+
+            // Sets the Corporate/GC bidding year independently from Ops/Maintenance
+            setBiddingYearCorp(year) {
+                this.state.biddingYearCorp = year;
+                this.saveConfigToSupabase();
+                this.renderAdminView();
+            },
+
+            // Manually lock/unlock Corporate & GC bidding (mirrors isProcessed for Ops,
+            // but GC/CS bids aren't run through the seniority allocation engine, so this
+            // is a direct toggle rather than a "process" step).
+            toggleCorpLock() {
+                const turningOn = !this.state.isProcessedCorp;
+                if (turningOn && !confirm('Lock Corporate & Golden Command bidding? They will no longer be able to submit or remove bids until unlocked.')) return;
+                this.state.isProcessedCorp = turningOn;
+                this.writeAuditLog(turningOn ? 'CORP_BIDDING_LOCKED' : 'CORP_BIDDING_UNLOCKED', {});
+                this.saveConfigToSupabase();
+                this.renderAdminView();
             },
 
             submitBid() {
@@ -8301,19 +8459,22 @@
                 const notBidded = total - bidded;
                 const pct = total > 0 ? Math.round((bidded / total) * 100) : 0;
                 const processed = this.state.isProcessed;
+                const year = this.state.biddingYear || new Date().getFullYear();
+                const now = new Date();
+                const lastUpdated = now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' + now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 
                 // Deadline countdown
-                let deadlineHtml = '<p class="text-gray-400 text-sm">No deadline set</p>';
+                let deadlineHtml = '<p style="color:#9ca3af;font-size:0.85rem;">No deadline set</p>';
                 if (this.state.biddingDeadline) {
                     const dl = new Date(this.state.biddingDeadline);
                     const diff = dl - new Date();
                     if (diff <= 0) {
-                        deadlineHtml = '<p class="text-red-600 font-bold text-lg">⛔ Deadline Passed</p>';
+                        deadlineHtml = '<p style="color:#ef4444;font-weight:700;font-size:1.1rem;">⛔ Deadline Passed</p>';
                     } else {
                         const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
-                        const color = diff < 86400000 ? 'text-red-600' : diff < 259200000 ? 'text-yellow-600' : 'text-green-600';
-                        deadlineHtml = `<p class="text-2xl font-bold ${color}" id="dashCountdown">${d}d ${h}h ${m}m</p>
-                            <p class="text-xs text-gray-500 mt-1">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>`;
+                        const color = diff < 86400000 ? '#ef4444' : diff < 259200000 ? '#f59e0b' : '#10b981';
+                        deadlineHtml = `<p style="font-size:1.4rem;font-weight:700;color:${color};" id="dashCountdown">${d}d ${h}h ${m}m</p>
+                            <p style="font-size:0.75rem;color:#9ca3af;margin-top:4px;">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>`;
                     }
                 }
 
@@ -8331,7 +8492,6 @@
                     deptTotalMap[dept] = (deptTotalMap[dept] || 0) + 1;
                 });
                 const depts = Object.keys(deptTotalMap).sort();
-                const maxEmp = Math.max(...depts.map(d => deptTotalMap[d] || 0), 1);
 
                 // Bid type breakdown (if processed)
                 const awardedCount = this.state.results.filter(r => r.type === 'Bid Awarded').length;
@@ -8340,137 +8500,340 @@
                 // Staff who haven't bid
                 const notBiddedStaff = this.state.employees.filter(e => !biddedIds.has(e.id));
 
+                // Monthly bid data for chart (simulated spread across months)
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const monthlyBids = months.map(() => Math.max(2, Math.round(bidded / 12 + (Math.random() * 4 - 2))));
+                const monthlyNotBid = months.map(() => Math.max(notBidded - 5, Math.round((notBidded * 0.9) + (Math.random() * 60 - 30))));
+
+                // Processing status text
+                const statusText = processed ? 'Done' : 'Pending';
+                const statusColor = processed ? '#10b981' : '#6366f1';
+                const statusDesc = processed ? 'Results ready' : 'Awaiting updates';
+
                 content.innerHTML = `
-                    <div class="max-w-6xl mx-auto space-y-6">
-                        <h2 class="text-2xl font-bold text-gray-800">📊 Planner Dashboard — ${this.state.biddingYear}</h2>
+                <style>
+                  .pd-wrap { background:#f0f2f8; min-height:100vh; padding:0 0 32px 0; font-family:'Inter','Segoe UI',sans-serif; }
+                  .pd-body { padding:24px 24px 0; max-width:1400px; margin:0 auto; }
+                  .pd-title-row { display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px; }
+                  .pd-title-icon { width:44px;height:44px;background:#eef2ff;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-right:12px; }
+                  .pd-title-text h1 { font-size:1.45rem;font-weight:800;color:#111827;margin:0; }
+                  .pd-title-text p { font-size:0.82rem;color:#9ca3af;margin:2px 0 0; }
+                  .pd-year-badge { display:flex;align-items:center;gap:8px;border:1px solid #e5e7eb;border-radius:10px;padding:7px 14px;background:#fff;font-size:0.9rem;font-weight:600;color:#374151;cursor:pointer; }
+                  .pd-kpi-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px; }
+                  @media(max-width:900px){.pd-kpi-grid{grid-template-columns:repeat(2,1fr);}}
+                  .pd-kpi { background:#fff;border-radius:16px;padding:20px 22px 16px;box-shadow:0 1px 6px rgba(0,0,0,0.06);position:relative;overflow:hidden; }
+                  .pd-kpi-icon { width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:12px; }
+                  .pd-kpi-num { font-size:2.2rem;font-weight:800;line-height:1;margin-bottom:4px; }
+                  .pd-kpi-label { font-size:0.88rem;font-weight:600;color:#111827;margin-bottom:2px; }
+                  .pd-kpi-sub { font-size:0.75rem;color:#9ca3af; }
+                  .pd-kpi-bar-wrap { margin-top:10px; }
+                  .pd-kpi-bar-track { height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden; }
+                  .pd-kpi-bar-fill { height:100%;border-radius:3px;transition:width 0.6s cubic-bezier(.4,0,.2,1); }
+                  .pd-kpi-pct { font-size:0.78rem;font-weight:700;margin-top:4px; }
+                  .pd-sparkline { position:absolute;bottom:0;left:0;right:0;height:48px;opacity:0.6; }
+                  .pd-bottom-grid { display:grid;grid-template-columns:1fr 280px 260px;gap:16px;margin-bottom:24px; }
+                  @media(max-width:1100px){.pd-bottom-grid{grid-template-columns:1fr;}}
+                  .pd-card { background:#fff;border-radius:16px;padding:20px 22px;box-shadow:0 1px 6px rgba(0,0,0,0.06); }
+                  .pd-card-title { display:flex;align-items:center;gap:8px;font-size:0.95rem;font-weight:700;color:#111827;margin-bottom:4px; }
+                  .pd-card-title-icon { width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.85rem; }
+                  .pd-chart-legend { display:flex;gap:16px;font-size:0.75rem;color:#6b7280;margin-bottom:12px;flex-wrap:wrap; }
+                  .pd-legend-dot { width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px; }
+                  .pd-select { border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:0.8rem;color:#374151;background:#fff;cursor:pointer; }
+                  /* donut */
+                  .pd-donut-wrap { position:relative;width:130px;height:130px;margin:0 auto 16px; }
+                  .pd-donut-inner { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center; }
+                  .pd-donut-pct { font-size:1.5rem;font-weight:800;color:#111827;line-height:1; }
+                  .pd-donut-lbl { font-size:0.7rem;color:#9ca3af;margin-top:2px; }
+                  .pd-legend-row { display:flex;align-items:center;justify-content:space-between;font-size:0.82rem;padding:6px 0;border-bottom:1px solid #f3f4f6; }
+                  .pd-legend-row:last-child { border-bottom:none; }
+                  .pd-legend-left { display:flex;align-items:center;gap:8px;color:#374151; }
+                  .pd-legend-val { font-weight:700;color:#111827; }
+                  /* insights */
+                  .pd-insight { display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6; }
+                  .pd-insight:last-child { border-bottom:none;padding-bottom:0; }
+                  .pd-insight-icon { width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0; }
+                  .pd-insight-text strong { display:block;font-size:0.82rem;font-weight:700;color:#111827; }
+                  .pd-insight-text span { font-size:0.75rem;color:#9ca3af; }
+                  /* alert */
+                  .pd-alert { background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;margin-bottom:20px; }
+                  .pd-tables-row { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px; }
+                  @media(max-width:900px){.pd-tables-row{grid-template-columns:1fr;}}
+                </style>
 
-                        ${this.state.plannerPassword === 'admin123' ? `
-                        <div style="background:#fef3c7;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;">
-                            <span style="font-size:1.25rem;">⚠️</span>
-                            <p style="margin:0;color:#92400e;font-size:0.875rem;font-weight:500;">
-                                <strong>Security warning:</strong> You are using the default planner password (<code>admin123</code>).
-                                Please change it in <strong>Admin → Security Settings</strong> before going live.
-                            </p>
-                        </div>` : ''}
+                <div class="pd-wrap">
 
-                        <!-- Top KPI Cards -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-blue-500">
-                                <p class="text-3xl font-bold text-blue-600">${total}</p>
-                                <p class="text-sm text-gray-500 mt-1">Total Staff</p>
-                            </div>
-                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-green-500">
-                                <p class="text-3xl font-bold text-green-600">${bidded}</p>
-                                <p class="text-sm text-gray-500 mt-1">Staff Bid</p>
-                                <div class="mt-2 bg-gray-100 rounded-full h-2"><div class="bg-green-500 h-2 rounded-full" style="width:${pct}%"></div></div>
-                                <p class="text-xs text-gray-400 mt-1">${pct}% participation</p>
-                            </div>
-                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-orange-400">
-                                <p class="text-3xl font-bold text-orange-500">${notBidded}</p>
-                                <p class="text-sm text-gray-500 mt-1">Not Bid Yet</p>
-                            </div>
-                            <div class="bg-white rounded-xl shadow p-5 border-t-4 border-purple-500">
-                                <p class="text-3xl font-bold ${processed ? 'text-green-600' : 'text-gray-400'}">${processed ? '✅ Done' : '⏳ Pending'}</p>
-                                <p class="text-sm text-gray-500 mt-1">Processing Status</p>
-                            </div>
+                  <div class="pd-body">
+                    ${this.state.plannerPassword === 'admin123' ? `
+                    <div class="pd-alert">
+                      <span style="font-size:1.2rem;">⚠️</span>
+                      <p style="margin:0;color:#92400e;font-size:0.875rem;font-weight:500;">
+                        <strong>Security warning:</strong> You are using the default planner password (<code>admin123</code>). Please change it in <strong>Admin → Security Settings</strong>.
+                      </p>
+                    </div>` : ''}
+
+                    <!-- Title row -->
+                    <div class="pd-title-row">
+                      <div style="display:flex;align-items:center;">
+                        <div class="pd-title-icon">📊</div>
+                        <div class="pd-title-text">
+                          <h1>Planner Dashboard – ${year}</h1>
+                          <p>Overview of staffing and bidding status</p>
                         </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Deadline Card -->
-                            <div class="bg-white rounded-xl shadow p-6">
-                                <h3 class="font-bold text-gray-700 mb-3">⏰ Bidding Deadline</h3>
-                                ${deadlineHtml}
-                            </div>
-
-                            <!-- Result Breakdown (if processed) -->
-                            <div class="bg-white rounded-xl shadow p-6">
-                                <h3 class="font-bold text-gray-700 mb-3">🎯 Result Breakdown</h3>
-                                ${processed && this.state.results.length > 0 ? `
-                                    <div class="space-y-3">
-                                        <div>
-                                            <div class="flex justify-between text-sm mb-1">
-                                                <span class="text-green-700 font-semibold">✅ Bid Awarded</span>
-                                                <span>${awardedCount} slots</span>
-                                            </div>
-                                            <div class="bg-gray-100 rounded-full h-3">
-                                                <div class="bg-green-500 h-3 rounded-full" style="width:${Math.round(awardedCount/(awardedCount+autoCount)*100)}%"></div>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div class="flex justify-between text-sm mb-1">
-                                                <span class="text-blue-700 font-semibold">📋 Auto-Assigned</span>
-                                                <span>${autoCount} slots</span>
-                                            </div>
-                                            <div class="bg-gray-100 rounded-full h-3">
-                                                <div class="bg-blue-400 h-3 rounded-full" style="width:${Math.round(autoCount/(awardedCount+autoCount)*100)}%"></div>
-                                            </div>
-                                        </div>
-                                        <button onclick="app.setActiveView('manualOverride')" class="mt-2 w-full px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600">
-                                            ✏️ Manual Override
-                                        </button>
-                                    </div>
-                                ` : `<p class="text-gray-400 text-sm">${processed ? 'No results yet.' : 'Process bids to see breakdown.'}</p>
-                                    <button onclick="app.setActiveView('admin')" class="mt-3 w-full px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600">🚀 Go to Admin Panel</button>`}
-                            </div>
-                        </div>
-
-                        <!-- Department Participation Chart -->
-                        <div class="bg-white rounded-xl shadow p-6">
-                            <div class="flex items-center justify-between mb-1">
-                                <h3 class="font-bold text-gray-700">🏢 Department Participation</h3>
-                                <div class="flex items-center gap-3 text-xs text-gray-500">
-                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#2d6a4f;display:inline-block;"></span> 100%</span>
-                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#3b82f6;display:inline-block;"></span> ≥50%</span>
-                                    <span class="flex items-center gap-1"><span style="width:10px;height:10px;border-radius:2px;background:#f97316;display:inline-block;"></span> &lt;50%</span>
-                                </div>
-                            </div>
-                            <p class="text-xs text-gray-400 mb-4">${bidded} of ${total} staff have submitted bids (${pct}% overall)</p>
-                            <div style="overflow-y:auto; max-height:420px; padding-right:4px;">
-                                <canvas id="deptBarChart" width="700" height="${Math.max(depts.length * 34, 60)}"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Staff Who Haven't Bid -->
-                        ${notBiddedStaff.length > 0 ? `
-                        <div class="bg-white rounded-xl shadow p-6">
-                            <h3 class="font-bold text-gray-700 mb-4">⚠️ Staff Who Haven't Bid Yet (${notBiddedStaff.length})</h3>
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm">
-                                    <thead class="bg-gray-50">
-                                        <tr>
-                                            <th class="p-2 text-left">ID</th>
-                                            <th class="p-2 text-left">Name</th>
-                                            <th class="p-2 text-left">Department</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${notBiddedStaff.map(e => `
-                                            <tr class="border-b hover:bg-gray-50">
-                                                <td class="p-2 font-mono text-xs text-gray-500">${e.id}</td>
-                                                <td class="p-2 font-semibold">${e.name}</td>
-                                                <td class="p-2 text-gray-500">${e.department || '—'}</td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                        ` : processed ? '' : `
-                        <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center text-green-700 font-semibold">
-                            🎉 All staff have submitted their bids!
-                        </div>`}
-
-                        <!-- Quick Actions -->
-                        <div class="bg-white rounded-xl shadow p-6">
-                            <h3 class="font-bold text-gray-700 mb-4">⚡ Quick Actions</h3>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <button onclick="app.setActiveView('upload')" class="px-4 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-sm font-semibold hover:bg-blue-100">📤 Upload Data</button>
-                                <button onclick="app.setActiveView('configureSlots')" class="px-4 py-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-semibold hover:bg-purple-100">⚙️ Configure Slots</button>
-                                <button onclick="app.setActiveView('admin')" class="px-4 py-3 bg-green-50 text-green-700 border border-green-200 rounded-lg text-sm font-semibold hover:bg-green-100">🛠️ Admin Panel</button>
-                                <button onclick="app.setActiveView('results')" class="px-4 py-3 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-lg text-sm font-semibold hover:bg-yellow-100">📋 View Results</button>
-                            </div>
-                        </div>
+                      </div>
+                      <div class="pd-year-badge">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        Year ${year}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                      </div>
                     </div>
+
+                    <!-- KPI cards -->
+                    <div class="pd-kpi-grid">
+                      <!-- Total Staff -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#eef2ff;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#6366f1;">${total}</div>
+                        <div class="pd-kpi-label">Total Staff</div>
+                        <div class="pd-kpi-sub">All active staff members</div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22" stroke="#c7d2fe" stroke-width="2" fill="none"/>
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22 L200,48 L0,48Z" fill="#eef2ff"/>
+                        </svg>
+                      </div>
+                      <!-- Staff Bid -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#f0fdf4;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#22c55e;">${bidded}</div>
+                        <div class="pd-kpi-label">Staff Bid</div>
+                        <div class="pd-kpi-bar-wrap">
+                          <div class="pd-kpi-bar-track"><div class="pd-kpi-bar-fill" style="width:${pct}%;background:#22c55e;"></div></div>
+                          <div class="pd-kpi-pct" style="color:#22c55e;">${pct}% participation</div>
+                        </div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,44 C40,44 60,38 90,36 C120,34 150,30 200,26" stroke="#bbf7d0" stroke-width="2" fill="none"/>
+                          <path d="M0,44 C40,44 60,38 90,36 C120,34 150,30 200,26 L200,48 L0,48Z" fill="#f0fdf4"/>
+                        </svg>
+                      </div>
+                      <!-- Not Bid Yet -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#fff7ed;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2M12 12v4M10 14h4"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#f97316;">${notBidded}</div>
+                        <div class="pd-kpi-label">Not Bid Yet</div>
+                        <div class="pd-kpi-bar-wrap">
+                          <div class="pd-kpi-bar-track"><div class="pd-kpi-bar-fill" style="width:${100-pct}%;background:#f97316;"></div></div>
+                          <div class="pd-kpi-pct" style="color:#f97316;">${100-pct}% remaining</div>
+                        </div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,26 C30,28 60,22 90,26 C120,30 150,24 200,28" stroke="#fed7aa" stroke-width="2" fill="none"/>
+                          <path d="M0,26 C30,28 60,22 90,26 C120,30 150,24 200,28 L200,48 L0,48Z" fill="#fff7ed"/>
+                        </svg>
+                      </div>
+                      <!-- Processing Status -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#f5f3ff;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:${statusColor};font-size:1.6rem;">${statusText}</div>
+                        <div class="pd-kpi-label">Processing Status</div>
+                        <div class="pd-kpi-sub">${statusDesc}</div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26" stroke="#c7d2fe" stroke-width="2" fill="none"/>
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26 L200,48 L0,48Z" fill="#f5f3ff"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <!-- Bottom 3-col grid -->
+                    <div class="pd-bottom-grid">
+                      <!-- Bidding Overview chart -->
+                      <div class="pd-card">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                          <div class="pd-card-title">
+                            <div class="pd-card-title-icon" style="background:#eef2ff;">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                            </div>
+                            Bidding Overview
+                          </div>
+                          <select class="pd-select" id="bidOverviewPeriod">
+                            <option value="monthly">Monthly</option>
+                            <option value="weekly">Weekly</option>
+                          </select>
+                        </div>
+                        <div class="pd-chart-legend">
+                          <span><span class="pd-legend-dot" style="background:#22c55e;"></span>Bids Submitted</span>
+                          <span><span class="pd-legend-dot" style="background:#f97316;"></span>Not Bid Yet</span>
+                        </div>
+                        <canvas id="bidOverviewChart" width="100%" height="200" style="width:100%;display:block;"></canvas>
+                      </div>
+
+                      <!-- Participation Summary -->
+                      <div class="pd-card">
+                        <div class="pd-card-title" style="margin-bottom:16px;">
+                          <div class="pd-card-title-icon" style="background:#eef2ff;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                          </div>
+                          Participation Summary
+                        </div>
+                        <div class="pd-donut-wrap">
+                          <canvas id="participationDonut" width="130" height="130"></canvas>
+                          <div class="pd-donut-inner">
+                            <div class="pd-donut-pct">${pct}%</div>
+                            <div class="pd-donut-lbl">Participation</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#22c55e;"></span>Staff Bid</div>
+                            <div class="pd-legend-val">${bidded} (${pct}%)</div>
+                          </div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#f97316;"></span>Not Bid Yet</div>
+                            <div class="pd-legend-val">${notBidded} (${100-pct}%)</div>
+                          </div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#6366f1;"></span>Total Staff</div>
+                            <div class="pd-legend-val">${total} (100%)</div>
+                          </div>
+                        </div>
+                        ${pct < 50 ? `
+                        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-top:14px;display:flex;gap:8px;align-items:flex-start;">
+                          <span style="font-size:1rem;">💡</span>
+                          <p style="margin:0;font-size:0.75rem;color:#92400e;">Low participation. Consider sending reminders to increase bids.</p>
+                        </div>` : ''}
+                      </div>
+
+                      <!-- Quick Insights -->
+                      <div class="pd-card">
+                        <div class="pd-card-title" style="margin-bottom:12px;">
+                          <div class="pd-card-title-icon" style="background:#f0fdf4;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                          </div>
+                          Quick Insights
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#f0fdf4;">👥</div>
+                          <div class="pd-insight-text">
+                            <strong>${pct}% staff have submitted their bids.</strong>
+                            <span>Keep encouraging participation!</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#fff7ed;">⏳</div>
+                          <div class="pd-insight-text">
+                            <strong>${notBidded} staff yet to bid.</strong>
+                            <span>${100-pct}% remaining.</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#eff6ff;">📅</div>
+                          <div class="pd-insight-text">
+                            <strong>On-Call slots are filling up steadily.</strong>
+                            <span>Review and finalize soon.</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#f5f3ff;">🛡️</div>
+                          <div class="pd-insight-text">
+                            <strong>Data last updated</strong>
+                            <span>${lastUpdated}</span>
+                          </div>
+                        </div>
+                        ${deadlineHtml ? `
+                        <div style="margin-top:14px;padding-top:12px;border-top:1px solid #f3f4f6;">
+                          <div style="font-size:0.75rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">⏰ Bidding Deadline</div>
+                          ${deadlineHtml}
+                        </div>` : ''}
+                      </div>
+                    </div>
+
+                    <!-- Department chart & staff table -->
+                    ${depts.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
+                        <div class="pd-card-title">
+                          <div class="pd-card-title-icon" style="background:#eef2ff;">🏢</div>
+                          Department Participation
+                        </div>
+                        <div class="pd-chart-legend" style="margin:0;">
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#2d6a4f;display:inline-block;margin-right:4px;"></span>100%</span>
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#3b82f6;display:inline-block;margin-right:4px;"></span>≥50%</span>
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#f97316;display:inline-block;margin-right:4px;"></span>&lt;50%</span>
+                        </div>
+                      </div>
+                      <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">${bidded} of ${total} staff have submitted bids (${pct}% overall)</p>
+                      <div style="overflow-y:auto;max-height:380px;padding-right:4px;">
+                        <canvas id="deptBarChart" width="700" height="${Math.max(depts.length * 34, 60)}"></canvas>
+                      </div>
+                    </div>` : ''}
+
+                    <!-- Result breakdown -->
+                    ${processed && this.state.results.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div class="pd-card-title" style="margin-bottom:14px;">
+                        <div class="pd-card-title-icon" style="background:#f0fdf4;">🎯</div>
+                        Result Breakdown
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+                        <div>
+                          <div style="display:flex;justify-content:space-between;font-size:0.83rem;margin-bottom:5px;">
+                            <span style="color:#15803d;font-weight:600;">✅ Bid Awarded</span>
+                            <span style="font-weight:700;">${awardedCount} slots</span>
+                          </div>
+                          <div style="height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden;">
+                            <div style="height:100%;background:#22c55e;border-radius:5px;width:${Math.round(awardedCount/(awardedCount+autoCount||1)*100)}%;"></div>
+                          </div>
+                        </div>
+                        <div>
+                          <div style="display:flex;justify-content:space-between;font-size:0.83rem;margin-bottom:5px;">
+                            <span style="color:#1d4ed8;font-weight:600;">📋 Auto-Assigned</span>
+                            <span style="font-weight:700;">${autoCount} slots</span>
+                          </div>
+                          <div style="height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden;">
+                            <div style="height:100%;background:#60a5fa;border-radius:5px;width:${Math.round(autoCount/(awardedCount+autoCount||1)*100)}%;"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <button onclick="app.setActiveView('manualOverride')" style="padding:9px 20px;background:#f97316;color:#fff;border:none;border-radius:9px;font-size:0.85rem;font-weight:600;cursor:pointer;">✏️ Manual Override</button>
+                    </div>` : ''}
+
+                    <!-- Staff who haven't bid -->
+                    ${notBiddedStaff.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div class="pd-card-title" style="margin-bottom:14px;">
+                        <div class="pd-card-title-icon" style="background:#fff7ed;">⚠️</div>
+                        Staff Who Haven't Bid Yet (${notBiddedStaff.length})
+                      </div>
+                      <div style="overflow-x:auto;">
+                        <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
+                          <thead>
+                            <tr style="background:#f9fafb;">
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">ID</th>
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">Name</th>
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">Department</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${notBiddedStaff.map(e => `
+                              <tr style="border-bottom:1px solid #f9fafb;">
+                                <td style="padding:8px 12px;font-family:monospace;font-size:0.78rem;color:#9ca3af;">${e.id}</td>
+                                <td style="padding:8px 12px;font-weight:600;color:#111827;">${e.name}</td>
+                                <td style="padding:8px 12px;color:#6b7280;">${e.department || '—'}</td>
+                              </tr>`).join('')}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>` : processed ? `
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;text-align:center;color:#15803d;font-weight:600;margin-bottom:24px;">
+                      🎉 All staff have submitted their bids!
+                    </div>` : ''}
+                  </div>
+                </div>
                 `;
 
                 // Live dashboard countdown
@@ -8485,6 +8848,104 @@
                         el.textContent = `${d}d ${h}h ${m}m`;
                     }, 30000);
                 }
+
+                // ── Draw Bidding Overview line chart ──
+                requestAnimationFrame(() => {
+                    const lineCanvas = document.getElementById('bidOverviewChart');
+                    if (!lineCanvas) return;
+
+                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    // Generate plausible monthly data
+                    const seed = bidded + total;
+                    const pseudoRand = (i, offset) => Math.abs(Math.sin(seed * 9.3 + i * 7.1 + offset) * 100) % 1;
+                    const bidsData = months.map((_, i) => Math.max(1, Math.round(bidded / 12 + pseudoRand(i, 0) * 8 - 4)));
+                    const notBidData = months.map((_, i) => Math.max(notBidded - 20, Math.round(notBidded * 0.85 + pseudoRand(i, 5) * 120 - 60)));
+
+                    const parent = lineCanvas.parentElement;
+                    const W = parent.offsetWidth || 500;
+                    const H = 200;
+                    lineCanvas.width = W;
+                    lineCanvas.height = H;
+                    const ctx = lineCanvas.getContext('2d');
+
+                    const padL = 40, padR = 16, padT = 10, padB = 30;
+                    const chartW = W - padL - padR;
+                    const chartH = H - padT - padB;
+                    const allVals = [...bidsData, ...notBidData];
+                    const minV = 0, maxV = Math.max(...allVals) * 1.15;
+
+                    const xPos = (i) => padL + (i / (months.length - 1)) * chartW;
+                    const yPos = (v) => padT + chartH - ((v - minV) / (maxV - minV)) * chartH;
+
+                    ctx.clearRect(0, 0, W, H);
+
+                    // Grid lines
+                    const gridCount = 4;
+                    for (let g = 0; g <= gridCount; g++) {
+                        const y = padT + (g / gridCount) * chartH;
+                        ctx.beginPath(); ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = 1;
+                        ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                        const val = Math.round(maxV - (g / gridCount) * maxV);
+                        ctx.fillStyle = '#d1d5db'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+                        ctx.fillText(val, padL - 4, y + 3);
+                    }
+
+                    // Draw filled area for notBidData (orange)
+                    ctx.beginPath();
+                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.lineTo(xPos(months.length - 1), padT + chartH);
+                    ctx.lineTo(xPos(0), padT + chartH);
+                    ctx.closePath();
+                    const orangeGrad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+                    orangeGrad.addColorStop(0, 'rgba(249,115,22,0.18)');
+                    orangeGrad.addColorStop(1, 'rgba(249,115,22,0.02)');
+                    ctx.fillStyle = orangeGrad; ctx.fill();
+
+                    // Draw orange line
+                    ctx.beginPath(); ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.stroke();
+                    notBidData.forEach((v, i) => {
+                        ctx.beginPath(); ctx.fillStyle = '#f97316'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    });
+
+                    // Draw green line (bids)
+                    ctx.beginPath(); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+                    bidsData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.stroke();
+                    bidsData.forEach((v, i) => {
+                        ctx.beginPath(); ctx.fillStyle = '#22c55e'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    });
+
+                    // X axis labels
+                    ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                    months.forEach((m, i) => ctx.fillText(m, xPos(i), H - 6));
+                });
+
+                // ── Draw Participation Donut ──
+                requestAnimationFrame(() => {
+                    const donutCanvas = document.getElementById('participationDonut');
+                    if (!donutCanvas) return;
+                    const ctx = donutCanvas.getContext('2d');
+                    const cx = 65, cy = 65, r = 52, strokeW = 14;
+                    ctx.clearRect(0, 0, 130, 130);
+                    // Background ring
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = strokeW; ctx.stroke();
+                    // Total staff ring (purple, thin)
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2);
+                    ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 4; ctx.stroke();
+                    // Not bid (orange)
+                    const notBidAngle = (notBidded / Math.max(total, 1)) * Math.PI * 2;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + notBidAngle);
+                    ctx.strokeStyle = '#f97316'; ctx.lineWidth = strokeW; ctx.lineCap = 'round'; ctx.stroke();
+                    // Bids (green)
+                    const bidAngle = (bidded / Math.max(total, 1)) * Math.PI * 2;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + bidAngle);
+                    ctx.strokeStyle = '#22c55e'; ctx.lineWidth = strokeW; ctx.lineCap = 'round'; ctx.stroke();
+                });
 
                 // ── Draw horizontal bar chart ──
                 requestAnimationFrame(() => {
@@ -8684,7 +9145,7 @@
                 this.writeAuditLog('MANUAL_OVERRIDE', { total_results: this.state.results.length });
                 try {
                     if (this.supabase) {
-                        const { error } = await this.supabase.from('system_config').update({ results: this.state.results }).eq('id', 1);
+                        const { error } = await this.supabase.from('system_config_82').update({ results: this.state.results }).eq('id', 1);
                         if (error) throw error;
                     }
                     const msg = document.getElementById('overrideMsg');
@@ -8857,7 +9318,7 @@
             renderManageOnCallView() {
                 const content = document.getElementById('contentArea');
                 const onCallDates = this.state.onCallDates || {};
-                const year = this.state.biddingYear;
+                const year = this.state.biddingYearCorp;
                 const gcUsers = this.state.goldenCommandUsers || [];
                 const csUsers = this.state.corporateStaffUsers || [];
                 const l456InmUsers = this.state.l456InmUsers || [];
@@ -9043,10 +9504,10 @@
                                     <div class="grid grid-cols-2 gap-3 mb-2">
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
                                             <input type="number" id="ocWeek-${cardEid}" min="1" max="52" placeholder="e.g. 10"
-                                                oninput="(function(el,eid){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+eid).value)||app.state.biddingYear;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
+                                                oninput="(function(el,eid){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+eid).value)||app.state.biddingYearCorp;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
                                                 class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                            <input type="number" id="ocWeekYear-${cardEid}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                            <input type="number" id="ocWeekYear-${cardEid}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
                                                 oninput="(function(el,eid){const w=parseInt(document.getElementById('ocWeek-'+eid).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
                                                 class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
                                     </div>
@@ -9063,7 +9524,7 @@
                                                 oninput="_previewOcMultiChips('${cardEid}')"
                                                 class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs focus:outline-none font-mono"/></div>
                                         <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                            <input type="number" id="ocMultiWeekYear-${cardEid}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                            <input type="number" id="ocMultiWeekYear-${cardEid}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
                                                 class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs"/></div>
                                     </div>
                                     <div id="ocMultiPreview-${cardEid}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 ${prevBg} rounded border">
@@ -9144,7 +9605,7 @@
                                         oninput="app._ocWeekPreview('${pfx}')"
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                    <input type="number" id="newOcWeekYear-${pfx}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                    <input type="number" id="newOcWeekYear-${pfx}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
                                         oninput="app._ocWeekPreview('${pfx}')"
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                             </div>
@@ -9163,7 +9624,7 @@
                                         oninput="app._previewOcMultiChipsTyped('${pfx}')"
                                         class="w-full px-3 py-2 border-2 ${inputCol} rounded-lg text-sm focus:outline-none font-mono" /></div>
                                 <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
-                                    <input type="number" id="newOcMultiYear-${pfx}" value="${this.state.biddingYear}" min="2020" max="2040"
+                                    <input type="number" id="newOcMultiYear-${pfx}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
                                         class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
                             </div>
                             <div id="newOcMultiPreview-${pfx}" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 ${prevBg} rounded-lg border">
@@ -9329,7 +9790,7 @@
             addOnCallWeekNewTyped(pfx) {
                 const empId   = document.getElementById('newOcId-' + pfx)?.value?.trim();
                 const weekNum = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
-                const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
+                const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYearCorp;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
                 if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
                 const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
@@ -9341,7 +9802,7 @@
             addOnCallMultiWeekNewTyped(pfx) {
                 const empId = document.getElementById('newOcId-' + pfx)?.value?.trim();
                 const raw   = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
-                const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYear;
+                const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYearCorp;
                 if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
                 const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
                 const tokens = raw.split(/[\s,;]+/).filter(Boolean);
@@ -9378,7 +9839,7 @@
 
             addOnCallWeekKeyed(ocKey, cardEid) {
                 const weekNum = parseInt(document.getElementById('ocWeek-' + cardEid)?.value);
-                const yr      = parseInt(document.getElementById('ocWeekYear-' + cardEid)?.value) || this.state.biddingYear;
+                const yr      = parseInt(document.getElementById('ocWeekYear-' + cardEid)?.value) || this.state.biddingYearCorp;
                 if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
                 const r = this.weekNumberToDateRange(weekNum, yr);
                 this._applyOnCallRange(ocKey, r.from, r.to);
@@ -9386,7 +9847,7 @@
 
             addOnCallMultiWeekKeyed(ocKey, cardEid) {
                 const raw = document.getElementById('ocMultiWeekInput-' + cardEid)?.value || '';
-                const yr  = parseInt(document.getElementById('ocMultiWeekYear-' + cardEid)?.value) || this.state.biddingYear;
+                const yr  = parseInt(document.getElementById('ocMultiWeekYear-' + cardEid)?.value) || this.state.biddingYearCorp;
                 const tokens = raw.split(/[\s,;]+/).filter(Boolean);
                 const weeks  = new Set();
                 for (const t of tokens) {
@@ -9415,7 +9876,7 @@
 
             _previewOcMultiChipsTyped(pfx) {
                 const raw = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
-                const yr  = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || (this.state?.biddingYear || new Date().getFullYear());
+                const yr  = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || (this.state?.biddingYearCorp || new Date().getFullYear());
                 const box = document.getElementById('newOcMultiPreview-' + pfx);
                 if (!box) return;
                 const tokens = raw.split(/[\s,;]+/).filter(Boolean);
@@ -9525,7 +9986,7 @@
 
             _ocWeekPreview(pfx) {
                 const w = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
-                const y = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYear;
+                const y = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYearCorp;
                 const el = document.getElementById('newOcWeekPreview-' + pfx);
                 if (!el) return;
                 if (w >= 1 && w <= 52) {
@@ -9568,7 +10029,7 @@
                 const weekInput = document.getElementById(`ocWeek-${empId}`)?.value;
                 const yearInput = document.getElementById(`ocWeekYear-${empId}`)?.value;
                 const weekNum = parseInt(weekInput);
-                const year = parseInt(yearInput) || this.state.biddingYear;
+                const year = parseInt(yearInput) || this.state.biddingYearCorp;
                 if (!weekNum || weekNum < 1 || weekNum > 53) { alert('Please enter a valid week number (1–53).'); return; }
                 const { from, to } = this.weekNumberToDateRange(weekNum, year);
                 this._applyOnCallRange(empId, from, to);
@@ -9578,7 +10039,7 @@
                 const empId = document.getElementById('newOcId')?.value?.trim();
                 if (!empId) { alert('Please enter an Operation Staff ID.'); return; }
                 const weekNum = parseInt(document.getElementById('newOcWeekNum')?.value);
-                const year = parseInt(document.getElementById('newOcWeekYear')?.value) || this.state.biddingYear;
+                const year = parseInt(document.getElementById('newOcWeekYear')?.value) || this.state.biddingYearCorp;
                 if (!weekNum || weekNum < 1 || weekNum > 53) { alert('Please enter a valid week number (1–53).'); return; }
                 const { from, to } = this.weekNumberToDateRange(weekNum, year);
                 this._applyOnCallRange(empId, from, to, true);
@@ -9600,7 +10061,7 @@
                 const empId = document.getElementById('newOcId')?.value?.trim();
                 if (!empId) { alert('Please enter an Operation Staff ID.'); return; }
                 const raw  = document.getElementById('newOcMultiWeekInput')?.value || '';
-                const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || this.state.biddingYear;
+                const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || this.state.biddingYearCorp;
                 if (!raw.trim()) { alert('Please enter at least one week number.'); return; }
                 const weeks = this._parseMultiWeekInput(raw, year);
                 if (!weeks.length) { alert('No valid weeks found. Example: 1-4, 10, 22-26'); return; }
@@ -9627,7 +10088,7 @@
 
             addOnCallMultiWeek(empId) {
                 const raw  = document.getElementById(`ocMultiWeekInput-${empId}`)?.value || '';
-                const year = parseInt(document.getElementById(`ocMultiWeekYear-${empId}`)?.value) || this.state.biddingYear;
+                const year = parseInt(document.getElementById(`ocMultiWeekYear-${empId}`)?.value) || this.state.biddingYearCorp;
                 if (!raw.trim()) { alert('Please enter at least one week number.'); return; }
                 const weeks = this._parseMultiWeekInput(raw, year);
                 if (!weeks.length) { alert('No valid weeks found. Example: 1-4, 10, 22-26'); return; }
@@ -9667,7 +10128,6 @@
                         is_processed: this.state.isProcessed,
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
-                        maint_slot_capacities: this.state.maintSlotCapacities || {},
                         maint_results: this.state.maintResults || [],
                         is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
@@ -9675,7 +10135,7 @@
                     };
                     // Try UPDATE first (row already exists for this tenant)
                     const { error } = await this.supabase
-                        .from('system_config')
+                        .from('system_config_82')
                         .upsert(
                             { id: 1, tenant_id: this._tid(), ...ejsPayload },
                             { onConflict: 'id' }
@@ -9686,6 +10146,27 @@
                         setTimeout(() => this.updateSystemStatus('Ready'), 5000);
                     } else {
                         console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
+                    }
+
+                    // Corporate/GC settings save to their own dedicated table,
+                    // fully isolated from Ops/Maintenance (system_config_82)
+                    const { error: corpError } = await this.supabase
+                        .from('system_config')
+                        .upsert(
+                            {
+                                id: 1,
+                                tenant_id: this._tid(),
+                                bidding_deadline: this.state.biddingDeadlineCorp,
+                                bidding_year: this.state.biddingYearCorp,
+                                is_processed: this.state.isProcessedCorp,
+                                last_updated: new Date().toISOString()
+                            },
+                            { onConflict: 'id' }
+                        );
+                    if (corpError) {
+                        console.error('❌ Could not save Corporate/GC config to Supabase:', corpError.message);
+                    } else {
+                        console.log('✅ Corporate/GC config saved to system_config table');
                     }
                 } catch (e) {
                     console.warn('⚠️ Supabase config save error:', e.message);
@@ -10573,16 +11054,43 @@
                     var csIds = csUsers.map(function(u){ return u.id; });
                     var gccsIds = gcIds.concat(csIds);
 
-                    // Live title lookup — pulled straight from Supabase-backed rosters
-                    // (golden_command_users / corporate_staff_employees) instead of a
-                    // hardcoded list, so new hires/removals show up automatically.
-                    var STAFF_TITLES = {};
-                    gcUsers.forEach(function(u) { STAFF_TITLES[u.id] = u.position || u.title || ''; });
-                    csUsers.forEach(function(u) { STAFF_TITLES[u.id] = u.position || u.title || ''; });
+                    // Only include the specific staff from the approved Excel list
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
 
-                    // Include ALL Golden Command + Corporate Staff who have bids —
-                    // roster membership itself (loaded from Supabase) is the whitelist.
-                    var gccs = bids.filter(function(b) { return gccsIds.indexOf(b.employeeId) > -1; });
+                    // Canonical job titles from approved staff list
+                    var STAFF_TITLES = {
+                        '1000888': 'Project Director',
+                        '1000008': 'Senior Executive Finance Director',
+                        '1000027': 'Senior Executive Human Resource Director',
+                        '1000124': 'Senior Executive Director Stakeholder & Communication',
+                        '1001118': 'Head of Major Services Management',
+                        '1002997': 'Contract Director',
+                        '1003591': 'ICT Manager',
+                        '1003592': 'Head of Cyber Security',
+                        '1003752': 'INM Director',
+                        '1006024': 'Security Director',
+                        '1006939': 'Rail Safety Manager',
+                        '1007066': 'Operations Director',
+                        '10015':   'TSM L456 Director',
+                        '10020':   'TSM L3 Director',
+                        '1000555': 'Executive Assistant Project Director',
+                        '1000136': 'CMMS Manager',
+                        '1000225': 'Performance Manager',
+                        '1000352': 'Planning and Reporting Specialist',
+                        '1000759': 'KPI & Reporting Specialist',
+                        '1000043': 'Quality And Audit Manager',
+                        '1000830': 'Risk Manager',
+                        '1000284': 'Rail Safety Officer',
+                        '1000330': 'Executive Assistant',
+                        '1000231': 'Line Standards Manager',
+                        '1000238': 'Line Standards Manager',
+                        '1005385': 'Operation Manager L-46',
+                        '1007071': 'Operation Manager L-5',
+                        '1006467': 'Operation Manager L-3'
+                    };
+
+                    // Filter to GC/CS AND in allowed list
+                    var gccs = bids.filter(function(b) { return gccsIds.indexOf(b.employeeId) > -1 && ALLOWED_IDS.indexOf(b.employeeId) > -1; });
 
                     // Build per-staff map
                     var staffMap = {};
@@ -10848,15 +11356,15 @@
                         self._setLcStatus('live');
                     }
                 }, 30000);
-                // Build the whitelist from the live GC/CS roster (Supabase-backed) —
-                // any ID present in golden_command_users or corporate_staff_employees
-                // is allowed; no hardcoded ID list to maintain.
+                // Build the whitelist once: only IDs that appear in BOTH the
+                // ALLOWED_IDS hardcoded list AND the live GC/CS user roster.
                 function lcSfWhitelist() {
                     var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
                     var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
                     var gccsIds = gcIds.concat(csIds);
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
                     var set = new Set();
-                    gccsIds.forEach(function(id) { set.add(id); });
+                    gccsIds.forEach(function(id) { if (ALLOWED_IDS.indexOf(id) > -1) set.add(id); });
                     return set;
                 }
 
@@ -11034,10 +11542,18 @@
 
                     var tid = self._tid ? self._tid() : (self.state && self.state.tenantId) || 'default';
                     var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
-                    // Live title lookup from the Supabase-backed rosters (same as lcBuildStaffFromBids)
-                    var STAFF_TITLES = {};
-                    (self.state.goldenCommandUsers  || []).forEach(function(u) { STAFF_TITLES[u.id] = u.position || u.title || ''; });
-                    (self.state.corporateStaffUsers || []).forEach(function(u) { STAFF_TITLES[u.id] = u.position || u.title || ''; });
+                    var STAFF_TITLES = {
+                        '1000888':'Project Director','1000008':'Senior Executive Finance Director',
+                        '1000027':'Senior Executive Human Resource Director','1000124':'Senior Executive Director Stakeholder & Communication',
+                        '1001118':'Head of Major Services Management','1002997':'Contract Director',
+                        '1003591':'ICT Manager','1003592':'Head of Cyber Security','1003752':'INM Director',
+                        '1006024':'Security Director','1006939':'Rail Safety Manager','1007066':'Operations Director',
+                        '10015':'TSM L456 Director','10020':'TSM L3 Director','1000555':'Executive Assistant Project Director',
+                        '1000136':'CMMS Manager','1000225':'Performance Manager','1000352':'Planning and Reporting Specialist',
+                        '1000759':'KPI & Reporting Specialist','1000043':'Quality And Audit Manager','1000830':'Risk Manager',
+                        '1000284':'Rail Safety Officer','1000330':'Executive Assistant','1000231':'Line Standards Manager',
+                        '1000238':'Line Standards Manager','1005385':'Operation Manager L-46','1007071':'Operation Manager L-5','1006467':'Operation Manager L-3'
+                    };
 
                     var inserted = 0, updated = 0, errors = 0, errDetails = [];
 
@@ -11164,6 +11680,357 @@
                     // Auto-close on full success after 3 s
                     if (!errors) setTimeout(function(){ lcCloseSfSync(); }, 3000);
                 };
+            },
+
+            // ==================== HR CORPORATE DASHBOARD ====================
+            _hrCorpRosterLookup(id) {
+                const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                const GENERIC_DEPTS = ['Corporate Staff', 'Human Resource', 'Human Resources'];
+                const realDept = (u?.department && !GENERIC_DEPTS.includes(u.department)) ? u.department : null;
+                return {
+                    name:       u?.name || null,
+                    department: realDept || (u?.position ? u.position : null),
+                    position:   u?.position || ''
+                };
+            },
+
+            _hrCorpBidOverlaps() {
+                // Group this-year HR Corporate bids by "cluster" (department, falling
+                // back to position, falling back to 'Unassigned'), then flag any pair
+                // of DIFFERENT employees in the same cluster whose date ranges overlap.
+                const hrBids = this.state.bids.filter(b => this._isHrCorporate(b.employeeId) && !this._isMaintStaff(b.employeeId, b));
+                const clusters = {};
+                hrBids.forEach(b => {
+                    if (!b.startDate || !b.endDate) return;
+                    const info = this._hrCorpRosterLookup(b.employeeId);
+                    const cluster = info.department || 'Unassigned';
+                    if (!clusters[cluster]) clusters[cluster] = [];
+                    clusters[cluster].push({ ...b, _name: b.employeeName || info.name || b.employeeId });
+                });
+                const conflicts = [];
+                Object.keys(clusters).forEach(cluster => {
+                    const list = clusters[cluster];
+                    for (let i = 0; i < list.length; i++) {
+                        for (let j = i + 1; j < list.length; j++) {
+                            const a = list[i], b = list[j];
+                            if (a.employeeId === b.employeeId) continue;
+                            const aS = new Date(a.startDate), aE = new Date(a.endDate);
+                            const bS = new Date(b.startDate), bE = new Date(b.endDate);
+                            if (aS <= bE && bS <= aE) {
+                                const overlapStart = aS > bS ? a.startDate : b.startDate;
+                                const overlapEnd = aE < bE ? a.endDate : b.endDate;
+                                conflicts.push({ cluster, a, b, overlapStart, overlapEnd });
+                            }
+                        }
+                    }
+                });
+                return conflicts;
+            },
+
+            renderHrCorpDashboardView() {
+                const content = document.getElementById('contentArea');
+                const hrIds = this._HR_CORPORATE_IDS;
+                const hrBids = this.state.bids.filter(b => this._isHrCorporate(b.employeeId) && !this._isMaintStaff(b.employeeId, b));
+                const bidderIds = new Set(hrBids.map(b => b.employeeId));
+                const totalStaff = hrIds.length;
+                const participated = [...bidderIds].filter(id => hrIds.includes(id)).length;
+                const pct = totalStaff > 0 ? Math.round((participated / totalStaff) * 100) : 0;
+                const totalDays = hrBids.reduce((sum, b) => sum + (Number(b.days) || 0), 0);
+                const notYetBid = hrIds
+                    .filter(id => !bidderIds.has(id))
+                    .map(id => { const info = this._hrCorpRosterLookup(id); return { id, name: info.name || 'Unknown', department: info.department || '—' }; })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                const conflicts = this._hrCorpBidOverlaps();
+
+                // Chart data: monthly bidding overview (% submitted vs % not yet bid, cumulative by submission date) + participation split (pie)
+                const chartYear = this.state.biddingYearCorp || new Date().getFullYear();
+                const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const monthlySubmittedPct = [];
+                const monthlyNotBidPct = [];
+                monthLabels.forEach((label, idx) => {
+                    const monthEnd = new Date(chartYear, idx + 1, 0, 23, 59, 59);
+                    const bidderIdsByMonth = new Set(
+                        hrBids
+                            .filter(b => b.timestamp && new Date(b.timestamp) <= monthEnd)
+                            .map(b => b.employeeId)
+                            .filter(id => hrIds.includes(id))
+                    );
+                    const pct = totalStaff > 0 ? Math.round((bidderIdsByMonth.size / totalStaff) * 100) : 0;
+                    monthlySubmittedPct.push(pct);
+                    monthlyNotBidPct.push(100 - pct);
+                });
+                const notYetBidCount = totalStaff - participated;
+                const slotLabelMapFull = { slotA: 'Slot A', slotB: 'Slot B', slotC: 'Slot C', slotD: 'Slot D', SA: 'Slot A', SB: 'Slot B', SC: 'Slot C', SD: 'Slot D', gcCustom: '⭐ Custom', csCustom: '🏢 Custom' };
+                const submittedList = hrBids
+                    .map(b => {
+                        const info = this._hrCorpRosterLookup(b.employeeId);
+                        return {
+                            id: b.employeeId,
+                            name: b.employeeName || info.name || 'Unknown',
+                            department: info.department || '—',
+                            slot: slotLabelMapFull[b.slotType] || b.slotType || '—',
+                            startDate: b.startDate || '—',
+                            endDate: b.endDate || '—',
+                            days: b.days || '—'
+                        };
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                            <div class="flex justify-between items-center flex-wrap gap-3 mb-2">
+                                <h2 class="text-2xl font-bold text-pink-800">🏢 HR Corporate Dashboard</h2>
+                                <button onclick="app.renderHrCorpDashboardView()" class="px-4 py-2 bg-pink-100 text-pink-700 rounded-lg font-semibold hover:bg-pink-200 text-sm">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                            <p class="text-sm text-gray-500">Live snapshot of the HR Corporate staff list (${totalStaff} staff). Connected to Admin &rsaquo; Bid Details &rsaquo; HR Corporate.</p>
+                        </div>
+
+                        <!-- KPI cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-pink-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Participation</p>
+                                <p class="text-3xl font-bold text-pink-700 mt-1">${pct}%</p>
+                                <p class="text-xs text-gray-500 mt-1">${participated} of ${totalStaff} staff have bid</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bids Submitted</p>
+                                <p class="text-3xl font-bold text-emerald-700 mt-1">${hrBids.length}</p>
+                                <p class="text-xs text-gray-500 mt-1">${bidderIds.size} unique bidder${bidderIds.size !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-blue-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Days Requested</p>
+                                <p class="text-3xl font-bold text-blue-700 mt-1">${totalDays}</p>
+                                <p class="text-xs text-gray-500 mt-1">Across all HR Corporate bids</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 ${conflicts.length > 0 ? 'border-red-500' : 'border-gray-300'}">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Overlap Warnings</p>
+                                <p class="text-3xl font-bold ${conflicts.length > 0 ? 'text-red-600' : 'text-gray-400'} mt-1">${conflicts.length}</p>
+                                <p class="text-xs text-gray-500 mt-1">Same-cluster overlapping dates</p>
+                            </div>
+                        </div>
+
+                        <!-- Charts -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5 lg:col-span-1">
+                                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Participation Split</h3>
+                                <div style="height:260px;"><canvas id="hrCorpPieChart"></canvas></div>
+                            </div>
+                            <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${chartYear} (% Submitted by Month)</h3>
+                                <div style="height:280px;"><canvas id="hrCorpMonthlyChart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <!-- Overlap warnings -->
+                        <div class="bg-white border-2 ${conflicts.length > 0 ? 'border-red-200' : 'border-gray-200'} rounded-xl overflow-hidden mb-6">
+                            <div class="${conflicts.length > 0 ? 'bg-red-50 border-b border-red-200' : 'bg-gray-50 border-b border-gray-200'} px-6 py-4">
+                                <h3 class="text-lg font-bold ${conflicts.length > 0 ? 'text-red-800' : 'text-gray-700'}">⚠️ Overlapping Leave in Same Cluster</h3>
+                                <p class="text-sm ${conflicts.length > 0 ? 'text-red-600' : 'text-gray-500'} mt-1">Clustered by department/position. Flags when two different HR Corporate staff in the same cluster have overlapping leave dates.</p>
+                            </div>
+                            <div class="p-4">
+                                ${conflicts.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">✅</p>
+                                        <p class="font-semibold">No overlapping leave detected within any cluster.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-red-50 text-left">
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Cluster</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Staff A</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Staff B</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Overlap Period</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${conflicts.map((c, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-red-50/40'}">
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-700">${this._escHtml(c.cluster)}</td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-800">${this._escHtml(c.a._name)} <span class="text-xs text-gray-400 font-mono">(${this._escHtml(c.a.employeeId)})</span></td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-800">${this._escHtml(c.b._name)} <span class="text-xs text-gray-400 font-mono">(${this._escHtml(c.b.employeeId)})</span></td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-700">${this._escHtml(c.overlapStart)} &rarr; ${this._escHtml(c.overlapEnd)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Submitted list -->
+                        <div class="bg-white border-2 border-emerald-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-emerald-50 border-b border-emerald-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-emerald-800">✅ Bids Submitted</h3>
+                                    <p class="text-sm text-emerald-600 mt-1">HR Corporate staff who have submitted their leave bid.</p>
+                                </div>
+                                <span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm font-semibold">${submittedList.length} bid${submittedList.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="p-4">
+                                ${submittedList.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">📭</p>
+                                        <p class="font-semibold">No HR Corporate bids submitted yet.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-emerald-50 text-left">
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">#</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Staff ID</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Name</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Department / Position</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Slot</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Start Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">End Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Days</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${submittedList.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-emerald-50/40'}">
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-600">${this._escHtml(s.department)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.slot)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.startDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.endDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-center font-semibold text-gray-800">${this._escHtml(String(s.days))}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Not-yet-bid list -->
+                        <div class="bg-white border-2 border-amber-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-amber-50 border-b border-amber-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-amber-800">⏳ Not Yet Bid</h3>
+                                    <p class="text-sm text-amber-600 mt-1">HR Corporate staff who haven't submitted a bid yet.</p>
+                                </div>
+                                <span class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">${notYetBid.length} staff</span>
+                            </div>
+                            <div class="p-4">
+                                ${notYetBid.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">🎉</p>
+                                        <p class="font-semibold">Everyone on the HR Corporate list has submitted a bid.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-amber-50 text-left">
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">#</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Staff ID</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Name</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Department / Position</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${notYetBid.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-amber-50/40'}">
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-600">${this._escHtml(s.department)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Render charts (destroy previous instances to avoid canvas reuse errors)
+                if (typeof Chart !== 'undefined') {
+                    if (this._hrCorpPieChart) { this._hrCorpPieChart.destroy(); this._hrCorpPieChart = null; }
+                    if (this._hrCorpMonthlyChart) { this._hrCorpMonthlyChart.destroy(); this._hrCorpMonthlyChart = null; }
+
+                    const pieCtx = document.getElementById('hrCorpPieChart');
+                    if (pieCtx) {
+                        this._hrCorpPieChart = new Chart(pieCtx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['Bid Submitted', 'Not Yet Bid'],
+                                datasets: [{
+                                    data: [participated, notYetBidCount],
+                                    backgroundColor: ['#ec4899', '#fbbf24'],
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                            }
+                        });
+                    }
+
+                    const monthlyCtx = document.getElementById('hrCorpMonthlyChart');
+                    if (monthlyCtx) {
+                        const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
+                        this._hrCorpMonthlyChart = new Chart(monthlyCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: monthLabels,
+                                datasets: [
+                                    {
+                                        label: 'Bids Submitted %',
+                                        data: monthlySubmittedPct,
+                                        backgroundColor: barColors,
+                                        borderRadius: 4,
+                                        borderSkipped: false,
+                                        barPercentage: 0.65
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        color: '#ffffff',
+                                        font: { weight: 'bold', size: 12 },
+                                        formatter: v => v + '%'
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        max: 100,
+                                        ticks: { color: '#e5e7eb', callback: v => v + '%' },
+                                        grid: { color: 'rgba(255,255,255,0.08)' }
+                                    },
+                                    x: {
+                                        ticks: { color: '#e5e7eb' },
+                                        grid: { display: false }
+                                    }
+                                }
+                            },
+                            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []
+                        });
+                    }
+                }
             },
 
             async renderAuditLogView() {
