@@ -17,6 +17,18 @@
             --metro-card: rgba(255,255,255,0.06);
             --metro-border: rgba(255,255,255,0.12);
             --metro-text: #d8f3dc;
+            --metro-gold: #d4a017;
+            --metro-gold-dark: #b8860b;
+
+            /* Post-login app chrome (light mode, same family as login) */
+            --app-bg: #eef3ef;
+            --app-card: #ffffff;
+            --app-border: #dbe7e0;
+            --app-text: #14251c;
+            --app-text-muted: #64766c;
+            --app-green-50: #eaf5ef;
+            --app-green-100: #d6ebe0;
+            --app-gold-50: #fbf3e0;
         }
 
         * { font-family: 'Barlow', sans-serif; box-sizing: border-box; }
@@ -723,10 +735,129 @@
 
         /* Keep rest of app readable on light bg after login */
         body.logged-in {
-            background: #f0f4f0;
+            background: var(--app-bg);
         }
         body.logged-in .login-bg,
         body.logged-in .orb { display: none; }
+
+        /* ══════════════ Shared post-login component system ══════════════ */
+
+        /* Nav tab bar — replaces the old rainbow Tailwind utility buttons */
+        .metro-tab-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            background: var(--app-card);
+            border: 1px solid var(--app-border);
+            border-radius: 12px;
+            padding: 8px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(20,37,28,0.04);
+        }
+        .metro-tab-bar + .metro-tab-bar { margin-top: -16px; }
+        .metro-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            font-family: 'Barlow', sans-serif;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--app-text-muted);
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        .metro-tab:hover {
+            background: var(--app-green-50);
+            color: var(--metro-green-dark);
+        }
+        .metro-tab.metro-tab-active {
+            background: var(--metro-green);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(45,106,79,0.25);
+        }
+        /* Gold variant — reserved for planner/admin-sensitive actions, mirrors the login page's gold = admin cue */
+        .metro-tab.metro-tab-gold {
+            color: var(--metro-gold-dark);
+        }
+        .metro-tab.metro-tab-gold:hover { background: var(--app-gold-50); }
+        .metro-tab.metro-tab-gold.metro-tab-active {
+            background: linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);
+            color: #fff;
+        }
+        /* Single primary call-to-action per bar (Save to Database) */
+        .metro-tab.metro-tab-primary {
+            background: var(--metro-green);
+            color: #fff;
+        }
+        .metro-tab.metro-tab-primary:hover { background: var(--metro-green-dark); }
+        .metro-tab-divider {
+            width: 1px;
+            align-self: stretch;
+            background: var(--app-border);
+            margin: 4px 4px;
+        }
+
+        /* Generic light-mode card, echoes the login page's glass card but opaque for readability */
+        .metro-card {
+            background: var(--app-card);
+            border: 1px solid var(--app-border);
+            border-radius: 14px;
+            box-shadow: 0 1px 6px rgba(20,37,28,0.05);
+        }
+
+        /* Data tables */
+        .metro-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .metro-table th {
+            text-align: left;
+            font-family: 'Barlow Condensed', sans-serif;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--app-text-muted);
+            background: var(--app-green-50);
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--app-border);
+            position: sticky;
+            top: 0;
+        }
+        .metro-table td {
+            padding: 9px 12px;
+            border-bottom: 1px solid var(--app-border);
+            color: var(--app-text);
+        }
+        .metro-table tbody tr:nth-child(even) { background: rgba(45,106,79,0.025); }
+        .metro-table tbody tr:hover { background: var(--app-green-50); }
+
+        /* Collapsible department cards (Configure Slots / Configure Maint Slots) */
+        .metro-dept-card {
+            border: 1px solid var(--app-border);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            background: var(--app-card);
+        }
+        .metro-dept-summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            background: var(--app-green-50);
+            border-bottom: 1px solid var(--app-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .metro-dept-summary::-webkit-details-marker { display: none; }
+        .metro-dept-caret { display:inline-block; transition: transform 0.15s ease; color: var(--metro-green); font-size: 0.7rem; }
+        .metro-dept-card[open] > .metro-dept-summary .metro-dept-caret { transform: rotate(90deg); }
+        .metro-dept-card[open] > .metro-dept-summary { border-bottom-color: var(--app-border); }
 
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
@@ -1051,91 +1182,64 @@
         </div>
 
         <!-- Planner Navigation -->
-        <div id="plannerNav" class="hidden flex justify-center space-x-4 mb-6 flex-wrap gap-2">
-            <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                📊 Dashboard
-            </button>
-            <button onclick="app.setActiveView('upload')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                📤 Upload Data
-            </button>
-            <button onclick="app.setActiveView('configureSlots')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                ⚙️ Configure Slots
-            </button>
-            <button onclick="app.setActiveView('seniorityReport')" class="px-4 py-2 rounded-lg font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300">
-                📋 Seniority Report
-            </button>
-            <button onclick="app.setActiveView('configureMaintSlots')" class="px-4 py-2 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-300">
-                🔧 Configure Maint Slots
-            </button>
-            <button onclick="app.setActiveView('admin')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🛠️ Admin Panel
-            </button>
-            <button onclick="app.publishToSupabase()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold">
-                💾 Save to Database
-            </button>
-            <button onclick="app.setActiveView('manageUsers')" class="px-4 py-2 rounded-lg font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-300">
-                👥 Manage Users
-            </button>
-            <button onclick="app.setActiveView('manageOnCall')" class="px-4 py-2 rounded-lg font-semibold bg-red-50 text-red-700 hover:bg-red-100 border border-red-300">
-                📅 On-Call Manager
-            </button>
-            <button onclick="app.setActiveView('changePlannerPassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🔐 Change Password
-            </button>
-            <button onclick="app.setActiveView('results')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                📋 View Results
-            </button>
-            <button onclick="app.setActiveView('auditLog')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🔍 Audit Log
-            </button>
-            <button onclick="app.setActiveView('leaveDashboard')" class="px-4 py-2 rounded-lg font-semibold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-300">
-                &#128197; GC &amp; CS Leave Tracker
-            </button>
-            <button onclick="app.setActiveView('hrCorpDashboard')" class="px-4 py-2 rounded-lg font-semibold bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-300">
-                &#127970; HR Corporate Dashboard
-            </button>
+        <div id="plannerNav" class="hidden flex" style="flex-direction:column;gap:8px;margin-bottom:24px;">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('dashboard')" class="metro-tab" data-nav="dashboard">📊 Dashboard</button>
+                <button onclick="app.setActiveView('upload')" class="metro-tab" data-nav="upload">📤 Upload Data</button>
+                <button onclick="app.setActiveView('configureSlots')" class="metro-tab" data-nav="configureSlots">⚙️ Configure Slots</button>
+                <button onclick="app.setActiveView('configureMaintSlots')" class="metro-tab" data-nav="configureMaintSlots">🔧 Configure Maint Slots</button>
+                <button onclick="app.setActiveView('seniorityReport')" class="metro-tab" data-nav="seniorityReport">📋 Seniority Report</button>
+                <div class="metro-tab-divider"></div>
+                <button onclick="app.setActiveView('results')" class="metro-tab" data-nav="results">📋 View Results</button>
+                <button onclick="app.setActiveView('leaveDashboard')" class="metro-tab" data-nav="leaveDashboard">📅 GC &amp; CS Leave Tracker</button>
+                <button onclick="app.setActiveView('hrCorpDashboard')" class="metro-tab" data-nav="hrCorpDashboard">🏢 HR Corporate Dashboard</button>
+                <button onclick="app.setActiveView('auditLog')" class="metro-tab" data-nav="auditLog">🔍 Audit Log</button>
+                <div class="metro-tab-divider"></div>
+                <button onclick="app.publishToSupabase()" class="metro-tab metro-tab-primary">💾 Save to Database</button>
+            </div>
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('admin')" class="metro-tab metro-tab-gold" data-nav="admin">🛠️ Admin Panel</button>
+                <button onclick="app.setActiveView('manageUsers')" class="metro-tab metro-tab-gold" data-nav="manageUsers">👥 Manage Users</button>
+                <button onclick="app.setActiveView('manageOnCall')" class="metro-tab metro-tab-gold" data-nav="manageOnCall">📅 On-Call Manager</button>
+                <div class="metro-tab-divider"></div>
+                <button onclick="app.setActiveView('changePlannerPassword')" class="metro-tab" data-nav="changePlannerPassword">🔐 Change Password</button>
+            </div>
         </div>
 
         <!-- Employee Navigation -->
-        <div id="employeeNav" class="hidden flex justify-center space-x-4 mb-6">
-            <button onclick="app.setActiveView('employee')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                📅 Place Bids
-            </button>
-            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="myResultsNavBtn">
-                📋 My Results
-                <span id="resultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
-            </button>
-            <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🔑 Change Password
-            </button>
+        <div id="employeeNav" class="hidden flex justify-center mb-6">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('employee')" class="metro-tab metro-tab-primary">📅 Place Bids</button>
+                <button onclick="app.setActiveView('myResults')" class="metro-tab relative" id="myResultsNavBtn">
+                    📋 My Results
+                    <span id="resultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
+                </button>
+                <button onclick="app.setActiveView('changePassword')" class="metro-tab">🔑 Change Password</button>
+            </div>
         </div>
 
         <!-- Golden Command Navigation -->
-        <div id="goldenCommandNav" class="hidden flex justify-center space-x-4 mb-6">
-            <button onclick="app.setActiveView('goldenCommand')" class="px-4 py-2 rounded-lg font-semibold bg-yellow-400 text-yellow-900 hover:bg-yellow-500 border border-yellow-500">
-                ⭐ Place GC Bids
-            </button>
-            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="gcResultsNavBtn">
-                📋 My Results
-                <span id="gcResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
-            </button>
-            <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🔑 Change Password
-            </button>
+        <div id="goldenCommandNav" class="hidden flex justify-center mb-6">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('goldenCommand')" class="metro-tab metro-tab-gold metro-tab-active">⭐ Place GC Bids</button>
+                <button onclick="app.setActiveView('myResults')" class="metro-tab relative" id="gcResultsNavBtn">
+                    📋 My Results
+                    <span id="gcResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
+                </button>
+                <button onclick="app.setActiveView('changePassword')" class="metro-tab">🔑 Change Password</button>
+            </div>
         </div>
 
         <!-- Corporate Staff Navigation -->
-        <div id="corporateStaffNav" class="hidden flex justify-center space-x-4 mb-6">
-            <button onclick="app.setActiveView('corporateStaff')" class="px-4 py-2 rounded-lg font-semibold bg-blue-500 text-white hover:bg-blue-600 border border-blue-600">
-                🏢 Place CS Bids
-            </button>
-            <button onclick="app.setActiveView('myResults')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border relative" id="csResultsNavBtn">
-                📋 My Results
-                <span id="csResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
-            </button>
-            <button onclick="app.setActiveView('changePassword')" class="px-4 py-2 rounded-lg font-semibold bg-white text-gray-700 hover:bg-gray-100 border">
-                🔑 Change Password
-            </button>
+        <div id="corporateStaffNav" class="hidden flex justify-center mb-6">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('corporateStaff')" class="metro-tab metro-tab-primary">🏢 Place CS Bids</button>
+                <button onclick="app.setActiveView('myResults')" class="metro-tab relative" id="csResultsNavBtn">
+                    📋 My Results
+                    <span id="csResultsReadyBadge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">!</span>
+                </button>
+                <button onclick="app.setActiveView('changePassword')" class="metro-tab">🔑 Change Password</button>
+            </div>
         </div>
 
         <!-- Main Content Area -->
@@ -2834,29 +2938,29 @@
                     <div class="max-w-6xl mx-auto">
                         ${deadlineCountdown}
                         <!-- Header with leave entitlement -->
-                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
-                            <h2 class="text-2xl font-bold mb-4">Leave Bidding for ${this.state.biddingYear}</h2>
+                        <div class="metro-card p-6 mb-6">
+                            <h2 class="text-2xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Leave Bidding for ${this.state.biddingYear}</h2>
                             
                             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                                <div class="bg-blue-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${entitlement}</p>
-                                    <p class="text-sm text-gray-600">Total Leave Days</p>
-                                    <p class="text-xs text-gray-500">${yearsOfService.toFixed(1)} years of service</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${entitlement}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Leave Days</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">${yearsOfService.toFixed(1)} years of service</p>
                                 </div>
-                                <div class="bg-green-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${userBids.length}</p>
-                                    <p class="text-sm text-gray-600">Preferences Submitted</p>
-                                    <p class="text-xs text-gray-500">Max 2 per month</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);">${userBids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Preferences Submitted</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Max 2 per month</p>
                                 </div>
-                                <div class="bg-yellow-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${totalBidDays}</p>
-                                    <p class="text-sm text-gray-600">Days Requested</p>
-                                    <p class="text-xs text-gray-500">Across all preferences</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);">${totalBidDays}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Days Requested</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Across all preferences</p>
                                 </div>
-                                <div class="bg-purple-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${entitlement}</p>
-                                    <p class="text-sm text-gray-600">Leave Entitlement</p>
-                                    <p class="text-xs text-gray-500">Final allocation by seniority</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${entitlement}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Leave Entitlement</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Final allocation by seniority</p>
                                 </div>
                             </div>
             
@@ -2864,8 +2968,8 @@
             
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <!-- Left: Place New Bid -->
-                            <div class="bg-white rounded-xl shadow-xl p-6">
-                                <h3 class="text-xl font-bold mb-4">Place New Bid</h3>
+                            <div class="metro-card p-6">
+                                <h3 class="text-xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Place New Bid</h3>
                                 
                                 ${this.state.isProcessed ? `
                                     <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
@@ -2882,8 +2986,8 @@
                                 
                                 <!-- Month Selection -->
                                 <div class="mb-5">
-                                    <label class="block font-semibold mb-2">Select Month:</label>
-                                    <select id="selectedMonth" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg" onchange="app.refreshAvailableSlots()">
+                                    <label class="block font-semibold mb-2" style="color:var(--app-text);">Select Month:</label>
+                                    <select id="selectedMonth" class="w-full px-4 py-2 border-2 rounded-lg" style="border-color:var(--app-border);" onchange="app.refreshAvailableSlots()">
                                         ${this.state.months.map(month => `
                                             <option value="${month}">${month} ${this.state.biddingYear}</option>
                                         `).join('')}
@@ -2892,24 +2996,27 @@
             
                                 <!-- Available Slots for selected month (planner-configured) -->
                                 <div class="mb-5">
-                                    <label class="block font-semibold mb-2">Select Available Slot:</label>
+                                    <label class="block font-semibold mb-2" style="color:var(--app-text);">Select Available Slot:</label>
                                     <div id="availableSlotCards" class="space-y-3">
                                         <!-- Populated by refreshAvailableSlots() -->
                                     </div>
                                 </div>
 
                                 <!-- Selected slot confirmation panel -->
-                                <div id="selectedSlotConfirm" class="hidden mb-5 p-4 rounded-xl border-2 border-blue-300 bg-blue-50">
-                                    <p class="font-semibold text-blue-800 mb-1">📌 Selected: <span id="confirmSlotName"></span></p>
-                                    <p class="text-sm text-blue-700">📅 <span id="confirmSlotDates"></span></p>
-                                    <p class="text-sm text-blue-700">⏱ <span id="confirmSlotDays"></span> days</p>
+                                <div id="selectedSlotConfirm" class="hidden mb-5 p-4 rounded-xl border-2" style="border-color:var(--metro-green-light);background:var(--app-green-50);">
+                                    <p class="font-semibold mb-1" style="color:var(--metro-green-dark);">📌 Selected: <span id="confirmSlotName"></span></p>
+                                    <p class="text-sm" style="color:var(--metro-green-dark);">📅 <span id="confirmSlotDates"></span></p>
+                                    <p class="text-sm" style="color:var(--metro-green-dark);">⏱ <span id="confirmSlotDays"></span> days</p>
                                 </div>
             
                                 <!-- Submit Button -->
                                 <button
                                     id="submitBidBtn"
                                     onclick="app.submitBid()"
-                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:opacity-50"
+                                    class="w-full px-6 py-3 text-white rounded-lg font-semibold disabled:opacity-50"
+                                    style="background:var(--metro-green);"
+                                    onmouseover="if(!this.disabled)this.style.background='var(--metro-green-dark)'"
+                                    onmouseout="if(!this.disabled)this.style.background='var(--metro-green)'"
                                     ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}
                                 >
                                     Submit Bid
@@ -2920,8 +3027,8 @@
                             </div>
             
                             <!-- Right: My Current Bids -->
-                            <div class="bg-white rounded-xl shadow-xl p-6">
-                                <h3 class="text-xl font-bold mb-4">My Current Bids</h3>
+                            <div class="metro-card p-6">
+                                <h3 class="text-xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">My Current Bids</h3>
                                 
                                 ${userBids.length === 0 ? `
                                     <div class="text-center py-8 text-gray-500">
@@ -2963,12 +3070,12 @@
                                 `}
                                 
                                 <!-- Bid Summary -->
-                                <div class="mt-6 p-4 bg-gray-50 rounded-lg">
-                                    <p class="font-semibold mb-2">Bid Summary:</p>
-                                    <p class="text-sm">Preferences submitted: ${userBids.length}</p>
-                                    <p class="text-sm text-gray-500">Limit: max 2 bids per month</p>
-                                    <p class="text-sm">Days requested: ${totalBidDays} days</p>
-                                    <p class="text-sm">Leave entitlement: ${entitlement} days (applied at allocation)</p>
+                                <div class="mt-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="font-semibold mb-2" style="color:var(--app-text);">Bid Summary:</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Preferences submitted: ${userBids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Limit: max 2 bids per month</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Days requested: ${totalBidDays} days</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Leave entitlement: ${entitlement} days (applied at allocation)</p>
                                 </div>
                             </div>
                         </div>
@@ -4013,18 +4120,19 @@
                 
                 content.innerHTML = `
                     <div class="max-w-7xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-4">📅 Configure Bid Slot Calendar for ${this.state.biddingYear}</h2>
-                            <p class="text-gray-600 mb-6">
+                        <div class="metro-card p-6">
+                            <h2 class="text-2xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">📅 Configure Bid Slot Calendar for ${this.state.biddingYear}</h2>
+                            <p class="mb-6" style="color:var(--app-text-muted);">
                                 Define specific calendar date ranges for each bid slot per department per month (Jan–Dec). 
                                 Each department has Slot A, Slot B, and Slot C for each of the 12 months, with individual capacity limits.
                             </p>
                             
-                            <div class="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
-                                <label class="block font-semibold mb-2">Filter by Department:</label>
+                            <div class="mb-6 p-4 rounded-lg border" style="background:var(--app-green-50);border-color:var(--app-border);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Filter by Department:</label>
                                 <select
                                     id="deptFilter"
-                                    class="w-full px-4 py-3 border-2 border-blue-300 rounded-lg text-lg font-semibold"
+                                    class="w-full px-4 py-3 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:var(--metro-green-light);color:var(--app-text);"
                                     onchange="app.filterDepartments()"
                                 >
                                     ${allDepartments.map(dept => `
@@ -4033,6 +4141,11 @@
                                         </option>
                                     `).join('')}
                                 </select>
+                            </div>
+
+                            <div class="flex justify-end gap-2 mb-3">
+                                <button onclick="document.querySelectorAll('#configArea details.metro-dept-card').forEach(d=>d.open=true)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌄ Expand all</button>
+                                <button onclick="document.querySelectorAll('#configArea details.metro-dept-card').forEach(d=>d.open=false)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌃ Collapse all</button>
                             </div>
             
                             <div id="configArea">
@@ -4060,24 +4173,30 @@
 
                 content.innerHTML = `
                     <div class="max-w-7xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6">
+                        <div class="metro-card p-6">
                             <div class="flex items-center gap-3 mb-2">
                                 <span style="font-size:1.8rem;">🔧</span>
-                                <h2 class="text-2xl font-bold">Configure Bid Slot Calendar — Maintenance Staff (${this.state.biddingYear})</h2>
+                                <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Configure Bid Slot Calendar — Maintenance Staff (${this.state.biddingYear})</h2>
                             </div>
-                            <p class="text-gray-600 mb-6">
+                            <p class="mb-6" style="color:var(--app-text-muted);">
                                 Define date ranges and capacities for Slot A, B, and C per Maintenance roster group per month.
                             </p>
 
-                            <div class="mb-6 p-4 bg-red-50 rounded-lg border-2 border-red-200">
-                                <label class="block font-semibold mb-2 text-red-800">Filter by Roster Group:</label>
+                            <div class="mb-6 p-4 rounded-lg border-2" style="background:#fff7ed;border-color:#fdba74;">
+                                <label class="block font-semibold mb-2" style="color:#9a3412;">Filter by Roster Group:</label>
                                 <select
                                     id="maintDeptFilter"
-                                    class="w-full px-4 py-3 border-2 border-red-300 rounded-lg text-lg font-semibold"
+                                    class="w-full px-4 py-3 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:#fb923c;color:var(--app-text);"
                                     onchange="app.filterMaintDepartments()"
                                 >
                                     ${allDepts.map(d => `<option value="${d}">${d === 'all' ? 'All Roster Groups' : d}</option>`).join('')}
                                 </select>
+                            </div>
+
+                            <div class="flex justify-end gap-2 mb-3">
+                                <button onclick="document.querySelectorAll('#maintConfigArea details.metro-dept-card').forEach(d=>d.open=true)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌄ Expand all</button>
+                                <button onclick="document.querySelectorAll('#maintConfigArea details.metro-dept-card').forEach(d=>d.open=false)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌃ Collapse all</button>
                             </div>
 
                             <div id="maintConfigArea">
@@ -4100,18 +4219,18 @@
                 const deptsToConfigure = filter === 'all' ? allDepts : [filter];
 
                 if (deptsToConfigure.length === 0) {
-                    return `<div class="bg-yellow-50 border border-yellow-200 rounded p-6 text-center">
+                    return `<div class="rounded p-6 text-center" style="background:#fffbeb;border:1px solid #fde68a;">
                         <p class="text-lg font-semibold">No maintenance roster groups found.</p>
                     </div>`;
                 }
 
                 let html = filter === 'all'
-                    ? `<div class="mb-6 p-4 bg-red-50 border border-red-300 rounded">
-                        <h3 class="text-xl font-semibold text-red-800 mb-2">🔧 Maintenance Slot Configuration — All Roster Groups</h3>
-                        <p class="text-red-700">Configure date ranges for each bid slot across ${deptsToConfigure.length} maintenance roster groups.</p>
+                    ? `<div class="mb-6 p-4 rounded" style="background:#fff7ed;border:1px solid #fdba74;">
+                        <h3 class="text-xl font-semibold mb-2" style="font-family:'Barlow Condensed',sans-serif;color:#9a3412;">🔧 Maintenance Slot Configuration — All Roster Groups</h3>
+                        <p style="color:#9a3412;">Configure date ranges for each bid slot across ${deptsToConfigure.length} maintenance roster groups.</p>
                        </div>`
-                    : `<div class="mb-6 p-4 bg-red-50 border border-red-300 rounded">
-                        <h3 class="text-xl font-semibold text-red-800 mb-2">🔧 Maintenance Slot Configuration — ${filter}</h3>
+                    : `<div class="mb-6 p-4 rounded" style="background:#fff7ed;border:1px solid #fdba74;">
+                        <h3 class="text-xl font-semibold mb-2" style="font-family:'Barlow Condensed',sans-serif;color:#9a3412;">🔧 Maintenance Slot Configuration — ${filter}</h3>
                        </div>`;
 
                 html += `<div class="space-y-8">`;
@@ -4119,20 +4238,23 @@
                 deptsToConfigure.forEach(dept => {
                     const empCount = maintUsers.filter(u => (u.position || 'Unassigned') === dept).length;
                     html += `
-                        <div class="border border-red-200 rounded-lg overflow-hidden">
-                            <div class="bg-red-50 p-4 border-b border-red-200 flex justify-between items-center">
-                                <div>
-                                    <h3 class="text-xl font-bold text-red-900">${dept}</h3>
-                                    <span class="text-xs px-2 py-1 bg-red-100 text-red-800 rounded">${empCount} maintenance staff</span>
+                        <details class="metro-dept-card" ${filter !== 'all' ? 'open' : ''}>
+                            <summary class="metro-dept-summary" style="background:#fff7ed;">
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <span class="metro-dept-caret" style="color:#ea580c;">▶</span>
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;margin:0;color:#9a3412;">${dept}</h3>
+                                        <span class="text-xs px-2 py-1 bg-orange-100 text-orange-800 rounded">${empCount} maintenance staff</span>
+                                    </div>
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
-                                    <button onclick="app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
                                 </div>
-                            </div>
+                            </summary>
                             <div class="px-4 pt-3">
                                 <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
-                                    <summary class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
+                                    <summary onclick="event.stopPropagation()" class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
                                     <div class="p-3 pt-1">
                                         <p class="text-xs text-indigo-700 mb-2">
                                             One row per month, columns tab- or comma-separated, dates as DD/MM/YYYY, "on" as 1 or 0:<br>
@@ -4243,26 +4365,26 @@
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </details>
                     `;
                 });
 
                 html += `</div>`;
                 html += `
                     <div class="mt-8">
-                        <div class="bg-red-50 border border-red-200 rounded p-4 mb-4">
-                            <p class="font-semibold text-red-800 mb-2">📋 Maintenance Slot Configuration Summary:</p>
-                            <p class="text-sm text-red-700">
+                        <div class="rounded p-4 mb-4" style="background:#fff7ed;border:1px solid #fdba74;">
+                            <p class="font-semibold mb-2" style="color:#9a3412;">📋 Maintenance Slot Configuration Summary:</p>
+                            <p class="text-sm" style="color:#9a3412;">
                                 • Roster groups: ${deptsToConfigure.length}<br>
                                 • Bid slots per group: 3 (Slot A, Slot B, Slot C) × 12 months<br>
                                 • Toggle <strong>On</strong> to make a slot visible to Maintenance Staff for that month
                             </p>
                         </div>
                         <div class="flex gap-3">
-                            <button onclick="app.saveMaintSlotConfiguration()" class="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700">
+                            <button onclick="app.saveMaintSlotConfiguration()" class="flex-1 px-6 py-3 text-white rounded-lg font-semibold" style="background:#ea580c;" onmouseover="this.style.background='#c2410c'" onmouseout="this.style.background='#ea580c'">
                                 💾 Save All Maintenance Slot Configurations
                             </button>
-                            <button onclick="app.setActiveView('admin')" class="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600">
+                            <button onclick="app.setActiveView('admin')" class="metro-tab">
                                 ← Back
                             </button>
                         </div>
@@ -4461,25 +4583,28 @@
                     ];
                     
                     html += `
-                        <div class="border rounded-lg overflow-hidden">
-                            <div class="bg-gray-100 p-4 border-b flex justify-between items-center">
-                                <div>
-                                    <h3 class="text-xl font-bold">${dept}</h3>
-                                    <div class="flex gap-2 mt-1">
-                                        ${hasEmployees ? 
-                                            `<span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">${employeeCount} employees</span>` : 
-                                            `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">No employees</span>`
-                                        }
+                        <details class="metro-dept-card" ${filter !== 'all' ? 'open' : ''}>
+                            <summary class="metro-dept-summary">
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <span class="metro-dept-caret">▶</span>
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;margin:0;">${dept}</h3>
+                                        <div class="flex gap-2 mt-1">
+                                            ${hasEmployees ? 
+                                                `<span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">${employeeCount} employees</span>` : 
+                                                `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">No employees</span>`
+                                            }
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <span class="text-sm text-gray-500">12-Month Slot Configuration</span>
-                                    <button onclick="app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
                                 </div>
-                            </div>
+                            </summary>
                             <div class="px-4 pt-3">
                                 <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
-                                    <summary class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
+                                    <summary onclick="event.stopPropagation()" class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
                                     <div class="p-3 pt-1">
                                         <p class="text-xs text-indigo-700 mb-2">
                                             One row per month, columns tab- or comma-separated, dates as DD/MM/YYYY, "on" as 1 or 0:<br>
@@ -4635,7 +4760,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
+                        </details>
                     `;
                 });
                 
@@ -4729,26 +4854,26 @@
 
                 content.innerHTML = `
                     <div class="max-w-7xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                        <div class="metro-card p-6 mb-6">
                             <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
                                 <div>
-                                    <h2 class="text-2xl font-bold">📋 Seniority Date Report</h2>
-                                    <p class="text-sm text-gray-500 mt-1">All Operations Staff and Maintenance Staff</p>
+                                    <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">📋 Seniority Date Report</h2>
+                                    <p class="text-sm mt-1" style="color:var(--app-text-muted);">All Operations Staff and Maintenance Staff</p>
                                 </div>
                                 <div class="flex gap-2">
-                                    <button onclick="app.exportSeniorityReportCSV()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">
+                                    <button onclick="app.exportSeniorityReportCSV()" class="metro-tab metro-tab-primary">
                                         ⬇ Export Excel
                                     </button>
-                                    <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm font-semibold hover:bg-gray-600">
+                                    <button onclick="app.setActiveView('dashboard')" class="metro-tab">
                                         ← Back
                                     </button>
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                                <div class="bg-gray-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${rows.length}</p>
-                                    <p class="text-sm text-gray-600">Total Staff</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${rows.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Staff</p>
                                 </div>
                                 <div class="bg-blue-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold text-blue-700">${rows.filter(r => r.isMaintenance).length}</p>
@@ -4758,9 +4883,9 @@
                                     <p class="text-2xl font-bold text-orange-700">${seniorCount}</p>
                                     <p class="text-sm text-gray-600">&gt;5 yrs — Slot C/D</p>
                                 </div>
-                                <div class="bg-green-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold text-green-700">${juniorCount}</p>
-                                    <p class="text-sm text-gray-600">≤5 yrs — Slot A/B</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);">${juniorCount}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">≤5 yrs — Slot A/B</p>
                                 </div>
                                 <div class="bg-red-50 p-4 rounded-lg">
                                     <p class="text-2xl font-bold text-red-700">${missingCount}</p>
@@ -4771,36 +4896,36 @@
                             <div class="flex flex-wrap gap-3 mb-4">
                                 <input type="text" id="seniorityReportSearch" placeholder="Search by name or ID…"
                                     oninput="app._filterSeniorityReport()"
-                                    class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm flex-1 min-w-[200px]" />
-                                <select id="seniorityReportDeptFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                    class="px-3 py-2 border-2 rounded-lg text-sm flex-1 min-w-[200px]" style="border-color:var(--app-border);" />
+                                <select id="seniorityReportDeptFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
                                     <option value="all">All Departments</option>
                                     ${deptOptions.map(d => `<option value="${this._escHtml(d)}">${this._escHtml(d)}</option>`).join('')}
                                 </select>
-                                <select id="seniorityReportEligFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                <select id="seniorityReportEligFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
                                     <option value="all">All Eligibility</option>
                                     <option value="senior">&gt;5 yrs — Slot C/D</option>
                                     <option value="junior">≤5 yrs — Slot A/B</option>
                                 </select>
-                                <select id="seniorityReportTypeFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 border-gray-300 rounded-lg text-sm">
+                                <select id="seniorityReportTypeFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
                                     <option value="all">All Staff Types</option>
                                     <option value="ops">Operations Staff</option>
                                     <option value="maintenance">Maintenance Staff</option>
                                 </select>
                             </div>
 
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm border-collapse" id="seniorityReportTable">
+                            <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                                <table class="metro-table" id="seniorityReportTable">
                                     <thead>
-                                        <tr class="bg-gray-100 text-left">
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Staff ID</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Department</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Type</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Seniority Date</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Years of Service</th>
-                                            <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Eligible Slots</th>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Staff ID</th>
+                                            <th>Name</th>
+                                            <th>Department</th>
+                                            <th>Position</th>
+                                            <th>Type</th>
+                                            <th>Seniority Date</th>
+                                            <th>Years of Service</th>
+                                            <th>Eligible Slots</th>
                                         </tr>
                                     </thead>
                                     <tbody id="seniorityReportBody">
@@ -4808,7 +4933,7 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <p class="text-xs text-gray-400 mt-3">Showing <span id="seniorityReportCount">${rows.length}</span> of ${rows.length} staff. Sorted by seniority date (most senior first).</p>
+                            <p class="text-xs mt-3" style="color:var(--app-text-muted);">Showing <span id="seniorityReportCount">${rows.length}</span> of ${rows.length} staff. Sorted by seniority date (most senior first).</p>
                         </div>
                     </div>
                 `;
@@ -4819,18 +4944,18 @@
 
             _seniorityReportRow(r, idx) {
                 const badgeClass = r.years > 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800';
-                const missingClass = !r.seniorityDate ? 'bg-red-50' : (idx % 2 === 0 ? '' : 'bg-gray-50');
+                const missingStyle = !r.seniorityDate ? 'background:#fef2f2;' : '';
                 return `
-                    <tr class="${missingClass} hover:bg-indigo-50 transition-colors" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-type="${r.isMaintenance ? 'maintenance' : 'ops'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
-                        <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
-                        <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(r.id)}</td>
-                        <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${this._escHtml(r.name)}</td>
-                        <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.department)}</td>
-                        <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(r.position)}</td>
-                        <td class="border border-gray-200 px-3 py-2">${r.isMaintenance ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">Maintenance</span>' : '<span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">Operations</span>'}</td>
-                        <td class="border border-gray-200 px-3 py-2 text-gray-700">${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0,10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
-                        <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${r.years.toFixed(1)}</td>
-                        <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${badgeClass}">${r.eligibleSlots}</span></td>
+                    <tr style="${missingStyle}" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-type="${r.isMaintenance ? 'maintenance' : 'ops'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
+                        <td style="text-align:center;color:var(--app-text-muted);">${idx + 1}</td>
+                        <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(r.id)}</td>
+                        <td style="font-weight:600;">${this._escHtml(r.name)}</td>
+                        <td>${this._escHtml(r.department)}</td>
+                        <td>${this._escHtml(r.position)}</td>
+                        <td>${r.isMaintenance ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">Maintenance</span>' : '<span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">Operations</span>'}</td>
+                        <td>${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0,10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
+                        <td style="text-align:center;font-weight:600;">${r.years.toFixed(1)}</td>
+                        <td><span class="px-2 py-1 rounded text-xs font-semibold ${badgeClass}">${r.eligibleSlots}</span></td>
                     </tr>`;
             },
 
@@ -5237,7 +5362,7 @@
                     btn.style.background = '#f3f4f6'; btn.style.color = '#374151';
                 });
                 const target = tab === 'employees' ? empBtn : tab === 'gccs' ? gccsBtn : tab === 'hrcorp' ? hrBtn : maintBtn;
-                if (target) { target.style.background = '#4f46e5'; target.style.color = '#fff'; }
+                if (target) { target.style.background = '#2d6a4f'; target.style.color = '#fff'; }
                 const container = document.getElementById('adminBidsTableContainer');
                 if (container) {
                     const currentQuery = document.getElementById('bidSearchInput')?.value || '';
@@ -5316,20 +5441,20 @@
                         </div>
                     </div>
                     ${noResults}
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm border-collapse">
+                    <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                        <table class="metro-table">
                             <thead>
-                                <tr class="bg-gray-100 text-left">
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">#</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Operation Staff ID</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Name</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Position</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Slot Type</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Start Date</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">End Date</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Days</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700">Submitted</th>
-                                    <th class="border border-gray-200 px-3 py-2 font-semibold text-gray-700 text-center">Action</th>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Operation Staff ID</th>
+                                    <th>Name</th>
+                                    <th>Position</th>
+                                    <th>Slot Type</th>
+                                    <th>Start Date</th>
+                                    <th>End Date</th>
+                                    <th>Days</th>
+                                    <th>Submitted</th>
+                                    <th style="text-align:center;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -5342,17 +5467,17 @@
                                     const safeSlot = encodeURIComponent(bid.slotType);
                                     const safeStart = encodeURIComponent(bid.startDate);
                                     return `
-                                        <tr class="${idx % 2 === 0 ? '' : 'bg-gray-50'} hover:bg-indigo-50 transition-colors">
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
-                                            <td class="border border-gray-200 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(bid.employeeId)}</td>
-                                            <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800">${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-600">${this._escHtml(bid.position || emp?.position || bid.department || emp?.department || 'Unassigned')}</td>
-                                            <td class="border border-gray-200 px-3 py-2"><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${this._escHtml(slotDisplay)}</span></td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${this._escHtml(bid.startDate || '—')}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-gray-700">${this._escHtml(bid.endDate || '—')}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-center font-semibold text-gray-800">${this._escHtml(String(bid.days || '—'))}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-xs text-gray-500">${this._escHtml(submitted)}</td>
-                                            <td class="border border-gray-200 px-3 py-2 text-center">
+                                        <tr>
+                                            <td style="text-align:center;color:var(--app-text-muted);">${idx + 1}</td>
+                                            <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(bid.employeeId)}</td>
+                                            <td style="font-weight:600;">${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}</td>
+                                            <td>${this._escHtml(bid.position || emp?.position || bid.department || emp?.department || 'Unassigned')}</td>
+                                            <td><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${this._escHtml(slotDisplay)}</span></td>
+                                            <td>${this._escHtml(bid.startDate || '—')}</td>
+                                            <td>${this._escHtml(bid.endDate || '—')}</td>
+                                            <td style="text-align:center;font-weight:600;">${this._escHtml(String(bid.days || '—'))}</td>
+                                            <td style="font-size:0.75rem;color:var(--app-text-muted);">${this._escHtml(submitted)}</td>
+                                            <td style="text-align:center;">
                                                 <button onclick="app.adminDeleteBid('${safeId}','${safeSlot}','${safeStart}')"
                                                     class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold hover:bg-red-200">
                                                     🗑️ Delete
@@ -5747,28 +5872,29 @@
                 
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6">
+                        <div class="metro-card p-6">
                             <div class="flex items-center justify-between mb-6">
-                                <h2 class="text-2xl font-bold">Admin Panel</h2>
-                                <div id="adminLiveBadge" class="flex items-center gap-2 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg text-sm text-green-700">
-                                    <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Admin Panel</h2>
+                                <div id="adminLiveBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm" style="background:var(--app-green-50);border:1px solid var(--app-border);color:var(--metro-green-dark);">
+                                    <span class="inline-block w-2 h-2 rounded-full animate-pulse" style="background:var(--metro-green);"></span>
                                     Live &mdash; auto-refreshes every 15s &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>
                                 </div>
                             </div>
                             
-                            <div class="mb-6 p-4 bg-blue-50 rounded-lg">
-                                <label class="block font-semibold mb-2">Set Bidding Deadline (Ops &amp; Maintenance):</label>
+                            <div class="mb-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Set Bidding Deadline (Ops &amp; Maintenance):</label>
                                 <input
                                     type="datetime-local"
                                     id="biddingDeadline"
                                     value="${this.state.biddingDeadline}"
-                                    class="w-full px-4 py-2 border-2 border-blue-300 rounded-lg"
+                                    class="w-full px-4 py-2 border-2 rounded-lg"
+                                    style="border-color:var(--metro-green-light);"
                                     onchange="app.setBiddingDeadline(this.value)"
                                 />
                             </div>
 
-                            <div class="mb-6 p-4 bg-yellow-50 rounded-lg border-2 border-yellow-300">
-                                <label class="block font-semibold mb-2">⭐ Corporate &amp; Golden Command Bidding Settings (independent):</label>
+                            <div class="mb-6 p-4 rounded-lg border-2" style="background:var(--app-gold-50);border-color:#f0d78c;">
+                                <label class="block font-semibold mb-2" style="color:var(--metro-gold-dark);">⭐ Corporate &amp; Golden Command Bidding Settings (independent):</label>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                                     <div>
                                         <label class="block text-sm font-semibold mb-1">Deadline:</label>
@@ -5776,7 +5902,8 @@
                                             type="datetime-local"
                                             id="biddingDeadlineCorp"
                                             value="${this.state.biddingDeadlineCorp}"
-                                            class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg"
+                                            class="w-full px-4 py-2 border-2 rounded-lg"
+                                            style="border-color:#e0c069;"
                                             onchange="app.setBiddingDeadlineCorp(this.value)"
                                         />
                                     </div>
@@ -5784,7 +5911,8 @@
                                         <label class="block text-sm font-semibold mb-1">Bidding Year:</label>
                                         <select
                                             id="biddingYearCorpSelect"
-                                            class="w-full px-4 py-2 border-2 border-yellow-400 rounded-lg font-semibold"
+                                            class="w-full px-4 py-2 border-2 rounded-lg font-semibold"
+                                            style="border-color:#e0c069;"
                                             onchange="app.setBiddingYearCorp(parseInt(this.value))"
                                         >
                                             ${[this.state.biddingYear - 1, this.state.biddingYear, this.state.biddingYear + 1].map(year => `
@@ -5795,18 +5923,20 @@
                                 </div>
                                 <button
                                     onclick="app.toggleCorpLock()"
-                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white ${this.state.isProcessedCorp ? 'bg-gray-500 hover:bg-gray-600' : 'bg-yellow-600 hover:bg-yellow-700'}"
+                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white"
+                                    style="background:${this.state.isProcessedCorp ? '#6b7280' : 'linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%)'};"
                                 >
                                     ${this.state.isProcessedCorp ? '🔓 Unlock Corporate &amp; GC Bidding' : '🔒 Lock Corporate &amp; GC Bidding'}
                                 </button>
-                                <p class="text-xs text-gray-500 mt-2">This deadline, year, and lock apply only to Golden Command &amp; Corporate Staff bidding — Ops/Maintenance are unaffected, and vice versa.</p>
+                                <p class="text-xs mt-2" style="color:var(--app-text-muted);">This deadline, year, and lock apply only to Golden Command &amp; Corporate Staff bidding — Ops/Maintenance are unaffected, and vice versa.</p>
                             </div>
 
-                            <div class="mb-6 p-4 bg-purple-50 rounded-lg">
-                                <label class="block font-semibold mb-2">Filter by Scheduling Row:</label>
+                            <div class="mb-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Filter by Scheduling Row:</label>
                                 <select
                                     id="adminDeptFilter"
-                                    class="w-full px-4 py-2 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                                    class="w-full px-4 py-2 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:var(--metro-green-light);"
                                     onchange="app.state.selectedDepartment = this.value;"
                                 >
                                     ${depts.map(dept => `
@@ -5818,21 +5948,21 @@
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                                <div class="bg-green-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold" id="adminBidCount">${this.state.bids.length}</p>
-                                    <p class="text-sm text-gray-600">Total Bids</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);" id="adminBidCount">${this.state.bids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Bids</p>
                                 </div>
-                                <div class="bg-yellow-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold" id="adminUniqueBidders">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
-                                    <p class="text-sm text-gray-600">Employees Who Bid</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);" id="adminUniqueBidders">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Employees Who Bid</p>
                                 </div>
-                                <div class="bg-purple-50 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${this.state.isProcessed ? 'Yes' : 'No'}</p>
-                                    <p class="text-sm text-gray-600">Ops Processed</p>
+                                <div class="p-4 rounded-lg" style="background:#f3f4f6;">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${this.state.isProcessed ? 'Yes' : 'No'}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Ops Processed</p>
                                 </div>
-                                <div class="bg-yellow-100 p-4 rounded-lg">
-                                    <p class="text-2xl font-bold">${this.state.isProcessedCorp ? '🔒 Locked' : '🔓 Open'}</p>
-                                    <p class="text-sm text-gray-600">Corporate &amp; GC Bidding</p>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);">${this.state.isProcessedCorp ? '🔒 Locked' : '🔓 Open'}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Corporate &amp; GC Bidding</p>
                                 </div>
                             </div>
 
@@ -5840,16 +5970,17 @@
                                 <button
                                     onclick="app.processBids()"
                                     ${this.state.isProcessed || this.state.employees.length === 0 ? 'disabled' : ''}
-                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold ${this.state.isProcessed ? 'opacity-50' : ''}"
+                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white ${this.state.isProcessed ? 'opacity-50' : ''}"
+                                    style="background:${this.state.isProcessed ? '#9ca3af' : 'var(--metro-green)'};"
                                 >
                                     ${this.state.isProcessed ? '✅ Bids Already Processed' : '🚀 Process All Bids'}
                                 </button>
                                 
                                 ${this.state.isProcessed ? `
-                                    <button onclick="app.exportResults()" class="w-full px-6 py-3 bg-green-500 text-white rounded-lg font-semibold">
+                                    <button onclick="app.exportResults()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-mid);">
                                         📊 Export Results to Excel
                                     </button>
-                                    <button onclick="app.showEmailNotifyModal()" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
+                                    <button onclick="app.showEmailNotifyModal()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-dark);">
                                         📧 Notify Staff by Email (Results Ready)
                                     </button>
                                     <button onclick="app.setActiveView('manualOverride')" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600">
@@ -5857,15 +5988,15 @@
                                     </button>
                                 ` : ''}
                                 
-                                <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-600">
+                                <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:var(--app-green-50);color:var(--metro-green-dark);border:1px solid var(--app-border);">
                                     🔄 Refresh Bids Now
                                 </button>
                                 
-                                <button onclick="app.setActiveView('emailSettings')" class="w-full px-6 py-3 bg-teal-500 text-white rounded-lg font-semibold hover:bg-teal-600">
+                                <button onclick="app.setActiveView('emailSettings')" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:var(--app-green-50);color:var(--metro-green-dark);border:1px solid var(--app-border);">
                                     ⚙️ Email Settings (OTP &amp; Notifications)
                                 </button>
 
-                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold">
+                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600">
                                     🔄 Reset System
                                 </button>
 
@@ -5917,9 +6048,9 @@
                                 </div>
                             </div>
                             
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <h3 class="font-bold mb-2">System Information</h3>
-                                <div class="text-sm text-gray-600 space-y-1">
+                            <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <h3 class="font-bold mb-2" style="color:var(--app-text);">System Information</h3>
+                                <div class="text-sm space-y-1" style="color:var(--app-text-muted);">
                                     <p>&bull; Scheduling Rows configured: ${allDepts.length}</p>
                                     <p>&bull; Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
                                     <p>&bull; Bidding year (Ops/Maint): ${this.state.biddingYear}</p>
@@ -5929,21 +6060,21 @@
                             </div>
 
                             <!-- Staff Bids Details Section -->
-                        <div class="mt-6 bg-white border-2 border-indigo-200 rounded-xl overflow-hidden">
-                            <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-200">
+                        <div class="mt-6 rounded-xl overflow-hidden" style="background:var(--app-card);border:2px solid var(--app-border);">
+                            <div class="px-6 py-4" style="background:var(--app-green-50);border-bottom:1px solid var(--app-border);">
                                 <div class="flex justify-between items-center mb-3">
                                     <div>
-                                        <h3 class="text-xl font-bold text-indigo-900">📋 Bid Details</h3>
-                                        <p class="text-sm text-indigo-600 mt-1">Bids sorted by seniority. Updates every 15 seconds.</p>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--metro-green-dark);">📋 Bid Details</h3>
+                                        <p class="text-sm mt-1" style="color:var(--app-text-muted);">Bids sorted by seniority. Updates every 15 seconds.</p>
                                     </div>
-                                    <span class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-semibold">
+                                    <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background:var(--app-green-100);color:var(--metro-green-dark);">
                                         <span id="adminBidCount2">${this.state.bids.length}</span> total bids
                                     </span>
                                 </div>
                                 <!-- Tab switcher -->
                                 <div class="flex gap-2 flex-wrap">
                                     <button id="bidTabEmp" onclick="app._switchBidTab('employees')"
-                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#4f46e5;color:#fff;">
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:var(--metro-green);color:#fff;">
                                         👤 Employees
                                         <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
                                             ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId, b)).length}
@@ -8507,16 +8638,16 @@
 
                 // Processing status text
                 const statusText = processed ? 'Done' : 'Pending';
-                const statusColor = processed ? '#10b981' : '#6366f1';
+                const statusColor = processed ? '#10b981' : '#2d6a4f';
                 const statusDesc = processed ? 'Results ready' : 'Awaiting updates';
 
                 content.innerHTML = `
                 <style>
-                  .pd-wrap { background:#f0f2f8; min-height:100vh; padding:0 0 32px 0; font-family:'Inter','Segoe UI',sans-serif; }
+                  .pd-wrap { background:#eef3ef; min-height:100vh; padding:0 0 32px 0; font-family:'Barlow',sans-serif; }
                   .pd-body { padding:24px 24px 0; max-width:1400px; margin:0 auto; }
                   .pd-title-row { display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px; }
-                  .pd-title-icon { width:44px;height:44px;background:#eef2ff;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-right:12px; }
-                  .pd-title-text h1 { font-size:1.45rem;font-weight:800;color:#111827;margin:0; }
+                  .pd-title-icon { width:44px;height:44px;background:#eaf5ef;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-right:12px; }
+                  .pd-title-text h1 { font-family:'Barlow Condensed',sans-serif;letter-spacing:0.03em;font-size:1.7rem;font-weight:700;color:#111827;margin:0; }
                   .pd-title-text p { font-size:0.82rem;color:#9ca3af;margin:2px 0 0; }
                   .pd-year-badge { display:flex;align-items:center;gap:8px;border:1px solid #e5e7eb;border-radius:10px;padding:7px 14px;background:#fff;font-size:0.9rem;font-weight:600;color:#374151;cursor:pointer; }
                   .pd-kpi-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px; }
@@ -8581,7 +8712,7 @@
                         </div>
                       </div>
                       <div class="pd-year-badge">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                         Year ${year}
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                       </div>
@@ -8591,15 +8722,15 @@
                     <div class="pd-kpi-grid">
                       <!-- Total Staff -->
                       <div class="pd-kpi">
-                        <div class="pd-kpi-icon" style="background:#eef2ff;">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        <div class="pd-kpi-icon" style="background:#eaf5ef;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         </div>
-                        <div class="pd-kpi-num" style="color:#6366f1;">${total}</div>
+                        <div class="pd-kpi-num" style="color:#2d6a4f;">${total}</div>
                         <div class="pd-kpi-label">Total Staff</div>
                         <div class="pd-kpi-sub">All active staff members</div>
                         <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
-                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22" stroke="#c7d2fe" stroke-width="2" fill="none"/>
-                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22 L200,48 L0,48Z" fill="#eef2ff"/>
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22" stroke="#a8d5bb" stroke-width="2" fill="none"/>
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22 L200,48 L0,48Z" fill="#eaf5ef"/>
                         </svg>
                       </div>
                       <!-- Staff Bid -->
@@ -8636,15 +8767,15 @@
                       </div>
                       <!-- Processing Status -->
                       <div class="pd-kpi">
-                        <div class="pd-kpi-icon" style="background:#f5f3ff;">
-                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <div class="pd-kpi-icon" style="background:#eaf5ef;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         </div>
                         <div class="pd-kpi-num" style="color:${statusColor};font-size:1.6rem;">${statusText}</div>
                         <div class="pd-kpi-label">Processing Status</div>
                         <div class="pd-kpi-sub">${statusDesc}</div>
                         <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
-                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26" stroke="#c7d2fe" stroke-width="2" fill="none"/>
-                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26 L200,48 L0,48Z" fill="#f5f3ff"/>
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26" stroke="#a8d5bb" stroke-width="2" fill="none"/>
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26 L200,48 L0,48Z" fill="#eaf5ef"/>
                         </svg>
                       </div>
                     </div>
@@ -8655,8 +8786,8 @@
                       <div class="pd-card">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                           <div class="pd-card-title">
-                            <div class="pd-card-title-icon" style="background:#eef2ff;">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                            <div class="pd-card-title-icon" style="background:#eaf5ef;">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                             </div>
                             Bidding Overview
                           </div>
@@ -8675,8 +8806,8 @@
                       <!-- Participation Summary -->
                       <div class="pd-card">
                         <div class="pd-card-title" style="margin-bottom:16px;">
-                          <div class="pd-card-title-icon" style="background:#eef2ff;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                          <div class="pd-card-title-icon" style="background:#eaf5ef;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
                           </div>
                           Participation Summary
                         </div>
@@ -8697,7 +8828,7 @@
                             <div class="pd-legend-val">${notBidded} (${100-pct}%)</div>
                           </div>
                           <div class="pd-legend-row">
-                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#6366f1;"></span>Total Staff</div>
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#2d6a4f;"></span>Total Staff</div>
                             <div class="pd-legend-val">${total} (100%)</div>
                           </div>
                         </div>
@@ -8738,7 +8869,7 @@
                           </div>
                         </div>
                         <div class="pd-insight">
-                          <div class="pd-insight-icon" style="background:#f5f3ff;">🛡️</div>
+                          <div class="pd-insight-icon" style="background:#eaf5ef;">🛡️</div>
                           <div class="pd-insight-text">
                             <strong>Data last updated</strong>
                             <span>${lastUpdated}</span>
@@ -8757,7 +8888,7 @@
                     <div class="pd-card" style="margin-bottom:24px;">
                       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
                         <div class="pd-card-title">
-                          <div class="pd-card-title-icon" style="background:#eef2ff;">🏢</div>
+                          <div class="pd-card-title-icon" style="background:#eaf5ef;">🏢</div>
                           Department Participation
                         </div>
                         <div class="pd-chart-legend" style="margin:0;">
@@ -8936,7 +9067,7 @@
                     ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = strokeW; ctx.stroke();
                     // Total staff ring (purple, thin)
                     ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2);
-                    ctx.strokeStyle = '#c7d2fe'; ctx.lineWidth = 4; ctx.stroke();
+                    ctx.strokeStyle = '#a8d5bb'; ctx.lineWidth = 4; ctx.stroke();
                     // Not bid (orange)
                     const notBidAngle = (notBidded / Math.max(total, 1)) * Math.PI * 2;
                     ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + notBidAngle);
@@ -9166,12 +9297,12 @@
                 const renderGroup = (cfg) => {
                     const users = this.state[cfg.stateKey] || [];
                     return `
-                    <div class="bg-white rounded-xl shadow p-6">
+                    <div class="metro-card p-6">
                         <div class="flex items-center gap-3 mb-1">
                             <span class="text-2xl">${cfg.icon}</span>
-                            <h3 class="text-xl font-bold" style="color:${cfg.headColor}">${cfg.label} Users</h3>
+                            <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:${cfg.headColor}">${cfg.label} Users</h3>
                         </div>
-                        <p class="text-sm text-gray-500 mb-5">${users.length} staff member${users.length !== 1 ? 's' : ''} registered.</p>
+                        <p class="text-sm mb-5" style="color:var(--app-text-muted);">${users.length} staff member${users.length !== 1 ? 's' : ''} registered.</p>
 
                         <!-- User list -->
                         <div class="space-y-2 mb-6 min-h-[48px]">
@@ -9247,7 +9378,8 @@
 
                 const tabs = groups.map(g => `
                     <button onclick="window._muTab='${g.key}'; app.renderManageUsersView();"
-                        class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._muTab === g.key ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
+                        class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._muTab === g.key ? 'text-white shadow' : 'text-gray-500 hover:text-gray-700'}"
+                        style="${window._muTab === g.key ? 'background:var(--metro-green);' : ''}">
                         ${g.icon} ${g.label}
                     </button>`).join('');
 
@@ -9257,13 +9389,13 @@
                 <div class="max-w-3xl mx-auto">
                     <div class="flex items-center justify-between mb-6">
                         <div>
-                            <h2 class="text-2xl font-bold text-gray-800">👥 Manage Users</h2>
-                            <p class="text-sm text-gray-500 mt-1">Add or remove staff for each On-Call group. Changes are saved to Supabase immediately.</p>
+                            <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">👥 Manage Users</h2>
+                            <p class="text-sm mt-1" style="color:var(--app-text-muted);">Add or remove staff for each On-Call group. Changes are saved to Supabase immediately.</p>
                         </div>
-                        <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
+                        <button onclick="app.setActiveView('dashboard')" class="metro-tab">← Back</button>
                     </div>
                     <!-- Tab bar -->
-                    <div class="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">${tabs}</div>
+                    <div class="flex gap-1 mb-6 rounded-xl p-1" style="background:var(--app-green-50);">${tabs}</div>
                     <!-- Active panel -->
                     ${renderGroup(activeGroup)}
                 </div>`;
@@ -12037,21 +12169,21 @@
                 const content = document.getElementById('contentArea');
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
-                        <div class="bg-white rounded-xl shadow-xl p-6">
+                        <div class="metro-card p-6">
                             <div class="flex items-center justify-between mb-6">
                                 <div>
-                                    <h2 class="text-2xl font-bold">🔍 Audit Log</h2>
-                                    <p class="text-sm text-gray-500 mt-1">All system activity — logins, bids, overrides, password changes</p>
+                                    <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">🔍 Audit Log</h2>
+                                    <p class="text-sm mt-1" style="color:var(--app-text-muted);">All system activity — logins, bids, overrides, password changes</p>
                                 </div>
                                 <div class="flex gap-3">
-                                    <button onclick="app.renderAuditLogView()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">🔄 Refresh</button>
+                                    <button onclick="app.renderAuditLogView()" class="metro-tab">🔄 Refresh</button>
                                     <button onclick="app.clearAuditLog()" class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-100">🗑 Clear Local</button>
                                 </div>
                             </div>
 
                             <!-- Filters -->
                             <div class="flex gap-3 mb-5 flex-wrap">
-                                <select id="auditFilterType" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
+                                <select id="auditFilterType" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm" style="border-color:var(--app-border);">
                                     <option value="all">All Actions</option>
                                     <option value="LOGIN">Login</option>
                                     <option value="LOGOUT">Logout</option>
@@ -12064,13 +12196,13 @@
                                     <option value="SYSTEM_RESET">System Reset</option>
                                     <option value="SF_SYNC">SF Sync</option>
                                 </select>
-                                <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm">
+                                <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm" style="border-color:var(--app-border);">
                                     <option value="all">All Roles</option>
                                     <option value="employee">Operation Staff</option>
                                     <option value="planner">Planner</option>
                                     <option value="goldencommand">Golden Command</option>
                                 </select>
-                                <input type="text" id="auditSearch" oninput="app.filterAuditLog()" placeholder="Search name or ID..." class="px-3 py-2 border rounded-lg text-sm flex-1 min-w-40" />
+                                <input type="text" id="auditSearch" oninput="app.filterAuditLog()" placeholder="Search name or ID..." class="px-3 py-2 border rounded-lg text-sm flex-1 min-w-40" style="border-color:var(--app-border);" />
                             </div>
 
                             <div id="auditTableContainer">
@@ -12150,16 +12282,16 @@
                 }
 
                 container.innerHTML = `
-                    <p class="text-xs text-gray-400 mb-3">${filtered.length} entr${filtered.length===1?'y':'ies'} found</p>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+                    <p class="text-xs mb-3" style="color:var(--app-text-muted);">${filtered.length} entr${filtered.length===1?'y':'ies'} found</p>
+                    <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                        <table class="metro-table">
+                            <thead>
                                 <tr>
-                                    <th class="p-3 text-left">Timestamp</th>
-                                    <th class="p-3 text-left">Action</th>
-                                    <th class="p-3 text-left">User</th>
-                                    <th class="p-3 text-left">Role</th>
-                                    <th class="p-3 text-left">Details</th>
+                                    <th>Timestamp</th>
+                                    <th>Action</th>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Details</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -12171,15 +12303,15 @@
                                     try { detailsObj = JSON.parse(l.details || '{}'); } catch(e) {}
                                     const detailStr = Object.entries(detailsObj).map(([k,v]) => `<span class="text-gray-500">${k}:</span> <span class="font-medium">${v}</span>`).join(' · ');
                                     return `
-                                        <tr class="border-b hover:bg-gray-50 transition-colors">
-                                            <td class="p-3 text-xs text-gray-500 whitespace-nowrap font-mono">${ts}</td>
-                                            <td class="p-3"><span class="px-2 py-1 rounded-full text-xs font-bold ${colorClass}">${l.action}</span></td>
-                                            <td class="p-3">
-                                                <p class="font-semibold text-gray-800">${l.user_name || '—'}</p>
-                                                <p class="text-xs text-gray-400">${l.user_id || ''}</p>
+                                        <tr>
+                                            <td style="font-family:monospace;font-size:0.75rem;color:var(--app-text-muted);white-space:nowrap;">${ts}</td>
+                                            <td><span class="px-2 py-1 rounded-full text-xs font-bold ${colorClass}">${l.action}</span></td>
+                                            <td>
+                                                <p style="font-weight:600;">${l.user_name || '—'}</p>
+                                                <p class="text-xs" style="color:var(--app-text-muted);">${l.user_id || ''}</p>
                                             </td>
-                                            <td class="p-3 text-xs">${roleIcon} ${l.user_type || '—'}</td>
-                                            <td class="p-3 text-xs text-gray-600">${detailStr || '—'}</td>
+                                            <td style="font-size:0.8rem;">${roleIcon} ${l.user_type || '—'}</td>
+                                            <td style="font-size:0.8rem;color:var(--app-text-muted);">${detailStr || '—'}</td>
                                         </tr>`;
                                 }).join('')}
                             </tbody>
