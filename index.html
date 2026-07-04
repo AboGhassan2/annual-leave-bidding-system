@@ -1321,7 +1321,8 @@
                     'L46-P&R', 'L46-AOCC',
                     'L5-LSS/SS', 'L5-DEP-DC', 'L5-DEP-DM', 'L5-DEP-GSM', 'L5-DEP-SC',
                     'L5-DEP- LTSS/TSS', 'L5-DEP-TC', 'L5-DEP-EFC', 'L5 SA', 'L5 SAMB',
-                    'L5 - TA-T'
+                    'L5 - TA-T',
+                    'L3465-DEP-TCC'
                 ],
                 
                 slotTypes: [
@@ -2783,7 +2784,7 @@
                             for (const col of deptColumns) {
                                 if (row[col] !== undefined && row[col] !== '') {
                                     const raw = String(row[col]).trim().split('.')[0].trim();
-                                    if (/^(L3|L46|L5)[-\s]/i.test(raw) || /^(L3-SA|L5 SA|L3 SAMB|L5 SAMB|L46 SAMB)$/i.test(raw)) {
+                                    if (/^(L3|L46|L5|L3465)[-\s]/i.test(raw) || /^(L3-SA|L5 SA|L3 SAMB|L5 SAMB|L46 SAMB)$/i.test(raw)) {
                                         department = raw;
                                         break;
                                     }
@@ -4115,7 +4116,7 @@
                 // Filter: only L3, L46, L5 prefixes
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
                 const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
-                const filteredDepts = allRawDepartments.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const filteredDepts = allRawDepartments.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
                 const allDepartments = ['all', ...filteredDepts];
                 
                 content.innerHTML = `
@@ -4530,7 +4531,7 @@
             renderDeptConfig(filter) {
                 const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
                 const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
-                const allDepartments = allRawDepartments.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const allDepartments = allRawDepartments.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
                 
                 let departmentsToConfigure = [];
                 
@@ -5866,7 +5867,7 @@
                 // Use exact same department list as Configure Slots (L3/L46/L5 codes only)
                 const employeeDeptsAdmin = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
                 const allRawDeptsAdmin = [...new Set([...this.state.departments, ...employeeDeptsAdmin])];
-                const filteredDeptsAdmin = allRawDeptsAdmin.filter(d => /^(L3|L46|L5)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const filteredDeptsAdmin = allRawDeptsAdmin.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
                 const allDepts = filteredDeptsAdmin;
                 const depts = ['all', ...filteredDeptsAdmin];
                 
