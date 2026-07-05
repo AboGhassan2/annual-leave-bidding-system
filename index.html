@@ -11130,8 +11130,8 @@
                     +     '<h3>&#8645; SAP SuccessFactors &mdash; Leave Sync</h3>'
                     +     '<p class="lc-sf-sub">Paste the exported SF leave data (CSV or tab-separated). <strong style="color:#ffe082;">Only employees listed in this dashboard will be imported.</strong> Any request from an employee not in the tracker is silently excluded.</p>'
                     +     '<div class="lc-sf-row2">'
-                    +       '<label style="margin:0;cursor:pointer;" class="lc-sf-filebtn" for="lcSfFileInput">&#128196; Upload CSV / TSV</label>'
-                    +       '<input type="file" id="lcSfFileInput" accept=".csv,.tsv,.txt" style="display:none;" onchange="lcSfLoadFile(this)">'
+                    +       '<label style="margin:0;cursor:pointer;" class="lc-sf-filebtn" for="lcSfFileInput">&#128196; Upload Excel / CSV / TSV</label>'
+                    +       '<input type="file" id="lcSfFileInput" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none;" onchange="lcSfLoadFile(this)">'
                     +       '<span id="lcSfFileName" style="font-size:.7rem;color:rgba(200,225,255,.4);"></span>'
                     +     '</div>'
                     +     '<label style="margin-top:10px;">Or paste raw data (CSV / tab-separated)</label>'
@@ -11507,6 +11507,31 @@
                     return (first.split('\t').length > first.split(',').length) ? '\t' : ',';
                 }
 
+                // Split a single line into fields, respecting double-quoted values that may
+                // themselves contain the delimiter (e.g. a department name like
+                // "Health, Safety and Environment") — a naive split(delim) would misalign
+                // every column after such a field.
+                function lcSfSplitLine(line, delim) {
+                    var result = [];
+                    var cur = '';
+                    var inQuotes = false;
+                    for (var i = 0; i < line.length; i++) {
+                        var c = line[i];
+                        if (inQuotes) {
+                            if (c === '"') {
+                                if (line[i+1] === '"') { cur += '"'; i++; }
+                                else { inQuotes = false; }
+                            } else { cur += c; }
+                        } else {
+                            if (c === '"') { inQuotes = true; }
+                            else if (c === delim) { result.push(cur); cur = ''; }
+                            else { cur += c; }
+                        }
+                    }
+                    result.push(cur);
+                    return result;
+                }
+
                 // Parse raw text → array of row objects
                 // Expected columns (flexible order, detected by header):
                 //   employee_id | employee_name | leave_type | start_date | end_date | days
@@ -11517,33 +11542,51 @@
                     if (!lines.length) return [];
 
                     var COL_ALIASES = {
-                        employee_id:     ['employee_id','employeeid','emp_id','empid','id','userid','user_id','personnel_number','personnel id','employee number'],
+                        employee_id:     ['employee_id','employeeid','emp_id','empid','id','userid','user_id','personnel_number','personnel id','personid','person id','employee number'],
                         employee_name:   ['employee_name','employeename','name','full_name','fullname','employee name'],
-                        leave_type:      ['leave_type','leavetype','type','leave type','absence type','absencetype','time type','timetype'],
+                        first_name:      ['first_name','firstname','first name'],
+                        last_name:       ['last_name','lastname','last name'],
+                        leave_type:      ['leave_type','leavetype','type','leave type','absence','absence type','absencetype','time type','timetype'],
                         start_date:      ['start_date','startdate','from','from_date','start date','leave start','begin_date'],
                         end_date:        ['end_date','enddate','to','to_date','end date','leave end','return_date'],
                         days:            ['days','no_of_days','num_days','duration','calendar days','working days','days_requested','quantity'],
-                        approval_status: ['approval_status','approvalstatus','status','wf_status','wfstatus','workflow status','leave status','request status','approvalStatus']
+                        approval_status: ['approval_status','approvalstatus','status','approval status','wf_status','wfstatus','workflow status','leave status','request status']
                     };
 
-                    var colIdx = { employee_id:-1, employee_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
+                    var colIdx = { employee_id:-1, employee_name:-1, first_name:-1, last_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
                     var dataStart = 0;
-
-                    // Try first line as header
-                    var firstCols = lines[0].split(delim).map(function(c){ return c.replace(/^["'\s]+|["'\s]+$/g,'').toLowerCase(); });
                     var headerDetected = false;
-                    Object.keys(COL_ALIASES).forEach(function(key) {
-                        firstCols.forEach(function(col, i) {
-                            if (COL_ALIASES[key].indexOf(col) > -1 && colIdx[key] === -1) {
-                                colIdx[key] = i;
-                                headerDetected = true;
-                            }
+
+                    // Scan the first several lines to find the real header row — SAP/SF exports
+                    // often prepend a title line ("Exported to Excel on ...") and a blank line
+                    // before the actual column headers, so we can't assume row 0 is the header.
+                    var scanLimit = Math.min(lines.length, 15);
+                    var bestRow = -1, bestMatches = 0, bestColIdx = null;
+                    for (var h = 0; h < scanLimit; h++) {
+                        var cols = lcSfSplitLine(lines[h], delim).map(function(c){ return c.replace(/^["'\s]+|["'\s]+$/g,'').toLowerCase(); });
+                        var trial = { employee_id:-1, employee_name:-1, first_name:-1, last_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
+                        var matches = 0;
+                        Object.keys(COL_ALIASES).forEach(function(key) {
+                            cols.forEach(function(col, i) {
+                                if (COL_ALIASES[key].indexOf(col) > -1 && trial[key] === -1) {
+                                    trial[key] = i;
+                                    matches++;
+                                }
+                            });
                         });
-                    });
-                    if (headerDetected) { dataStart = 1; }
+                        if (matches > bestMatches) { bestMatches = matches; bestRow = h; bestColIdx = trial; }
+                    }
+                    // Require at least 2 recognised columns (e.g. an id + a date) before trusting
+                    // a row as the header — avoids mistaking a title/blank row for headers.
+                    if (bestMatches >= 2) {
+                        headerDetected = true;
+                        dataStart = bestRow + 1;
+                        colIdx = bestColIdx;
+                    }
+
                     // Positional fallback (approval_status has no positional default — only header-detected)
                     if (colIdx.employee_id   === -1) colIdx.employee_id   = 0;
-                    if (colIdx.employee_name === -1) colIdx.employee_name = 1;
+                    if (colIdx.employee_name === -1 && colIdx.first_name === -1 && colIdx.last_name === -1) colIdx.employee_name = 1;
                     if (colIdx.leave_type    === -1) colIdx.leave_type    = 2;
                     if (colIdx.start_date    === -1) colIdx.start_date    = 3;
                     if (colIdx.end_date      === -1) colIdx.end_date      = 4;
@@ -11568,7 +11611,7 @@
                     var rows = [];
                     var skippedStatus = 0;
                     for (var i = dataStart; i < lines.length; i++) {
-                        var parts = lines[i].split(delim);
+                        var parts = lcSfSplitLine(lines[i], delim);
                         var id    = clean(parts[colIdx.employee_id]);
                         if (!id) continue;
 
@@ -11581,7 +11624,14 @@
                             }
                         }
 
-                        var name  = clean(parts[colIdx.employee_name]);
+                        var name;
+                        if (colIdx.employee_name !== -1) {
+                            name = clean(parts[colIdx.employee_name]);
+                        } else {
+                            var fn = colIdx.first_name !== -1 ? clean(parts[colIdx.first_name]) : '';
+                            var ln = colIdx.last_name  !== -1 ? clean(parts[colIdx.last_name])  : '';
+                            name = (fn + ' ' + ln).trim();
+                        }
                         var ltype = clean(parts[colIdx.leave_type]) || 'Annual Leave';
                         var start = parseDate(parts[colIdx.start_date]);
                         var end   = parseDate(parts[colIdx.end_date]);
@@ -11620,29 +11670,65 @@
                 var sfModal = document.getElementById('lcSfModal');
                 if (sfModal) sfModal.addEventListener('click', function(e) { if (e.target === sfModal) lcCloseSfSync(); });
 
+                function lcSfShowPreview(text) {
+                    var ta = document.getElementById('lcSfRaw');
+                    if (ta) ta.value = text;
+                    var rows = lcSfParseRows(text);
+                    var whitelist = lcSfWhitelist();
+                    var matched = rows.filter(function(r){ return whitelist.has(r.id); });
+                    var prev = document.getElementById('lcSfPreview');
+                    if (prev) {
+                        var msg = 'Detected ' + (rows.length + (rows._skippedStatus||0)) + ' rows — ';
+                        if (rows._hasStatusCol) msg += (rows._skippedStatus||0) + ' non-approved skipped, ';
+                        msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees.';
+                        if (!rows._hasStatusCol) msg += ' ⚠ No status column detected — export should be pre-filtered to Approved only.';
+                        prev.textContent = msg;
+                        prev.classList.add('show');
+                    }
+                }
+
                 window.lcSfLoadFile = function(input) {
                     var file = input.files && input.files[0];
                     if (!file) return;
                     var fn = document.getElementById('lcSfFileName');
                     if (fn) fn.textContent = file.name;
+                    var isExcel = /\.(xlsx|xls)$/i.test(file.name);
                     var reader = new FileReader();
-                    reader.onload = function(e) {
-                        var ta = document.getElementById('lcSfRaw');
-                        if (ta) ta.value = e.target.result;
-                        var rows = lcSfParseRows(e.target.result);
-                        var whitelist = lcSfWhitelist();
-                        var matched = rows.filter(function(r){ return whitelist.has(r.id); });
-                        var prev = document.getElementById('lcSfPreview');
-                        if (prev) {
-                            var msg = 'Detected ' + (rows.length + (rows._skippedStatus||0)) + ' rows — ';
-                            if (rows._hasStatusCol) msg += (rows._skippedStatus||0) + ' non-approved skipped, ';
-                            msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees.';
-                            if (!rows._hasStatusCol) msg += ' ⚠ No status column detected — export should be pre-filtered to Approved only.';
-                            prev.textContent = msg;
-                            prev.classList.add('show');
-                        }
-                    };
-                    reader.readAsText(file);
+                    if (isExcel) {
+                        reader.onload = function(e) {
+                            try {
+                                var data = new Uint8Array(e.target.result);
+                                var wb = XLSX.read(data, { type: 'array', cellDates: true });
+                                var firstSheet = wb.Sheets[wb.SheetNames[0]];
+                                // SheetJS's sheet_to_csv dateNF option is unreliable for Date-typed
+                                // cells (it silently falls back to the system locale, e.g. M/D/YYYY,
+                                // which lcSfParseRows' regex then misreads as D/M/YYYY and swaps the
+                                // day/month — producing invalid dates like "2026-29-05"). To avoid
+                                // that ambiguity entirely, rewrite every date cell as an explicit
+                                // YYYY-MM-DD string before exporting to CSV.
+                                Object.keys(firstSheet).forEach(function(addr) {
+                                    if (addr[0] === '!') return;
+                                    var cell = firstSheet[addr];
+                                    if (cell && cell.t === 'd' && cell.v instanceof Date) {
+                                        var d = cell.v;
+                                        var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                                        cell.v = iso;
+                                        cell.w = iso;
+                                        cell.t = 's';
+                                    }
+                                });
+                                var csv = XLSX.utils.sheet_to_csv(firstSheet);
+                                lcSfShowPreview(csv);
+                            } catch (ex) {
+                                var prev = document.getElementById('lcSfPreview');
+                                if (prev) { prev.textContent = '⚠ Could not read Excel file: ' + ex.message; prev.classList.add('show'); }
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        reader.onload = function(e) { lcSfShowPreview(e.target.result); };
+                        reader.readAsText(file);
+                    }
                 };
 
                 window.lcRunSfSync = async function() {
