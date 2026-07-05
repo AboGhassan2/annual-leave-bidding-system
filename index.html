@@ -11698,23 +11698,26 @@
                         reader.onload = function(e) {
                             try {
                                 var data = new Uint8Array(e.target.result);
-                                var wb = XLSX.read(data, { type: 'array', cellDates: true });
+                                // IMPORTANT: do NOT use { cellDates: true } here. SheetJS's cellDates
+                                // conversion applies a correction based on the *browser's local
+                                // timezone at parse time*, which corrupts date-only cells (e.g. a
+                                // leave request dated 2026-01-18 can silently become 2026-01-17
+                                // depending on the user's timezone). Reading the raw numeric serial
+                                // and converting it with SSF.parse_date_code is pure arithmetic and
+                                // gives the same correct calendar date on every machine.
+                                var wb = XLSX.read(data, { type: 'array', cellNF: true });
                                 var firstSheet = wb.Sheets[wb.SheetNames[0]];
-                                // SheetJS's sheet_to_csv dateNF option is unreliable for Date-typed
-                                // cells (it silently falls back to the system locale, e.g. M/D/YYYY,
-                                // which lcSfParseRows' regex then misreads as D/M/YYYY and swaps the
-                                // day/month — producing invalid dates like "2026-29-05"). To avoid
-                                // that ambiguity entirely, rewrite every date cell as an explicit
-                                // YYYY-MM-DD string before exporting to CSV.
                                 Object.keys(firstSheet).forEach(function(addr) {
                                     if (addr[0] === '!') return;
                                     var cell = firstSheet[addr];
-                                    if (cell && cell.t === 'd' && cell.v instanceof Date) {
-                                        var d = cell.v;
-                                        var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-                                        cell.v = iso;
-                                        cell.w = iso;
-                                        cell.t = 's';
+                                    if (cell && cell.t === 'n' && typeof cell.v === 'number' && cell.z && /[ymd]/i.test(cell.z)) {
+                                        var dc = XLSX.SSF.parse_date_code(cell.v);
+                                        if (dc) {
+                                            var iso = dc.y + '-' + String(dc.m).padStart(2,'0') + '-' + String(dc.d).padStart(2,'0');
+                                            cell.v = iso;
+                                            cell.w = iso;
+                                            cell.t = 's';
+                                        }
                                     }
                                 });
                                 var csv = XLSX.utils.sheet_to_csv(firstSheet);
