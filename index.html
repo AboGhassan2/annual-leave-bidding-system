@@ -1412,7 +1412,8 @@
                         }
                     }
                     
-                    // Load bids from BOTH leave_requests and maint_leave_requests
+                    // Load bids from leave_requests (Ops), maint_leave_requests (Maintenance),
+                    // and corporate_leave_request (GC & Corporate Staff)
                     const _fetchBidTable = async (tableName) => {
                         let rows = [], pg = 0, more = true;
                         while (more) {
@@ -1431,12 +1432,13 @@
                         }
                         return rows;
                     };
-                    const [regularBids, maintBids] = await Promise.all([
+                    const [regularBids, maintBids, corporateBids] = await Promise.all([
                         _fetchBidTable('leave_requests'),
-                        _fetchBidTable('maint_leave_requests')
+                        _fetchBidTable('maint_leave_requests'),
+                        _fetchBidTable('corporate_leave_request')
                     ]);
-                    let allBids = [...regularBids, ...maintBids];
-                    console.log(`✅ Initial load: ${regularBids.length} regular + ${maintBids.length} maintenance bids`);
+                    let allBids = [...regularBids, ...maintBids, ...corporateBids];
+                    console.log(`✅ Initial load: ${regularBids.length} regular + ${maintBids.length} maintenance + ${corporateBids.length} corporate bids`);
                     
                     // Load system config
                     const { data: config, error: configError } = await this.supabase
@@ -1854,34 +1856,49 @@
                     this.updateSystemStatus('Saving on-call dates...');
                     await this.saveOnCallDatesToSupabase();
 
-                    // ── 3. Save bids in batches of 500 ──
+                    // ── 3. Save bids in batches of 500, routed to the correct table per bid ──
                     if (this.state.bids.length > 0) {
                         const bidTotal = this.state.bids.length;
-                        const bidChunks = chunk(this.state.bids, 500);
                         this.updateSystemStatus(`Saving bids (0/${bidTotal})...`);
 
-                        for (let i = 0; i < bidChunks.length; i++) {
-                            const batch = bidChunks[i].map(bid => ({
-                                tenant_id: this._tid(),
-                                employee_id: bid.employeeId,
-                                employee_name: bid.employeeName || '',
-                                department: bid.department || '',
-                                start_date: bid.startDate,
-                                end_date: bid.endDate,
-                                days_requested: bid.days,
-                                status: 'pending',
-                                slot_type: bid.slotType,
-                                created_at: bid.timestamp || new Date().toISOString()
-                            }));
+                        // Group bids by destination table (Ops / Maintenance / Corporate)
+                        const bidsByTable = { leave_requests: [], maint_leave_requests: [], corporate_leave_request: [] };
+                        this.state.bids.forEach(bid => {
+                            const table = this._isMaintStaff(bid.employeeId, bid)
+                                ? 'maint_leave_requests'
+                                : this._isCorporateStaff(bid.employeeId, bid)
+                                    ? 'corporate_leave_request'
+                                    : 'leave_requests';
+                            bidsByTable[table].push(bid);
+                        });
 
-                            const { error } = await this.supabase
-                                .from('leave_requests')
-                                .upsert(batch, { onConflict: 'employee_id,slot_type,start_date' });
+                        let savedSoFar = 0;
+                        for (const [table, bidsForTable] of Object.entries(bidsByTable)) {
+                            if (bidsForTable.length === 0) continue;
+                            const bidChunks = chunk(bidsForTable, 500);
+                            for (let i = 0; i < bidChunks.length; i++) {
+                                const batch = bidChunks[i].map(bid => ({
+                                    tenant_id: this._tid(),
+                                    employee_id: bid.employeeId,
+                                    employee_name: bid.employeeName || '',
+                                    department: bid.department || '',
+                                    start_date: bid.startDate,
+                                    end_date: bid.endDate,
+                                    days_requested: bid.days,
+                                    status: 'pending',
+                                    slot_type: bid.slotType,
+                                    created_at: bid.timestamp || new Date().toISOString()
+                                }));
 
-                            if (error) throw new Error(`Bid batch ${i + 1} failed: ${error.message}`);
+                                const { error } = await this.supabase
+                                    .from(table)
+                                    .upsert(batch, { onConflict: 'employee_id,slot_type,start_date' });
 
-                            const saved = Math.min((i + 1) * 500, bidTotal);
-                            this.updateSystemStatus(`Saving bids (${saved}/${bidTotal})...`);
+                                if (error) throw new Error(`Bid batch failed [${table}]: ${error.message}`);
+
+                                savedSoFar += batch.length;
+                                this.updateSystemStatus(`Saving bids (${savedSoFar}/${bidTotal})...`);
+                            }
                         }
                     }
 
@@ -3646,7 +3663,7 @@
                     return;
                 }
                 const { error } = await this.supabase
-                    .from('leave_requests')
+                    .from('corporate_leave_request')
                     .delete()
                     .eq('tenant_id', this._tid())
                     .eq('employee_id', gcUser.id)
@@ -4093,7 +4110,7 @@
                     return;
                 }
                 const { error } = await this.supabase
-                    .from('leave_requests')
+                    .from('corporate_leave_request')
                     .delete()
                     .eq('tenant_id', this._tid())
                     .eq('employee_id', csUser.id)
@@ -5265,18 +5282,20 @@
                         return rows;
                     };
 
-                    // Fetch both regular AND maintenance bids in parallel
-                    const [regularRows, maintRows] = await Promise.all([
+                    // Fetch regular, maintenance, AND corporate (GC/CS) bids in parallel
+                    const [regularRows, maintRows, corporateRows] = await Promise.all([
                         fetchAllFromTable('leave_requests'),
-                        fetchAllFromTable('maint_leave_requests')
+                        fetchAllFromTable('maint_leave_requests'),
+                        fetchAllFromTable('corporate_leave_request')
                     ]);
 
-                    const allBids = [...regularRows, ...maintRows];
-                    console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance bids from Supabase`);
+                    const allBids = [...regularRows, ...maintRows, ...corporateRows];
+                    console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance + ${corporateRows.length} corporate bids from Supabase`);
 
                     this.state.bids = [
                         ...regularRows.map(b => this._mapRemoteBid(b, 'leave_requests')),
-                        ...maintRows.map(b => this._mapRemoteBid(b, 'maint_leave_requests'))
+                        ...maintRows.map(b => this._mapRemoteBid(b, 'maint_leave_requests')),
+                        ...corporateRows.map(b => this._mapRemoteBid(b, 'corporate_leave_request'))
                     ];
 
                     this.saveState();
@@ -5351,6 +5370,31 @@
                 if (ids.length > 0) return ids.includes(employeeId);
                 // Last resort: check if any bid in state has this employeeId tagged as maint
                 return this.state.bids.some(b => b.employeeId === employeeId && b._sourceTable === 'maint_leave_requests');
+            },
+
+            // Returns true for Golden Command (GC) and Corporate Staff (CS) employee IDs —
+            // these route to the dedicated `corporate_leave_request` table, kept separate
+            // from Ops (`leave_requests`) and Maintenance (`maint_leave_requests`).
+            _isCorporateStaff(employeeId, bid) {
+                // Prefer the source table tag set at fetch time — reliable even when
+                // the GC/CS user lists are not loaded in the admin session
+                if (bid && bid._sourceTable) return bid._sourceTable === 'corporate_leave_request';
+                const gcIds = (this.state.goldenCommandUsers   || []).map(u => u.id);
+                const csIds = (this.state.corporateStaffUsers  || []).map(u => u.id);
+                if (gcIds.length > 0 || csIds.length > 0) {
+                    return gcIds.includes(employeeId) || csIds.includes(employeeId);
+                }
+                // Last resort: check if any bid in state has this employeeId tagged as corporate
+                return this.state.bids.some(b => b.employeeId === employeeId && b._sourceTable === 'corporate_leave_request');
+            },
+
+            // Central place that decides which Supabase table a bid belongs to,
+            // based on the acting user's userType. Used by every read/write path
+            // so the routing rule only has to be maintained in one spot.
+            _bidTableForUserType(userType) {
+                if (userType === 'maintenancestaff') return 'maint_leave_requests';
+                if (userType === 'goldencommand' || userType === 'corporatestaff') return 'corporate_leave_request';
+                return 'leave_requests';
             },
 
             _switchBidTab(tab) {
@@ -5518,7 +5562,11 @@
                 if (this.supabase) {
                     // ✅ FIX: Use the bid looked up above (before state removal), not a stale re-lookup.
                     // Also added .eq('tenant_id') for safe scoping, consistent with bulk-delete functions.
-                    const table = this._isMaintStaff(employeeId, bid) ? 'maint_leave_requests' : 'leave_requests';
+                    const table = this._isMaintStaff(employeeId, bid)
+                        ? 'maint_leave_requests'
+                        : this._isCorporateStaff(employeeId, bid)
+                            ? 'corporate_leave_request'
+                            : 'leave_requests';
                     const { error } = await this.supabase
                         .from(table)
                         .delete()
@@ -5595,8 +5643,18 @@
                             .eq('tenant_id', this._tid());
                         if (error) console.warn('⚠️ Supabase delete all maint error:', error.message);
                         else console.log('✅ All maintenance bids deleted');
+                    } else if (tabFilter === 'gccs' || tabFilter === 'hrcorp') {
+                        // GC, Corporate Staff, and HR Corporate all live in corporate_leave_request
+                        const idsToDelete = tabBids.map(b => b.employeeId);
+                        const { error } = await this.supabase
+                            .from('corporate_leave_request')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .in('employee_id', idsToDelete);
+                        if (error) console.warn(`⚠️ Supabase delete all [${tabFilter}] error:`, error.message);
+                        else console.log(`✅ All ${sectionName} bids deleted from corporate_leave_request`);
                     } else {
-                        // Employees and GC/CS both live in leave_requests
+                        // Ops employees live in leave_requests
                         // Delete only the specific employee IDs for this tab, scoped to this tenant
                         const idsToDelete = tabBids.map(b => b.employeeId);
                         const { error } = await this.supabase
@@ -5623,13 +5681,15 @@
                 this.saveState();
 
                 if (this.supabase) {
-                    const [r1, r2] = await Promise.all([
+                    const [r1, r2, r3] = await Promise.all([
                         this.supabase.from('leave_requests').delete().eq('tenant_id', this._tid()),
-                        this.supabase.from('maint_leave_requests').delete().eq('tenant_id', this._tid())
+                        this.supabase.from('maint_leave_requests').delete().eq('tenant_id', this._tid()),
+                        this.supabase.from('corporate_leave_request').delete().eq('tenant_id', this._tid())
                     ]);
                     if (r1.error) console.warn('⚠️ Supabase delete all error [leave_requests]:', r1.error.message);
                     if (r2.error) console.warn('⚠️ Supabase delete all error [maint_leave_requests]:', r2.error.message);
-                    if (!r1.error && !r2.error) console.log('✅ All bids deleted from both tables');
+                    if (r3.error) console.warn('⚠️ Supabase delete all error [corporate_leave_request]:', r3.error.message);
+                    if (!r1.error && !r2.error && !r3.error) console.log('✅ All bids deleted from all three tables');
                 }
 
                 this._liveUpdateAdminPanel();
@@ -5723,6 +5783,9 @@
                     .on('postgres_changes',
                         { event: '*', schema: 'public', table: 'maint_leave_requests' },
                         payload => applyChange(payload, 'maint_leave_requests'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'corporate_leave_request' },
+                        payload => applyChange(payload, 'corporate_leave_request'))
                     .subscribe(status => {
                         console.log('🔌 Admin Realtime status:', status);
                         if (status === 'SUBSCRIBED') this._setAdminStatus('live');
@@ -5774,8 +5837,8 @@
                 this._lcRealtimeChannel = this.supabase
                     .channel('lc-tracker-bids')
                     .on('postgres_changes',
-                        { event: '*', schema: 'public', table: 'leave_requests' },
-                        payload => applyLcChange(payload, 'leave_requests'))
+                        { event: '*', schema: 'public', table: 'corporate_leave_request' },
+                        payload => applyLcChange(payload, 'corporate_leave_request'))
                     .on('postgres_changes',
                         { event: '*', schema: 'public', table: 'golden_command_users' },
                         () => { if (typeof window.lcRender === 'function') window.lcRender(); })
@@ -7983,10 +8046,10 @@
                     return false;
                 }
                 try {
-                    // Route maintenance staff to their own table
-                    const table = this.state.userType === 'maintenancestaff'
-                        ? 'maint_leave_requests'
-                        : 'leave_requests';
+                    // Route to the correct table based on the acting user's type:
+                    // employee/planner -> leave_requests, maintenancestaff -> maint_leave_requests,
+                    // goldencommand/corporatestaff -> corporate_leave_request
+                    const table = this._bidTableForUserType(this.state.userType);
 
                     const row = {
                         tenant_id: this._tid(),
@@ -8049,9 +8112,7 @@
                     this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
                     return;
                 }
-                const table = this.state.userType === 'maintenancestaff'
-                    ? 'maint_leave_requests'
-                    : 'leave_requests';
+                const table = this._bidTableForUserType(this.state.userType);
                 const { error } = await this.supabase
                     .from(table)
                     .delete()
@@ -11786,7 +11847,7 @@
                         var position = STAFF_TITLES[r.id] || dept;
                         var slotType = (r.days || 0) > 15 ? 'slotC' : 'slotA';
 
-                        // Only columns that exist in leave_requests (matches the real schema)
+                        // Only columns that exist in corporate_leave_request (matches the real schema)
                         var record = {
                             tenant_id:      tid,
                             employee_id:    r.id,
@@ -11804,7 +11865,7 @@
                             try {
                                 // Step 1 — check if a record already exists for this employee+slot+start
                                 var { data: existing, error: selErr } = await self.supabase
-                                    .from('leave_requests')
+                                    .from('corporate_leave_request')
                                     .select('id')
                                     .eq('tenant_id',    tid)
                                     .eq('employee_id',  r.id)
@@ -11816,7 +11877,7 @@
                                 if (existing && existing.id) {
                                     // UPDATE existing row by id
                                     var { error: updErr } = await self.supabase
-                                        .from('leave_requests')
+                                        .from('corporate_leave_request')
                                         .update({
                                             end_date:       record.end_date,
                                             days_requested: record.days_requested,
@@ -11829,7 +11890,7 @@
                                 } else {
                                     // INSERT new row
                                     var { error: insErr } = await self.supabase
-                                        .from('leave_requests')
+                                        .from('corporate_leave_request')
                                         .insert(record);
                                     opErr = insErr;
                                     if (!insErr) inserted++;
@@ -11857,7 +11918,7 @@
                                 endDate:      r.endDate,
                                 days:         r.days,
                                 timestamp:    new Date().toISOString(),
-                                _sourceTable: 'leave_requests',
+                                _sourceTable: 'corporate_leave_request',
                                 _importSource:'SAP_SF'
                             };
                             var existIdx = (self.state.bids || []).findIndex(function(b){
@@ -11874,13 +11935,15 @@
                             var allBids = [], pg2 = 0, more2 = true, bs2 = 1000;
                             while (more2) {
                                 var { data: batch2, error: err2 } = await self.supabase
-                                    .from('leave_requests').select('*')
+                                    .from('corporate_leave_request').select('*')
                                     .eq('tenant_id', tid).range(pg2, pg2 + bs2 - 1);
                                 if (err2 || !batch2 || !batch2.length) { more2 = false; }
                                 else { allBids = allBids.concat(batch2); more2 = batch2.length === bs2; pg2 += bs2; }
                             }
-                            self.state.bids = self.state.bids.filter(function(b){ return b._sourceTable === 'maint_leave_requests'; });
-                            allBids.forEach(function(row) { self.state.bids.push(self._mapRemoteBid(row, 'leave_requests')); });
+                            // Keep everything that ISN'T corporate (Ops + Maintenance bids untouched),
+                            // then re-add the freshly synced corporate rows
+                            self.state.bids = self.state.bids.filter(function(b){ return b._sourceTable !== 'corporate_leave_request'; });
+                            allBids.forEach(function(row) { self.state.bids.push(self._mapRemoteBid(row, 'corporate_leave_request')); });
                         } catch(ex2) { console.warn('Post-sync reload failed', ex2); }
                     }
 
