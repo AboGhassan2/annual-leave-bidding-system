@@ -11148,7 +11148,41 @@
                     '.lc-sf-preview.show{display:block;}',
                     '.lc-sf-row2{display:flex;gap:8px;margin-top:10px;align-items:center;}',
                     '.lc-sf-filebtn{font-size:.72rem;padding:6px 12px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);color:rgba(200,225,255,.7);cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.06em;}',
-                    '.lc-sf-filebtn:hover{background:rgba(255,255,255,.14);}'
+                    '.lc-sf-filebtn:hover{background:rgba(255,255,255,.14);}',
+                    '.lc-dc.ph{background:#6a1b9a;}',
+                    '.lc-dc.ph .dcn{color:rgba(255,255,255,.8);}',
+                    '.lc-c.ph{background:rgba(171,71,188,.18);}',
+                    '.lc-c.leave.ph{background:rgba(171,71,188,.30);color:#e1bee7;}',
+                    '.lc-year-nav{display:flex;align-items:center;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid rgba(255,255,255,.25);}',
+                    '.lc-year-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 8px;border-radius:7px;cursor:pointer;font-size:.85rem;}',
+                    '.lc-year-btn:hover{background:rgba(255,255,255,.35);}',
+                    '.lc-year-label{font-family:"Barlow Condensed",sans-serif;font-size:.95rem;font-weight:700;min-width:44px;text-align:center;color:#fff;}',
+                    '.lc-ph-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(206,147,216,.7);background:rgba(171,71,188,.22);color:#f3e5f5;cursor:pointer;transition:all .15s;}',
+                    '.lc-ph-btn:hover{background:rgba(171,71,188,.4);border-color:#f3e5f5;color:#fff;}',
+                    '#lcPhModal{display:none;position:fixed;inset:0;z-index:10000;background:rgba(10,20,40,.72);align-items:center;justify-content:center;}',
+                    '#lcPhModal.open{display:flex;}',
+                    '#lcPhBox{background:#0d1b2e;border:1px solid rgba(171,71,188,.35);border-radius:14px;padding:26px 28px;width:480px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.7);color:#d8eaf7;font-family:Barlow,sans-serif;}',
+                    '#lcPhBox h3{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:800;letter-spacing:.08em;color:#ce93d8;margin-bottom:4px;}',
+                    '#lcPhBox p.lc-ph-sub{font-size:.73rem;color:rgba(200,225,255,.45);margin-bottom:14px;line-height:1.5;}',
+                    '.lc-ph-form{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;}',
+                    '.lc-ph-form label{font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(200,225,255,.5);display:block;margin-bottom:4px;}',
+                    '.lc-ph-form input[type=date],.lc-ph-form input[type=text]{background:rgba(255,255,255,.06);border:1px solid rgba(171,71,188,.3);border-radius:8px;color:#d8eaf7;font-size:.78rem;padding:7px 9px;outline:none;}',
+                    '.lc-ph-form input:focus{border-color:#ce93d8;}',
+                    '.lc-ph-name-input{width:170px;}',
+                    '.lc-ph-add{font-family:"Barlow Condensed",sans-serif;font-size:.8rem;font-weight:700;padding:8px 16px;border-radius:8px;background:#6a1b9a;border:1px solid #ce93d8;color:#fff;cursor:pointer;}',
+                    '.lc-ph-add:hover{background:#7b1fa2;}',
+                    '.lc-ph-list{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;}',
+                    '.lc-ph-row{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.04);border:1px solid rgba(171,71,188,.15);border-radius:8px;padding:8px 12px;gap:8px;}',
+                    '.lc-ph-row .lc-ph-date{font-weight:700;color:#ce93d8;font-size:.78rem;min-width:88px;}',
+                    '.lc-ph-row .lc-ph-name{font-size:.78rem;color:rgba(216,234,247,.8);flex:1;}',
+                    '.lc-ph-del{background:rgba(255,107,107,.15);border:1px solid rgba(255,107,107,.4);color:#ff8080;border-radius:6px;padding:4px 9px;font-size:.7rem;cursor:pointer;}',
+                    '.lc-ph-del:hover{background:rgba(255,107,107,.3);}',
+                    '.lc-ph-empty{font-size:.75rem;color:rgba(200,225,255,.35);text-align:center;padding:16px;}',
+                    '.lc-ph-status{font-size:.7rem;margin-bottom:10px;min-height:14px;}',
+                    '.lc-ph-status.ok{color:#2ecc9a;}',
+                    '.lc-ph-status.err{color:#ff6b6b;}',
+                    '.lc-ph-close{margin-top:16px;font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:600;padding:8px 14px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(200,225,255,.6);cursor:pointer;}',
+                    '.lc-ph-close:hover{background:rgba(255,255,255,.12);}'
                 ].join('\n');
 
                 var lcHTML = '<div id="lcDash">'
@@ -11156,7 +11190,7 @@
                     + '<div id="lcTopbar">'
                     +   '<div style="display:flex;align-items:center;gap:10px;">'
                     +     '<div class="lc-logo">FLOW <span>METRO</span></div>'
-                    +     '<div class="lc-badge-yr">GC &amp; CS Leave Tracker 2026</div>'
+                    +     '<div class="lc-badge-yr" id="lcYearBadge">GC &amp; CS Leave Tracker</div>'
                     +     '<span class="lc-live-badge" id="lcLiveBadge">&#9679; LIVE</span>'
                     +   '</div>'
                     +   '<div class="lc-tabs">'
@@ -11170,10 +11204,16 @@
                     +       '<div class="lc-mnav-label" id="lcMonthLabel">April 2026</div>'
                     +       '<button class="lc-mnav-btn" onclick="lcNextMonth()">&#8250;</button>'
                     +       '<button class="lc-mnav-btn" onclick="lcShowAll()" style="font-size:.72rem;padding:4px 8px;">Full Year</button>'
+                    +       '<div class="lc-year-nav">'
+                    +         '<button class="lc-year-btn" onclick="lcPrevYear()" title="Previous year">&#8249;&#8249;</button>'
+                    +         '<div class="lc-year-label" id="lcYearLabel">2026</div>'
+                    +         '<button class="lc-year-btn" onclick="lcNextYear()" title="Next year">&#8250;&#8250;</button>'
+                    +       '</div>'
                     +     '</div>'
                     +     '<div class="lc-search"><input type="text" id="lcSearch" placeholder="Search staff..." oninput="lcFilterStaff(this.value)"></div>'
                     +     '<button class="lc-refresh-btn" onclick="lcRefresh()">&#8635; Refresh</button>'
                     +     '<button class="lc-sf-btn" onclick="lcOpenSfSync()">&#8645; SF Sync</button>'
+                    +     '<button class="lc-ph-btn" onclick="lcOpenPhModal()">&#127881; Public Holidays</button>'
                     +     '<button class="lc-export-btn" onclick="lcExportCSV()">&#11015; CSV</button>'
                     +   '</div>'
                     + '</div>'
@@ -11182,10 +11222,25 @@
                     + '<div class="lc-legend">'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,107,107,.22);border:1px solid #ff6b6b;"></div>Leave / Absent</div>'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(100,140,200,.1);border:1px solid rgba(100,140,200,.2);"></div>Fri / Sat</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(171,71,188,.18);border:1px solid #ab47bc;"></div>Public Holiday</div>'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(78,176,255,.08);border:1px solid #4eb0ff;"></div>Today</div>'
-                    +   '<div style="margin-left:auto;font-size:.62rem;">Connected to Admin &#8250; Bid Details &#8250; GC &amp; Corporate Staff</div>'
+                    +   '<div style="margin-left:auto;font-size:.62rem;">Leave days shown exclude Fri/Sat &amp; public holidays &middot; Connected to Admin &#8250; Bid Details &#8250; GC &amp; Corporate Staff</div>'
                     + '</div>'
                     + '<div id="lcTooltip"></div>'
+                    + '<div id="lcPhModal">'
+                    +   '<div id="lcPhBox">'
+                    +     '<h3>&#127881; Public Holiday Configuration</h3>'
+                    +     '<p class="lc-ph-sub">Dates added here are excluded from leave day totals for every staff member, in addition to Fridays and Saturdays. Holidays apply to whichever year they fall in.</p>'
+                    +     '<div class="lc-ph-form">'
+                    +       '<div><label>Date</label><input type="date" id="lcPhDateInput"></div>'
+                    +       '<div><label>Name (optional)</label><input type="text" id="lcPhNameInput" class="lc-ph-name-input" placeholder="e.g. National Day"></div>'
+                    +       '<button class="lc-ph-add" onclick="lcAddPublicHoliday()">+ Add</button>'
+                    +     '</div>'
+                    +     '<div class="lc-ph-status" id="lcPhStatus"></div>'
+                    +     '<div class="lc-ph-list" id="lcPhList"></div>'
+                    +     '<button class="lc-ph-close" onclick="lcClosePhModal()">Close</button>'
+                    +   '</div>'
+                    + '</div>'
                     + '<div id="lcSfModal">'
                     +   '<div id="lcSfBox">'
                     +     '<h3>&#8645; SAP SuccessFactors &mdash; Leave Sync</h3>'
@@ -11215,27 +11270,165 @@
 
                 var lcViewMode = 'month';
                 var lcMonth    = new Date().getMonth();
+                var lcYear     = self.state.biddingYear || new Date().getFullYear();
                 var lcDeptFilter = 'all';
                 var lcQuery    = '';
                 var lcToday    = new Date();
                 var lcTodayStr = lcToday.getFullYear() + '-' + String(lcToday.getMonth()+1).padStart(2,'0') + '-' + String(lcToday.getDate()).padStart(2,'0');
 
+                // ── Public Holiday configuration ────────────────────────
+                // Stored as an array of {date:'YYYY-MM-DD', name} objects.
+                // Cached in localStorage and (if available) synced to a
+                // Supabase table called `public_holidays` (columns: id,
+                // tenant_id, date, name, created_at). If that table doesn't
+                // exist yet, the dashboard silently falls back to the
+                // localStorage-only copy so nothing breaks.
+                var lcPublicHolidays = [];
+                var lcPhSet = new Set();
+
+                function lcRebuildPhSet() {
+                    lcPhSet = new Set(lcPublicHolidays.map(function(h) { return h.date; }));
+                }
+                function lcIsWE(dt) { var d = dt.getDay(); return d === 5 || d === 6; }
+                function lcIsPH(dt) { return lcPhSet.has(lcDK(dt)); }
+
                 function lcDK(dt) {
                     return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
                 }
-                function lcIsWE(dt) { var d = dt.getDay(); return d === 5 || d === 6; }
+
+                function lcLoadPhLocal() {
+                    try {
+                        var raw = localStorage.getItem('lcPublicHolidays');
+                        lcPublicHolidays = raw ? JSON.parse(raw) : [];
+                    } catch(e) { lcPublicHolidays = []; }
+                    lcRebuildPhSet();
+                }
+                function lcSavePhLocal() {
+                    try { localStorage.setItem('lcPublicHolidays', JSON.stringify(lcPublicHolidays)); } catch(e) {}
+                }
+                async function lcLoadPublicHolidays() {
+                    lcLoadPhLocal();
+                    if (self.supabase) {
+                        try {
+                            var { data, error } = await self.supabase
+                                .from('public_holidays')
+                                .select('date, name')
+                                .eq('tenant_id', self._tid())
+                                .order('date', { ascending: true });
+                            if (!error && data) {
+                                lcPublicHolidays = data.map(function(r) { return { date: r.date, name: r.name || '' }; });
+                                lcSavePhLocal();
+                            }
+                        } catch(e) { console.warn('Public holidays: Supabase load failed, using local cache', e); }
+                    }
+                    lcRebuildPhSet();
+                }
+                window.lcAddPublicHoliday = async function() {
+                    var dateEl = document.getElementById('lcPhDateInput');
+                    var nameEl = document.getElementById('lcPhNameInput');
+                    var statusEl = document.getElementById('lcPhStatus');
+                    var date = dateEl ? dateEl.value : '';
+                    var name = nameEl ? nameEl.value.trim() : '';
+                    if (!date) {
+                        if (statusEl) { statusEl.textContent = 'Please pick a date first.'; statusEl.className = 'lc-ph-status err'; }
+                        return;
+                    }
+                    if (lcPhSet.has(date)) {
+                        if (statusEl) { statusEl.textContent = 'That date is already configured.'; statusEl.className = 'lc-ph-status err'; }
+                        return;
+                    }
+                    lcPublicHolidays.push({ date: date, name: name });
+                    lcPublicHolidays.sort(function(a,b) { return a.date.localeCompare(b.date); });
+                    lcRebuildPhSet();
+                    lcSavePhLocal();
+                    if (dateEl) dateEl.value = '';
+                    if (nameEl) nameEl.value = '';
+                    if (statusEl) { statusEl.textContent = 'Added ' + date + '.'; statusEl.className = 'lc-ph-status ok'; }
+                    lcRenderPhList();
+                    lcRender();
+                    if (self.supabase) {
+                        try {
+                            await self.supabase.from('public_holidays').insert({
+                                tenant_id: self._tid(), date: date, name: name
+                            });
+                        } catch(e) { console.warn('Public holidays: Supabase insert failed (using local cache only)', e); }
+                    }
+                };
+                window.lcDeletePublicHoliday = async function(date) {
+                    lcPublicHolidays = lcPublicHolidays.filter(function(h) { return h.date !== date; });
+                    lcRebuildPhSet();
+                    lcSavePhLocal();
+                    lcRenderPhList();
+                    lcRender();
+                    if (self.supabase) {
+                        try {
+                            await self.supabase.from('public_holidays').delete()
+                                .eq('tenant_id', self._tid()).eq('date', date);
+                        } catch(e) { console.warn('Public holidays: Supabase delete failed (using local cache only)', e); }
+                    }
+                };
+                function lcRenderPhList() {
+                    var listEl = document.getElementById('lcPhList');
+                    if (!listEl) return;
+                    if (!lcPublicHolidays.length) {
+                        listEl.innerHTML = '<div class="lc-ph-empty">No public holidays configured yet.</div>';
+                        return;
+                    }
+                    listEl.innerHTML = lcPublicHolidays.map(function(h) {
+                        return '<div class="lc-ph-row">'
+                             + '<span class="lc-ph-date">' + h.date + '</span>'
+                             + '<span class="lc-ph-name">' + (h.name || '&mdash;') + '</span>'
+                             + '<button class="lc-ph-del" onclick="lcDeletePublicHoliday(\'' + h.date + '\')">Remove</button>'
+                             + '</div>';
+                    }).join('');
+                }
+                window.lcOpenPhModal = function() {
+                    lcRenderPhList();
+                    var statusEl = document.getElementById('lcPhStatus');
+                    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'lc-ph-status'; }
+                    var modal = document.getElementById('lcPhModal');
+                    if (modal) modal.classList.add('open');
+                };
+                window.lcClosePhModal = function() {
+                    var modal = document.getElementById('lcPhModal');
+                    if (modal) modal.classList.remove('open');
+                };
+
+                // ── Working-day helpers ─────────────────────────────────
+                // A day counts toward leave consumed only if it is NOT a
+                // weekend (Fri/Sat) and NOT a configured public holiday.
+                function lcIsWorkingDay(dt) { return !lcIsWE(dt) && !lcIsPH(dt); }
+
+                // Count working days for a bid's date range that fall
+                // within [winStart, winEnd] (inclusive). Used for both the
+                // full-year total and the current month view.
+                function lcWorkingDaysInWindow(bid, winStart, winEnd) {
+                    if (!bid || !bid.startDate || !winStart || !winEnd) return 0;
+                    var bs = new Date(bid.startDate + 'T00:00:00');
+                    var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
+                    var overlapStart = bs < winStart ? winStart : bs;
+                    var overlapEnd   = be > winEnd   ? winEnd   : be;
+                    if (overlapStart > overlapEnd) return 0;
+                    var count = 0;
+                    var cur = new Date(overlapStart);
+                    while (cur <= overlapEnd) {
+                        if (lcIsWorkingDay(cur)) count++;
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                    return count;
+                }
 
                 function lcGetDates() {
                     if (lcViewMode === 'full') {
                         var r = [];
                         for (var m = 0; m < 12; m++) {
-                            var daysInM = new Date(2026, m+1, 0).getDate();
-                            for (var d = 1; d <= daysInM; d++) r.push(new Date(2026, m, d));
+                            var daysInM = new Date(lcYear, m+1, 0).getDate();
+                            for (var d = 1; d <= daysInM; d++) r.push(new Date(lcYear, m, d));
                         }
                         return r;
                     }
-                    var dIM2 = new Date(2026, lcMonth+1, 0).getDate(), r2 = [];
-                    for (var d2 = 1; d2 <= dIM2; d2++) r2.push(new Date(2026, lcMonth, d2));
+                    var dIM2 = new Date(lcYear, lcMonth+1, 0).getDate(), r2 = [];
+                    for (var d2 = 1; d2 <= dIM2; d2++) r2.push(new Date(lcYear, lcMonth, d2));
                     return r2;
                 }
 
@@ -11288,6 +11481,12 @@
                     // Filter to GC/CS AND in allowed list
                     var gccs = bids.filter(function(b) { return gccsIds.indexOf(b.employeeId) > -1 && ALLOWED_IDS.indexOf(b.employeeId) > -1; });
 
+                    // Full-year window for the currently selected lcYear, used to
+                    // compute each bid's working-day contribution (excludes
+                    // Fri/Sat weekends and configured public holidays).
+                    var lcYearStart = new Date(lcYear, 0, 1);
+                    var lcYearEnd   = new Date(lcYear, 11, 31);
+
                     // Build per-staff map
                     var staffMap = {};
                     gccs.forEach(function(bid) {
@@ -11316,9 +11515,11 @@
                         } else if (bid.startDate) {
                             staffMap[id].leaveSet.add(bid.startDate);
                         }
-                        // Store raw bid and accumulate totalDays from bid.days (not leaveSet.size)
+                        // Store raw bid and accumulate totalDays as working days only
+                        // (excludes Fri/Sat weekends and configured public holidays),
+                        // clipped to the currently selected year.
                         staffMap[id].bids.push(bid);
-                        staffMap[id].totalDays += (bid.days || 0);
+                        staffMap[id].totalDays += lcWorkingDaysInWindow(bid, lcYearStart, lcYearEnd);
                     });
 
                     var staff = Object.values(staffMap);
@@ -11348,19 +11549,12 @@
                     var monthEnd   = dates.length ? dates[dates.length - 1] : null;
                     var totalLD = staff.reduce(function(a, s) {
                         if (lcViewMode === 'full') return a + s.totalDays;
-                        // Proportional bid.days overlap for month view
+                        // Exact working-day count (excludes Fri/Sat + public
+                        // holidays) for whichever dates fall in the current month.
                         var mDays = 0;
                         (s.bids || []).forEach(function(bid) {
-                            if (!bid.startDate || !monthStart) return;
-                            var bs = new Date(bid.startDate + 'T00:00:00');
-                            var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
-                            var overlapStart = bs < monthStart ? monthStart : bs;
-                            var overlapEnd   = be > monthEnd   ? monthEnd   : be;
-                            if (overlapStart > overlapEnd) return;
-                            var totalCalDays   = Math.round((be - bs) / 86400000) + 1;
-                            var overlapCalDays = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
-                            var proportion = totalCalDays > 0 ? overlapCalDays / totalCalDays : 0;
-                            mDays += Math.round((bid.days || 0) * proportion);
+                            if (!monthStart) return;
+                            mDays += lcWorkingDaysInWindow(bid, monthStart, monthEnd);
                         });
                         return a + mDays;
                     }, 0);
@@ -11376,8 +11570,8 @@
 
                 function lcBuildDateCells(dates) {
                     return dates.map(function(d) {
-                        var dk = lcDK(d), we = lcIsWE(d), td = dk === lcTodayStr;
-                        var cls = 'lc-dc' + (we ? ' wknd' : '') + (td ? ' td-col' : '');
+                        var dk = lcDK(d), we = lcIsWE(d), ph = lcIsPH(d), td = dk === lcTodayStr;
+                        var cls = 'lc-dc' + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-col' : '');
                         return '<div class="' + cls + '"><div class="dcd">' + LC_DAYS[d.getDay()].slice(0,2) + '</div><div class="dcn">' + d.getDate() + '</div></div>';
                     }).join('');
                 }
@@ -11387,7 +11581,7 @@
                     dates.forEach(function(d, i) {
                         var m = d.getMonth();
                         if (m !== cur) {
-                            var dIM = new Date(2026, m+1, 0).getDate();
+                            var dIM = new Date(lcYear, m+1, 0).getDate();
                             var w = Math.min(dIM, dates.length - i);
                             html += '<div class="lc-month-band" style="width:' + (w*30) + 'px;">' + LC_MONTHS[m].slice(0,3).toUpperCase() + '</div>';
                             cur = m;
@@ -11414,7 +11608,8 @@
                               + '</div>'
                               + '</div>';
                         members.forEach(function(s) {
-                            // Compute days-in-view from bid.days proportionally (avoids weekend inflation)
+                            // Compute days-in-view as exact working days (excludes
+                            // Fri/Sat weekends and configured public holidays).
                             var leaveInView;
                             if (lcViewMode === 'full') {
                                 leaveInView = s.totalDays;
@@ -11424,22 +11619,13 @@
                                 leaveInView = 0;
                                 if (monthStart && monthEnd) {
                                     (s.bids || []).forEach(function(bid) {
-                                        if (!bid.startDate) return;
-                                        var bs = new Date(bid.startDate + 'T00:00:00');
-                                        var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
-                                        var overlapStart = bs < monthStart ? monthStart : bs;
-                                        var overlapEnd   = be > monthEnd   ? monthEnd   : be;
-                                        if (overlapStart > overlapEnd) return;
-                                        var totalCalDays  = Math.round((be - bs) / 86400000) + 1;
-                                        var overlapCalDays = Math.round((overlapEnd - overlapStart) / 86400000) + 1;
-                                        var proportion = totalCalDays > 0 ? overlapCalDays / totalCalDays : 0;
-                                        leaveInView += Math.round((bid.days || 0) * proportion);
+                                        leaveInView += lcWorkingDaysInWindow(bid, monthStart, monthEnd);
                                     });
                                 }
                             }
                             var cells = dates.map(function(d) {
-                                var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), td = dk === lcTodayStr;
-                                var cls = 'lc-c' + (lv ? ' leave' : '') + (we ? ' wknd' : '') + (td ? ' td-c' : '');
+                                var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), ph = lcIsPH(d), td = dk === lcTodayStr;
+                                var cls = 'lc-c' + (lv ? ' leave' : '') + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-c' : '');
                                 return '<div class="' + cls + '" data-date="' + dk + '" data-name="' + s.name + '" data-leave="' + lv + '">' + (lv ? 'A' : '') + '</div>';
                             }).join('');
                             var yrNote = (s.totalDays !== leaveInView) ? '<span style="color:rgba(200,225,255,.3);font-size:.58rem;">(' + s.totalDays + ' yr)</span>' : '';
@@ -11459,7 +11645,9 @@
                     var staff = lcBuildStaffFromBids();
 
                     var lbl = document.getElementById('lcMonthLabel');
-                    if (lbl) lbl.textContent = lcViewMode === 'full' ? 'Full Year 2026' : LC_MONTHS[lcMonth] + ' 2026';
+                    if (lbl) lbl.textContent = lcViewMode === 'full' ? ('Full Year ' + lcYear) : (LC_MONTHS[lcMonth] + ' ' + lcYear);
+                    var yrLbl = document.getElementById('lcYearLabel');
+                    if (yrLbl) yrLbl.textContent = lcYear;
 
                     var statsEl = document.getElementById('lcStats');
                     if (statsEl) statsEl.innerHTML = lcBuildStats(staff, dates);
@@ -11512,6 +11700,8 @@
                 window.lcPrevMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth - 1 + 12) % 12; lcRender(); };
                 window.lcNextMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth + 1) % 12; lcRender(); };
                 window.lcShowAll     = function() { lcViewMode = 'full'; lcRender(); };
+                window.lcPrevYear    = function() { lcYear -= 1; lcRender(); };
+                window.lcNextYear    = function() { lcYear += 1; lcRender(); };
                 window.lcRefresh     = function() { lcRender(); };
                 window.lcSetDept     = function(d) {
                     lcDeptFilter = d;
@@ -11534,10 +11724,14 @@
                     var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
                     var a = document.createElement('a');
                     a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
-                    a.download = 'GC_CS_Leave_2026.csv'; a.click();
+                    a.download = 'GC_CS_Leave_' + lcYear + '.csv'; a.click();
                 };
 
+                lcLoadPhLocal();
                 lcRender();
+                // Sync public holidays from Supabase (if configured) in the
+                // background, then re-render so the grid/stats reflect them.
+                lcLoadPublicHolidays().then(function() { lcRender(); });
 
                 // ── Start realtime subscription for the Leave Tracker ─────────
                 // Expose lcRender on window so the realtime callback can call it
