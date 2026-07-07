@@ -11315,9 +11315,26 @@
                                 .select('date, name')
                                 .eq('tenant_id', self._tid())
                                 .order('date', { ascending: true });
-                            if (!error && data) {
+                            if (error) {
+                                console.warn('Public holidays: Supabase select returned an error, keeping local cache', error);
+                            } else if (data && data.length > 0) {
+                                // Supabase has rows — trust it as the source of truth.
                                 lcPublicHolidays = data.map(function(r) { return { date: r.date, name: r.name || '' }; });
                                 lcSavePhLocal();
+                            } else if (data && data.length === 0 && lcPublicHolidays.length > 0) {
+                                // Supabase came back empty but we already have entries locally.
+                                // This almost always means earlier inserts never actually reached
+                                // Supabase (missing table / RLS policy / tenant mismatch), NOT that
+                                // the holidays were intentionally deleted. Keep the local cache and
+                                // try to re-push it so future loads stay in sync.
+                                console.warn('Public holidays: Supabase returned 0 rows but local cache has ' + lcPublicHolidays.length + ' — keeping local cache and re-syncing to Supabase.');
+                                for (const h of lcPublicHolidays) {
+                                    try {
+                                        await self.supabase.from('public_holidays').insert({
+                                            tenant_id: self._tid(), date: h.date, name: h.name
+                                        });
+                                    } catch(e2) { console.error('Public holidays: re-sync insert failed for', h.date, e2); }
+                                }
                             }
                         } catch(e) { console.warn('Public holidays: Supabase load failed, using local cache', e); }
                     }
@@ -11348,10 +11365,14 @@
                     lcRender();
                     if (self.supabase) {
                         try {
-                            await self.supabase.from('public_holidays').insert({
+                            var { error: insErr } = await self.supabase.from('public_holidays').insert({
                                 tenant_id: self._tid(), date: date, name: name
                             });
-                        } catch(e) { console.warn('Public holidays: Supabase insert failed (using local cache only)', e); }
+                            if (insErr) {
+                                console.error('Public holidays: Supabase insert failed (saved locally only)', insErr);
+                                if (statusEl) { statusEl.textContent = 'Added ' + date + ' locally, but cloud sync failed (' + (insErr.message || 'see console') + '). It may not survive a full cache clear.'; statusEl.className = 'lc-ph-status err'; }
+                            }
+                        } catch(e) { console.error('Public holidays: Supabase insert failed (saved locally only)', e); }
                     }
                 };
                 window.lcDeletePublicHoliday = async function(date) {
