@@ -5737,6 +5737,7 @@
                     position: this.state.employees.find(e => e.id === bid.employee_id)?.position ||
                         (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.position || '',
                     slotType: bid.slot_type || 'slotA',
+                    leaveType: bid.leave_type || 'Annual Leave',
                     startDate: bid.start_date,
                     endDate: bid.end_date,
                     days: bid.days_requested,
@@ -11107,13 +11108,17 @@
                     '.lc-stitle{font-size:.67rem;color:rgba(30,60,100,.6);line-height:1.3;}',
                     '.lc-lcount{margin-top:3px;font-size:.63rem;font-weight:700;font-family:"Barlow Condensed",sans-serif;display:flex;align-items:center;gap:4px;}',
                     '.lc-lval{color:#ff6b6b;}.lc-llab{color:rgba(200,225,255,.38);text-transform:uppercase;letter-spacing:.08em;}',
+                    '.lc-sick-count{margin-top:1px;}',
+                    '.lc-lval-sick{color:#ffb74d;font-weight:700;}',
                     '.lc-leave-cells{display:flex;}',
                     '.lc-c{width:30px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-right:1px solid rgba(100,180,255,.07);font-size:.65rem;font-weight:700;}',
                     '.lc-c.leave{background:rgba(255,107,107,.22);color:#ff8080;}',
                     '.lc-c.leave-start{background:rgba(255,107,107,.28);color:#ff8080;border-left:2px solid #ff6b6b;}',
+                    '.lc-c.leave-sick{background:rgba(255,183,77,.24);color:#ffb74d;}',
                     '.lc-c.wknd{background:rgba(100,140,200,.07);}',
                     '.lc-c.td-c{background:rgba(78,176,255,.06);}',
                     '.lc-c.leave.wknd{background:rgba(255,107,107,.14);}',
+                    '.lc-c.leave-sick.wknd{background:rgba(255,183,77,.15);}',
                     '.lc-month-band{display:flex;align-items:center;background:rgba(78,176,255,.08);border-right:1px solid rgba(100,180,255,.22);padding:0 8px;font-family:"Barlow Condensed",sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4eb0ff;white-space:nowrap;}',
                     '.lc-legend{display:flex;gap:14px;align-items:center;padding:9px 22px;border-top:1px solid rgba(21,101,192,.1);background:#f0f7ff;font-size:.67rem;color:rgba(30,60,100,.5);flex-wrap:wrap;}',
                     '.lc-leg-item{display:flex;align-items:center;gap:5px;}',
@@ -11220,7 +11225,8 @@
                     + '<div class="lc-stats" id="lcStats"></div>'
                     + '<div id="lcGrid"></div>'
                     + '<div class="lc-legend">'
-                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,107,107,.22);border:1px solid #ff6b6b;"></div>Leave / Absent</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,107,107,.22);border:1px solid #ff6b6b;"></div>A &mdash; Annual Leave</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,183,77,.24);border:1px solid #ffb74d;"></div>SL &mdash; Sick Leave</div>'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(100,140,200,.1);border:1px solid rgba(100,140,200,.2);"></div>Fri / Sat</div>'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(171,71,188,.18);border:1px solid #ab47bc;"></div>Public Holiday</div>'
                     +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(78,176,255,.08);border:1px solid #4eb0ff;"></div>Today</div>'
@@ -11294,6 +11300,17 @@
 
                 function lcDK(dt) {
                     return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                }
+
+                // Normalise a raw SF/SAP "Absences" value into the two-letter
+                // dashboard code shown on the calendar: A = Annual Leave, SL = Sick Leave.
+                // Anything not clearly identifiable as sick defaults to Annual so existing
+                // records without a leave_type (pre-dating this feature) keep showing 'A'.
+                function lcAbsenceCode(rawType) {
+                    var t = (rawType || '').toString().trim().toLowerCase();
+                    if (!t) return 'A';
+                    if (t === 'sl' || t.indexOf('sick') > -1) return 'SL';
+                    return 'A';
                 }
 
                 function lcLoadPhLocal() {
@@ -11439,6 +11456,23 @@
                     return count;
                 }
 
+                // Counts each calendar date at most once per employee (using the
+                // already-deduped leaveCodeByDate map) and splits the total into
+                // Annual vs Sick working days within the given window. This avoids
+                // double counting when two overlapping/duplicate leave records
+                // (e.g. a stale test row plus a real SF-synced row) cover the same date.
+                function lcCountDaysByCode(staffEntry, winStart, winEnd) {
+                    var annual = 0, sick = 0;
+                    var byDate = staffEntry.leaveCodeByDate || {};
+                    Object.keys(byDate).forEach(function(dk) {
+                        var dt = new Date(dk + 'T00:00:00');
+                        if (dt < winStart || dt > winEnd) return;
+                        if (!lcIsWorkingDay(dt)) return;
+                        if (byDate[dk] === 'SL') sick++; else annual++;
+                    });
+                    return { annual: annual, sick: sick };
+                }
+
                 function lcGetDates() {
                     if (lcViewMode === 'full') {
                         var r = [];
@@ -11521,26 +11555,40 @@
                                 group: isGC ? 'gc' : 'cs',
                                 dept: isGC ? 'Golden Command' : 'Corporate Staff',
                                 leaveSet: new Set(),
+                                leaveCodeByDate: {},
                                 bids: [],
-                                totalDays: 0
+                                totalDays: 0,
+                                sickDays: 0
                             };
                         }
                         // Expand bid date range into individual days (for calendar cell highlighting only)
                         if (bid.startDate && bid.endDate) {
                             var cur = new Date(bid.startDate + 'T00:00:00');
                             var end = new Date(bid.endDate + 'T00:00:00');
+                            var absCode = lcAbsenceCode(bid.leaveType);
                             while (cur <= end) {
                                 staffMap[id].leaveSet.add(lcDK(cur));
+                                staffMap[id].leaveCodeByDate[lcDK(cur)] = absCode;
                                 cur.setDate(cur.getDate() + 1);
                             }
                         } else if (bid.startDate) {
                             staffMap[id].leaveSet.add(bid.startDate);
+                            staffMap[id].leaveCodeByDate[bid.startDate] = lcAbsenceCode(bid.leaveType);
                         }
-                        // Store raw bid and accumulate totalDays as working days only
-                        // (excludes Fri/Sat weekends and configured public holidays),
-                        // clipped to the currently selected year.
+                        // Store raw bid for month-view lookups. Totals are computed
+                        // AFTER this loop, once per staff, from the deduped date map
+                        // (see below) so overlapping/duplicate records for the same
+                        // date can't inflate the count.
                         staffMap[id].bids.push(bid);
-                        staffMap[id].totalDays += lcWorkingDaysInWindow(bid, lcYearStart, lcYearEnd);
+                    });
+
+                    // Compute full-year Annual vs Sick totals per staff from the
+                    // deduped leaveCodeByDate map (each date counts once, even if
+                    // multiple bids happen to cover it).
+                    Object.keys(staffMap).forEach(function(id) {
+                        var counts = lcCountDaysByCode(staffMap[id], lcYearStart, lcYearEnd);
+                        staffMap[id].totalDays = counts.annual;
+                        staffMap[id].sickDays  = counts.sick;
                     });
 
                     var staff = Object.values(staffMap);
@@ -11568,22 +11616,23 @@
                 function lcBuildStats(staff, dates) {
                     var monthStart = dates.length ? dates[0] : null;
                     var monthEnd   = dates.length ? dates[dates.length - 1] : null;
-                    var totalLD = staff.reduce(function(a, s) {
-                        if (lcViewMode === 'full') return a + s.totalDays;
-                        // Exact working-day count (excludes Fri/Sat + public
-                        // holidays) for whichever dates fall in the current month.
-                        var mDays = 0;
-                        (s.bids || []).forEach(function(bid) {
-                            if (!monthStart) return;
-                            mDays += lcWorkingDaysInWindow(bid, monthStart, monthEnd);
-                        });
-                        return a + mDays;
-                    }, 0);
+                    var totalLD = 0, totalSick = 0;
+                    staff.forEach(function(s) {
+                        if (lcViewMode === 'full') {
+                            totalLD   += s.totalDays;
+                            totalSick += s.sickDays;
+                        } else if (monthStart) {
+                            var counts = lcCountDaysByCode(s, monthStart, monthEnd);
+                            totalLD   += counts.annual;
+                            totalSick += counts.sick;
+                        }
+                    });
                     var onToday = staff.filter(function(s) { return s.leaveSet.has(lcTodayStr); }).length;
                     var gcCount = staff.filter(function(s) { return s.group === 'gc'; }).length;
                     var csCount = staff.filter(function(s) { return s.group === 'cs'; }).length;
                     return '<div class="lc-stat"><div class="sv sv-blue">' + staff.length + '</div><div class="sl">Staff on Leave</div></div>'
-                         + '<div class="lc-stat"><div class="sv sv-red">' + totalLD + '</div><div class="sl">Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-red">' + totalLD + '</div><div class="sl">Annual Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-amber">' + totalSick + '</div><div class="sl">Sick Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
                          + '<div class="lc-stat"><div class="sv ' + (onToday > 0 ? 'sv-red' : 'sv-green') + '">' + onToday + '</div><div class="sl">On Leave Today</div></div>'
                          + '<div class="lc-stat"><div class="sv sv-amber">' + gcCount + '</div><div class="sl">GC Staff</div></div>'
                          + '<div class="lc-stat"><div class="sv sv-blue">' + csCount + '</div><div class="sl">CS Staff</div></div>';
@@ -11629,31 +11678,40 @@
                               + '</div>'
                               + '</div>';
                         members.forEach(function(s) {
-                            // Compute days-in-view as exact working days (excludes
-                            // Fri/Sat weekends and configured public holidays).
-                            var leaveInView;
+                            // Compute days-in-view as exact, deduped working days
+                            // (excludes Fri/Sat weekends and configured public
+                            // holidays), split Annual vs Sick.
+                            var leaveInView, sickInView;
                             if (lcViewMode === 'full') {
                                 leaveInView = s.totalDays;
+                                sickInView  = s.sickDays;
                             } else {
                                 var monthStart = dates.length ? dates[0] : null;
                                 var monthEnd   = dates.length ? dates[dates.length - 1] : null;
-                                leaveInView = 0;
                                 if (monthStart && monthEnd) {
-                                    (s.bids || []).forEach(function(bid) {
-                                        leaveInView += lcWorkingDaysInWindow(bid, monthStart, monthEnd);
-                                    });
+                                    var counts = lcCountDaysByCode(s, monthStart, monthEnd);
+                                    leaveInView = counts.annual;
+                                    sickInView  = counts.sick;
+                                } else {
+                                    leaveInView = 0; sickInView = 0;
                                 }
                             }
                             var cells = dates.map(function(d) {
                                 var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), ph = lcIsPH(d), td = dk === lcTodayStr;
-                                var cls = 'lc-c' + (lv ? ' leave' : '') + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-c' : '');
-                                return '<div class="' + cls + '" data-date="' + dk + '" data-name="' + s.name + '" data-leave="' + lv + '">' + (lv ? 'A' : '') + '</div>';
+                                var code = lv ? (s.leaveCodeByDate[dk] || 'A') : '';
+                                var cls = 'lc-c' + (lv ? ' leave' : '') + (code === 'SL' ? ' leave-sick' : '') + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-c' : '');
+                                return '<div class="' + cls + '" data-date="' + dk + '" data-name="' + s.name + '" data-leave="' + lv + '">' + code + '</div>';
                             }).join('');
                             var yrNote = (s.totalDays !== leaveInView) ? '<span style="color:rgba(200,225,255,.3);font-size:.58rem;">(' + s.totalDays + ' yr)</span>' : '';
+                            var sickBadge = sickInView > 0
+                                ? '<div class="lc-lcount lc-sick-count"><span class="lc-lval-sick">' + sickInView + '</span><span class="lc-llab">🩹 sick</span></div>'
+                                : '';
                             html += '<div class="lc-staff-row">'
                                   + '<div class="lc-frozen-name"><div class="lc-sname">' + s.name + '</div><div class="lc-sid">' + s.id + '</div></div>'
                                   + '<div class="lc-frozen-meta"><div class="lc-stitle">' + s.title + '</div>'
-                                  + '<div class="lc-lcount"><span class="lc-lval">' + leaveInView + '</span><span class="lc-llab"> days off</span>' + yrNote + '</div></div>'
+                                  + '<div class="lc-lcount"><span class="lc-lval">' + leaveInView + '</span><span class="lc-llab"> days off</span>' + yrNote + '</div>'
+                                  + sickBadge
+                                  + '</div>'
                                   + '<div class="lc-leave-cells">' + cells + '</div>'
                                   + '</div>';
                         });
@@ -11954,11 +12012,14 @@
                     var rows = lcSfParseRows(text);
                     var whitelist = lcSfWhitelist();
                     var matched = rows.filter(function(r){ return whitelist.has(r.id); });
+                    var alCount = matched.filter(function(r){ return lcAbsenceCode(r.leaveType) === 'A'; }).length;
+                    var slCount = matched.filter(function(r){ return lcAbsenceCode(r.leaveType) === 'SL'; }).length;
                     var prev = document.getElementById('lcSfPreview');
                     if (prev) {
                         var msg = 'Detected ' + (rows.length + (rows._skippedStatus||0)) + ' rows — ';
                         if (rows._hasStatusCol) msg += (rows._skippedStatus||0) + ' non-approved skipped, ';
-                        msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees.';
+                        msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees ';
+                        msg += '(' + alCount + ' Annual / ' + slCount + ' Sick).';
                         if (!rows._hasStatusCol) msg += ' ⚠ No status column detected — export should be pre-filtered to Approved only.';
                         prev.textContent = msg;
                         prev.classList.add('show');
@@ -12071,6 +12132,7 @@
                             employee_name:  r.name || r.id,
                             department:     dept,
                             slot_type:      slotType,
+                            leave_type:     r.leaveType,
                             start_date:     r.startDate,
                             end_date:       r.endDate,
                             days_requested: r.days,
@@ -12099,6 +12161,7 @@
                                             end_date:       record.end_date,
                                             days_requested: record.days_requested,
                                             employee_name:  record.employee_name,
+                                            leave_type:     record.leave_type,
                                             status:         'approved'
                                         })
                                         .eq('id', existing.id);
@@ -12131,6 +12194,7 @@
                                 department:   dept,
                                 position:     position,
                                 slotType:     slotType,
+                                leaveType:    r.leaveType,
                                 startDate:    r.startDate,
                                 endDate:      r.endDate,
                                 days:         r.days,
