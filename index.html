@@ -1473,14 +1473,14 @@
                             department: emp.department || 'Unassigned',
                             gender: emp.gender || '',
                             nationality: emp.nationality || '',
-                            email: emp.email || ''
+                            email: emp.email || '',
+                            password: emp.password || ''
                         }));
                         
-                        // Set default passwords
+                        // Load passwords from Supabase (source of truth for cross-device sync).
+                        // Falls back to any existing local cache, then to employee ID as the default.
                         this.state.employees.forEach(emp => {
-                            if (!this.state.employeePasswords[emp.id]) {
-                                this.state.employeePasswords[emp.id] = emp.id;
-                            }
+                            this.state.employeePasswords[emp.id] = emp.password || this.state.employeePasswords[emp.id] || emp.id;
                         });
                         
                         console.log(`✅ Loaded ${this.state.employees.length} employees from Supabase (with pagination)`);
@@ -2426,6 +2426,9 @@
                         break;
                     case 'manualOverride':
                         this.renderManualOverrideView();
+                        break;
+                    case 'maintManualOverride':
+                        this.renderMaintManualOverrideView();
                         break;
                     case 'auditLog':
                         this.renderAuditLogView();
@@ -6099,6 +6102,11 @@
                                                 onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
                                                 📋 View Maintenance Results
                                             </button>
+                                            <button onclick="app.setActiveView('maintManualOverride')"
+                                                style="width:100%;padding:10px 16px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#c2410c'" onmouseout="this.style.background='#ea580c'">
+                                                ✏️ Manual Override Maintenance Results
+                                            </button>
                                             <button onclick="app.exportMaintResults()"
                                                 style="width:100%;padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
                                                 onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
@@ -9352,6 +9360,125 @@
                 }
             },
 
+            // ==================== MAINTENANCE MANUAL OVERRIDE ====================
+            renderMaintManualOverrideView() {
+                const content = document.getElementById('contentArea');
+                if (!this.state.isMaintProcessed || (this.state.maintResults || []).length === 0) {
+                    content.innerHTML = `
+                        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
+                            <p class="text-2xl mb-4">⚠️</p>
+                            <p class="text-gray-600">No maintenance results to override. Process maintenance bids first.</p>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                        </div>`;
+                    return;
+                }
+
+                // Group maintenance results by employee
+                const empMap = {};
+                this.state.maintResults.forEach(r => {
+                    if (!empMap[r.employeeId]) empMap[r.employeeId] = [];
+                    empMap[r.employeeId].push(r);
+                });
+
+                content.innerHTML = `
+                    <div class="max-w-5xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold">✏️ Maintenance Manual Override</h2>
+                                    <p class="text-sm text-gray-500 mt-1">Edit any maintenance employee's assigned leave slots directly.</p>
+                                </div>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                            </div>
+                            <div id="maintOverrideMsg"></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50 text-gray-600">
+                                        <tr>
+                                            <th class="p-3 text-left">Maintenance Staff</th>
+                                            <th class="p-3 text-left">Slot</th>
+                                            <th class="p-3 text-left">Slot Name</th>
+                                            <th class="p-3 text-left">Start Date</th>
+                                            <th class="p-3 text-left">End Date</th>
+                                            <th class="p-3 text-left">Days</th>
+                                            <th class="p-3 text-left">Type</th>
+                                            <th class="p-3 text-left">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${Object.entries(empMap).map(([empId, slots]) => {
+                                            const emp = (this.state.maintenanceStaffUsers || []).find(e => e.id === empId);
+                                            return slots.sort((a,b)=>(a.slotOrder||0)-(b.slotOrder||0)).map((r, i) => `
+                                                <tr class="border-b hover:bg-gray-50" id="maint-row-${empId}-${r.slotOrder}">
+                                                    ${i===0 ? `<td class="p-3 font-semibold" rowspan="${slots.length}">${emp?.name||r.employeeName||empId}<br><span class="text-xs text-gray-400">${empId}</span></td>` : ''}
+                                                    <td class="p-3 text-gray-500">Slot ${r.slotOrder}</td>
+                                                    <td class="p-3">
+                                                        <input type="text" class="border rounded px-2 py-1 w-28 text-xs" value="${r.slotName||''}" id="ov-maint-slotName-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-maint-start-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-maint-end-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="number" class="border rounded px-2 py-1 w-16 text-xs" value="${r.days||0}" id="ov-maint-days-${empId}-${r.slotOrder}" min="1" max="60" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <select class="border rounded px-2 py-1 text-xs" id="ov-maint-type-${empId}-${r.slotOrder}">
+                                                            <option value="Bid Awarded" ${r.type==='Bid Awarded'?'selected':''}>Bid Awarded</option>
+                                                            <option value="Auto-Assigned" ${r.type==='Auto-Assigned'?'selected':''}>Auto-Assigned</option>
+                                                            <option value="Manual Override" ${r.type==='Manual Override'?'selected':''}>Manual Override</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <button onclick="app.saveMaintOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                    </td>
+                                                </tr>
+                                            `).join('');
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-6 flex gap-3">
+                                <button onclick="app.saveAllMaintOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            saveMaintOverride(empId, slotOrder) {
+                const idx = this.state.maintResults.findIndex(r => r.employeeId === empId && r.slotOrder === slotOrder);
+                if (idx === -1) { alert('Result not found'); return; }
+                this.state.maintResults[idx].slotName  = document.getElementById(`ov-maint-slotName-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].slotName;
+                this.state.maintResults[idx].startDate = document.getElementById(`ov-maint-start-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].startDate;
+                this.state.maintResults[idx].endDate   = document.getElementById(`ov-maint-end-${empId}-${slotOrder}`)?.value   || this.state.maintResults[idx].endDate;
+                this.state.maintResults[idx].days      = parseInt(document.getElementById(`ov-maint-days-${empId}-${slotOrder}`)?.value) || this.state.maintResults[idx].days;
+                this.state.maintResults[idx].type      = document.getElementById(`ov-maint-type-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].type;
+                this.saveState();
+                const msg = document.getElementById('maintOverrideMsg');
+                if (msg) { msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ Slot ${slotOrder} for ${(this.state.maintenanceStaffUsers || []).find(e=>e.id===empId)?.name||empId} updated locally. Click "Save All" to push to database.</div>`; }
+            },
+
+            async saveAllMaintOverrides() {
+                this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'maintenance', total_results: this.state.maintResults.length });
+                try {
+                    if (this.supabase) {
+                        const { error } = await this.supabase.from('system_config_82').update({ maint_results: this.state.maintResults }).eq('id', 1);
+                        if (error) throw error;
+                    }
+                    const msg = document.getElementById('maintOverrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ All maintenance overrides saved to database successfully!</div>`;
+                } catch(err) {
+                    console.error(err);
+                    const msg = document.getElementById('maintOverrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">❌ Database save failed. Changes saved locally only.</div>`;
+                }
+            },
+
             // ==================== MANAGE USERS ====================
             renderManageUsersView() {
                 const content = document.getElementById('contentArea');
@@ -10889,9 +11016,13 @@
                 } else if (role === 'goldencommand') {
                     const u = (this.state.goldenCommandUsers || []).find(u => u.id === id);
                     if (u) u.password = newPwd;
+                    try { if (this.supabase) await this.supabase.from('golden_command_users').update({ password: newPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
                 } else if (role === 'corporatestaff') {
                     const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
                     if (u) u.password = newPwd;
+                    try { if (this.supabase) await this.supabase.from('corporate_staff_employees').update({ password: newPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
                 }
 
                 this.saveState();
