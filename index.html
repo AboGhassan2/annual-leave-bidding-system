@@ -826,8 +826,43 @@
             overflow-y: auto;
         }
         @media (max-width: 1000px) {
-            .app-shell-body { flex-direction: column; }
-            .app-sidebar { width: 100%; position: static; max-height: none; }
+            .app-sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 78vw;
+                max-width: 300px;
+                height: 100vh;
+                max-height: 100vh;
+                border-radius: 0;
+                box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+                transform: translateX(-105%);
+                transition: transform 0.25s ease;
+                z-index: 300;
+            }
+            .app-sidebar.mobile-open { transform: translateX(0); }
+        }
+        .app-sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(8,28,21,0.45);
+            z-index: 250;
+        }
+        .app-sidebar-backdrop.show { display: block; }
+        .app-mobile-toggle {
+            display: none;
+            width: 34px; height: 34px;
+            border-radius: 9px;
+            align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.18);
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+        @media (max-width: 1000px) {
+            .app-mobile-toggle { display: flex; }
         }
         .app-sidebar-item {
             display: flex;
@@ -867,6 +902,30 @@
             padding: 14px 12px 4px;
         }
         .app-sidebar-divider { height: 1px; background: var(--app-border); margin: 8px 4px; }
+
+        /* Collapsible sidebar groups */
+        .sb-group { margin: 2px 0; }
+        .sb-group summary::-webkit-details-marker { display: none; }
+        .sb-group-summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            cursor: pointer;
+            border-radius: 9px;
+            transition: background 0.15s ease;
+        }
+        .sb-group-summary:hover { background: var(--app-green-50); color: var(--metro-green-dark); }
+        .sb-caret { display: inline-block; font-size: 0.65rem; transition: transform 0.15s ease; color: var(--metro-green); }
+        .sb-group[open] > .sb-group-summary .sb-caret { transform: rotate(90deg); }
+        .sb-group-items { display: flex; flex-direction: column; gap: 2px; padding-left: 4px; margin: 2px 0 4px; }
         .app-sidebar-deadline {
             margin-top: 12px;
             padding: 12px 13px;
@@ -996,6 +1055,7 @@
         <!-- Post-login header (hidden on login screen) -->
         <div id="userInfo" class="hidden app-topbar">
             <div style="display:flex;align-items:center;gap:12px;">
+                <button class="app-mobile-toggle" id="mobileNavToggle" onclick="app.toggleMobileSidebar()" title="Menu" aria-label="Open menu">☰</button>
                 <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:700;color:#fff;letter-spacing:0.06em;">
                     FL<span style="color:#74c69d;">O</span>W
                 </div>
@@ -1008,6 +1068,9 @@
                     <span id="currentUserName" style="font-weight:600;color:#fff;font-size:0.85rem;"></span>
                     <span id="userTypeBadge" class="ml-2 px-2 py-1 text-xs rounded"></span>
                 </div>
+                <button onclick="app.publishToSupabase()" id="headerSaveBtn" class="hidden" style="padding:7px 16px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.25);border-radius:8px;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer;white-space:nowrap;">
+                    💾 Save to Database
+                </button>
                 <button onclick="app.handleLogout()" class="app-topbar-logout">
                     Logout
                 </button>
@@ -1289,23 +1352,48 @@
 
         <div class="app-shell-body">
 
+        <!-- Mobile sidebar backdrop -->
+        <div id="sidebarBackdrop" class="app-sidebar-backdrop" onclick="app.toggleMobileSidebar(false)"></div>
+
         <!-- Planner Sidebar -->
         <aside id="plannerSidebar" class="hidden app-sidebar">
             <button onclick="app.setActiveView('dashboard')" class="app-sidebar-item" data-snav="dashboard"><span class="sb-icon">📊</span>Dashboard</button>
-            <button onclick="app.setActiveView('upload')" class="app-sidebar-item" data-snav="upload"><span class="sb-icon">📤</span>Upload Data</button>
-            <button onclick="app.setActiveView('configureSlots')" class="app-sidebar-item" data-snav="configureSlots"><span class="sb-icon">⚙️</span>Configure Slots</button>
-            <button onclick="app.setActiveView('configureMaintSlots')" class="app-sidebar-item" data-snav="configureMaintSlots"><span class="sb-icon">🔧</span>Configure Staff Slots</button>
-            <button onclick="app.setActiveView('seniorityReport')" class="app-sidebar-item" data-snav="seniorityReport"><span class="sb-icon">📋</span>Seniority Report</button>
-            <button onclick="app.setActiveView('results')" class="app-sidebar-item" data-snav="results"><span class="sb-icon">📋</span>View Results</button>
-            <button onclick="app.setActiveView('leaveDashboard')" class="app-sidebar-item" data-snav="leaveDashboard"><span class="sb-icon">📅</span>GC &amp; CS Leave Tracker</button>
-            <button onclick="app.setActiveView('hrCorpDashboard')" class="app-sidebar-item" data-snav="hrCorpDashboard"><span class="sb-icon">🏢</span>HR Corporate Dashboard</button>
-            <button onclick="app.setActiveView('auditLog')" class="app-sidebar-item" data-snav="auditLog"><span class="sb-icon">🔍</span>Audit Log</button>
+            <button onclick="app.setActiveView('manageOnCall')" class="app-sidebar-item" data-snav="manageOnCall"><span class="sb-icon">📅</span>On-Call Roster</button>
 
-            <div class="app-sidebar-section-label">System</div>
-            <button onclick="app.setActiveView('admin')" class="app-sidebar-item sb-gold" data-snav="admin"><span class="sb-icon">🛠️</span>Admin Panel</button>
-            <button onclick="app.setActiveView('manageUsers')" class="app-sidebar-item sb-gold" data-snav="manageUsers"><span class="sb-icon">👥</span>Manage Users</button>
-            <button onclick="app.setActiveView('manageOnCall')" class="app-sidebar-item sb-gold" data-snav="manageOnCall"><span class="sb-icon">📅</span>On-Call Roster</button>
-            <button onclick="app.setActiveView('changePlannerPassword')" class="app-sidebar-item" data-snav="changePlannerPassword"><span class="sb-icon">🔐</span>Change Password</button>
+            <details class="sb-group" data-sbgroup="reports" open>
+                <summary class="sb-group-summary"><span class="sb-caret">▸</span>Reports</summary>
+                <div class="sb-group-items">
+                    <button onclick="app.setActiveView('leaveDashboard')" class="app-sidebar-item" data-snav="leaveDashboard"><span class="sb-icon">📅</span>GC &amp; CS Leave Tracker</button>
+                    <button onclick="app.setActiveView('hrCorpDashboard')" class="app-sidebar-item" data-snav="hrCorpDashboard"><span class="sb-icon">🏢</span>HR Corporate Dashboard</button>
+                    <button onclick="app.setActiveView('auditLog')" class="app-sidebar-item" data-snav="auditLog"><span class="sb-icon">🔍</span>Audit Log</button>
+                </div>
+            </details>
+
+            <details class="sb-group" data-sbgroup="bidding" open>
+                <summary class="sb-group-summary"><span class="sb-caret">▸</span>Bidding &amp; Results</summary>
+                <div class="sb-group-items">
+                    <button onclick="app.setActiveView('results')" class="app-sidebar-item" data-snav="results"><span class="sb-icon">📋</span>View Results</button>
+                    <button onclick="app.setActiveView('seniorityReport')" class="app-sidebar-item" data-snav="seniorityReport"><span class="sb-icon">📋</span>Seniority Report</button>
+                </div>
+            </details>
+
+            <details class="sb-group" data-sbgroup="configuration" open>
+                <summary class="sb-group-summary"><span class="sb-caret">▸</span>Configuration</summary>
+                <div class="sb-group-items">
+                    <button onclick="app.setActiveView('upload')" class="app-sidebar-item" data-snav="upload"><span class="sb-icon">📤</span>Upload Data</button>
+                    <button onclick="app.setActiveView('configureSlots')" class="app-sidebar-item" data-snav="configureSlots"><span class="sb-icon">⚙️</span>Configure Slots</button>
+                    <button onclick="app.setActiveView('configureMaintSlots')" class="app-sidebar-item" data-snav="configureMaintSlots"><span class="sb-icon">🔧</span>Configure Staff Slots</button>
+                </div>
+            </details>
+
+            <details class="sb-group" data-sbgroup="administration" open>
+                <summary class="sb-group-summary"><span class="sb-caret">▸</span>Administration</summary>
+                <div class="sb-group-items">
+                    <button onclick="app.setActiveView('admin')" class="app-sidebar-item sb-gold" data-snav="admin"><span class="sb-icon">🛠️</span>Admin Panel</button>
+                    <button onclick="app.setActiveView('manageUsers')" class="app-sidebar-item sb-gold" data-snav="manageUsers"><span class="sb-icon">👥</span>Manage Users</button>
+                    <button onclick="app.setActiveView('changePlannerPassword')" class="app-sidebar-item" data-snav="changePlannerPassword"><span class="sb-icon">🔐</span>Change Password</button>
+                </div>
+            </details>
 
             <div class="app-sidebar-deadline" id="sidebarDeadlineBox">
                 <div class="app-sidebar-deadline-label">⏰ Bidding Deadline</div>
@@ -1315,30 +1403,8 @@
 
         <div class="app-main-col">
 
-        <!-- Planner Navigation -->
-        <div id="plannerNav" class="hidden flex" style="flex-direction:column;gap:8px;margin-bottom:24px;">
-            <div class="metro-tab-bar" style="margin-bottom:0;">
-                <button onclick="app.setActiveView('dashboard')" class="metro-tab" data-nav="dashboard">📊 Dashboard</button>
-                <button onclick="app.setActiveView('upload')" class="metro-tab" data-nav="upload">📤 Upload Data</button>
-                <button onclick="app.setActiveView('configureSlots')" class="metro-tab" data-nav="configureSlots">⚙️ Configure Slots</button>
-                <button onclick="app.setActiveView('configureMaintSlots')" class="metro-tab" data-nav="configureMaintSlots">🔧 Configure Maint Slots</button>
-                <button onclick="app.setActiveView('seniorityReport')" class="metro-tab" data-nav="seniorityReport">📋 Seniority Report</button>
-                <div class="metro-tab-divider"></div>
-                <button onclick="app.setActiveView('results')" class="metro-tab" data-nav="results">📋 View Results</button>
-                <button onclick="app.setActiveView('leaveDashboard')" class="metro-tab" data-nav="leaveDashboard">📅 GC &amp; CS Leave Tracker</button>
-                <button onclick="app.setActiveView('hrCorpDashboard')" class="metro-tab" data-nav="hrCorpDashboard">🏢 HR Corporate Dashboard</button>
-                <button onclick="app.setActiveView('auditLog')" class="metro-tab" data-nav="auditLog">🔍 Audit Log</button>
-                <div class="metro-tab-divider"></div>
-                <button onclick="app.publishToSupabase()" class="metro-tab metro-tab-primary">💾 Save to Database</button>
-            </div>
-            <div class="metro-tab-bar" style="margin-bottom:0;">
-                <button onclick="app.setActiveView('admin')" class="metro-tab metro-tab-gold" data-nav="admin">🛠️ Admin Panel</button>
-                <button onclick="app.setActiveView('manageUsers')" class="metro-tab metro-tab-gold" data-nav="manageUsers">👥 Manage Users</button>
-                <button onclick="app.setActiveView('manageOnCall')" class="metro-tab metro-tab-gold" data-nav="manageOnCall">📅 On-Call Roster</button>
-                <div class="metro-tab-divider"></div>
-                <button onclick="app.setActiveView('changePlannerPassword')" class="metro-tab" data-nav="changePlannerPassword">🔐 Change Password</button>
-            </div>
-        </div>
+        <!-- Planner Navigation (kept empty for legacy show/hide compatibility — sidebar now carries all planner nav) -->
+        <div id="plannerNav" class="hidden"></div>
 
         <!-- Employee Navigation -->
         <div id="employeeNav" class="hidden flex justify-center mb-6">
@@ -2232,6 +2298,7 @@
                         uip.style.display = 'flex'; uip.classList.remove('hidden');
                         document.getElementById('plannerNav').classList.remove('hidden');
                         document.getElementById('plannerSidebar').classList.remove('hidden');
+                        document.getElementById('headerSaveBtn').classList.remove('hidden');
                         document.getElementById('currentUserName').textContent = 'Planner Admin';
                         document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
@@ -2442,6 +2509,7 @@
                 
                 document.getElementById('userInfo').style.display = 'none';
                 document.getElementById('plannerSidebar').classList.add('hidden');
+                document.getElementById('headerSaveBtn').classList.add('hidden');
                 document.getElementById('plannerNav').classList.add('hidden');
                 document.getElementById('employeeNav').classList.add('hidden');
                 document.getElementById('goldenCommandNav').classList.add('hidden');
@@ -2522,6 +2590,16 @@
                 }
             },
 
+            // Mobile slide-out sidebar control
+            toggleMobileSidebar(force) {
+                const sb = document.getElementById('plannerSidebar');
+                const bd = document.getElementById('sidebarBackdrop');
+                if (!sb || !bd) return;
+                const open = typeof force === 'boolean' ? force : !sb.classList.contains('mobile-open');
+                sb.classList.toggle('mobile-open', open);
+                bd.classList.toggle('show', open);
+            },
+
             // Highlights the active item in both the top tab bar and the planner sidebar
             _syncNavHighlight(view) {
                 document.querySelectorAll('[data-nav]').forEach(el => {
@@ -2530,6 +2608,12 @@
                 document.querySelectorAll('[data-snav]').forEach(el => {
                     el.classList.toggle('sb-active', el.dataset.snav === view);
                 });
+                // Auto-expand whichever sidebar group contains the active view
+                const activeItem = document.querySelector(`.app-sidebar [data-snav="${view}"]`);
+                const group = activeItem ? activeItem.closest('.sb-group') : null;
+                if (group) group.open = true;
+                // On mobile, close the slide-out sidebar after navigating
+                if (window.innerWidth <= 1000) this.toggleMobileSidebar(false);
             },
 
             // Keeps the header notification bell and sidebar deadline card in sync,
@@ -7664,6 +7748,8 @@
                     await this.saveConfigToSupabase(); // push reset state to Supabase
                     // Reset UI
                     document.getElementById('userInfo').classList.add('hidden');
+                    document.getElementById('plannerSidebar').classList.add('hidden');
+                    document.getElementById('headerSaveBtn').classList.add('hidden');
                     document.getElementById('plannerNav').classList.add('hidden');
                     document.getElementById('employeeNav').classList.add('hidden');
                     document.getElementById('loginView').classList.remove('hidden');
