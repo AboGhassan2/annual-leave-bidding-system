@@ -739,6 +739,7 @@
         }
         body.logged-in .login-bg,
         body.logged-in .orb { display: none; }
+        body.logged-in #app { max-width: 1680px; }
 
         /* ══════════════ Shared post-login component system ══════════════ */
 
@@ -801,6 +802,111 @@
             background: var(--app-border);
             margin: 4px 4px;
         }
+
+        /* ══════════════ Sidebar shell (Planner) ══════════════ */
+        .app-shell-body {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        .app-sidebar {
+            width: 232px;
+            flex-shrink: 0;
+            background: var(--app-card);
+            border: 1px solid var(--app-border);
+            border-radius: 14px;
+            padding: 14px;
+            position: sticky;
+            top: 88px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            box-shadow: 0 1px 6px rgba(20,37,28,0.05);
+            max-height: calc(100vh - 108px);
+            overflow-y: auto;
+        }
+        @media (max-width: 1000px) {
+            .app-shell-body { flex-direction: column; }
+            .app-sidebar { width: 100%; position: static; max-height: none; }
+        }
+        .app-sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 9px;
+            font-size: 0.83rem;
+            font-weight: 600;
+            color: var(--app-text-muted);
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            width: 100%;
+            text-align: left;
+            font-family: 'Barlow', sans-serif;
+            transition: all 0.15s ease;
+        }
+        .app-sidebar-item .sb-icon { font-size: 0.95rem; width: 18px; text-align: center; flex-shrink: 0; }
+        .app-sidebar-item:hover { background: var(--app-green-50); color: var(--metro-green-dark); }
+        .app-sidebar-item.sb-active {
+            background: var(--metro-green);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(45,106,79,0.22);
+        }
+        .app-sidebar-item.sb-gold.sb-active {
+            background: linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);
+            color: #fff;
+        }
+        .app-sidebar-section-label {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            padding: 14px 12px 4px;
+        }
+        .app-sidebar-divider { height: 1px; background: var(--app-border); margin: 8px 4px; }
+        .app-sidebar-deadline {
+            margin-top: 12px;
+            padding: 12px 13px;
+            border-radius: 12px;
+            background: var(--app-green-50);
+            border: 1px solid var(--app-border);
+        }
+        .app-sidebar-deadline-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+            color: var(--metro-green-dark); margin-bottom: 6px;
+        }
+        .app-main-col { flex: 1; min-width: 0; }
+
+        /* ══════════════ Redesigned post-login top bar ══════════════ */
+        .app-topbar {
+            background: linear-gradient(90deg, var(--metro-green-dark) 0%, var(--metro-green) 100%);
+            border-radius: 14px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            position: sticky;
+            top: 12px;
+            z-index: 100;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 16px rgba(20,37,28,0.18);
+        }
+        /* Robust hidden-state override — guarantees .hidden wins regardless of stylesheet order,
+           since these components otherwise hardcode their own display value. */
+        .app-topbar.hidden, .app-sidebar.hidden { display: none !important; }
+        .app-topbar-right { display: flex; align-items: center; gap: 10px; }
+        .app-topbar-logout {
+            padding: 7px 16px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
+            border-radius: 8px; color: #fca5a5; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .app-topbar-logout:hover { background: rgba(239,68,68,0.25); }
 
         /* Generic light-mode card, echoes the login page's glass card but opaque for readability */
         .metro-card {
@@ -888,7 +994,7 @@
     <div id="app" class="max-w-7xl mx-auto relative" style="z-index:1">
 
         <!-- Post-login header (hidden on login screen) -->
-        <div id="userInfo" class="hidden metro-header-bar rounded-xl mb-6">
+        <div id="userInfo" class="hidden app-topbar">
             <div style="display:flex;align-items:center;gap:12px;">
                 <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:700;color:#fff;letter-spacing:0.06em;">
                     FL<span style="color:#74c69d;">O</span>W
@@ -896,13 +1002,13 @@
                 <div style="width:1px;height:22px;background:rgba(255,255,255,0.15)"></div>
                 <div style="font-size:0.72rem;font-weight:600;color:rgba(255,255,255,0.45);letter-spacing:0.12em;text-transform:uppercase;">Annual Leave System</div>
             </div>
-            <div style="display:flex;align-items:center;gap:12px;">
+            <div class="app-topbar-right">
                 <div style="background:rgba(82,183,136,0.1);border:1px solid rgba(82,183,136,0.2);border-radius:8px;padding:5px 14px;">
                     <span style="font-size:0.75rem;color:rgba(255,255,255,0.5);">Logged in as </span>
                     <span id="currentUserName" style="font-weight:600;color:#fff;font-size:0.85rem;"></span>
                     <span id="userTypeBadge" class="ml-2 px-2 py-1 text-xs rounded"></span>
                 </div>
-                <button onclick="app.handleLogout()" style="padding:7px 16px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.8rem;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.25)'" onmouseout="this.style.background='rgba(239,68,68,0.15)'">
+                <button onclick="app.handleLogout()" class="app-topbar-logout">
                     Logout
                 </button>
             </div>
@@ -1181,6 +1287,34 @@
 
         </div>
 
+        <div class="app-shell-body">
+
+        <!-- Planner Sidebar -->
+        <aside id="plannerSidebar" class="hidden app-sidebar">
+            <button onclick="app.setActiveView('dashboard')" class="app-sidebar-item" data-snav="dashboard"><span class="sb-icon">📊</span>Dashboard</button>
+            <button onclick="app.setActiveView('upload')" class="app-sidebar-item" data-snav="upload"><span class="sb-icon">📤</span>Upload Data</button>
+            <button onclick="app.setActiveView('configureSlots')" class="app-sidebar-item" data-snav="configureSlots"><span class="sb-icon">⚙️</span>Configure Slots</button>
+            <button onclick="app.setActiveView('configureMaintSlots')" class="app-sidebar-item" data-snav="configureMaintSlots"><span class="sb-icon">🔧</span>Configure Staff Slots</button>
+            <button onclick="app.setActiveView('seniorityReport')" class="app-sidebar-item" data-snav="seniorityReport"><span class="sb-icon">📋</span>Seniority Report</button>
+            <button onclick="app.setActiveView('results')" class="app-sidebar-item" data-snav="results"><span class="sb-icon">📋</span>View Results</button>
+            <button onclick="app.setActiveView('leaveDashboard')" class="app-sidebar-item" data-snav="leaveDashboard"><span class="sb-icon">📅</span>GC &amp; CS Leave Tracker</button>
+            <button onclick="app.setActiveView('hrCorpDashboard')" class="app-sidebar-item" data-snav="hrCorpDashboard"><span class="sb-icon">🏢</span>HR Corporate Dashboard</button>
+            <button onclick="app.setActiveView('auditLog')" class="app-sidebar-item" data-snav="auditLog"><span class="sb-icon">🔍</span>Audit Log</button>
+
+            <div class="app-sidebar-section-label">System</div>
+            <button onclick="app.setActiveView('admin')" class="app-sidebar-item sb-gold" data-snav="admin"><span class="sb-icon">🛠️</span>Admin Panel</button>
+            <button onclick="app.setActiveView('manageUsers')" class="app-sidebar-item sb-gold" data-snav="manageUsers"><span class="sb-icon">👥</span>Manage Users</button>
+            <button onclick="app.setActiveView('manageOnCall')" class="app-sidebar-item sb-gold" data-snav="manageOnCall"><span class="sb-icon">📅</span>On-Call Roster</button>
+            <button onclick="app.setActiveView('changePlannerPassword')" class="app-sidebar-item" data-snav="changePlannerPassword"><span class="sb-icon">🔐</span>Change Password</button>
+
+            <div class="app-sidebar-deadline" id="sidebarDeadlineBox">
+                <div class="app-sidebar-deadline-label">⏰ Bidding Deadline</div>
+                <p style="margin:0;font-size:0.78rem;color:#9ca3af;">No deadline set</p>
+            </div>
+        </aside>
+
+        <div class="app-main-col">
+
         <!-- Planner Navigation -->
         <div id="plannerNav" class="hidden flex" style="flex-direction:column;gap:8px;margin-bottom:24px;">
             <div class="metro-tab-bar" style="margin-bottom:0;">
@@ -1200,7 +1334,7 @@
             <div class="metro-tab-bar" style="margin-bottom:0;">
                 <button onclick="app.setActiveView('admin')" class="metro-tab metro-tab-gold" data-nav="admin">🛠️ Admin Panel</button>
                 <button onclick="app.setActiveView('manageUsers')" class="metro-tab metro-tab-gold" data-nav="manageUsers">👥 Manage Users</button>
-                <button onclick="app.setActiveView('manageOnCall')" class="metro-tab metro-tab-gold" data-nav="manageOnCall">📅 On-Call Manager</button>
+                <button onclick="app.setActiveView('manageOnCall')" class="metro-tab metro-tab-gold" data-nav="manageOnCall">📅 On-Call Roster</button>
                 <div class="metro-tab-divider"></div>
                 <button onclick="app.setActiveView('changePlannerPassword')" class="metro-tab" data-nav="changePlannerPassword">🔐 Change Password</button>
             </div>
@@ -1244,6 +1378,9 @@
 
         <!-- Main Content Area -->
         <div id="contentArea"></div>
+
+        </div><!-- /.app-main-col -->
+        </div><!-- /.app-shell-body -->
     </div>
 
     <!-- Scripts - Load at the end -->
@@ -2094,6 +2231,7 @@
                         const uip = document.getElementById('userInfo');
                         uip.style.display = 'flex'; uip.classList.remove('hidden');
                         document.getElementById('plannerNav').classList.remove('hidden');
+                        document.getElementById('plannerSidebar').classList.remove('hidden');
                         document.getElementById('currentUserName').textContent = 'Planner Admin';
                         document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
@@ -2303,6 +2441,7 @@
                 this.state.activeView = 'login';
                 
                 document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('plannerSidebar').classList.add('hidden');
                 document.getElementById('plannerNav').classList.add('hidden');
                 document.getElementById('employeeNav').classList.add('hidden');
                 document.getElementById('goldenCommandNav').classList.add('hidden');
@@ -2374,6 +2513,7 @@
                 // Stop Leave Dashboard realtime when navigating away
                 if (view !== 'leaveDashboard') this.stopLcRealtime();
                 this.state.activeView = view;
+                this._syncNavHighlight(view);
                 // Auto-refresh bids from Supabase when planner opens Admin Panel
                 if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
                     this.refreshBidsFromSupabase(false).then(() => this._startAdminLive());
@@ -2382,11 +2522,46 @@
                 }
             },
 
+            // Highlights the active item in both the top tab bar and the planner sidebar
+            _syncNavHighlight(view) {
+                document.querySelectorAll('[data-nav]').forEach(el => {
+                    el.classList.toggle('metro-tab-active', el.dataset.nav === view);
+                });
+                document.querySelectorAll('[data-snav]').forEach(el => {
+                    el.classList.toggle('sb-active', el.dataset.snav === view);
+                });
+            },
+
+            // Keeps the header notification bell and sidebar deadline card in sync,
+            // regardless of which view is currently open. Safe to call for any role.
+            _updateGlobalChrome() {
+                if (this.state.userType !== 'planner') return;
+                const box = document.getElementById('sidebarDeadlineBox');
+                if (box) {
+                    let inner = '<p style="margin:0;font-size:0.78rem;color:#9ca3af;">No deadline set</p>';
+                    if (this.state.biddingDeadline) {
+                        const dl = new Date(this.state.biddingDeadline);
+                        const diff = dl - new Date();
+                        if (diff <= 0) {
+                            inner = '<p style="margin:0;color:#ef4444;font-weight:700;font-size:0.95rem;">⛔ Deadline Passed</p>';
+                        } else {
+                            const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
+                            const color = diff < 86400000 ? '#ef4444' : diff < 259200000 ? '#f59e0b' : '#10b981';
+                            inner = `<p style="margin:0;font-size:1.1rem;font-weight:700;color:${color};">${d}d ${h}h ${m}m</p>
+                                <p style="font-size:0.7rem;color:#9ca3af;margin:3px 0 0;">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p>`;
+                        }
+                    }
+                    box.innerHTML = `<div class="app-sidebar-deadline-label">⏰ Bidding Deadline</div>${inner}`;
+                }
+            },
+
             renderView() {
                 const content = document.getElementById('contentArea');
                 if (!content) return;
                 
                 content.innerHTML = '';
+                this._updateGlobalChrome();
+                this._syncNavHighlight(this.state.activeView);
 
                 // Show/hide results ready badge
                 const userId = this.state.verifiedEmployee?.id;
