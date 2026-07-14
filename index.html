@@ -808,6 +808,7 @@
             display: flex;
             align-items: flex-start;
             gap: 20px;
+            padding-top: calc(var(--topbar-h, 0px) + 20px);
         }
         .app-sidebar {
             width: 232px;
@@ -817,12 +818,12 @@
             border-radius: 14px;
             padding: 14px;
             position: sticky;
-            top: 88px;
+            top: calc(var(--topbar-h, 0px) + 16px);
             display: flex;
             flex-direction: column;
             gap: 2px;
             box-shadow: 0 1px 6px rgba(20,37,28,0.05);
-            max-height: calc(100vh - 108px);
+            max-height: calc(100vh - var(--topbar-h, 0px) - 36px);
             overflow-y: auto;
         }
         @media (max-width: 1000px) {
@@ -838,7 +839,7 @@
                 box-shadow: 4px 0 24px rgba(0,0,0,0.25);
                 transform: translateX(-105%);
                 transition: transform 0.25s ease;
-                z-index: 300;
+                z-index: 1100;
             }
             .app-sidebar.mobile-open { transform: translateX(0); }
         }
@@ -847,7 +848,7 @@
             position: fixed;
             inset: 0;
             background: rgba(8,28,21,0.45);
-            z-index: 250;
+            z-index: 1050;
         }
         .app-sidebar-backdrop.show { display: block; }
         .app-mobile-toggle {
@@ -943,17 +944,20 @@
         /* ══════════════ Redesigned post-login top bar ══════════════ */
         .app-topbar {
             background: linear-gradient(90deg, var(--metro-green-dark) 0%, var(--metro-green) 100%);
-            border-radius: 14px;
             padding: 12px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
             flex-wrap: wrap;
-            position: sticky;
-            top: 12px;
-            z-index: 100;
-            margin-bottom: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            margin: 0;
+            border-radius: 0;
+            z-index: 1000;
             box-shadow: 0 4px 16px rgba(20,37,28,0.18);
         }
         /* Robust hidden-state override — guarantees .hidden wins regardless of stylesheet order,
@@ -2296,6 +2300,7 @@
                         document.getElementById('loginView').style.display = 'none';
                         const uip = document.getElementById('userInfo');
                         uip.style.display = 'flex'; uip.classList.remove('hidden');
+                        requestAnimationFrame(() => this._syncHeaderOffset());
                         document.getElementById('plannerNav').classList.remove('hidden');
                         document.getElementById('plannerSidebar').classList.remove('hidden');
                         document.getElementById('headerSaveBtn').classList.remove('hidden');
@@ -2574,6 +2579,16 @@
                 this.renderLoginForm();
             },
 
+            // Keeps --topbar-h in sync with the real header height so the fixed
+            // header never leaves a gap or overlaps the content below it.
+            _syncHeaderOffset() {
+                const topbar = document.getElementById('userInfo');
+                if (!topbar) return;
+                const isHidden = topbar.classList.contains('hidden') || getComputedStyle(topbar).display === 'none';
+                const h = isHidden ? 0 : topbar.offsetHeight;
+                document.documentElement.style.setProperty('--topbar-h', h + 'px');
+            },
+
             setActiveView(view) {
                 console.log('Setting view to:', view);
                 // Stop any existing admin polling when navigating away
@@ -2582,6 +2597,9 @@
                 if (view !== 'leaveDashboard') this.stopLcRealtime();
                 this.state.activeView = view;
                 this._syncNavHighlight(view);
+                // Reset scroll to top so the new view's content isn't hidden above
+                // the sticky header (which otherwise stays anchored mid-scroll).
+                window.scrollTo(0, 0);
                 // Auto-refresh bids from Supabase when planner opens Admin Panel
                 if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
                     this.refreshBidsFromSupabase(false).then(() => this._startAdminLive());
@@ -2646,6 +2664,10 @@
                 content.innerHTML = '';
                 this._updateGlobalChrome();
                 this._syncNavHighlight(this.state.activeView);
+                // Always land at the top of the page for the freshly rendered view —
+                // covers navigation, login, logout, and any other direct renderView() call.
+                window.scrollTo(0, 0);
+                requestAnimationFrame(() => this._syncHeaderOffset());
 
                 // Show/hide results ready badge
                 const userId = this.state.verifiedEmployee?.id;
@@ -7748,6 +7770,7 @@
                     await this.saveConfigToSupabase(); // push reset state to Supabase
                     // Reset UI
                     document.getElementById('userInfo').classList.add('hidden');
+                    this._syncHeaderOffset();
                     document.getElementById('plannerSidebar').classList.add('hidden');
                     document.getElementById('headerSaveBtn').classList.add('hidden');
                     document.getElementById('plannerNav').classList.add('hidden');
@@ -13219,6 +13242,11 @@
                 }
                 
                 this.renderLoginForm();
+                
+                // Keep the fixed header's height in sync with the layout,
+                // both now and whenever the window is resized.
+                this._syncHeaderOffset();
+                window.addEventListener('resize', () => this._syncHeaderOffset());
                 
                 // Update landing page stats
                 this._updateLandingStats();
