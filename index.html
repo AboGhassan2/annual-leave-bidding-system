@@ -1583,8 +1583,15 @@
                     'January', 'February', 'March', 'April', 'May', 'June',
                     'July', 'August', 'September', 'October', 'November', 'December'
                 ],
-                loginType: 'employee'
+                loginType: 'employee',
+
+                // Security: auto-logout after this many minutes of user inactivity
+                sessionTimeoutMinutes: 15
             },
+
+            // Idle/session-timeout tracking (not part of reactive state; internal bookkeeping only)
+            _lastActivityTs: Date.now(),
+            _idleCheckInterval: null,
 
             // ==================== SUPABASE FUNCTIONS ====================
             async initSupabase() {
@@ -2545,6 +2552,32 @@
                         this.showToast('Incorrect password.', 'error');
                     }
                 }
+            },
+
+            // Watches for user activity and auto-logs-out after `sessionTimeoutMinutes`
+            // of inactivity (security requirement). Safe to call once at init().
+            startIdleWatcher() {
+                const markActive = () => { this._lastActivityTs = Date.now(); };
+
+                // Any of these user interactions count as "active"
+                ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click']
+                    .forEach(evt => document.addEventListener(evt, markActive, { passive: true }));
+
+                markActive();
+
+                if (this._idleCheckInterval) clearInterval(this._idleCheckInterval);
+                // Check every 15s — frequent enough to feel responsive, cheap enough to ignore
+                this._idleCheckInterval = setInterval(() => {
+                    if (!this.state.currentUser) return; // nobody logged in, nothing to expire
+
+                    const limitMinutes = this.state.sessionTimeoutMinutes || 15;
+                    const idleMs = Date.now() - this._lastActivityTs;
+
+                    if (idleMs >= limitMinutes * 60 * 1000) {
+                        this.showToast(`You've been logged out after ${limitMinutes} minutes of inactivity.`, 'error');
+                        this.handleLogout();
+                    }
+                }, 15000);
             },
 
             async handleLogout() {
@@ -13456,7 +13489,10 @@
                 
                 // Start live clock
                 this._startClock();
-                
+
+                // Security: begin watching for inactivity so sessions auto-expire
+                this.startIdleWatcher();
+
                 console.log('App ready');
             }
         };
