@@ -7908,54 +7908,47 @@
                     };
                 };
 
-                const resolveConflicts = (candidates) => {
-                    const bySlot = {};
-                    candidates.forEach(({ user, startDate, endDate, slotLetter }) => {
-                        const pos = resolvePos(user.position || 'Unassigned');
-                        const month = months[new Date(startDate).getMonth()];
-                        const key = pos + '||' + month + '||' + slotLetter;
-                        if (!bySlot[key]) bySlot[key] = { pos, month, slotLetter, contenders: [] };
-                        bySlot[key].contenders.push({ user, startDate, endDate, slotLetter });
-                    });
-                    const won = [], lost = [];
-                    Object.values(bySlot).forEach(({ pos, month, slotLetter, contenders }) => {
-                        const cap = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
-                        if (cap <= 0) { contenders.forEach(c => lost.push(c)); return; }
-                        const ranked = [...contenders].sort((a, b) =>
-                            (posRankMap[a.user.id]?.posRank ?? 9999) - (posRankMap[b.user.id]?.posRank ?? 9999));
-                        ranked.forEach((c, i) => {
-                            if (i < cap) { won.push(c); slotAvailability[month][pos][slotLetter]--; }
-                            else lost.push(c);
-                        });
-                    });
-                    return { won, lost };
-                };
-
                 const sortedBidsById = {};
                 sortedMaintUsers.forEach(u => {
                     sortedBidsById[u.id] = [...this.state.bids.filter(b => b.employeeId === u.id)]
                         .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
                 });
 
-                const maxPrefs = Math.max(0, ...sortedMaintUsers.map(u => sortedBidsById[u.id].length));
-                for (let pi = 0; pi < maxPrefs; pi++) {
-                    const candidates = [];
-                    sortedMaintUsers.forEach(user => {
-                        const bids = sortedBidsById[user.id];
-                        if (awarded[user.id].length >= 2 || pi >= bids.length) return;
-                        const bid = bids[pi];
+                // ── PREFERENCE ALLOCATION (strict seniority order) ────────────────────────
+                // Same fix as the Ops engine: process one maintenance staff member at a time,
+                // most senior first (posRankMap, already position-grouped and sorted by
+                // seniorityDate). For each user, try their own bids in the order submitted
+                // (1st choice, 2nd choice, 3rd choice...) and award the first one that still
+                // has capacity, decrementing immediately. This guarantees a senior user's
+                // later-listed choice is never blocked by a junior user's earlier-round pick
+                // for the same slot — the old round-based approach (all 1st choices matched
+                // together, then all 2nd choices, etc.) could let that happen.
+                sortedMaintUsers.forEach(user => {
+                    const bids = sortedBidsById[user.id];
+                    const pos  = resolvePos(user.position || 'Unassigned');
+
+                    for (const bid of bids) {
+                        if (awarded[user.id].length >= 2) break; // fully allocated
+
+                        const alreadyHas = awarded[user.id].some(
+                            a => a.startDate === bid.startDate && a.endDate === bid.endDate
+                        );
+                        if (alreadyHas) continue;
+
                         const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
-                        const alreadyHas = awarded[user.id].some(a => a.startDate === bid.startDate && a.endDate === bid.endDate);
-                        if (!alreadyHas) candidates.push({ user, startDate: bid.startDate, endDate: bid.endDate, slotLetter });
-                    });
-                    if (!candidates.length) continue;
-                    const { won } = resolveConflicts(candidates);
-                    won.forEach(({ user, startDate, endDate, slotLetter }) => {
-                        const a = makeAssignment(user, startDate, endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded');
+                        const month      = months[new Date(bid.startDate).getMonth()];
+                        const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
+
+                        if (cap <= 0) continue; // no capacity left for this choice — try next preference
+
+                        const a = makeAssignment(user, bid.startDate, bid.endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded');
                         const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
-                        if (usedDays + a.days <= 30) awarded[user.id].push(a);
-                    });
-                }
+                        if (usedDays + a.days > 30) continue; // would exceed entitlement — try next preference
+
+                        slotAvailability[month][pos][slotLetter]--;
+                        awarded[user.id].push(a);
+                    }
+                });
 
                 sortedMaintUsers.forEach(user => {
                     const pos = resolvePos(user.position || 'Unassigned');
