@@ -7351,9 +7351,26 @@
                     const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
                     const slotObj  = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
                     const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
-                    const startDate = configuredDates?.start || bid.startDate;
-                    const endDate   = configuredDates?.end   || bid.endDate;
+
+                    // Honor what the employee actually bid on. Winning a slot is decided by
+                    // dept + block + slot-type + seniority (the per-employee allocation loop,
+                    // below, which processes employees senior-first) — but the
+                    // AWARDED DATES should be the dates the employee actually saw and chose at
+                    // bid time, not whatever the slot happens to be configured as by the time
+                    // bids are processed. Only fall back to the live configured dates when the
+                    // bid itself never stored its own dates (legacy bids).
+                    const startDate = bid.startDate || configuredDates?.start;
+                    const endDate   = bid.endDate   || configuredDates?.end;
                     const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+
+                    // Still flag when the slot's currently-configured dates have since moved
+                    // away from what was awarded — this doesn't change the outcome anymore
+                    // (the employee's original dates win), but it's a sign the master schedule
+                    // and this employee's honored dates are now out of sync and may need
+                    // reconciling (e.g. capacity/roster planning for the new config dates).
+                    const datesDrifted = !!(configuredDates &&
+                        (configuredDates.start !== startDate || configuredDates.end !== endDate));
+
                     return {
                         employeeId:     employee.id,
                         employeeName:   employee.name,
@@ -7370,84 +7387,25 @@
                         seniorityDate:  employee.seniorityDate,
                         yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1),
                         type:           'Bid Awarded',
-                        bidChoice:      slotNumber
+                        bidChoice:      slotNumber,
+                        datesDrifted,
+                        currentConfiguredStartDate: configuredDates?.start || null,
+                        currentConfiguredEndDate:   configuredDates?.end   || null
                     };
                 };
 
                 // Helper: resolve conflicts for a batch of (employee, bid) pairs against
                 // the live slotAvailability map.  Returns { won: [...], lost: [...] }
                 // where lost employees didn't fit within remaining capacity.
-                const resolveConflicts = (candidates) => {
-                    // Group by slot key
-                    const bySlot = {};
-                    candidates.forEach(({ employee, bid }) => {
-                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
-                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                        // Same fix as makeBidAssignment: trust the stored bid.month over
-                        // re-parsing startDate, so competing bids for the same configured
-                        // slot always land in the same bucket key regardless of timezone.
-                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
-                        const key = `${bidDept}||${month}||${slotType}`;
-                        if (!bySlot[key]) bySlot[key] = { bidDept, month, slotType, contenders: [] };
-                        bySlot[key].contenders.push({ employee, bid });
-                    });
+                // NOTE: conflict resolution is now implicit — employees are processed one at
+                // a time in strict seniority order (see the allocation loop below), and
+                // capacity is checked/decremented directly against `slotAvailability` as each
+                // employee's bids are tried. There's no separate "resolve simultaneous
+                // candidates" step because there's never more than one candidate for a given
+                // slot at the moment it's being decided.
 
-                    const won  = []; // { employee, bid }
-                    const lost = []; // { employee, bid } — didn't get this choice
-
-                    Object.values(bySlot).forEach(({ bidDept, month, slotType, contenders }) => {
-                        const cap = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
-
-                        if (cap <= 0) {
-                            // Slot has no capacity at all — everyone loses this choice
-                            contenders.forEach(c => lost.push(c));
-                            return;
-                        }
-
-                        if (cap >= contenders.length) {
-                            // Enough room for everyone — all win
-                            contenders.forEach(c => {
-                                won.push(c);
-                                slotAvailability[month][bidDept][slotType]--;
-                            });
-                            return;
-                        }
-
-                        // Conflict: more contenders than capacity.
-                        // Sort contenders by seniority rank (lowest deptRank = most senior).
-                        const ranked = [...contenders].sort((a, b) => {
-                            const rankA = deptRankMap[a.employee.id]?.deptRank ?? 9999;
-                            const rankB = deptRankMap[b.employee.id]?.deptRank ?? 9999;
-                            return rankA - rankB;
-                        });
-
-                        ranked.forEach((c, i) => {
-                            if (i < cap) {
-                                won.push(c);
-                                slotAvailability[month][bidDept][slotType]--;
-                            } else {
-                                lost.push(c); // junior — goes to next choice / auto-assign
-                            }
-                        });
-                    });
-
-                    return { won, lost };
-                };
-
-                // ── PREFERENCE CASCADE (Rounds 1…N) ──────────────────────────────────────
-                // Employees may submit many preferences (ordered by submission timestamp).
-                // We run one round per preference position (1st choice, 2nd choice, 3rd…).
-                // Each round: collect all employees still needing slots who have a bid at
-                // that preference position, resolve conflicts by seniority, apply winners.
-                // Losers fall through to the next round automatically.
-                // After all preference rounds, auto-assign fills any remaining gaps.
-
-                // Find the maximum number of preferences any employee submitted
-                const maxPrefs = Math.max(0, ...sortedEmployees.map(emp =>
-                    this.state.bids.filter(b => b.employeeId === emp.id).length
-                ));
-
-                // Cache sorted bids per employee once
+                // Cache sorted bids per employee once, in the order they were submitted
+                // (i.e. 1st choice, 2nd choice, 3rd choice...).
                 const sortedBidsById = {};
                 sortedEmployees.forEach(emp => {
                     sortedBidsById[emp.id] = [...this.state.bids.filter(b => b.employeeId === emp.id)]
@@ -7455,15 +7413,21 @@
                 });
 
                 // ── DIAGNOSTIC: detect config drift since bids were placed ───────────────
-                // Awarding is intentionally keyed by dept + month + slot TYPE only — never
-                // by the exact date range on the bid. So if a planner reconfigures a slot's
-                // dates after employees already bid on it, that's expected: those employees
-                // still correctly win/lose "Slot D, May" on its merits, and the awarded dates
-                // shown are always the current live configuration, not a snapshot from bid
-                // time. This diagnostic exists only to flag the one case that DOES change an
-                // outcome — a slot the employee bid on being removed/disabled entirely, which
-                // means that bid can no longer be honored and falls through to the next
-                // preference / auto-assign instead.
+                // Winning a slot is decided by dept + block + slot-type + seniority — never
+                // by the exact date range on the bid. The AWARDED DATES, however, are now
+                // always the employee's own original bid dates (see makeBidAssignment), so a
+                // config change after the fact no longer overrides what the employee agreed
+                // to. Two things are still surfaced here:
+                //   • 'removed'       — the slot is no longer configured at all; the bid can
+                //                       no longer be honored and falls through to the next
+                //                       preference / auto-assign instead.
+                //   • 'dates_changed' — the slot is still configured, but its dates have since
+                //                       moved away from what the employee originally bid on.
+                //                       The employee still gets their original dates — this is
+                //                       purely a heads-up that the master "Configure Slots"
+                //                       schedule and this employee's honored leave dates are
+                //                       now out of sync, in case that needs reconciling
+                //                       (e.g. rosters/capacity planned around the new dates).
                 const driftedBids = [];
                 sortedEmployees.forEach(employee => {
                     (sortedBidsById[employee.id] || []).forEach(bid => {
@@ -7472,58 +7436,82 @@
                         const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
                         const configured = slotDates[bidDept]?.[month]?.[slotType];
                         if (!configured) {
-                            driftedBids.push({ employee, bid, reason: 'no longer configured / disabled', configured: null });
+                            driftedBids.push({ employee, bid, reason: 'removed', configured: null });
+                        } else if (bid.startDate && bid.endDate &&
+                                   (bid.startDate !== configured.start || bid.endDate !== configured.end)) {
+                            driftedBids.push({ employee, bid, reason: 'dates_changed', configured });
                         }
-                        // Note: date-only differences are no longer tracked here — they're
-                        // expected behavior, not a discrepancy worth surfacing.
                     });
                 });
                 if (driftedBids.length > 0) {
-                    console.log(`ℹ️ ${driftedBids.length} bid(s) reference a slot that's since been removed/disabled — will fall through to next preference / auto-assign:`,
-                        driftedBids.map(d => ({
-                            employee: d.employee.name, id: d.employee.id,
-                            bidSlot: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`
-                        }))
-                    );
+                    const removed = driftedBids.filter(d => d.reason === 'removed');
+                    const datesChanged = driftedBids.filter(d => d.reason === 'dates_changed');
+                    if (removed.length > 0) {
+                        console.log(`ℹ️ ${removed.length} bid(s) reference a slot that's since been removed/disabled — will fall through to next preference / auto-assign:`,
+                            removed.map(d => ({
+                                employee: d.employee.name, id: d.employee.id,
+                                bidSlot: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`
+                            }))
+                        );
+                    }
+                    if (datesChanged.length > 0) {
+                        console.warn(`ℹ️ ${datesChanged.length} bid(s) will be honored using the employee's original bid dates, which no longer match the slot's current "Configure Slots" dates — schedule may need reconciling:`,
+                            datesChanged.map(d => ({
+                                employee: d.employee.name, id: d.employee.id,
+                                honoredAs: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`,
+                                currentlyConfiguredAs: `${d.configured.start}→${d.configured.end}`
+                            }))
+                        );
+                    }
                 }
 
-                for (let prefIdx = 0; prefIdx < maxPrefs; prefIdx++) {
-                    const candidates = [];
+                // ── PREFERENCE ALLOCATION (strict seniority order) ────────────────────────
+                // Employees are processed ONE AT A TIME in seniority order — this is already
+                // the order of `sortedEmployees` (each dept group sorted senior-first by
+                // seniorityDate, then dept groups processed in sequence). For each employee,
+                // their own bids are tried in the order they were submitted (1st choice, 2nd
+                // choice, 3rd choice...), and the FIRST one that still has capacity is awarded
+                // immediately, decrementing capacity right away before moving to the next
+                // employee.
+                //
+                // This replaces the old "round-based" approach, which processed all 1st
+                // choices together, then all 2nd choices together, etc. That let a JUNIOR
+                // employee's 1st choice claim a slot in round 1 before a SENIOR employee's
+                // 2nd or 3rd choice for that same slot was even considered in round 2/3 —
+                // silently violating seniority. Processing employee-by-employee (senior
+                // first) instead guarantees a senior employee's entire preference list is
+                // exhausted, in order, before any junior employee gets a shot at the same
+                // capacity.
+                sortedEmployees.forEach(employee => {
+                    const bids        = sortedBidsById[employee.id];
+                    const entitlement = getEmployeeEntitlement(employee);
 
-                    sortedEmployees.forEach(employee => {
-                        const bids          = sortedBidsById[employee.id];
-                        const alreadyCount  = awarded[employee.id].length;
-                        const assignedDays  = awarded[employee.id].reduce((s, a) => s + a.days, 0);
-                        const entitlement   = getEmployeeEntitlement(employee);
+                    for (const bid of bids) {
+                        if (awarded[employee.id].length >= 2) break; // fully allocated
 
-                        if (alreadyCount >= 2)              return; // fully allocated
-                        if (assignedDays >= entitlement)    return; // entitlement exhausted
-                        if (prefIdx >= bids.length)         return; // no bid at this position
-
-                        const bid = bids[prefIdx];
+                        const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                        if (assignedDays >= entitlement) break; // entitlement exhausted
 
                         // Skip if this exact slot was already awarded to this employee
                         const alreadyHasSlot = awarded[employee.id].some(
                             a => a.startDate === bid.startDate && a.endDate === bid.endDate
                         );
-                        if (alreadyHasSlot) return;
+                        if (alreadyHasSlot) continue;
 
-                        candidates.push({ employee, bid });
-                    });
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                        const cap      = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
 
-                    if (candidates.length === 0) continue;
+                        if (cap <= 0) continue; // no capacity left for this choice — try next preference
 
-                    const { won } = resolveConflicts(candidates);
-
-                    won.forEach(({ employee, bid }) => {
-                        const entitlement  = getEmployeeEntitlement(employee);
-                        const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
                         const a = makeBidAssignment(employee, bid, awarded[employee.id].length + 1);
-                        if (assignedDays + a.days <= entitlement) {
-                            awarded[employee.id].push(a);
-                        }
-                    });
-                }
+                        if (assignedDays + a.days > entitlement) continue; // would exceed entitlement — try next preference
+
+                        slotAvailability[month][bidDept][slotType]--;
+                        awarded[employee.id].push(a);
+                    }
+                });
 
                 // ── AUTO-ASSIGN: fill remaining gaps after all preference rounds ──────────
                 // For each employee still needing slots, scan available capacity
@@ -7595,6 +7583,7 @@
                 const totalEmployees = sortedEmployees.length;
                 const bidAwarded = slotAssignments.filter(r => r.type === 'Bid Awarded').length;
                 const autoAssigned = slotAssignments.filter(r => r.type === 'Auto-Assigned').length;
+                const datesDriftedCount = slotAssignments.filter(r => r.datesDrifted).length;
                 const seniorEmployees = sortedEmployees.filter(e => getEmployeeEntitlement(e) === 35).length;
                 const juniorEmployees = totalEmployees - seniorEmployees;
 
@@ -7608,7 +7597,7 @@
                     unconfiguredDepts,
                     driftedBids,
                     stats: {
-                        totalSlots, totalEmployees, bidAwarded, autoAssigned,
+                        totalSlots, totalEmployees, bidAwarded, autoAssigned, datesDriftedCount,
                         seniorEmployees, juniorEmployees,
                         totalDays: slotAssignments.reduce((sum, r) => sum + r.days, 0)
                     }
@@ -7649,7 +7638,10 @@
                                `• Bid Awards: ${stats.bidAwarded} slots\n` +
                                `• Auto-Assigned: ${stats.autoAssigned} slots\n` +
                                `• Each employee received exactly 2 slots\n` +
-                               `• Total leave days allocated: ${stats.totalDays}`;
+                               `• Total leave days allocated: ${stats.totalDays}` +
+                               (stats.datesDriftedCount > 0
+                                   ? `\n\nℹ️ ${stats.datesDriftedCount} slot(s) were awarded using the employee's original bid dates, which no longer match what's currently configured in "Configure Slots" for that block. The employee's original dates were honored. Check the console for the full list, and verify the master schedule/rosters are aligned for those dates.`
+                                   : '');
 
                 alert(message);
 
@@ -7702,7 +7694,8 @@
                 const stats = {
                     totalEmployees: filteredEmployeeIds.size,
                     bidAwarded: filteredAssignments.filter(r => r.type === 'Bid Awarded').length,
-                    autoAssigned: filteredAssignments.filter(r => r.type === 'Auto-Assigned').length
+                    autoAssigned: filteredAssignments.filter(r => r.type === 'Auto-Assigned').length,
+                    datesDrifted: filteredAssignments.filter(r => r.datesDrifted).length
                 };
 
                 // Keep a filtered snapshot around so the "Export to Excel" button
@@ -7718,15 +7711,26 @@
                 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
                 const summaryHtml = `
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+                    <div style="display:grid;grid-template-columns:repeat(${stats.datesDrifted > 0 ? 4 : 3},1fr);gap:10px;margin-bottom:16px;">
                         <div style="background:#f0fdf4;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#166534;">${stats.totalEmployees}</p><p style="font-size:0.7rem;color:#6b7280;">Employees</p></div>
                         <div style="background:#eff6ff;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#1e40af;">${stats.bidAwarded}</p><p style="font-size:0.7rem;color:#6b7280;">Bid Awards</p></div>
                         <div style="background:#fefce8;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#854d0e;">${stats.autoAssigned}</p><p style="font-size:0.7rem;color:#6b7280;">Auto-Assigned</p></div>
+                        ${stats.datesDrifted > 0 ? `<div style="background:#fff7ed;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#c2410c;">${stats.datesDrifted}</p><p style="font-size:0.7rem;color:#6b7280;">Schedule Drift</p></div>` : ''}
                     </div>`;
 
                 const warningHtml = unconfiguredDepts.length > 0 ? `
                     <div style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.78rem;margin-bottom:16px;">
                         ⚠️ No slot capacity configured for: ${unconfiguredDepts.map(esc).join(', ')}
+                    </div>` : '';
+
+                // Dates-changed warning: lists every employee whose winning bid will be
+                // awarded with different dates than what's stored on their original bid,
+                // because the slot's configured dates moved after they bid.
+                const driftedRows = filteredAssignments.filter(r => r.datesDrifted);
+                const driftedHtml = driftedRows.length > 0 ? `
+                    <div style="padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;font-size:0.78rem;margin-bottom:16px;">
+                        <div style="font-weight:700;margin-bottom:6px;">ℹ️ ${driftedRows.length} bid(s) are being honored using the employee's original bid dates — the master schedule for that slot has since changed:</div>
+                        ${driftedRows.map(r => `<div style="margin-top:2px;">• ${esc(r.employeeName)} (${esc(r.employeeId)}) — honored as <strong>${esc(r.startDate)}→${esc(r.endDate)}</strong> (${esc(r.slotName)}, ${esc(this.blockLabel(r.month))}), but "Configure Slots" now shows this slot as <strong>${esc(r.currentConfiguredStartDate)}→${esc(r.currentConfiguredEndDate)}</strong></div>`).join('')}
                     </div>` : '';
 
                 const groupsHtml = sortedGroupKeys.map(groupKey => {
@@ -7735,7 +7739,7 @@
                     const rows = employees.map((emp, idx) => {
                         const assigns = assignmentsByEmp[emp.id] || [];
                         const awardedHtml = assigns.length > 0
-                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span></div>`).join('')
+                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span>${a.datesDrifted ? ` <span title="Configure Slots now shows this slot as ${esc(a.currentConfiguredStartDate)}→${esc(a.currentConfiguredEndDate)} — employee's original bid dates were honored instead" style="color:#c2410c;font-weight:700;cursor:help;">ℹ️ schedule since changed</span>` : ''}</div>`).join('')
                             : '<span style="color:#dc2626;font-weight:600;">No slot awarded</span>';
                         return `<tr style="border-top:1px solid #f0f0f0;">
                             <td style="padding:6px 10px;font-weight:700;color:#6b7280;">#${idx + 1}</td>
@@ -7756,7 +7760,7 @@
                     </div>`;
                 }).join('');
 
-                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsHtml;
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + driftedHtml + groupsHtml;
                 document.getElementById('previewAllocationModal').style.display = 'flex';
             },
 
@@ -10159,6 +10163,7 @@
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-start-${empId}-${r.slotOrder}" />
+                                                        ${r.datesDrifted ? `<div class="text-xs text-orange-600 font-semibold mt-1" title="'Configure Slots' currently shows this slot as ${r.currentConfiguredStartDate||''} → ${r.currentConfiguredEndDate||''}">ℹ️ schedule since changed (config now shows ${r.currentConfiguredStartDate||'?'})</div>` : ''}
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-end-${empId}-${r.slotOrder}" />
