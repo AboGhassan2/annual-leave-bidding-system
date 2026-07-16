@@ -1723,7 +1723,7 @@
                             id: emp.id,
                             name: emp.name,
                             seniorityDate: emp.seniority_date,
-                            position: emp.position || '',
+                            position: emp.department || emp.position || '',
                             department: emp.department || 'Unassigned',
                             gender: emp.gender || '',
                             nationality: emp.nationality || '',
@@ -6474,7 +6474,16 @@
                                 >
                                     ${this.state.isProcessed ? '✅ Bids Already Processed' : '🚀 Process All Bids'}
                                 </button>
-                                
+
+                                <button
+                                    onclick="app.previewAllocation()"
+                                    ${this.state.employees.length === 0 ? 'disabled' : ''}
+                                    class="w-full px-6 py-3 rounded-lg font-semibold border-2"
+                                    style="color:var(--metro-green-dark);border-color:var(--metro-green-dark);background:#fff;"
+                                >
+                                    🔍 Preview Allocation (read-only, no data written)
+                                </button>
+
                                 ${this.state.isProcessed ? `
                                     <button onclick="app.exportResults()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-mid);">
                                         📊 Export Results to Excel
@@ -6933,18 +6942,25 @@
             // ==================== OTHER FUNCTIONS ====================
 
             // ==================== OTHER FUNCTIONS ====================
-            async processBids() {
-                if (this.state.employees.length === 0) {
-                    alert('No employees to process. Please upload data first.');
-                    return;
-                }
-                
-                if (Object.keys(this.state.slotCapacities).length === 0) {
-                    alert('Please configure slot capacities first in "Configure Slots".');
-                    this.setActiveView('configureSlots');
-                    return;
-                }
-                
+            // ────────────────────────────────────────────────────────────────────────
+            // computeBidAllocation() — the SINGLE source of truth for seniority-based
+            // slot allocation. Both processBids() (writes results) and
+            // previewAllocation() (read-only report) call this exact function, so the
+            // preview can never drift out of sync with what actually runs for real.
+            //
+            // opts.skipUnconfiguredConfirm — when true, skips the blocking confirm()
+            // dialog about departments with no configured slots (used by Preview,
+            // which is read-only and should never require a decision). The
+            // unconfigured departments are still returned in `unconfiguredDepts` so
+            // the caller can display a warning.
+            //
+            // Returns { cancelled: true } if the user cancels the confirm dialog,
+            // otherwise { cancelled: false, sortedEmployees, positionGroups,
+            // sortedGroupKeys, deptRankMap, slotAssignments, unconfiguredDepts, stats }
+            // ────────────────────────────────────────────────────────────────────────
+            computeBidAllocation(opts = {}) {
+                const { skipUnconfiguredConfirm = false } = opts;
+
                 // Calculate entitlement for each employee
                 const calculateYearsOfService = (seniorityDate) => {
                     const today = new Date();
@@ -7149,14 +7165,14 @@
                 const configuredDepts = new Set(Object.keys(slotAvailability).flatMap(month => Object.keys(slotAvailability[month] || {})));
                 const employeeDeptSet = new Set(sortedEmployees.map(e => resolveEmployeeDept(e.department || 'Unassigned')));
                 const unconfiguredDepts = [...employeeDeptSet].filter(d => !configuredDepts.has(d));
-                if (unconfiguredDepts.length > 0) {
+                if (unconfiguredDepts.length > 0 && !skipUnconfiguredConfirm) {
                     const proceed = confirm(
                         `⚠️ WARNING: The following employee departments have NO slot capacity configured:\n\n` +
                         unconfiguredDepts.map(d => `• ${d}`).join('\n') +
                         `\n\nEmployees in these departments will be auto-assigned using available slots from other configured departments.\n\n` +
                         `It is strongly recommended to Cancel and configure slots for these departments first.\n\nContinue anyway?`
                     );
-                    if (!proceed) return;
+                    if (!proceed) return { cancelled: true };
                 }
 
                 // ═══════════════════════════════════════════════════════════════════
@@ -7197,7 +7213,11 @@
                 const makeBidAssignment = (employee, bid, slotNumber) => {
                     const slotType = bid.slotType.charAt(bid.slotType.length - 1);
                     const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                    const month    = this.state.months[new Date(bid.startDate).getMonth()];
+                    // Prefer the month captured at bid-submission time (tied directly to the
+                    // configured slot the employee actually selected). Only fall back to
+                    // deriving it from startDate for legacy bids that never stored .month
+                    // (e.g. Golden Command / Corporate Staff free-date bids).
+                    const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
                     const slotObj  = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
                     const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
                     const startDate = configuredDates?.start || bid.startDate;
@@ -7232,7 +7252,10 @@
                     candidates.forEach(({ employee, bid }) => {
                         const slotType = bid.slotType.charAt(bid.slotType.length - 1);
                         const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                        const month    = this.state.months[new Date(bid.startDate).getMonth()];
+                        // Same fix as makeBidAssignment: trust the stored bid.month over
+                        // re-parsing startDate, so competing bids for the same configured
+                        // slot always land in the same bucket key regardless of timezone.
+                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
                         const key = `${bidDept}||${month}||${slotType}`;
                         if (!bySlot[key]) bySlot[key] = { bidDept, month, slotType, contenders: [] };
                         bySlot[key].contenders.push({ employee, bid });
@@ -7299,6 +7322,39 @@
                     sortedBidsById[emp.id] = [...this.state.bids.filter(b => b.employeeId === emp.id)]
                         .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
                 });
+
+                // ── DIAGNOSTIC: detect config drift since bids were placed ───────────────
+                // If a slot's admin-configured dates were changed (or capacity/enabled
+                // status flipped) AFTER an employee bid on it, the bid's stored
+                // startDate/endDate will no longer match the live config for that
+                // dept/month/slotType. That employee's bid then silently competes for
+                // (or is auto-assigned into) a different window than what they actually
+                // requested. Surface these so the planner can catch it before results
+                // go out, rather than discovering it employee-by-employee afterwards.
+                const driftedBids = [];
+                sortedEmployees.forEach(employee => {
+                    (sortedBidsById[employee.id] || []).forEach(bid => {
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                        const configured = slotDates[bidDept]?.[month]?.[slotType];
+                        if (!configured) {
+                            driftedBids.push({ employee, bid, reason: 'no longer configured / disabled', configured: null });
+                        } else if (configured.start !== bid.startDate || configured.end !== bid.endDate) {
+                            driftedBids.push({ employee, bid, reason: 'dates changed since bid was placed', configured });
+                        }
+                    });
+                });
+                if (driftedBids.length > 0) {
+                    console.warn(`⚠️ ${driftedBids.length} bid(s) no longer match their current slot configuration:`,
+                        driftedBids.map(d => ({
+                            employee: d.employee.name, id: d.employee.id,
+                            bidSlot: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`,
+                            reason: d.reason,
+                            nowConfigured: d.configured ? `${d.configured.start}→${d.configured.end}` : '(none)'
+                        }))
+                    );
+                }
 
                 for (let prefIdx = 0; prefIdx < maxPrefs; prefIdx++) {
                     const candidates = [];
@@ -7403,11 +7459,6 @@
                         });
                     });
                 });
-                // Save results
-                this.state.results = slotAssignments;
-                this.state.isProcessed = true;
-                await this.saveConfigToSupabase();
-                
                 // Calculate statistics
                 const totalSlots = slotAssignments.length;
                 const totalEmployees = sortedEmployees.length;
@@ -7415,21 +7466,211 @@
                 const autoAssigned = slotAssignments.filter(r => r.type === 'Auto-Assigned').length;
                 const seniorEmployees = sortedEmployees.filter(e => getEmployeeEntitlement(e) === 35).length;
                 const juniorEmployees = totalEmployees - seniorEmployees;
-                
-                const message = `✅ Successfully processed ${totalEmployees} employees!\n\n` +
+
+                return {
+                    cancelled: false,
+                    sortedEmployees,
+                    positionGroups,
+                    sortedGroupKeys,
+                    deptRankMap,
+                    slotAssignments,
+                    unconfiguredDepts,
+                    driftedBids,
+                    stats: {
+                        totalSlots, totalEmployees, bidAwarded, autoAssigned,
+                        seniorEmployees, juniorEmployees,
+                        totalDays: slotAssignments.reduce((sum, r) => sum + r.days, 0)
+                    }
+                };
+            },
+
+            // ────────────────────────────────────────────────────────────────────────
+            // processBids() — runs computeBidAllocation() and WRITES the result:
+            // saves to this.state.results / Supabase and marks bidding as processed.
+            // ────────────────────────────────────────────────────────────────────────
+            async processBids() {
+                if (this.state.employees.length === 0) {
+                    alert('No employees to process. Please upload data first.');
+                    return;
+                }
+
+                if (Object.keys(this.state.slotCapacities).length === 0) {
+                    alert('Please configure slot capacities first in "Configure Slots".');
+                    this.setActiveView('configureSlots');
+                    return;
+                }
+
+                const result = this.computeBidAllocation({ skipUnconfiguredConfirm: false });
+                if (!result || result.cancelled) return;
+
+                const { slotAssignments, stats } = result;
+
+                // Save results
+                this.state.results = slotAssignments;
+                this.state.isProcessed = true;
+                await this.saveConfigToSupabase();
+
+                const message = `✅ Successfully processed ${stats.totalEmployees} employees!\n\n` +
                                `• Seniority: Per-department (each dept processed independently)\n` +
-                               `• Total slots assigned: ${totalSlots} (${totalEmployees} × 2)\n` +
-                               `• Senior employees (35 days): ${seniorEmployees}\n` +
-                               `• Junior employees (30 days): ${juniorEmployees}\n` +
-                               `• Bid Awards: ${bidAwarded} slots\n` +
-                               `• Auto-Assigned: ${autoAssigned} slots\n` +
+                               `• Total slots assigned: ${stats.totalSlots} (${stats.totalEmployees} × 2)\n` +
+                               `• Senior employees (35 days): ${stats.seniorEmployees}\n` +
+                               `• Junior employees (30 days): ${stats.juniorEmployees}\n` +
+                               `• Bid Awards: ${stats.bidAwarded} slots\n` +
+                               `• Auto-Assigned: ${stats.autoAssigned} slots\n` +
                                `• Each employee received exactly 2 slots\n` +
-                               `• Total leave days allocated: ${slotAssignments.reduce((sum, r) => sum + r.days, 0)}`;
-                
+                               `• Total leave days allocated: ${stats.totalDays}`;
+
                 alert(message);
-                
+
                 this.renderAdminView();
             },
+
+            // ────────────────────────────────────────────────────────────────────────
+            // previewAllocation() — READ-ONLY dry run of the exact same allocation
+            // logic (computeBidAllocation), rendered as a report. Does NOT write to
+            // this.state.results, does NOT mark bidding as processed, does NOT save
+            // to Supabase, and does NOT send any staff notification email. Use this
+            // to regression-check seniority grouping (e.g. confirm L3-DEP-DM only
+            // competes against L3-DEP-DM) before running the real "Process Bids".
+            // ────────────────────────────────────────────────────────────────────────
+            previewAllocation() {
+                if (this.state.employees.length === 0) {
+                    alert('No employees to preview. Please upload data first.');
+                    return;
+                }
+
+                if (Object.keys(this.state.slotCapacities).length === 0) {
+                    alert('Please configure slot capacities first in "Configure Slots".');
+                    this.setActiveView('configureSlots');
+                    return;
+                }
+
+                const result = this.computeBidAllocation({ skipUnconfiguredConfirm: true });
+                this.renderPreviewAllocationReport(result);
+            },
+
+            // Builds the read-only HTML report and shows it in the preview modal.
+            renderPreviewAllocationReport(result) {
+                const { positionGroups, slotAssignments, unconfiguredDepts } = result;
+
+                // Corporate Staff bid separately via the Corporate Staff bidding flow and
+                // are not part of Ops/Maintenance seniority allocation — exclude them here.
+                const isCorporateStaffDept = (dept) => /corporate staff/i.test(dept || '');
+                const sortedGroupKeys = result.sortedGroupKeys.filter(groupKey => {
+                    const [, dept] = groupKey.split('||');
+                    return !isCorporateStaffDept(dept);
+                });
+
+                // Recompute the summary stats from the filtered groups only, so the
+                // cards above the report match what's actually displayed.
+                const filteredEmployeeIds = new Set();
+                sortedGroupKeys.forEach(groupKey => {
+                    (positionGroups[groupKey] || []).forEach(emp => filteredEmployeeIds.add(emp.id));
+                });
+                const filteredAssignments = slotAssignments.filter(a => filteredEmployeeIds.has(a.employeeId));
+                const stats = {
+                    totalEmployees: filteredEmployeeIds.size,
+                    bidAwarded: filteredAssignments.filter(r => r.type === 'Bid Awarded').length,
+                    autoAssigned: filteredAssignments.filter(r => r.type === 'Auto-Assigned').length
+                };
+
+                // Keep a filtered snapshot around so the "Export to Excel" button
+                // exports exactly what's shown (Corporate Staff excluded).
+                this._lastPreviewExport = { sortedGroupKeys, positionGroups, slotAssignments: filteredAssignments };
+
+                const assignmentsByEmp = {};
+                slotAssignments.forEach(a => {
+                    if (!assignmentsByEmp[a.employeeId]) assignmentsByEmp[a.employeeId] = [];
+                    assignmentsByEmp[a.employeeId].push(a);
+                });
+
+                const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+                const summaryHtml = `
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+                        <div style="background:#f0fdf4;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#166534;">${stats.totalEmployees}</p><p style="font-size:0.7rem;color:#6b7280;">Employees</p></div>
+                        <div style="background:#eff6ff;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#1e40af;">${stats.bidAwarded}</p><p style="font-size:0.7rem;color:#6b7280;">Bid Awards</p></div>
+                        <div style="background:#fefce8;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#854d0e;">${stats.autoAssigned}</p><p style="font-size:0.7rem;color:#6b7280;">Auto-Assigned</p></div>
+                    </div>`;
+
+                const warningHtml = unconfiguredDepts.length > 0 ? `
+                    <div style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.78rem;margin-bottom:16px;">
+                        ⚠️ No slot capacity configured for: ${unconfiguredDepts.map(esc).join(', ')}
+                    </div>` : '';
+
+                const groupsHtml = sortedGroupKeys.map(groupKey => {
+                    const [pos, dept] = groupKey.split('||');
+                    const employees = positionGroups[groupKey];
+                    const rows = employees.map((emp, idx) => {
+                        const assigns = assignmentsByEmp[emp.id] || [];
+                        const awardedHtml = assigns.length > 0
+                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(a.month)} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span></div>`).join('')
+                            : '<span style="color:#dc2626;font-weight:600;">No slot awarded</span>';
+                        return `<tr style="border-top:1px solid #f0f0f0;">
+                            <td style="padding:6px 10px;font-weight:700;color:#6b7280;">#${idx + 1}</td>
+                            <td style="padding:6px 10px;">${esc(emp.name)} <span style="color:#9ca3af;font-size:0.72rem;">(${esc(emp.id)})</span></td>
+                            <td style="padding:6px 10px;font-size:0.75rem;color:#6b7280;">${esc(emp.seniorityDate)}</td>
+                            <td style="padding:6px 10px;font-size:0.75rem;">${awardedHtml}</td>
+                        </tr>`;
+                    }).join('');
+                    return `
+                    <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+                        <div style="background:#f3f4f6;padding:8px 14px;font-weight:700;font-size:0.82rem;">${esc(pos)} — ${esc(dept)} <span style="font-weight:400;color:#6b7280;">(${employees.length} competing)</span></div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead><tr style="background:#fafafa;text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;">
+                                <th style="padding:6px 10px;">Rank</th><th style="padding:6px 10px;">Employee</th><th style="padding:6px 10px;">Seniority Date</th><th style="padding:6px 10px;">Awarded</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+                }).join('');
+
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsHtml;
+                document.getElementById('previewAllocationModal').style.display = 'flex';
+            },
+
+            // Exports the currently-shown Preview Allocation report to an Excel file.
+            // Uses the same filtered (Corporate Staff excluded) snapshot that was
+            // just rendered — nothing is recomputed and nothing is saved/written.
+            exportPreviewAllocationToExcel() {
+                const snapshot = this._lastPreviewExport;
+                if (!snapshot || !snapshot.sortedGroupKeys.length) {
+                    alert('Nothing to export yet — run Preview Allocation first.');
+                    return;
+                }
+                const { sortedGroupKeys, positionGroups, slotAssignments } = snapshot;
+
+                const assignmentsByEmp = {};
+                slotAssignments.forEach(a => {
+                    if (!assignmentsByEmp[a.employeeId]) assignmentsByEmp[a.employeeId] = [];
+                    assignmentsByEmp[a.employeeId].push(a);
+                });
+
+                const wsData = [
+                    ['Position', 'Department', 'Rank', 'Employee ID', 'Employee Name', 'Seniority Date',
+                     'Slot Name', 'Month', 'Start Date', 'End Date', 'Assignment Type']
+                ];
+
+                sortedGroupKeys.forEach(groupKey => {
+                    const [pos, dept] = groupKey.split('||');
+                    positionGroups[groupKey].forEach((emp, idx) => {
+                        const assigns = assignmentsByEmp[emp.id] || [];
+                        if (assigns.length === 0) {
+                            wsData.push([pos, dept, idx + 1, emp.id, emp.name, emp.seniorityDate, 'No slot awarded', '', '', '', '']);
+                        } else {
+                            assigns.forEach(a => {
+                                wsData.push([pos, dept, idx + 1, emp.id, emp.name, emp.seniorityDate, a.slotName, a.month, a.startDate, a.endDate, a.type]);
+                            });
+                        }
+                    });
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Preview Allocation');
+                XLSX.writeFile(wb, `Preview_Allocation_${this.state.biddingYear}.xlsx`);
+            },
+
             async processMaintBids() {
                 const maintUsers = this.state.maintenanceStaffUsers || [];
                 if (maintUsers.length === 0) {
@@ -13578,6 +13819,25 @@
                 <button onclick="app.sendResultsNotification()" style="flex:1;padding:11px;background:#2d6a4f;color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer;">📤 Send to All Staff</button>
                 <button onclick="document.getElementById('emailModal').style.display='none'" style="flex:1;padding:11px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-weight:600;cursor:pointer;">Cancel</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Preview Allocation Modal (read-only — never writes results, never notifies staff) -->
+    <div id="previewAllocationModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:16px;padding:28px;max-width:820px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;">
+                <h3 style="font-size:1.25rem;font-weight:700;">🔍 Preview Allocation</h3>
+                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                    <button onclick="app.exportPreviewAllocationToExcel()" title="Export to Excel" style="display:flex;align-items:center;gap:6px;padding:7px 12px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;">📊 Export</button>
+                    <button onclick="document.getElementById('previewAllocationModal').style.display='none'" title="Close" style="background:#f3f4f6;color:#374151;border:none;width:30px;height:30px;border-radius:8px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
+                </div>
+            </div>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:18px;">
+                Read-only dry run using the exact same allocation logic as "Process All Bids". Nothing is saved,
+                bidding is not marked as processed, and no staff notification is sent. Corporate Staff are excluded
+                (they bid separately).
+            </p>
+            <div id="previewAllocationBody"></div>
         </div>
     </div>
 
