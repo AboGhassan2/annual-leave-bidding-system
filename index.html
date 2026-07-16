@@ -7362,7 +7362,7 @@
                         totalDays: slotAssignments.reduce((sum, r) => sum + r.days, 0)
                     }
                 };
-            }
+            }  // ← This closes the computeBidAllocation function
 
             // ────────────────────────────────────────────────────────────────────────
             // processBids() — runs computeBidAllocation() and WRITES the result:
