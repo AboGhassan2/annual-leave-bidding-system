@@ -6007,9 +6007,13 @@
                         if (tabFilter === 'maint'     && !isMaint) return false;
                         // Search filter
                         if (!q) return true;
-                        const name = (bid.employeeName || this.state.employees.find(e => e.id === bid.employeeId)?.name || '').toLowerCase();
+                        const empRec = this.state.employees.find(e => e.id === bid.employeeId);
+                        const name = (bid.employeeName || empRec?.name || '').toLowerCase();
                         const id   = (bid.employeeId || '').toLowerCase();
-                        return name.includes(q) || id.includes(q);
+                        // Matches the same fallback chain used to render the Position column,
+                        // so searching finds exactly what's shown on screen.
+                        const position = (bid.position || empRec?.position || bid.department || empRec?.department || '').toLowerCase();
+                        return name.includes(q) || id.includes(q) || position.includes(q);
                     });
                 const colorMap = { 
                     slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800', slotD: 'bg-orange-100 text-orange-800',
@@ -6028,14 +6032,14 @@
                     <div class="text-center py-8 text-gray-400">
                         <p class="text-3xl mb-2">🔍</p>
                         <p class="font-semibold">No bids match "<span class="text-indigo-600">${filterQuery}</span>"</p>
-                        <p class="text-sm mt-1">Try a different name or ID.</p>
+                        <p class="text-sm mt-1">Try a different name, ID, or position.</p>
                     </div>` : '';
                 return `
                     <div class="mb-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
                         <div class="relative flex-1 max-w-sm">
                             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
                             <input type="text" id="bidSearchInput"
-                                placeholder="Search by name or ID…"
+                                placeholder="Search by name, ID, or position…"
                                 value="${filterQuery.replace(/"/g, '&quot;')}"
                                 oninput="app._filterBidsTable(this.value)"
                                 style="width:100%;padding:9px 12px 9px 32px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:0.875rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
@@ -7608,6 +7612,24 @@
             // processBids() — runs computeBidAllocation() and WRITES the result:
             // saves to this.state.results / Supabase and marks bidding as processed.
             // ────────────────────────────────────────────────────────────────────────
+            // Generic Proceed/Cancel confirmation modal (styled, matches app design) — used
+            // instead of the native browser confirm() for critical/irreversible actions where
+            // a plain OK/Cancel isn't explicit enough. Returns a Promise<boolean>.
+            showConfirmModal(message) {
+                return new Promise(resolve => {
+                    document.getElementById('appConfirmModalMessage').textContent = message;
+                    document.getElementById('appConfirmModal').style.display = 'flex';
+                    this._confirmModalResolve = resolve;
+                });
+            },
+            _resolveConfirmModal(result) {
+                document.getElementById('appConfirmModal').style.display = 'none';
+                if (this._confirmModalResolve) {
+                    this._confirmModalResolve(result);
+                    this._confirmModalResolve = null;
+                }
+            },
+
             async processBids() {
                 if (this.state.employees.length === 0) {
                     alert('No employees to process. Please upload data first.');
@@ -7619,6 +7641,9 @@
                     this.setActiveView('configureSlots');
                     return;
                 }
+
+                const confirmed = await this.showConfirmModal('Are you sure you want to process all bids?');
+                if (!confirmed) return;
 
                 const result = this.computeBidAllocation({ skipUnconfiguredConfirm: false });
                 if (!result || result.cancelled) return;
@@ -13972,6 +13997,17 @@
             <!-- Scrollable report area — only this part moves when scrolling -->
             <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 28px 28px 28px;">
                 <div id="previewAllocationBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Proceed/Cancel confirmation modal, used for critical actions like Process All Bids -->
+    <div id="appConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1100;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:16px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);padding:28px;">
+            <p id="appConfirmModalMessage" style="font-size:1rem;font-weight:600;color:#111827;margin:0 0 22px 0;line-height:1.5;"></p>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="app._resolveConfirmModal(false)" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.875rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;">Cancel</button>
+                <button onclick="app._resolveConfirmModal(true)" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.875rem;border:none;background:var(--metro-green, #166534);color:#fff;cursor:pointer;">Proceed</button>
             </div>
         </div>
     </div>
