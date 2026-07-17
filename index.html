@@ -7736,11 +7736,10 @@
                 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
                 const summaryHtml = `
-                    <div style="display:grid;grid-template-columns:repeat(${stats.datesDrifted > 0 ? 4 : 3},1fr);gap:10px;margin-bottom:16px;">
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
                         <div style="background:#f0fdf4;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#166534;">${stats.totalEmployees}</p><p style="font-size:0.7rem;color:#6b7280;">Employees</p></div>
                         <div style="background:#eff6ff;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#1e40af;">${stats.bidAwarded}</p><p style="font-size:0.7rem;color:#6b7280;">Bid Awards</p></div>
                         <div style="background:#fefce8;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#854d0e;">${stats.autoAssigned}</p><p style="font-size:0.7rem;color:#6b7280;">Auto-Assigned</p></div>
-                        ${stats.datesDrifted > 0 ? `<div style="background:#fff7ed;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#c2410c;">${stats.datesDrifted}</p><p style="font-size:0.7rem;color:#6b7280;">Schedule Drift</p></div>` : ''}
                     </div>`;
 
                 const warningHtml = unconfiguredDepts.length > 0 ? `
@@ -7748,15 +7747,12 @@
                         ⚠️ No slot capacity configured for: ${unconfiguredDepts.map(esc).join(', ')}
                     </div>` : '';
 
-                // Dates-changed warning: lists every employee whose winning bid will be
-                // awarded with different dates than what's stored on their original bid,
-                // because the slot's configured dates moved after they bid.
-                const driftedRows = filteredAssignments.filter(r => r.datesDrifted);
-                const driftedHtml = driftedRows.length > 0 ? `
-                    <div style="padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;font-size:0.78rem;margin-bottom:16px;">
-                        <div style="font-weight:700;margin-bottom:6px;">ℹ️ ${driftedRows.length} bid(s) are being honored using the employee's original bid dates — the master schedule for that slot has since changed:</div>
-                        ${driftedRows.map(r => `<div style="margin-top:2px;">• ${esc(r.employeeName)} (${esc(r.employeeId)}) — honored as <strong>${esc(r.startDate)}→${esc(r.endDate)}</strong> (${esc(r.slotName)}, ${esc(this.blockLabel(r.month))}), but "Configure Slots" now shows this slot as <strong>${esc(r.currentConfiguredStartDate)}→${esc(r.currentConfiguredEndDate)}</strong></div>`).join('')}
-                    </div>` : '';
+                // Note: schedule-drift info (bids honored with dates that no longer match
+                // the live "Configure Slots" config) is intentionally NOT surfaced here in
+                // Preview Allocation — it's noise for a quick preview. It's still tracked on
+                // each result (`datesDrifted`) and surfaced where it's actually actionable:
+                // the "Process All Bids" completion summary, the console log, and inline on
+                // the Manual Override screen.
 
                 const groupsHtml = sortedGroupKeys.map(groupKey => {
                     const [pos, dept] = groupKey.split('||');
@@ -7764,7 +7760,7 @@
                     const rows = employees.map((emp, idx) => {
                         const assigns = assignmentsByEmp[emp.id] || [];
                         const awardedHtml = assigns.length > 0
-                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span>${a.datesDrifted ? ` <span title="Configure Slots now shows this slot as ${esc(a.currentConfiguredStartDate)}→${esc(a.currentConfiguredEndDate)} — employee's original bid dates were honored instead" style="color:#c2410c;font-weight:700;cursor:help;">ℹ️ schedule since changed</span>` : ''}</div>`).join('')
+                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span></div>`).join('')
                             : '<span style="color:#dc2626;font-weight:600;">No slot awarded</span>';
                         return `<tr style="border-top:1px solid #f0f0f0;">
                             <td style="padding:6px 10px;font-weight:700;color:#6b7280;">#${idx + 1}</td>
@@ -7785,7 +7781,7 @@
                     </div>`;
                 }).join('');
 
-                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + driftedHtml + groupsHtml;
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsHtml;
                 document.getElementById('previewAllocationModal').style.display = 'flex';
             },
 
