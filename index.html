@@ -6635,6 +6635,11 @@
                                         ✏️ Manual Override Results
                                     </button>
                                 ` : ''}
+                                ${(this.state.isProcessed || this.state.isMaintProcessed) ? `
+                                    <button onclick="app.renderJustificationReport()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:#4338ca;">
+                                        📋 Bid Allocation Justification Report
+                                    </button>
+                                ` : ''}
                                 
                                 <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:var(--app-green-50);color:var(--metro-green-dark);border:1px solid var(--app-border);">
                                     🔄 Refresh Bids Now
@@ -8218,7 +8223,275 @@
                 alert('✅ Results exported to Excel file!');
             },
 
+            // ════════════════════════════════════════════════════════════════════
+            // BID ALLOCATION JUSTIFICATION REPORT
+            //
+            // Builds a per-employee, per-awarded-slot transparency report explaining
+            // WHY each slot was awarded the way it was: which choice number it was
+            // (1st/2nd/3rd...), and — when an earlier preference was lost — WHO won
+            // it instead (by seniority). Covers both Ops (this.state.results) and
+            // Maintenance (this.state.maintResults), since both use the same
+            // seniority + ranked-choice + auto-assign allocation model. Golden
+            // Command / Corporate Staff use a different free-date bidding flow
+            // without ranked discrete slot choices, so they're intentionally not
+            // included here.
+            //
+            // Does not recompute allocation — it explains the actual saved results
+            // (this.state.results / maintResults) against the actual submitted bids
+            // (this.state.bids), so it always matches what employees were told.
+            // ════════════════════════════════════════════════════════════════════
+            _ordinal(n) {
+                if (n === 1) return '1st';
+                if (n === 2) return '2nd';
+                if (n === 3) return '3rd';
+                return `${n}th`;
+            },
+
+            // Shared builder — works for both Ops and Maintenance since their result
+            // objects have the same shape (employeeId, department/position, month,
+            // slotType, startDate/endDate, seniorityRank, slotOrder, type, ...).
+            // `groupField` is 'department' for Ops (capacity pooled per dept) or
+            // 'position' for Maintenance (capacity pooled per position).
+            _buildJustificationRowsForResults(results, groupField, category) {
+                if (!results || results.length === 0) return [];
+
+                // Employee's own submitted bids, in the order they were submitted
+                // (earliest timestamp = 1st choice, next = 2nd choice, ...).
+                const bidsByEmp = {};
+                (this.state.bids || []).forEach(b => {
+                    if (!bidsByEmp[b.employeeId]) bidsByEmp[b.employeeId] = [];
+                    bidsByEmp[b.employeeId].push(b);
+                });
+                Object.keys(bidsByEmp).forEach(id => {
+                    bidsByEmp[id].sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                const slotLetter = (slotType) => (slotType || '').slice(-1).toUpperCase();
+
+                // key = groupValue||month||slotLetter → every "Bid Awarded" winner of that key
+                const winnersByKey = {};
+                results.filter(r => r.type === 'Bid Awarded').forEach(r => {
+                    const key = `${r[groupField] || ''}||${r.month || ''}||${slotLetter(r.slotType)}`;
+                    if (!winnersByKey[key]) winnersByKey[key] = [];
+                    winnersByKey[key].push({
+                        employeeId: r.employeeId,
+                        employeeName: r.employeeName,
+                        seniorityRank: r.seniorityRank
+                    });
+                });
+
+                // Resolve the group key (dept or position) a bid belongs to, mirroring
+                // how the allocation engine itself resolves it at award time.
+                const bidGroupValue = (bid, empGroupValue) => bid.department || empGroupValue || 'Unassigned';
+                const bidKey = (bid, empGroupValue) => {
+                    const month = bid.month || (bid.startDate ? this.state.months[new Date(bid.startDate).getMonth()] : '');
+                    return `${bidGroupValue(bid, empGroupValue)}||${month}||${slotLetter(bid.slotType)}`;
+                };
+
+                const resultsByEmp = {};
+                results.forEach(r => {
+                    if (!resultsByEmp[r.employeeId]) resultsByEmp[r.employeeId] = [];
+                    resultsByEmp[r.employeeId].push(r);
+                });
+
+                const rows = [];
+                Object.keys(resultsByEmp).forEach(empId => {
+                    const empResults = resultsByEmp[empId].slice().sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
+                    const myBids = bidsByEmp[empId] || [];
+                    const empGroupValue = empResults[0]?.[groupField] || '';
+
+                    empResults.forEach(r => {
+                        let awardStatus, justification;
+
+                        if (r.type === 'Bid Awarded') {
+                            // Which of the employee's own submitted bids does this match?
+                            let matchIdx = myBids.findIndex(b => b.startDate === r.startDate && b.endDate === r.endDate);
+                            if (matchIdx === -1) {
+                                const rKey = `${r[groupField] || ''}||${r.month || ''}||${slotLetter(r.slotType)}`;
+                                matchIdx = myBids.findIndex(b => bidKey(b, empGroupValue) === rKey);
+                            }
+                            const choiceNum = matchIdx >= 0 ? matchIdx + 1 : (r.bidChoice || 1);
+                            awardStatus = `${this._ordinal(choiceNum)} Choice`;
+
+                            if (choiceNum === 1) {
+                                justification = `Employee was awarded their first-choice slot based on seniority.`;
+                            } else {
+                                const lostOrdinals = [];
+                                let firstLosersWinnerName = '';
+                                for (let i = 0; i < choiceNum - 1; i++) {
+                                    const lostBid = myBids[i];
+                                    if (!lostBid) continue;
+                                    lostOrdinals.push(this._ordinal(i + 1));
+                                    if (!firstLosersWinnerName) {
+                                        const key = bidKey(lostBid, empGroupValue);
+                                        const winners = (winnersByKey[key] || []).filter(w => w.employeeId !== empId);
+                                        if (winners.length) {
+                                            winners.sort((a, b) => (a.seniorityRank ?? 999) - (b.seniorityRank ?? 999));
+                                            firstLosersWinnerName = `${winners[0].employeeName} (${winners[0].employeeId})`;
+                                        }
+                                    }
+                                }
+                                if (choiceNum === 2 && lostOrdinals.length === 1) {
+                                    justification = firstLosersWinnerName
+                                        ? `Employee's first-choice slot was awarded to ${firstLosersWinnerName}, who has a higher seniority ranking. The employee was awarded their 2nd choice.`
+                                        : `Employee's first-choice slot was no longer available by the time it was processed. The employee was awarded their 2nd choice.`;
+                                } else {
+                                    justification = `Employee's ${lostOrdinals.join(' and ')} choices were awarded to higher-seniority employees. The employee was awarded their ${this._ordinal(choiceNum)} choice.`;
+                                }
+                            }
+                        } else {
+                            // Auto-Assigned
+                            if (myBids.length === 0) {
+                                awardStatus = 'No Bid Submitted';
+                                justification = 'Employee did not submit any bid. A leftover slot was assigned after all bidding employees had been processed.';
+                            } else {
+                                awardStatus = 'Leftover Slot';
+                                justification = "None of the employee's selected choices were available after seniority allocation. The employee was assigned the best available remaining slot.";
+                            }
+                        }
+
+                        rows.push({
+                            category,
+                            employeeId: empId,
+                            employeeName: r.employeeName,
+                            position: r.position || '',
+                            department: groupField === 'department' ? (r.department || '') : (r.department || r.position || ''),
+                            seniorityRank: r.seniorityRank,
+                            slotOrder: r.slotOrder,
+                            totalEmployeeSlots: r.totalEmployeeSlots || 2,
+                            awardedSlot: `${r.slotName || ''} — ${this.blockLabel ? this.blockLabel(r.month) : (r.month || '')} ${r.startDate || ''} → ${r.endDate || ''} (${r.days || 0}d)`,
+                            awardStatus,
+                            justification
+                        });
+                    });
+                });
+
+                return rows;
+            },
+
+            buildJustificationReport() {
+                const opsRows  = this._buildJustificationRowsForResults(this.state.results || [], 'department', 'Ops');
+                const maintRows = this._buildJustificationRowsForResults(this.state.maintResults || [], 'position', 'Maintenance');
+                const rows = [...opsRows, ...maintRows];
+                rows.sort((a, b) =>
+                    (a.category || '').localeCompare(b.category) ||
+                    (a.department || '').localeCompare(b.department || '') ||
+                    (a.position || '').localeCompare(b.position || '') ||
+                    (a.seniorityRank || 0) - (b.seniorityRank || 0) ||
+                    (a.slotOrder || 0) - (b.slotOrder || 0)
+                );
+                return rows;
+            },
+
+            renderJustificationReport() {
+                if (!this.state.isProcessed && !this.state.isMaintProcessed) {
+                    alert('No results yet — process Ops or Maintenance bids first.');
+                    return;
+                }
+                this._justificationRows = this.buildJustificationReport();
+                if (this._justificationRows.length === 0) {
+                    alert('No awarded slots found to report on yet.');
+                    return;
+                }
+                const catSel = document.getElementById('jrCategoryFilter');
+                if (catSel) catSel.value = 'all';
+                const searchEl = document.getElementById('jrSearch');
+                if (searchEl) searchEl.value = '';
+                this._filterJustificationReport();
+                document.getElementById('justificationReportModal').style.display = 'flex';
+            },
+
+            _filterJustificationReport() {
+                const rows = this._justificationRows || [];
+                const category = document.getElementById('jrCategoryFilter')?.value || 'all';
+                const search = (document.getElementById('jrSearch')?.value || '').toLowerCase().trim();
+
+                const filtered = rows.filter(r => {
+                    if (category !== 'all' && r.category !== category) return false;
+                    if (search && !String(r.employeeName || '').toLowerCase().includes(search) && !String(r.employeeId || '').toLowerCase().includes(search)) return false;
+                    return true;
+                });
+
+                const esc = this._escHtml.bind(this);
+                const statusColors = {
+                    '1st Choice': 'bg-green-100 text-green-800',
+                    '2nd Choice': 'bg-blue-100 text-blue-800',
+                    '3rd Choice': 'bg-indigo-100 text-indigo-800',
+                    'Leftover Slot': 'bg-orange-100 text-orange-800',
+                    'No Bid Submitted': 'bg-gray-200 text-gray-700'
+                };
+
+                const body = document.getElementById('justificationReportBody');
+                if (!body) return;
+
+                if (filtered.length === 0) {
+                    body.innerHTML = `<div style="text-align:center;padding:40px 0;color:#9ca3af;">No matching entries.</div>`;
+                    return;
+                }
+
+                body.innerHTML = `
+                    <p style="font-size:0.75rem;color:#6b7280;margin-bottom:10px;">${filtered.length} slot(s) shown</p>
+                    <div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead>
+                                <tr style="background:#fafafa;text-align:left;color:#6b7280;font-size:0.68rem;text-transform:uppercase;">
+                                    <th style="padding:8px 10px;">Employee</th>
+                                    <th style="padding:8px 10px;">Position</th>
+                                    <th style="padding:8px 10px;">Department</th>
+                                    <th style="padding:8px 10px;">Seniority&nbsp;Rank</th>
+                                    <th style="padding:8px 10px;">Slot</th>
+                                    <th style="padding:8px 10px;">Awarded Slot</th>
+                                    <th style="padding:8px 10px;">Status</th>
+                                    <th style="padding:8px 10px;">Justification</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.map(r => `
+                                    <tr style="border-top:1px solid #f0f0f0;">
+                                        <td style="padding:8px 10px;">
+                                            <p style="font-weight:600;">${esc(r.employeeName)}</p>
+                                            <p style="font-size:0.7rem;color:#9ca3af;">${esc(r.employeeId)} · ${esc(r.category)}</p>
+                                        </td>
+                                        <td style="padding:8px 10px;">${esc(r.position)}</td>
+                                        <td style="padding:8px 10px;">${esc(r.department)}</td>
+                                        <td style="padding:8px 10px;text-align:center;">#${esc(r.seniorityRank)}</td>
+                                        <td style="padding:8px 10px;text-align:center;">${r.slotOrder} of ${r.totalEmployeeSlots}</td>
+                                        <td style="padding:8px 10px;">${esc(r.awardedSlot)}</td>
+                                        <td style="padding:8px 10px;"><span class="px-2 py-1 rounded-full text-xs font-bold ${statusColors[r.awardStatus] || 'bg-gray-100 text-gray-700'}">${esc(r.awardStatus)}</span></td>
+                                        <td style="padding:8px 10px;color:#374151;max-width:320px;">${esc(r.justification)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            },
+
+            exportJustificationReport() {
+                const rows = this._justificationRows || [];
+                if (rows.length === 0) {
+                    alert('Nothing to export yet — open the Justification Report first.');
+                    return;
+                }
+                const wsData = [
+                    ['Category', 'Employee ID', 'Employee Name', 'Position', 'Department', 'Seniority Rank',
+                     'Slot # (of Total)', 'Awarded Slot', 'Award Status', 'Justification']
+                ];
+                rows.forEach(r => {
+                    wsData.push([
+                        r.category, r.employeeId, r.employeeName, r.position, r.department, r.seniorityRank,
+                        `${r.slotOrder} of ${r.totalEmployeeSlots}`, r.awardedSlot, r.awardStatus, r.justification
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                ws['!cols'] = [{wch:12},{wch:12},{wch:22},{wch:20},{wch:20},{wch:12},{wch:12},{wch:34},{wch:16},{wch:70}];
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Bid Justification');
+                XLSX.writeFile(wb, `Bid_Allocation_Justification_${this.state.biddingYear}.xlsx`);
+            },
+
             // ==================== EMAIL SETTINGS (Admin Only) ====================
+
             renderEmailSettingsView() {
                 const content = document.getElementById('contentArea');
                 const svc = localStorage.getItem('ejs_service')  || '';
@@ -14054,6 +14327,42 @@
             <div style="display:flex;gap:10px;justify-content:flex-end;">
                 <button onclick="app._resolveConfirmModal(false)" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.875rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;">Cancel</button>
                 <button onclick="app._resolveConfirmModal(true)" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.875rem;border:none;background:var(--metro-green, #166534);color:#fff;cursor:pointer;">Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bid Allocation Justification Report Modal -->
+    <div id="justificationReportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:16px;max-width:1100px;width:100%;max-height:88vh;box-shadow:0 20px 60px rgba(0,0,0,0.3);display:flex;flex-direction:column;overflow:hidden;">
+            <div style="flex-shrink:0;padding:28px 28px 14px 28px;border-bottom:1px solid #f0f0f0;background:#fff;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px;">
+                    <h3 style="font-size:1.25rem;font-weight:700;">📋 Bid Allocation Justification Report</h3>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                        <button onclick="app.exportJustificationReport()" title="Export to Excel" style="display:flex;align-items:center;gap:6px;padding:7px 12px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:8px;font-size:0.78rem;font-weight:600;cursor:pointer;">📊 Export</button>
+                        <button onclick="document.getElementById('justificationReportModal').style.display='none'" title="Close" style="background:#f3f4f6;color:#374151;border:none;width:30px;height:30px;border-radius:8px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
+                    </div>
+                </div>
+                <p style="font-size:0.8rem;color:#6b7280;margin:0 0 12px 0;">
+                    One row per awarded slot, explaining exactly why it was awarded — which choice number it was,
+                    and (when an earlier preference was lost) who won it instead by seniority. Covers Ops and
+                    Maintenance staff, who bid on ranked slot choices; Golden Command / Corporate Staff use a
+                    separate free-date process and aren't included.
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <select id="jrCategoryFilter" onchange="app._filterJustificationReport()" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;color:#111827;background:#f9fafb;">
+                        <option value="all">All Categories</option>
+                        <option value="Ops">Ops</option>
+                        <option value="Maintenance">Maintenance</option>
+                    </select>
+                    <input type="text" id="jrSearch" placeholder="🔍 Search by name or ID…"
+                        oninput="app._filterJustificationReport()"
+                        style="flex:1;min-width:180px;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                        onfocus="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.12)'"
+                        onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" />
+                </div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 28px 28px 28px;">
+                <div id="justificationReportBody"></div>
             </div>
         </div>
     </div>
