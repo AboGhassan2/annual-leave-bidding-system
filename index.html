@@ -1979,6 +1979,7 @@
                     app.state.maintenanceStaffUsers.forEach(u => { maintPwds[u.id] = u.id; });
                     app.state.maintenanceStaffPasswords = maintPwds;
                     console.log(`✅ Maintenance staff loaded from Supabase: ${app.state.maintenanceStaffUsers.length} records`);
+                    this.saveState();
 
                 this.renderLoginForm();
                     this._updateLandingStats();
@@ -2208,6 +2209,8 @@
                     localStorage.setItem('maintSlotCapacities', JSON.stringify(this.state.maintSlotCapacities || {}));
                     localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
                     localStorage.setItem('corporateStaffUsers', JSON.stringify(this.state.corporateStaffUsers || []));
+                    localStorage.setItem('maintenanceStaffUsers', JSON.stringify(this.state.maintenanceStaffUsers || []));
+                    localStorage.setItem('maintenanceStaffPasswords', JSON.stringify(this.state.maintenanceStaffPasswords || {}));
                     localStorage.setItem('l456InmUsers', JSON.stringify(this.state.l456InmUsers || []));
                     localStorage.setItem('l3InmUsers', JSON.stringify(this.state.l3InmUsers || []));
                     localStorage.setItem('l3TsmUsers', JSON.stringify(this.state.l3TsmUsers || []));
@@ -2239,6 +2242,8 @@
                         this.state.maintSlotCapacities = JSON.parse(localStorage.getItem('maintSlotCapacities') || '{}');
                         this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
                         this.state.corporateStaffUsers = JSON.parse(localStorage.getItem('corporateStaffUsers') || '[]');
+                        this.state.maintenanceStaffUsers = JSON.parse(localStorage.getItem('maintenanceStaffUsers') || '[]');
+                        this.state.maintenanceStaffPasswords = JSON.parse(localStorage.getItem('maintenanceStaffPasswords') || '{}');
                         this.state.l456InmUsers = JSON.parse(localStorage.getItem('l456InmUsers') || '[]');
                         this.state.l3InmUsers = JSON.parse(localStorage.getItem('l3InmUsers') || '[]');
                         this.state.l3TsmUsers = JSON.parse(localStorage.getItem('l3TsmUsers') || '[]');
@@ -7754,7 +7759,7 @@
                 // the "Process All Bids" completion summary, the console log, and inline on
                 // the Manual Override screen.
 
-                const groupsHtml = sortedGroupKeys.map(groupKey => {
+                const groupsData = sortedGroupKeys.map(groupKey => {
                     const [pos, dept] = groupKey.split('||');
                     const employees = positionGroups[groupKey];
                     const rows = employees.map((emp, idx) => {
@@ -7769,7 +7774,7 @@
                             <td style="padding:6px 10px;font-size:0.75rem;">${awardedHtml}</td>
                         </tr>`;
                     }).join('');
-                    return `
+                    const html = `
                     <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
                         <div style="background:#f3f4f6;padding:8px 14px;font-weight:700;font-size:0.82rem;">${esc(pos)} — ${esc(dept)} <span style="font-weight:400;color:#6b7280;">(${employees.length} competing)</span></div>
                         <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
@@ -7779,10 +7784,39 @@
                             <tbody>${rows}</tbody>
                         </table>
                     </div>`;
-                }).join('');
+                    return { pos, dept, html };
+                });
 
-                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsHtml;
+                // Keep the summary/warning HTML and per-group data around so the position
+                // search box can re-filter and re-render without recomputing the allocation.
+                this._lastPreviewGroupsData = groupsData;
+                this._lastPreviewSummaryWarningHtml = summaryHtml + warningHtml;
+
+                const searchInput = document.getElementById('previewAllocationPositionSearch');
+                if (searchInput) searchInput.value = '';
+
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsData.map(g => g.html).join('');
                 document.getElementById('previewAllocationModal').style.display = 'flex';
+            },
+
+            // Re-renders the Preview Allocation report filtered to positions whose name
+            // contains the search box text (case-insensitive). Read-only — just narrows
+            // which already-computed groups are shown, nothing is recomputed.
+            _filterPreviewAllocationByPosition() {
+                const groupsData = this._lastPreviewGroupsData || [];
+                const summaryWarningHtml = this._lastPreviewSummaryWarningHtml || '';
+                const query = (document.getElementById('previewAllocationPositionSearch')?.value || '').trim().toLowerCase();
+
+                const filtered = query
+                    ? groupsData.filter(g => (g.pos || '').toLowerCase().includes(query))
+                    : groupsData;
+
+                const noMatchHtml = query && filtered.length === 0
+                    ? `<div style="padding:14px;text-align:center;color:#6b7280;font-size:0.85rem;">No positions match "${query.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}".</div>`
+                    : '';
+
+                document.getElementById('previewAllocationBody').innerHTML =
+                    summaryWarningHtml + noMatchHtml + filtered.map(g => g.html).join('');
             },
 
             // Exports the currently-shown Preview Allocation report to an Excel file.
@@ -9536,6 +9570,10 @@
             renderDashboardView() {
                 const content = document.getElementById('contentArea');
                 const total = this.state.employees.length;
+                const maintStaffCount = (this.state.maintenanceStaffUsers || []).length;
+                const csStaffCount = (this.state.corporateStaffUsers || []).length;
+                const gcStaffCount = (this.state.goldenCommandUsers || []).length;
+                const allActiveStaffTotal = total + maintStaffCount + csStaffCount + gcStaffCount;
                 const biddedIds = new Set(this.state.bids.map(b => b.employeeId));
                 const bidded = biddedIds.size;
                 const notBidded = total - bidded;
@@ -9676,9 +9714,9 @@
                         <div class="pd-kpi-icon" style="background:#eaf5ef;">
                           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         </div>
-                        <div class="pd-kpi-num" style="color:#2d6a4f;">${total}</div>
+                        <div class="pd-kpi-num" style="color:#2d6a4f;">${allActiveStaffTotal}</div>
                         <div class="pd-kpi-label">Total Staff</div>
-                        <div class="pd-kpi-sub">All active staff members</div>
+                        <div class="pd-kpi-sub">Ops ${total} &bull; Maint ${maintStaffCount} &bull; CS ${csStaffCount} &bull; GC ${gcStaffCount}</div>
                         <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
                           <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22" stroke="#a8d5bb" stroke-width="2" fill="none"/>
                           <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22 L200,48 L0,48Z" fill="#eaf5ef"/>
@@ -13640,6 +13678,8 @@
                                     <option value="employee">Operation Staff</option>
                                     <option value="planner">Planner</option>
                                     <option value="goldencommand">Golden Command</option>
+                                    <option value="corporatestaff">Corporate Staff</option>
+                                    <option value="maintenancestaff">Maintenance</option>
                                 </select>
                                 <input type="text" id="auditSearch" oninput="app.filterAuditLog()" placeholder="Search name or ID..." class="px-3 py-2 border rounded-lg text-sm flex-1 min-w-40" style="border-color:var(--app-border);" />
                             </div>
@@ -13658,6 +13698,7 @@
                         const { data, error } = await this.supabase
                             .from('audit_logs')
                             .select('*')
+                            .eq('tenant_id', this._tid())
                             .order('created_at', { ascending: false })
                             .limit(500);
                         if (!error && data) {
@@ -13707,7 +13748,7 @@
                     'SYSTEM_RESET':     'bg-red-200 text-red-900',
                 };
 
-                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐', corporatestaff: '🏢' };
+                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐', corporatestaff: '🏢', maintenancestaff: '🔧' };
 
                 const container = document.getElementById('auditTableContainer');
                 if (!container) return;
@@ -13739,7 +13780,11 @@
                                     const colorClass = actionColors[l.action] || 'bg-gray-100 text-gray-700';
                                     const roleIcon = roleIcons[l.user_type] || '👤';
                                     let detailsObj = {};
-                                    try { detailsObj = JSON.parse(l.details || '{}'); } catch(e) {}
+                                    if (l.details && typeof l.details === 'object') {
+                                        detailsObj = l.details;
+                                    } else if (typeof l.details === 'string' && l.details.trim()) {
+                                        try { detailsObj = JSON.parse(l.details); } catch(e) { detailsObj = {}; }
+                                    }
                                     const detailStr = Object.entries(detailsObj).map(([k,v]) => `<span class="text-gray-500">${k}:</span> <span class="font-medium">${v}</span>`).join(' · ');
                                     return `
                                         <tr>
@@ -13984,11 +14029,16 @@
                         <button onclick="document.getElementById('previewAllocationModal').style.display='none'" title="Close" style="background:#f3f4f6;color:#374151;border:none;width:30px;height:30px;border-radius:8px;font-weight:700;cursor:pointer;line-height:1;">✕</button>
                     </div>
                 </div>
-                <p style="font-size:0.8rem;color:#6b7280;margin:0;">
+                <p style="font-size:0.8rem;color:#6b7280;margin:0 0 12px 0;">
                     Read-only dry run using the exact same allocation logic as "Process All Bids". Nothing is saved,
                     bidding is not marked as processed, and no staff notification is sent. Corporate Staff are excluded
                     (they bid separately).
                 </p>
+                <input type="text" id="previewAllocationPositionSearch" placeholder="🔍 Search by position…"
+                    oninput="app._filterPreviewAllocationByPosition()"
+                    style="width:100%;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                    onfocus="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.12)'"
+                    onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" />
             </div>
             <!-- Scrollable report area — only this part moves when scrolling -->
             <div style="flex:1;min-height:0;overflow-y:auto;padding:18px 28px 28px 28px;">
