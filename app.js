@@ -1,7 +1,5 @@
-        // ==================== SUPABASE CONFIG ====================
-        const SUPABASE_URL = 'https://wniqprjtwiyeqryplfdn.supabase.co';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InduaXFwcmp0d2l5ZXFyeXBsZmRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1ODc3NTAsImV4cCI6MjA4NDE2Mzc1MH0.sbfoW8pNmDauQQxFV97DUvvbNg0S1ls8AqkufRHnh70';
-        
+        // SUPABASE_URL and SUPABASE_KEY moved to config.js (loaded before this file)
+
         // ==================== APP OBJECT ====================
         const app = {
             supabase: null,
