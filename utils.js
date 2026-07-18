@@ -1,4 +1,3 @@
-
 // ════════════════════════════════════════════════════════════════════
 // utils.js — shared helper functions used across the app.
 //
