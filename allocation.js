@@ -1,4 +1,3 @@
-
 // ════════════════════════════════════════════════════════════════════
 // core/allocation.js — the seniority-based leave slot allocation engine.
 //
