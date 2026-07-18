@@ -488,37 +488,7 @@
                 }
             },
 
-            // XSS-safe HTML escaping — always wrap user-supplied strings before innerHTML
-            _escHtml(s) {
-                return String(s == null ? '' : s)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-            },
-
-            // Non-blocking toast — replaces alert() for notifications (level: 'success'|'error'|'warn'|'info')
-            showToast(message, level = 'info', duration = 4000) {
-                const colors = {
-                    success: { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46', icon: '✅' },
-                    error:   { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', icon: '❌' },
-                    warn:    { bg: '#fef3c7', border: '#fcd34d', text: '#92400e', icon: '⚠️' },
-                    info:    { bg: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', icon: 'ℹ️' },
-                };
-                const c = colors[level] || colors.info;
-                const el = document.createElement('div');
-                el.setAttribute('role', 'status');
-                el.setAttribute('aria-live', 'polite');
-                el.style.cssText = `position:fixed;bottom:84px;right:24px;z-index:9999;max-width:360px;padding:12px 16px;border-radius:12px;border:1.5px solid ${c.border};background:${c.bg};color:${c.text};font-size:0.875rem;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.12);opacity:0;transform:translateY(8px);transition:opacity 0.2s,transform 0.2s;white-space:pre-wrap;`;
-                el.textContent = `${c.icon}  ${message}`;
-                document.body.appendChild(el);
-                requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
-                setTimeout(() => {
-                    el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
-                    setTimeout(() => el.remove(), 250);
-                }, duration);
-            },
+            // _escHtml and showToast moved to utils.js (loaded after this file)
 
             async publishToSupabase() {
                 if (!this.supabase) {
@@ -3062,14 +3032,7 @@
 
             // Display-only helper: converts an internal month-name key (e.g. 'May') —
             // which is still the actual bucket used everywhere for bid matching / storage
-            // and must never change — into a "Block N" label for anything a person reads.
-            // A slot's dates often drift into the following calendar month by the time you
-            // reach Slot C/D within a row, so labeling rows by month implied a promise the
-            // data never kept. "Block N" carries no such promise.
-            blockLabel(month) {
-                const idx = this.state.months.indexOf(month);
-                return idx >= 0 ? `Block ${idx + 1}` : (month || '—');
-            },
+            // blockLabel moved to utils.js (loaded after this file)
 
             renderConfigureSlotsView() {
                 const content = document.getElementById('contentArea');
@@ -6681,12 +6644,7 @@
             // (this.state.results / maintResults) against the actual submitted bids
             // (this.state.bids), so it always matches what employees were told.
             // ════════════════════════════════════════════════════════════════════
-            _ordinal(n) {
-                if (n === 1) return '1st';
-                if (n === 2) return '2nd';
-                if (n === 3) return '3rd';
-                return `${n}th`;
-            },
+            // _ordinal moved to utils.js (loaded after this file)
 
             // Shared builder — works for both Ops and Maintenance since their result
             // objects have the same shape (employeeId, department/position, month,
@@ -7370,14 +7328,7 @@
             },
 
 
-            checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
-                const start1 = new Date(startDate1);
-                const end1 = new Date(endDate1);
-                const start2 = new Date(startDate2);
-                const end2 = new Date(endDate2);
-                
-                return (start1 <= end2 && end1 >= start2);
-            },
+            // checkDateOverlap moved to utils.js (loaded after this file)
 
             // Centralized deadline check — used to gate bid submission everywhere
             isBiddingClosed() {
@@ -9734,33 +9685,7 @@
             // Week 1 starts on the Sunday on or before Jan 1 of the given year.
             // e.g. for 2026: Jan 1 is Thursday → Week 1 = Dec 28 2025 (Sun) → Jan 3 2026 (Sat).
             // Always 52 weeks max. What would be Week 53 is labelled Week 1 of the next year.
-            weekNumberToDateRange(weekNum, year) {
-                // Use local date parts to avoid UTC offset shifting the date (e.g. UTC+3 turns midnight into previous day in UTC)
-                const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-                const jan1 = new Date(year, 0, 1);
-                const jan1Day = jan1.getDay(); // 0=Sun, 6=Sat
-                // Roll back to the Sunday on or before Jan 1
-                const week1Sun = new Date(jan1);
-                week1Sun.setDate(jan1.getDate() - jan1Day);
-                // Week N starts (weekNum-1)*7 days after week1Sun
-                const weekSun = new Date(week1Sun);
-                weekSun.setDate(week1Sun.getDate() + (weekNum - 1) * 7);
-                const weekSat = new Date(weekSun);
-                weekSat.setDate(weekSun.getDate() + 6);
-                return { from: fmt(weekSun), to: fmt(weekSat) };
-            },
-
-            // ---- MULTI-WEEK helpers ----
-            _parseMultiWeekInput(raw, year) {
-                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
-                const weeks = new Set();
-                for (const tok of tokens) {
-                    const m = tok.match(/^(\d+)-(\d+)$/);
-                    if (m) { for (let w = Math.max(1, +m[1]); w <= Math.min(53, +m[2]); w++) weeks.add(w); }
-                    else { const n = +tok; if (!isNaN(n) && n >= 1 && n <= 53) weeks.add(n); }
-                }
-                return [...weeks].sort((a, b) => a - b);
-            },
+            // weekNumberToDateRange and _parseMultiWeekInput moved to utils.js (loaded after this file)
 
             // Saves all system_config fields (deadline, year, slots, on-call, password, results) to Supabase + localStorage
             async saveConfigToSupabase() {
