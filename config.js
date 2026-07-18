@@ -1,4 +1,3 @@
-
 // ════════════════════════════════════════════════════════════════════
 // config.js — connection constants used to initialize Supabase.
 //
