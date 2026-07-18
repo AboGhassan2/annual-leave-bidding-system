@@ -844,6 +844,7 @@
                         console.error('❌ Could not save config to Supabase:', error.message);
                         this.updateSystemStatus('⚠️ Save failed — data saved locally only');
                         setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                        this.showToast('Config save to server failed: ' + error.message + ' — your changes are only saved on this device until this is fixed.', 'error', 10000);
                     } else {
                         console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
                     }
@@ -865,6 +866,7 @@
                         );
                     if (corpError) {
                         console.error('❌ Could not save Corporate/GC config to Supabase:', corpError.message);
+                        this.showToast('Corporate/GC config save to server failed: ' + corpError.message, 'error', 10000);
                     } else {
                         console.log('✅ Corporate/GC config saved to system_config table');
                     }
@@ -872,6 +874,7 @@
                     console.warn('⚠️ Supabase config save error:', e.message);
                     this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
                     setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                    this.showToast('Config save to server failed: ' + e.message + ' — your changes are only saved on this device until this is fixed.', 'error', 10000);
                 }
             };
 
