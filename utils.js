@@ -1,6 +1,4 @@
-// ════════════════════════════════════════════════════════════════════
 // utils.js — shared helper functions used across the app.
-//
 // `app` is declared as one big object literal inside app.js, so this
 // file must load AFTER app.js (there'd be no `app` to attach to
 // otherwise). This is safe: app.init() only runs on the page's
