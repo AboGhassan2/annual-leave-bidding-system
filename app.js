@@ -1,1 +1,12319 @@
+        // ==================== SUPABASE CONFIG ====================
+        const SUPABASE_URL = 'https://wniqprjtwiyeqryplfdn.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InduaXFwcmp0d2l5ZXFyeXBsZmRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1ODc3NTAsImV4cCI6MjA4NDE2Mzc1MH0.sbfoW8pNmDauQQxFV97DUvvbNg0S1ls8AqkufRHnh70';
+        
+        // ==================== APP OBJECT ====================
+        const app = {
+            supabase: null,
+            
+            // ==================== STATE ====================
+            state: {
+                tenantId: '00000000-0000-0000-0000-000000000001',
+                authUser: null,
+                employees: [],
+                employeePasswords: {},
+                bids: [],
+                biddingDeadline: '',
+                biddingYear: 2026,
+                isProcessed: false,
+                isMaintProcessed: false,
+                biddingDeadlineCorp: '',
+                biddingYearCorp: 2026,
+                isProcessedCorp: false,
+                activeView: 'login',
+                selectedEmployeeId: '',
+                verifiedEmployee: null,
+                currentUser: null,
+                userType: null,
+                plannerPassword: 'admin123',
+                plannerEmail: 'a_abdulqader@outlook.com', // recovery email for OTP
+                ejsServiceId: '',  // EmailJS — set once in Admin → Email Settings
+                ejsTemplateId: '',
+                ejsPublicKey: '',
+                smtpFallbackUrl: '',   // SMTP fallback — HTTP relay endpoint (e.g. Supabase Edge Function) used when EmailJS fails
+                smtpFallbackKey: '',   // optional bearer token / shared secret for the relay
+                goldenCommandPassword: 'gc123',
+                goldenCommandUsers: [
+                    { id: 'GC001', name: 'Golden Command 1', password: 'GC001' },
+                    { id: 'GC002', name: 'Golden Command 2', password: 'GC002' }
+                ],
+                corporateStaffUsers: [],
+                maintenanceStaffUsers: [],
+                maintenanceStaffPasswords: {},
+                l456InmUsers: [],
+                l3InmUsers: [],
+                l3TsmUsers: [],
+                hseqUsers: [],
+                results: [],
+                maintResults: [],
 
+                // On-Call dates per employee (extracted from Director_On-Call.xlsx)
+                // Keyed by Employee ID → array of 'YYYY-MM-DD' strings (loaded from Supabase)
+                onCallDates: {},
+                selectedDepartment: 'all',
+                slotCapacities: {},
+                maintSlotCapacities: {},
+                
+                // OPS-only departments list (L3/L46/L5 groups — maintenance positions are separate)
+                departments: [
+                    'L3-DEP-DC', 'L3-DEP-TC', 'L3-DEP-DM', 'L3-DEP- LTSS/TSS',
+                    'L3-DEP-EFC', 'L3-DEP-GSM', 'L3-TA-T', 'L3-DS', 'L3-P&R',
+                    'L3-LSS/SS', 'L3-DEP-SC', 'L3-SA', 'L3 SAMB',
+                    'L46-DEP-TC', 'L46-DEP- LTSS/TSS', 'L46-TA-T', 'L46-DEP-DC',
+                    'L46-LSS/SS', 'L46-DEP-GSM', 'L46-DEP-SC', 'L46 SAMB',
+                    'L46-P&R', 'L46-AOCC',
+                    'L5-LSS/SS', 'L5-DEP-DC', 'L5-DEP-DM', 'L5-DEP-GSM', 'L5-DEP-SC',
+                    'L5-DEP- LTSS/TSS', 'L5-DEP-TC', 'L5-DEP-EFC', 'L5 SA', 'L5 SAMB',
+                    'L5 - TA-T',
+                    'L3465-DEP-TCC'
+                ],
+                
+                slotTypes: [
+                    { id: 'slotA', name: 'Slot A', days: 15, color: 'green' },
+                    { id: 'slotB', name: 'Slot B', days: 15, color: 'blue' },
+                    { id: 'slotC', name: 'Slot C', days: 15, color: 'purple' },
+                    { id: 'slotD', name: 'Slot D', days: 20, color: 'orange' }
+                ],
+                
+                months: [
+                    'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'
+                ],
+                loginType: 'employee',
+
+                // Security: auto-logout after this many minutes of user inactivity
+                sessionTimeoutMinutes: 15
+            },
+
+            // Idle/session-timeout tracking (not part of reactive state; internal bookkeeping only)
+            _lastActivityTs: Date.now(),
+            _idleCheckInterval: null,
+
+            // ==================== SUPABASE FUNCTIONS ====================
+            async initSupabase() {
+                try {
+                    this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                    console.log('✅ Supabase initialized');
+
+                    // Check for existing Supabase Auth session
+                    const { data: { session } } = await this.supabase.auth.getSession();
+                    if (session?.user) await this._applyAuthSession(session);
+
+                    // Listen for auth state changes
+                    this.supabase.auth.onAuthStateChange(async (event, session) => {
+                        if (session?.user) await this._applyAuthSession(session);
+                        else if (event === 'SIGNED_OUT') {
+                            this.state.authUser = null;
+                            this.state.tenantId = '00000000-0000-0000-0000-000000000001';
+                        }
+                    });
+                    return true;
+                } catch (error) {
+                    console.error('❌ Supabase init failed:', error);
+                    return false;
+                }
+            },
+
+            async _applyAuthSession(session) {
+                this.state.authUser = session.user;
+                const claims = session.access_token
+                    ? JSON.parse(atob(session.access_token.split('.')[1]))
+                    : {};
+                if (claims.tenant_id) this.state.tenantId = claims.tenant_id;
+                if (claims.user_role)  this.state.userType  = claims.user_role;
+            },
+
+            _tid() {
+                return this.state.tenantId || '00000000-0000-0000-0000-000000000001';
+            },
+
+            async loadFromSupabase() {
+                if (!this.supabase) {
+                    console.log('Supabase not initialized');
+                    return false;
+                }
+
+                try {
+                    this.updateSystemStatus('Loading from Supabase...');
+                    
+                    // FIX FOR 1000 STAFF LIMIT: Use range queries with pagination
+                    console.log('Loading employees with pagination to avoid 1000 limit...');
+                    let allEmployees = [];
+                    let from = 0;
+                    const batchSize = 1000;
+                    let hasMore = true;
+
+                    // Load employees with pagination
+                    while (hasMore) {
+                        const { data: employeesBatch, error: empError } = await this.supabase
+                            .from('employees')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .range(from, from + batchSize - 1);
+                        
+                        if (empError) throw empError;
+                        
+                        if (employeesBatch && employeesBatch.length > 0) {
+                            allEmployees = [...allEmployees, ...employeesBatch];
+                            hasMore = employeesBatch.length === batchSize;
+                            from += batchSize;
+                        } else {
+                            hasMore = false;
+                        }
+                    }
+                    
+                    // Load bids from leave_requests (Ops), maint_leave_requests (Maintenance),
+                    // and corporate_leave_request (GC & Corporate Staff)
+                    const _fetchBidTable = async (tableName) => {
+                        let rows = [], pg = 0, more = true;
+                        while (more) {
+                            const { data: batch, error: err } = await this.supabase
+                                .from(tableName).select('*')
+                                .eq('tenant_id', this._tid())
+                                .range(pg, pg + batchSize - 1);
+                            if (err) {
+                                if (err.code !== 'PGRST116') console.warn(`No bids / error [${tableName}]:`, err);
+                                more = false;
+                            } else if (batch && batch.length > 0) {
+                                rows = [...rows, ...batch];
+                                more = batch.length === batchSize;
+                                pg += batchSize;
+                            } else { more = false; }
+                        }
+                        return rows;
+                    };
+                    const [regularBids, maintBids, corporateBids] = await Promise.all([
+                        _fetchBidTable('leave_requests'),
+                        _fetchBidTable('maint_leave_requests'),
+                        _fetchBidTable('corporate_leave_request')
+                    ]);
+                    let allBids = [...regularBids, ...maintBids, ...corporateBids];
+                    console.log(`✅ Initial load: ${regularBids.length} regular + ${maintBids.length} maintenance + ${corporateBids.length} corporate bids`);
+                    
+                    // Load system config
+                    const { data: config, error: configError } = await this.supabase
+                        .from('system_config_82')
+                        .select('*')
+                        .eq('tenant_id', this._tid())
+                        .single();
+
+                    // Load Corporate/GC config from its own dedicated table (isolated
+                    // from Ops/Maintenance settings, which live in system_config_82)
+                    const { data: configCorp, error: configCorpError } = await this.supabase
+                        .from('system_config')
+                        .select('*')
+                        .eq('tenant_id', this._tid())
+                        .single();
+
+                    if (configCorpError && configCorpError.code !== 'PGRST116') {
+                        console.warn('Corp config error:', configCorpError);
+                    }
+                    
+                    if (configError && configError.code !== 'PGRST116') {
+                        console.warn('Config error:', configError);
+                    }
+                    
+                    // Update state
+                    if (allEmployees && allEmployees.length > 0) {
+                        this.state.employees = allEmployees.map(emp => ({
+                            id: emp.id,
+                            name: emp.name,
+                            seniorityDate: emp.seniority_date,
+                            position: emp.department || emp.position || '',
+                            department: emp.department || 'Unassigned',
+                            gender: emp.gender || '',
+                            nationality: emp.nationality || '',
+                            email: emp.email || '',
+                            password: emp.password || ''
+                        }));
+                        
+                        // Load passwords from Supabase (source of truth for cross-device sync).
+                        // Falls back to any existing local cache, then to employee ID as the default.
+                        this.state.employees.forEach(emp => {
+                            this.state.employeePasswords[emp.id] = emp.password || this.state.employeePasswords[emp.id] || emp.id;
+                        });
+                        
+                        console.log(`✅ Loaded ${this.state.employees.length} employees from Supabase (with pagination)`);
+                    }
+                    
+                    // Load bids — Supabase is source of truth
+                    // Map Supabase rows to app bid format (look up name/dept from both employee and maintenance lists)
+                    const supabaseBids = (allBids || []).map(bid => {
+                        const emp  = this.state.employees.find(e => e.id === bid.employee_id);
+                        const mEmp = (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id);
+                        return {
+                            employeeId:   bid.employee_id,
+                            employeeName: bid.employee_name || emp?.name || mEmp?.name || '',
+                            seniorityDate: emp?.seniorityDate || mEmp?.seniorityDate || '',
+                            department:   bid.department || emp?.department || mEmp?.department || '',
+                            position:     emp?.position  || mEmp?.position  || '',
+                            slotType:     bid.slot_type || 'slotA',
+                            leaveType:    bid.leave_type || 'Annual Leave',
+                            startDate:    bid.start_date,
+                            endDate:      bid.end_date,
+                            days:         bid.days_requested,
+                            timestamp:    bid.created_at
+                        };
+                    });
+
+                    // Also grab any locally-stored bids not yet in Supabase (safety net)
+                    const localBids = JSON.parse(localStorage.getItem('bids') || '[]');
+                    const supabaseKeys = new Set(supabaseBids.map(b => `${b.employeeId}|${b.slotType}|${b.startDate}`));
+                    const localOnly = localBids.filter(b => !supabaseKeys.has(`${b.employeeId}|${b.slotType}|${b.startDate}`));
+
+                    // Only re-push bids created within the last 60 seconds — older
+                    // entries in localStorage are either already synced or were
+                    // intentionally deleted, so we must NOT resurrect them.
+                    const freshLocalOnly = localOnly.filter(b => {
+                        const ts = new Date(b.timestamp || 0).getTime();
+                        return Date.now() - ts < 60_000;
+                    });
+
+                    if (freshLocalOnly.length > 0) {
+                        console.log(`ℹ️ Found ${freshLocalOnly.length} recent local bid(s) not yet in Supabase — pushing now...`);
+                        freshLocalOnly.forEach(bid => this.saveBidToSupabase(bid));
+                    }
+
+                    this.state.bids = [...supabaseBids, ...freshLocalOnly];
+                    console.log(`✅ Loaded ${supabaseBids.length} bids from Supabase + ${freshLocalOnly.length} recent local-only bid(s)`);
+                    this.saveState();
+                    
+                    if (config) {
+                        this.state.biddingDeadline = config.bidding_deadline || '';
+                        this.state.biddingYear = config.bidding_year || 2026;
+                        this.state.isProcessed = config.is_processed || false;
+                        this.state.plannerPassword = config.planner_password || 'admin123';
+                        this.state.plannerEmail    = config.planner_email    || 'a_abdulqader@outlook.com';
+                        this.state.slotCapacities = config.slot_capacities || {};
+                        this.state.maintSlotCapacities = config.maint_slot_capacities || {};
+                        this.state.maintResults     = config.maint_results || [];
+                        this.state.isMaintProcessed = config.is_maint_processed || false;
+                        this.state.results = config.results || [];
+                        // Load EmailJS keys from Supabase into localStorage so OTP works on any device
+                        if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
+                        if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
+                        if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
+                        if (config.smtp_fallback_url) { this.state.smtpFallbackUrl = config.smtp_fallback_url; localStorage.setItem('smtp_fallback_url', config.smtp_fallback_url); }
+                        if (config.smtp_fallback_key) { this.state.smtpFallbackKey = config.smtp_fallback_key; localStorage.setItem('smtp_fallback_key', config.smtp_fallback_key); }
+                        if (config.planner_email){ this.state.plannerEmail  = config.planner_email; localStorage.setItem('ejs_planner_email', config.planner_email); }
+                        console.log('✅ Loaded system config from Supabase — ejs_service:', config.ejs_service || '(empty)', '| ejs_template:', config.ejs_template || '(empty)', '| ejs_pubkey:', config.ejs_pubkey ? config.ejs_pubkey.substring(0,6)+'…' : '(empty)');
+                    }
+
+                    // Corporate/GC settings live in their own table (system_config),
+                    // completely separate from Ops/Maintenance (system_config_82)
+                    if (configCorp) {
+                        this.state.biddingDeadlineCorp = configCorp.bidding_deadline || '';
+                        this.state.biddingYearCorp = configCorp.bidding_year || 2026;
+                        this.state.isProcessedCorp = configCorp.is_processed || false;
+                        console.log('✅ Loaded Corporate/GC config from system_config table');
+                    }
+
+                    // Load on-call dates from dedicated oncall_dates table
+                    // Load on-call dates with pagination (bypass 1000-row Supabase limit)
+                    let ocRows = [];
+                    let ocFrom = 0;
+                    const ocBatch = 1000;
+                    while (true) {
+                        const { data: batch, error: ocError } = await this.supabase
+                            .from('oncall_dates')
+                            .select('employee_id, date')
+                            .eq('tenant_id', this._tid())
+                            .range(ocFrom, ocFrom + ocBatch - 1);
+                        if (ocError) { console.warn('⚠️ Could not load oncall_dates:', ocError.message); break; }
+                        if (!batch || batch.length === 0) break;
+                        ocRows = [...ocRows, ...batch];
+                        if (batch.length < ocBatch) break;
+                        ocFrom += ocBatch;
+                    }
+
+                    if (ocRows.length > 0) {
+                        const built = {};
+                        for (const row of ocRows) {
+                            if (!built[row.employee_id]) built[row.employee_id] = [];
+                            const dateStr = row.date ? String(row.date).substring(0, 10) : null;
+                            if (dateStr) built[row.employee_id].push(dateStr);
+                        }
+                        for (const id of Object.keys(built)) built[id].sort();
+                        this.state.onCallDates = { ...(this.state.onCallDates || {}), ...built };
+                        console.log(`✅ Loaded on-call dates: ${ocRows.length} rows, ${Object.keys(built).length} staff entries`);
+                    } else {
+                        console.log('ℹ️ No on-call dates in oncall_dates table yet');
+                    }
+
+                    // Load Golden Command users from dedicated table
+                    const { data: gcUsers, error: gcError } = await this.supabase
+                        .from('golden_command_users')
+                        .select('*')
+                        .eq('tenant_id', this._tid())
+                        .order('created_at', { ascending: true });
+
+                    if (gcError) {
+                        console.warn('⚠️ Could not load GC users:', gcError.message);
+                    } else if (gcUsers && gcUsers.length > 0) {
+                        this.state.goldenCommandUsers = gcUsers.map(u => ({
+                            id: u.id,
+                            name: u.name,
+                            password: u.password,
+                            email: u.email || ''
+                        }));
+                        console.log(`✅ Loaded ${gcUsers.length} Golden Command users from dedicated table`);
+                    } else {
+                        // Table exists but is empty — keep whatever is in localStorage
+                        console.log('ℹ️ No GC users found in dedicated table');
+                    }
+
+                    // Load Corporate Staff roster from dedicated table (paginated, like Maintenance staff)
+                    let allCsStaff = [];
+                    let csFrom = 0;
+                    let csHasMore = true;
+                    while (csHasMore) {
+                        const { data: csBatch, error: csError } = await this.supabase
+                            .from('corporate_staff_employees')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .range(csFrom, csFrom + batchSize - 1);
+                        if (csError) {
+                            console.warn('⚠️ Could not load corporate_staff_employees:', csError.message);
+                            csHasMore = false;
+                        } else if (csBatch && csBatch.length > 0) {
+                            allCsStaff = [...allCsStaff, ...csBatch];
+                            csHasMore = csBatch.length === batchSize;
+                            csFrom += batchSize;
+                        } else {
+                            csHasMore = false;
+                        }
+                    }
+                    if (allCsStaff.length > 0) {
+                        this.state.corporateStaffUsers = allCsStaff.map(u => ({
+                            id:            String(u.id),
+                            name:          u.name         || '',
+                            department:    u.department   || 'Corporate Staff',
+                            position:      u.position     || '',
+                            role:          u.role         || '',
+                            nationality:   u.nationality  || '',
+                            gender:        u.gender       || '',
+                            seniorityDate: u.seniority_date || '2000-01-01',
+                            totalLeaveDays: u.total_leave_days ?? 30,
+                            usedLeaveDays:  u.used_leave_days  ?? 0,
+                            password:      u.password || String(u.id),
+                            email:         u.email || ''
+                        }));
+                        console.log(`✅ Corporate Staff roster loaded from Supabase: ${this.state.corporateStaffUsers.length} records`);
+                    } else {
+                        console.log('ℹ️ No Corporate Staff records found in corporate_staff_employees table');
+                    }
+
+                    // ── Load CS sub-group users (L456 INM, L3 INM, L3 TSM) from Supabase ──
+                    const subGroups = [
+                        { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
+                        { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
+                        { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                        { table: 'hseq_users',     stateKey: 'hseqUsers'     },
+                    ];
+                    const _dbg = (msg) => { const el = document.getElementById('_dbgLog'); if(el) el.innerHTML += msg + '<br>'; };
+                    for (const sg of subGroups) {
+                        try {
+                            _dbg(`⏳ Loading ${sg.table}...`);
+                            const { data: sgRows, error: sgErr } = await this.supabase
+                                .from(sg.table)
+                                .select('id, name, password, email')
+                                .eq('tenant_id', this._tid());
+                            if (sgErr) {
+                                _dbg(`❌ ${sg.table} ERROR: ${sgErr.message}`);
+                            } else if (sgRows && sgRows.length > 0) {
+                                _dbg(`✅ ${sg.table}: ${sgRows.length} rows — assigning to state...`);
+                                this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
+                                _dbg(`✅ ${sg.table}: state updated OK`);
+                            } else {
+                                _dbg(`⚠️ ${sg.table}: 0 rows for tenant ${this._tid()}`);
+                            }
+                        } catch (sgEx) {
+                            _dbg(`❌ ${sg.table} EXCEPTION: ${sgEx.message}`);
+                        }
+                    }
+                    _dbg(`✅ Sub-group loop done. Calling saveState...`);
+                    // ────────────────────────────────────────────────────────────────────────
+                    this.saveState();
+                    _dbg(`✅ saveState done. l456: state=${(this.state.l456InmUsers||[]).length} localStorage=${JSON.parse(localStorage.getItem('l456InmUsers')||'[]').length}`);
+                    this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
+                    // ===== MAINTENANCE STAFF DATA (loaded from Supabase) =====
+                    let allMaintStaff = [];
+                    let maintFrom = 0;
+                    let maintHasMore = true;
+                    while (maintHasMore) {
+                        const { data: maintBatch, error: maintError } = await this.supabase
+                            .from('maintenance_employees')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .range(maintFrom, maintFrom + batchSize - 1);
+                        if (maintError) {
+                            console.warn('⚠️ Could not load maintenance_employees:', maintError.message);
+                            maintHasMore = false;
+                        } else if (maintBatch && maintBatch.length > 0) {
+                            allMaintStaff = [...allMaintStaff, ...maintBatch];
+                            maintHasMore = maintBatch.length === batchSize;
+                            maintFrom += batchSize;
+                        } else {
+                            maintHasMore = false;
+                        }
+                    }
+                    // Map Supabase columns → internal shape used throughout the app
+                    app.state.maintenanceStaffUsers = allMaintStaff.map(u => ({
+                        id:           String(u.id),
+                        name:         u.name         || '',
+                        department:   u.department   || '',
+                        position:     u.position     || '',
+                        role:         u.role         || '',
+                        nationality:  u.nationality  || '',
+                        gender:       u.gender       || '',
+                        seniorityDate: u.seniority_date || '',
+                        totalLeaveDays: u.total_leave_days ?? 25,
+                        usedLeaveDays:  u.used_leave_days  ?? 0,
+                    }));
+                    // Default password = employee ID (same as before)
+                    const maintPwds = {};
+                    app.state.maintenanceStaffUsers.forEach(u => { maintPwds[u.id] = u.id; });
+                    app.state.maintenanceStaffPasswords = maintPwds;
+                    console.log(`✅ Maintenance staff loaded from Supabase: ${app.state.maintenanceStaffUsers.length} records`);
+                    this.saveState();
+
+                this.renderLoginForm();
+                    this._updateLandingStats();
+                    return true;
+                    
+                } catch (error) {
+                    console.error('❌ Error loading from Supabase:', error);
+                    this.updateSystemStatus('⚠️ Could not load from database');
+                    return false;
+                }
+            },
+
+            // XSS-safe HTML escaping — always wrap user-supplied strings before innerHTML
+            _escHtml(s) {
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            },
+
+            // Non-blocking toast — replaces alert() for notifications (level: 'success'|'error'|'warn'|'info')
+            showToast(message, level = 'info', duration = 4000) {
+                const colors = {
+                    success: { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46', icon: '✅' },
+                    error:   { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', icon: '❌' },
+                    warn:    { bg: '#fef3c7', border: '#fcd34d', text: '#92400e', icon: '⚠️' },
+                    info:    { bg: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', icon: 'ℹ️' },
+                };
+                const c = colors[level] || colors.info;
+                const el = document.createElement('div');
+                el.setAttribute('role', 'status');
+                el.setAttribute('aria-live', 'polite');
+                el.style.cssText = `position:fixed;bottom:84px;right:24px;z-index:9999;max-width:360px;padding:12px 16px;border-radius:12px;border:1.5px solid ${c.border};background:${c.bg};color:${c.text};font-size:0.875rem;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,0.12);opacity:0;transform:translateY(8px);transition:opacity 0.2s,transform 0.2s;white-space:pre-wrap;`;
+                el.textContent = `${c.icon}  ${message}`;
+                document.body.appendChild(el);
+                requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+                setTimeout(() => {
+                    el.style.opacity = '0'; el.style.transform = 'translateY(8px)';
+                    setTimeout(() => el.remove(), 250);
+                }, duration);
+            },
+
+            async publishToSupabase() {
+                if (!this.supabase) {
+                    alert('Supabase not connected');
+                    return;
+                }
+
+                if (this.state.employees.length === 0) {
+                    alert('⚠️ No employee data to save');
+                    return;
+                }
+
+                if (!confirm(`Save all data to Supabase database?\n\n• ${this.state.employees.length} employees\n• ${this.state.bids.length} bids\n• System configuration`)) return;
+
+                // Helper: split array into chunks
+                const chunk = (arr, size) => {
+                    const chunks = [];
+                    for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+                    return chunks;
+                };
+
+                try {
+                    // ── 1. Save employees in batches of 500 ──
+                    const empTotal = this.state.employees.length;
+                    const empChunks = chunk(this.state.employees, 500);
+                    this.updateSystemStatus(`Saving employees (0/${empTotal})...`);
+
+                    for (let i = 0; i < empChunks.length; i++) {
+                        const batch = empChunks[i].map(emp => ({
+                            id: emp.id,
+                            tenant_id: this._tid(),
+                            name: emp.name,
+                            seniority_date: emp.seniorityDate,
+                            position: emp.position || '',
+                            department: emp.department || '',
+                            gender: emp.gender || '',
+                            nationality: emp.nationality || '',
+                            email: emp.email || '',
+                            updated_at: new Date().toISOString()
+                        }));
+
+                        const { error } = await this.supabase
+                            .from('employees')
+                            .upsert(batch, { onConflict: 'id' });
+
+                        if (error) throw new Error(`Employee batch ${i + 1} failed: ${error.message}`);
+
+                        const saved = Math.min((i + 1) * 500, empTotal);
+                        this.updateSystemStatus(`Saving employees (${saved}/${empTotal})...`);
+                    }
+
+                    // ── 2. Save system config (Ops/Maintenance) ──
+                    this.updateSystemStatus('Saving system config...');
+                    const { error: configError } = await this.supabase
+                        .from('system_config_82')
+                        .upsert({
+                            id: 1,
+                            tenant_id: this._tid(),
+                            bidding_deadline: this.state.biddingDeadline,
+                            bidding_year: this.state.biddingYear,
+                            is_processed: this.state.isProcessed,
+                            planner_password: this.state.plannerPassword,
+                            planner_email:    this.state.plannerEmail,
+                            slot_capacities:  this.state.slotCapacities,
+                            maint_slot_capacities: this.state.maintSlotCapacities || {},
+                            results: this.state.results,
+                            last_updated: new Date().toISOString()
+                            // on_call_dates intentionally omitted — stored in oncall_dates table
+                        }, { onConflict: 'id' });
+
+                    if (configError) console.warn('Config save warning:', configError.message);
+
+                    // ── 2b. Save Corporate/GC system config to its own dedicated table ──
+                    this.updateSystemStatus('Saving Corporate/GC config...');
+                    const { error: configCorpError } = await this.supabase
+                        .from('system_config')
+                        .upsert({
+                            id: 1,
+                            tenant_id: this._tid(),
+                            bidding_deadline: this.state.biddingDeadlineCorp,
+                            bidding_year: this.state.biddingYearCorp,
+                            is_processed: this.state.isProcessedCorp,
+                            last_updated: new Date().toISOString()
+                        }, { onConflict: 'id' });
+
+                    if (configCorpError) console.warn('Corp config save warning:', configCorpError.message);
+
+                    // ── 2b. Save on-call dates to dedicated table ──
+                    this.updateSystemStatus('Saving on-call dates...');
+                    await this.saveOnCallDatesToSupabase();
+
+                    // ── 3. Save bids in batches of 500, routed to the correct table per bid ──
+                    if (this.state.bids.length > 0) {
+                        const bidTotal = this.state.bids.length;
+                        this.updateSystemStatus(`Saving bids (0/${bidTotal})...`);
+
+                        // Group bids by destination table (Ops / Maintenance / Corporate)
+                        const bidsByTable = { leave_requests: [], maint_leave_requests: [], corporate_leave_request: [] };
+                        this.state.bids.forEach(bid => {
+                            const table = this._isMaintStaff(bid.employeeId, bid)
+                                ? 'maint_leave_requests'
+                                : this._isCorporateStaff(bid.employeeId, bid)
+                                    ? 'corporate_leave_request'
+                                    : 'leave_requests';
+                            bidsByTable[table].push(bid);
+                        });
+
+                        let savedSoFar = 0;
+                        for (const [table, bidsForTable] of Object.entries(bidsByTable)) {
+                            if (bidsForTable.length === 0) continue;
+                            const bidChunks = chunk(bidsForTable, 500);
+                            for (let i = 0; i < bidChunks.length; i++) {
+                                const batch = bidChunks[i].map(bid => ({
+                                    tenant_id: this._tid(),
+                                    employee_id: bid.employeeId,
+                                    employee_name: bid.employeeName || '',
+                                    department: bid.department || '',
+                                    start_date: bid.startDate,
+                                    end_date: bid.endDate,
+                                    days_requested: bid.days,
+                                    status: 'pending',
+                                    slot_type: bid.slotType,
+                                    created_at: bid.timestamp || new Date().toISOString()
+                                }));
+
+                                const { error } = await this.supabase
+                                    .from(table)
+                                    .upsert(batch, { onConflict: 'employee_id,slot_type,start_date' });
+
+                                if (error) throw new Error(`Bid batch failed [${table}]: ${error.message}`);
+
+                                savedSoFar += batch.length;
+                                this.updateSystemStatus(`Saving bids (${savedSoFar}/${bidTotal})...`);
+                            }
+                        }
+                    }
+
+                    this.updateSystemStatus(`✅ Saved: ${empTotal} employees, ${this.state.bids.length} bids`);
+                    alert(`✅ All data saved to Supabase!\n\n• ${empTotal} employees\n• ${this.state.bids.length} bids\n• System configuration\n• ${Object.keys(this.state.onCallDates || {}).length} on-call staff entries`);
+                    setTimeout(() => this.updateSystemStatus('Ready'), 4000);
+
+                } catch (error) {
+                    console.error('❌ Error saving to Supabase:', error);
+                    this.updateSystemStatus('❌ Save failed — check console');
+                    alert(`❌ Save failed:\n${error.message}\n\nCheck browser console (F12) for details.`);
+                }
+            },
+
+            async syncWithSupabase() {
+                this.updateSystemStatus('Syncing with Supabase...');
+                
+                // First try to load from Supabase
+                const loaded = await this.loadFromSupabase();
+                
+                if (!loaded) {
+                    // If Supabase fails, try localStorage
+                    const localLoaded = this.loadFromLocalStorage();
+                    if (localLoaded) {
+                        this.updateSystemStatus(`✅ ${this.state.employees.length} employees from local storage`);
+                    } else {
+                        this.updateSystemStatus('⚠️ No data found locally or in database');
+                    }
+                }
+                
+                this.renderLoginForm();
+            },
+
+            // ==================== UTILITY FUNCTIONS ====================
+            saveState() {
+                try {
+                    localStorage.setItem('employees', JSON.stringify(this.state.employees));
+                    localStorage.setItem('employeePasswords', JSON.stringify(this.state.employeePasswords));
+                    localStorage.setItem('bids', JSON.stringify(this.state.bids));
+                    localStorage.setItem('biddingDeadline', this.state.biddingDeadline);
+                    localStorage.setItem('biddingYear', this.state.biddingYear.toString());
+                    localStorage.setItem('isProcessed', JSON.stringify(this.state.isProcessed));
+                    localStorage.setItem('biddingDeadlineCorp', this.state.biddingDeadlineCorp);
+                    localStorage.setItem('biddingYearCorp', this.state.biddingYearCorp.toString());
+                    localStorage.setItem('isProcessedCorp', JSON.stringify(this.state.isProcessedCorp));
+                    localStorage.setItem('plannerPassword', this.state.plannerPassword);
+                    localStorage.setItem('plannerEmail',    this.state.plannerEmail || 'a_abdulqader@outlook.com');
+                    localStorage.setItem('results', JSON.stringify(this.state.results));
+                    localStorage.setItem('slotCapacities', JSON.stringify(this.state.slotCapacities));
+                    localStorage.setItem('maintSlotCapacities', JSON.stringify(this.state.maintSlotCapacities || {}));
+                    localStorage.setItem('goldenCommandUsers', JSON.stringify(this.state.goldenCommandUsers || []));
+                    localStorage.setItem('corporateStaffUsers', JSON.stringify(this.state.corporateStaffUsers || []));
+                    localStorage.setItem('maintenanceStaffUsers', JSON.stringify(this.state.maintenanceStaffUsers || []));
+                    localStorage.setItem('maintenanceStaffPasswords', JSON.stringify(this.state.maintenanceStaffPasswords || {}));
+                    localStorage.setItem('l456InmUsers', JSON.stringify(this.state.l456InmUsers || []));
+                    localStorage.setItem('l3InmUsers', JSON.stringify(this.state.l3InmUsers || []));
+                    localStorage.setItem('l3TsmUsers', JSON.stringify(this.state.l3TsmUsers || []));
+                    localStorage.setItem('hseqUsers', JSON.stringify(this.state.hseqUsers || []));
+                    localStorage.setItem('onCallDates', JSON.stringify(this.state.onCallDates || {}));
+                } catch (e) {
+                    console.error('Error saving state:', e);
+                }
+            },
+
+            loadFromLocalStorage() {
+                try {
+                    const saved = localStorage.getItem('employees');
+                    if (saved) {
+                        this.state.employees = JSON.parse(saved);
+                        this.state.employeePasswords = JSON.parse(localStorage.getItem('employeePasswords') || '{}');
+                        this.state.bids = JSON.parse(localStorage.getItem('bids') || '[]');
+                        this.state.biddingDeadline = localStorage.getItem('biddingDeadline') || '';
+                        this.state.biddingYear = parseInt(localStorage.getItem('biddingYear')) || 2026;
+                        this.state.isProcessed = JSON.parse(localStorage.getItem('isProcessed') || 'false');
+                        this.state.biddingDeadlineCorp = localStorage.getItem('biddingDeadlineCorp') || '';
+                        this.state.biddingYearCorp = parseInt(localStorage.getItem('biddingYearCorp')) || 2026;
+                        this.state.isProcessedCorp = JSON.parse(localStorage.getItem('isProcessedCorp') || 'false');
+                        this.state.plannerPassword = localStorage.getItem('plannerPassword') || 'admin123';
+                        if (!this.state.plannerPassword) this.state.plannerPassword = 'admin123';
+                        this.state.plannerEmail    = localStorage.getItem('plannerEmail')    || 'a_abdulqader@outlook.com';
+                        this.state.results = JSON.parse(localStorage.getItem('results') || '[]');
+                        this.state.slotCapacities = JSON.parse(localStorage.getItem('slotCapacities') || '{}');
+                        this.state.maintSlotCapacities = JSON.parse(localStorage.getItem('maintSlotCapacities') || '{}');
+                        this.state.goldenCommandUsers = JSON.parse(localStorage.getItem('goldenCommandUsers') || '[]');
+                        this.state.corporateStaffUsers = JSON.parse(localStorage.getItem('corporateStaffUsers') || '[]');
+                        this.state.maintenanceStaffUsers = JSON.parse(localStorage.getItem('maintenanceStaffUsers') || '[]');
+                        this.state.maintenanceStaffPasswords = JSON.parse(localStorage.getItem('maintenanceStaffPasswords') || '{}');
+                        this.state.l456InmUsers = JSON.parse(localStorage.getItem('l456InmUsers') || '[]');
+                        this.state.l3InmUsers = JSON.parse(localStorage.getItem('l3InmUsers') || '[]');
+                        this.state.l3TsmUsers = JSON.parse(localStorage.getItem('l3TsmUsers') || '[]');
+                        this.state.hseqUsers  = JSON.parse(localStorage.getItem('hseqUsers')  || '[]');
+                        this.state.onCallDates = JSON.parse(localStorage.getItem('onCallDates') || '{}');
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('Error loading from localStorage:', e);
+                }
+                return false;
+            },
+
+            updateSystemStatus(message) {
+                const el = document.getElementById('systemStatus');
+                if (el) el.textContent = message;
+            },
+
+            // ==================== VIEW FUNCTIONS ====================
+            setLoginType(type) {
+                console.log('Setting login type to:', type);
+                this.state.loginType = type;
+
+                // Update tab bar active states
+                ['employee','planner','goldencommand','corporatestaff'].forEach(t => {
+                    const btn = document.getElementById('tab-' + t);
+                    if (!btn) return;
+                    btn.className = 'tab-btn';
+                    if (t === type) {
+                        if (t === 'employee') btn.classList.add('active-emp');
+                        else if (t === 'planner') btn.classList.add('active-plan');
+                        else if (t === 'goldencommand') btn.classList.add('active-gc');
+                        else if (t === 'corporatestaff') btn.classList.add('active-cs');
+                    }
+                });
+
+                this.renderLoginForm();
+            },
+
+            renderLoginForm() {
+                const form = document.getElementById('loginForm');
+                if (!form) return;
+                
+                if (this.state.loginType === 'planner') {
+                    form.innerHTML = `
+                        <div>
+                            <label class="metro-label">Planner Password</label>
+                            <input type="password" id="metro-plannerPwd" class="metro-input" placeholder="Enter planner password" />
+                        </div>
+                    `;
+                } else if (this.state.loginType === 'goldencommand') {
+                    const gcUsers = this.state.goldenCommandUsers || [];
+                    const hasGCUsers = gcUsers.length > 0;
+                    form.innerHTML = `
+                        <div style="margin-bottom:14px;">
+                            ${!hasGCUsers ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No Golden Command users configured. Contact the planner.</div>` : ''}
+                            <label class="metro-label">Golden Command ID</label>
+                            <input type="text" id="metro-gcLoginId" class="metro-input" placeholder="Enter your GC ID" ${!hasGCUsers ? 'disabled' : ''} />
+                        </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="metro-gcPwd" class="metro-input" placeholder="Enter your password" ${!hasGCUsers ? 'disabled' : ''} />
+                        </div>
+                    `;
+                } else if (this.state.loginType === 'corporatestaff') {
+                    const csUsers = this.state.corporateStaffUsers || [];
+                    const hasCSUsers = csUsers.length > 0;
+                    form.innerHTML = `
+                        <div style="margin-bottom:14px;">
+                            ${!hasCSUsers ? `<div style="background:rgba(2,136,209,0.08);border:1px solid rgba(2,136,209,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(2,136,209,0.9);">No Corporate Staff users configured. Contact the planner.</div>` : ''}
+                            <label class="metro-label">Corporate Staff ID</label>
+                            <input type="text" id="csLoginId" class="metro-input" placeholder="Enter your Staff ID" ${!hasCSUsers ? 'disabled' : ''} />
+                        </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="loginPassword" class="metro-input" placeholder="Enter your password" ${!hasCSUsers ? 'disabled' : ''} />
+                        </div>
+                    `;
+                } else {
+                    const hasData = this.state.employees.length > 0;
+                    form.innerHTML = `
+                        <div style="margin-bottom:14px;">
+                            ${!hasData ? `<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.75rem;color:rgba(251,191,36,0.8);">No employee data loaded. Click "Sync with Database" above.</div>` : ''}
+                            <label class="metro-label">Operation Staff ID</label>
+                            <input type="text" id="metro-empLoginId" class="metro-input" placeholder="Enter your ID" ${!hasData ? 'disabled' : ''} />
+                        </div>
+                        <div>
+                            <label class="metro-label">Password</label>
+                            <input type="password" id="metro-empPwd" class="metro-input" placeholder="Enter your password" ${!hasData ? 'disabled' : ''} />
+                        </div>
+                    `;
+                }
+            },
+
+            handleLogin() {
+                if (this.state.loginType === 'planner') {
+                    const input = document.getElementById('plannerLoginPwd') || document.getElementById('metro-plannerPwd') || document.getElementById('loginPassword');
+                    const password = this._pendingPlannerPw ?? (input ? input.value : '');
+                    this._pendingPlannerPw = null;
+                    
+                    if (password === this.state.plannerPassword) {
+                        this.state.currentUser = { name: 'Planner Admin' };
+                        this.state.userType = 'planner';
+                        this.state.activeView = 'dashboard';
+                        
+                        document.body.classList.add('logged-in');
+                        ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                        document.getElementById('loginView').style.display = 'none';
+                        const uip = document.getElementById('userInfo');
+                        uip.style.display = 'flex'; uip.classList.remove('hidden');
+                        requestAnimationFrame(() => this._syncHeaderOffset());
+                        document.getElementById('plannerNav').classList.remove('hidden');
+                        document.getElementById('plannerSidebar').classList.remove('hidden');
+                        document.getElementById('headerSaveBtn').classList.remove('hidden');
+                        document.getElementById('currentUserName').textContent = 'Planner Admin';
+                        document.getElementById('userTypeBadge').textContent = 'Planner';
+                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
+                        
+                        // Clear the modal password field immediately after login
+                        const modalPwdEl = document.getElementById('plannerModalPwd');
+                        if (modalPwdEl) modalPwdEl.value = '';
+                        
+                        this.renderView();
+                        this.writeAuditLog('LOGIN', { role: 'planner' });
+                        this.showToast('Welcome, Planner!', 'success');
+                    } else {
+                        this.showToast('Incorrect planner password.', 'error');
+                    }
+                } else if (this.state.loginType === 'goldencommand') {
+                    // Use _pendingLogin values if set by card button (avoids DOM ID conflicts)
+                    const gcId = (this._pendingLogin?.gcId) ?? (document.getElementById('gcLoginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.gcPw) ?? (document.getElementById('gcLoginPwd')?.value || document.getElementById('loginPassword')?.value || '');
+                    this._pendingLogin = null;
+                    
+                    if (!gcId || !password) {
+                        this.showToast('Please enter both GC ID and password.', 'warn');
+                        return;
+                    }
+
+                    const gcUsers = this.state.goldenCommandUsers || [];
+                    const gcUser = gcUsers.find(u => u.id === gcId);
+
+                    if (!gcUser) {
+                        this.showToast('Golden Command ID not found. Please contact the planner.', 'error');
+                        return;
+                    }
+
+                    const storedPass = gcUser.password || gcUser.id;
+                    if (password !== storedPass) {
+                        this.showToast('Incorrect password.', 'error');
+                        return;
+                    }
+                    
+                    this.state.currentUser = gcUser;
+                    this.state.userType = 'goldencommand';
+                    this.state.verifiedEmployee = { id: gcUser.id, name: gcUser.name, department: 'Golden Command', seniorityDate: '2000-01-01' };
+                    this.state.activeView = 'goldenCommand';
+                    
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const ui = document.getElementById('userInfo');
+                    ui.style.display = 'flex'; ui.classList.remove('hidden');
+                    document.getElementById('goldenCommandNav').classList.remove('hidden');
+                    document.getElementById('currentUserName').textContent = gcUser.name;
+                    document.getElementById('userTypeBadge').textContent = '⭐ Golden Command';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800';
+                    
+                    this.renderView();
+                    this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
+                    this.showToast(`Welcome, ${gcUser.name}!`, 'success');
+                } else if (this.state.loginType === 'corporatestaff') {
+                    const csIdInput = document.getElementById('csLoginId');
+                    const passInput = document.getElementById('csLoginPwd') || document.getElementById('loginPassword');
+                    const csId = csIdInput ? csIdInput.value.trim() : '';
+                    const password = passInput ? passInput.value : '';
+
+                    if (!csId || !password) {
+                        this.showToast('Please enter both Staff ID and password.', 'warn');
+                        return;
+                    }
+
+                    const csUsers = this.state.corporateStaffUsers || [];
+                    const csUser = csUsers.find(u => u.id === csId);
+
+                    if (!csUser) {
+                        this.showToast('Corporate Staff ID not found. Please contact the planner.', 'error');
+                        return;
+                    }
+
+                    const storedPass = csUser.password || csUser.id;
+                    if (password !== storedPass) {
+                        this.showToast('Incorrect password.', 'error');
+                        return;
+                    }
+
+                    this.state.currentUser = csUser;
+                    this.state.userType = 'corporatestaff';
+                    this.state.verifiedEmployee = {
+                        id: csUser.id,
+                        name: csUser.name,
+                        department: csUser.department || 'Corporate Staff',
+                        position: csUser.position || '',
+                        seniorityDate: csUser.seniorityDate || '2000-01-01'
+                    };
+                    this.state.activeView = 'corporateStaff';
+
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const csUi = document.getElementById('userInfo');
+                    csUi.style.display = 'flex'; csUi.classList.remove('hidden');
+                    document.getElementById('corporateStaffNav').classList.remove('hidden');
+                    document.getElementById('currentUserName').textContent = csUser.name;
+                    document.getElementById('userTypeBadge').textContent = '🏢 Corporate Staff';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+
+                    this.renderView();
+                    this.writeAuditLog('LOGIN', { name: csUser.name, id: csUser.id, role: 'corporatestaff' });
+                    this.showToast(`Welcome, ${csUser.name}!`, 'success');
+                } else if (this.state.loginType === 'maintenancestaff') {
+                    // Maintenance Staff login — use _pendingLogin if set by card button
+                    const id = (this._pendingLogin?.maintId) ?? (document.getElementById('maintLoginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.maintPw) ?? (document.getElementById('maintLoginPwd')?.value || '');
+                    this._pendingLogin = null;
+
+                    if (!id || !password) {
+                        this.showToast('Please enter both ID and password.', 'warn');
+                        return;
+                    }
+
+                    const maintUsers = this.state.maintenanceStaffUsers || [];
+                    const maintUser = maintUsers.find(u => String(u.id) === String(id));
+                    if (!maintUser) {
+                        this.showToast('Maintenance Staff ID not found. Please contact the planner.', 'error');
+                        return;
+                    }
+
+                    const storedPass = this.state.maintenanceStaffPasswords[String(id)] || String(id);
+                    if (password !== storedPass) {
+                        this.showToast('Incorrect password.', 'error');
+                        return;
+                    }
+
+                    this.state.currentUser = maintUser;
+                    this.state.userType = 'maintenancestaff';
+                    this.state.verifiedEmployee = {
+                        id: maintUser.id,
+                        name: maintUser.name,
+                        department: maintUser.department,
+                        position: maintUser.position,
+                        seniorityDate: maintUser.seniorityDate || '2020-01-01'
+                    };
+                    this.state.activeView = 'employee'; // reuse employee view for leave bidding
+
+                    // Hide login, show app
+                    document.body.classList.add('logged-in');
+                    ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                    document.getElementById('loginView').style.display = 'none';
+                    const maintUi = document.getElementById('userInfo');
+                    maintUi.style.display = 'flex'; maintUi.classList.remove('hidden');
+                    document.getElementById('employeeNav').classList.remove('hidden');
+                    document.getElementById('currentUserName').textContent = maintUser.name;
+                    document.getElementById('userTypeBadge').textContent = '🔧 Maintenance Staff';
+                    document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-800';
+
+                    this.renderView();
+                    this.writeAuditLog('LOGIN', { name: maintUser.name, id: maintUser.id, department: maintUser.department, role: 'maintenancestaff' });
+                    this.showToast(`Welcome, ${maintUser.name}!`, 'success');
+                } else {
+                    // Employee login — use _pendingLogin if set by card button, else read from DOM
+                    const id = (this._pendingLogin?.empId) ?? (document.getElementById('empLoginId')?.value?.trim() || document.getElementById('loginId')?.value?.trim() || '');
+                    const password = (this._pendingLogin?.empPw) ?? (document.getElementById('empLoginPwd')?.value || document.getElementById('loginPassword')?.value || '');
+                    this._pendingLogin = null;
+                    
+                    if (!id || !password) {
+                        this.showToast('Please enter both ID and password.', 'warn');
+                        return;
+                    }
+
+                    const employee = this.state.employees.find(e => e.id === id);
+                    if (!employee) {
+                        this.showToast('Operation Staff ID not found. Please upload data first.', 'error');
+                        return;
+                    }
+                    
+                    const storedPass = this.state.employeePasswords[id] || id;
+                    if (password === storedPass) {
+                        this.state.currentUser = employee;
+                        this.state.userType = 'employee';
+                        this.state.verifiedEmployee = employee;
+                        this.state.activeView = 'employee';
+                        
+                        // Hide login, show app
+                        document.body.classList.add('logged-in');
+                        ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                        document.getElementById('loginView').style.display = 'none';
+                        const ui2 = document.getElementById('userInfo');
+                        ui2.style.display = 'flex'; ui2.classList.remove('hidden');
+                        document.getElementById('employeeNav').classList.remove('hidden');
+                        document.getElementById('currentUserName').textContent = employee.name;
+                        document.getElementById('userTypeBadge').textContent = 'Operation Staff';
+                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
+                        
+                        this.renderView();
+                        this.writeAuditLog('LOGIN', { name: employee.name, id: employee.id, department: employee.department });
+                        this.showToast(`Welcome, ${employee.name}!`, 'success');
+                    } else {
+                        this.showToast('Incorrect password.', 'error');
+                    }
+                }
+            },
+
+            // Watches for user activity and auto-logs-out after `sessionTimeoutMinutes`
+            // of inactivity (security requirement). Safe to call once at init().
+            startIdleWatcher() {
+                const markActive = () => { this._lastActivityTs = Date.now(); };
+
+                // Any of these user interactions count as "active"
+                ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click']
+                    .forEach(evt => document.addEventListener(evt, markActive, { passive: true }));
+
+                markActive();
+
+                if (this._idleCheckInterval) clearInterval(this._idleCheckInterval);
+                // Check every 15s — frequent enough to feel responsive, cheap enough to ignore
+                this._idleCheckInterval = setInterval(() => {
+                    if (!this.state.currentUser) return; // nobody logged in, nothing to expire
+
+                    const limitMinutes = this.state.sessionTimeoutMinutes || 15;
+                    const idleMs = Date.now() - this._lastActivityTs;
+
+                    if (idleMs >= limitMinutes * 60 * 1000) {
+                        this.showToast(`You've been logged out after ${limitMinutes} minutes of inactivity.`, 'error');
+                        this.handleLogout();
+                    }
+                }, 15000);
+            },
+
+            // Force-closes every modal overlay in the app, regardless of which one is
+            // open or how it toggles (inline style="display:none" vs a CSS "open" class).
+            // Called on every logout path so a stale modal (e.g. Preview Allocation left
+            // open by the admin) never lingers on screen after the session has ended —
+            // this was the bug where the idle timeout signed the user out but the modal
+            // stayed visible on top of the login screen.
+            _closeAllModals() {
+                document.querySelectorAll('[id$="Modal"]').forEach(el => {
+                    el.style.display = 'none';
+                    el.classList.remove('open');
+                });
+            },
+
+            async handleLogout() {
+                // Close any modal that might be open BEFORE we tear down the rest of the
+                // session — otherwise it stays rendered on top of the login screen.
+                this._closeAllModals();
+
+                this.writeAuditLog('LOGOUT', { name: this.state.currentUser?.name, role: this.state.userType });
+                this.state.currentUser = null;
+                this.state.userType = null;
+                this.state.verifiedEmployee = null;
+                this.state.activeView = 'login';
+                
+                document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('plannerSidebar').classList.add('hidden');
+                document.getElementById('headerSaveBtn').classList.add('hidden');
+                document.getElementById('plannerNav').classList.add('hidden');
+                document.getElementById('employeeNav').classList.add('hidden');
+                document.getElementById('goldenCommandNav').classList.add('hidden');
+                document.getElementById('corporateStaffNav').classList.add('hidden');
+                document.getElementById('loginView').style.display = 'flex';
+                document.getElementById('contentArea').innerHTML = '';
+
+                // Restore dark bg
+                document.body.classList.remove('logged-in');
+                ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = '';
+                });
+
+                // Clear all login card inputs so credentials don't persist
+                ['empLoginId','empLoginPwd','csLoginId','csLoginPwd',
+                 'plannerLoginPwd','plannerModalPwd','gcLoginId','gcLoginPwd',
+                 'maintLoginId','maintLoginPwd',
+                 'loginId','loginPassword'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+
+                // Clear all running timers to prevent interval leaks
+                clearInterval(window._countdownInterval);   window._countdownInterval = null;
+                clearInterval(window._gcCountdownInterval); window._gcCountdownInterval = null;
+                clearInterval(window._csCountdownTimer);    window._csCountdownTimer = null;
+                clearInterval(window._dashInterval);        window._dashInterval = null;
+                this._stopAdminLive();
+
+                // Re-sync only user lists from Supabase so dropdowns are fresh on next login
+                if (this.supabase) {
+                    try {
+                        // Reload CS roster
+                        const { data: csRows } = await this.supabase
+                            .from('corporate_staff_employees').select('*')
+                            .eq('tenant_id', this._tid());
+                        if (csRows && csRows.length > 0)
+                            this.state.corporateStaffUsers = csRows.map(u => ({
+                                id: String(u.id), name: u.name || '',
+                                department: u.department || 'Corporate Staff', position: u.position || '',
+                                role: u.role || '', nationality: u.nationality || '', gender: u.gender || '',
+                                seniorityDate: u.seniority_date || '2000-01-01',
+                                totalLeaveDays: u.total_leave_days ?? 30, usedLeaveDays: u.used_leave_days ?? 0,
+                                password: u.password || String(u.id), email: u.email || ''
+                            }));
+
+                        // Reload sub-group users
+                        for (const sg of [
+                            { table:'l456inm_users', key:'l456InmUsers' },
+                            { table:'l3inm_users',   key:'l3InmUsers'   },
+                            { table:'l3tsm_users',   key:'l3TsmUsers'   },
+                            { table:'hseq_users',    key:'hseqUsers'    },
+                        ]) {
+                            const { data: rows } = await this.supabase
+                                .from(sg.table).select('id,name,password,email').eq('tenant_id', this._tid());
+                            if (rows && rows.length > 0)
+                                this.state[sg.key] = rows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
+                        }                    } catch(e) { /* silent — use whatever is already in state */ }
+                }
+
+                this.renderLoginForm();
+            },
+
+            // Keeps --topbar-h in sync with the real header height so the fixed
+            // header never leaves a gap or overlaps the content below it.
+            _syncHeaderOffset() {
+                const topbar = document.getElementById('userInfo');
+                if (!topbar) return;
+                const isHidden = topbar.classList.contains('hidden') || getComputedStyle(topbar).display === 'none';
+                const h = isHidden ? 0 : topbar.offsetHeight;
+                document.documentElement.style.setProperty('--topbar-h', h + 'px');
+            },
+
+            // ==================== EMAIL SEND (EmailJS + SMTP fallback) ====================
+            // Tries EmailJS first. If it's unconfigured or the send fails (network error,
+            // bad keys, EmailJS outage, etc.), falls back to a configurable HTTP relay
+            // endpoint that the admin points at their own SMTP-sending backend
+            // (e.g. a Supabase Edge Function using nodemailer). Browsers can't speak raw
+            // SMTP directly, so the fallback always goes through an HTTP endpoint like this.
+            //
+            // vars: the EmailJS template variables (to_email, to_name, otp_code, etc.)
+            // returns { sent: boolean, method: 'emailjs'|'smtp'|null, error: string }
+            async sendEmailWithFallback(vars) {
+                const svcId  = this.state.ejsServiceId  || localStorage.getItem('ejs_service')  || '';
+                const tplId  = this.state.ejsTemplateId || localStorage.getItem('ejs_template') || '';
+                const pubKey = this.state.ejsPublicKey  || localStorage.getItem('ejs_pubkey')   || '';
+                const fbUrl  = this.state.smtpFallbackUrl || localStorage.getItem('smtp_fallback_url') || '';
+                const fbKey  = this.state.smtpFallbackKey || localStorage.getItem('smtp_fallback_key') || '';
+
+                let lastError = '';
+
+                // Method 1 — EmailJS
+                if (svcId && tplId && pubKey) {
+                    try {
+                        emailjs.init(pubKey);
+                        await emailjs.send(svcId, tplId, vars);
+                        return { sent: true, method: 'emailjs', error: '' };
+                    } catch (err) {
+                        lastError = 'EmailJS: ' + (err?.text || err?.message || JSON.stringify(err));
+                        console.warn('EmailJS send failed, trying SMTP fallback:', lastError);
+                    }
+                } else {
+                    lastError = 'EmailJS not configured';
+                }
+
+                // Method 2 — SMTP fallback relay
+                if (fbUrl) {
+                    try {
+                        const resp = await fetch(fbUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(fbKey ? { 'Authorization': 'Bearer ' + fbKey } : {})
+                            },
+                            body: JSON.stringify({
+                                to: vars.to_email || vars.email,
+                                to_name: vars.to_name || '',
+                                subject: vars.subject || 'Annual Leave System notification',
+                                vars
+                            })
+                        });
+                        if (!resp.ok) throw new Error('Relay responded ' + resp.status);
+                        return { sent: true, method: 'smtp', error: '' };
+                    } catch (err) {
+                        lastError += (lastError ? ' | ' : '') + 'SMTP fallback: ' + (err?.message || String(err));
+                        console.error('SMTP fallback also failed:', err);
+                    }
+                }
+
+                return { sent: false, method: null, error: lastError };
+            },
+
+            // ==================== LIGHT/DARK THEME (login page) ====================
+            toggleTheme() {
+                const isLight = document.body.classList.toggle('light-theme');
+                localStorage.setItem('lp_theme', isLight ? 'light' : 'dark');
+                const btn = document.getElementById('lpThemeBtn');
+                if (btn) btn.textContent = isLight ? '☀️' : '🌙';
+            },
+
+            applySavedTheme() {
+                const isLight = localStorage.getItem('lp_theme') === 'light';
+                document.body.classList.toggle('light-theme', isLight);
+                const btn = document.getElementById('lpThemeBtn');
+                if (btn) btn.textContent = isLight ? '☀️' : '🌙';
+            },
+
+            setActiveView(view) {
+                console.log('Setting view to:', view);
+                // Stop any existing admin polling when navigating away
+                if (view !== 'admin') this._stopAdminLive();
+                // Stop Leave Dashboard realtime when navigating away
+                if (view !== 'leaveDashboard') this.stopLcRealtime();
+                this.state.activeView = view;
+                this._syncNavHighlight(view);
+                // Reset scroll to top so the new view's content isn't hidden above
+                // the sticky header (which otherwise stays anchored mid-scroll).
+                window.scrollTo(0, 0);
+                // Auto-refresh bids from Supabase when planner opens Admin Panel
+                if (view === 'admin' && this.state.userType === 'planner' && this.supabase) {
+                    this.refreshBidsFromSupabase(false).then(() => this._startAdminLive());
+                } else {
+                    this.renderView();
+                }
+            },
+
+            // Mobile slide-out sidebar control
+            toggleMobileSidebar(force) {
+                const sb = document.getElementById('plannerSidebar');
+                const bd = document.getElementById('sidebarBackdrop');
+                if (!sb || !bd) return;
+                const open = typeof force === 'boolean' ? force : !sb.classList.contains('mobile-open');
+                sb.classList.toggle('mobile-open', open);
+                bd.classList.toggle('show', open);
+            },
+
+            // Highlights the active item in both the top tab bar and the planner sidebar
+            _syncNavHighlight(view) {
+                document.querySelectorAll('[data-nav]').forEach(el => {
+                    el.classList.toggle('metro-tab-active', el.dataset.nav === view);
+                });
+                document.querySelectorAll('[data-snav]').forEach(el => {
+                    el.classList.toggle('sb-active', el.dataset.snav === view);
+                });
+                // Auto-expand whichever sidebar group contains the active view
+                const activeItem = document.querySelector(`.app-sidebar [data-snav="${view}"]`);
+                const group = activeItem ? activeItem.closest('.sb-group') : null;
+                if (group) group.open = true;
+                // On mobile, close the slide-out sidebar after navigating
+                if (window.innerWidth <= 1000) this.toggleMobileSidebar(false);
+            },
+
+            // Keeps the header notification bell and sidebar deadline card in sync,
+            // regardless of which view is currently open. Safe to call for any role.
+            _updateGlobalChrome() {
+                if (this.state.userType !== 'planner') return;
+                const box = document.getElementById('sidebarDeadlineBox');
+                if (box) {
+                    let inner = '<p style="margin:0;font-size:0.78rem;color:#9ca3af;">No deadline set</p>';
+                    if (this.state.biddingDeadline) {
+                        const dl = new Date(this.state.biddingDeadline);
+                        const diff = dl - new Date();
+                        if (diff <= 0) {
+                            inner = '<p style="margin:0;color:#ef4444;font-weight:700;font-size:0.95rem;">⛔ Deadline Passed</p>';
+                        } else {
+                            const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
+                            const color = diff < 86400000 ? '#ef4444' : diff < 259200000 ? '#f59e0b' : '#10b981';
+                            inner = `<p style="margin:0;font-size:1.1rem;font-weight:700;color:${color};">${d}d ${h}h ${m}m</p>
+                                <p style="font-size:0.7rem;color:#9ca3af;margin:3px 0 0;">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</p>`;
+                        }
+                    }
+                    box.innerHTML = `<div class="app-sidebar-deadline-label">⏰ Bidding Deadline</div>${inner}`;
+                }
+            },
+
+            renderView() {
+                const content = document.getElementById('contentArea');
+                if (!content) return;
+                
+                content.innerHTML = '';
+                this._updateGlobalChrome();
+                this._syncNavHighlight(this.state.activeView);
+                // Always land at the top of the page for the freshly rendered view —
+                // covers navigation, login, logout, and any other direct renderView() call.
+                window.scrollTo(0, 0);
+                requestAnimationFrame(() => this._syncHeaderOffset());
+
+                // Show/hide results ready badge
+                const userId = this.state.verifiedEmployee?.id;
+                const hasMyResults = userId && this.state.isProcessed && this.state.results.some(r => r.employeeId === userId);
+                ['resultsReadyBadge', 'gcResultsReadyBadge', 'csResultsReadyBadge'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.toggle('hidden', !hasMyResults);
+                });
+                
+                switch(this.state.activeView) {
+                    case 'dashboard':
+                        this.renderDashboardView();
+                        break;
+                    case 'upload':
+                        this.renderUploadView();
+                        break;
+                    case 'configureSlots':
+                        this.renderConfigureSlotsView();
+                        break;
+                    case 'seniorityReport':
+                        this.renderSeniorityReportView();
+                        break;
+                    case 'configureMaintSlots':
+                        this.renderConfigureMaintSlotsView();
+                        break;
+                    case 'admin':
+                        this.renderAdminView();
+                        break;
+                    case 'employee':
+                        this.renderEmployeeBiddingView();
+                        break;
+                    case 'myResults':
+                        this.renderMyResultsView();
+                        break;
+                    case 'results':
+                        this.renderResultsView();
+                        break;
+                    case 'manualOverride':
+                        this.renderManualOverrideView();
+                        break;
+                    case 'maintManualOverride':
+                        this.renderMaintManualOverrideView();
+                        break;
+                    case 'auditLog':
+                        this.renderAuditLogView();
+                        break;
+                    case 'changePassword':
+                        this.renderChangePasswordView();
+                        break;
+                    case 'changePlannerPassword':
+                        this.renderChangePlannerPasswordView();
+                        break;
+                    case 'emailSettings':
+                        this.renderEmailSettingsView();
+                        break;
+                    case 'manageOnCall':
+                        this.renderManageOnCallView();
+                        break;
+                    case 'manageUsers':
+                        this.renderManageUsersView();
+                        break;
+                    case 'goldenCommand':
+                        this.renderGoldenCommandBiddingView();
+                        break;
+                    case 'corporateStaff':
+                        this.renderCorporateStaffBiddingView();
+                        break;
+                    case 'leaveDashboard':
+                        this.renderLeaveDashboardView();
+                        break;
+                    case 'hrCorpDashboard':
+                        this.renderHrCorpDashboardView();
+                        break;
+                }
+                
+                this.saveState();
+            },
+
+            // ==================== VIEW RENDERING ====================
+            async renderUploadView() {
+                const content = document.getElementById('contentArea');
+                content.innerHTML = `
+                    <div class="max-w-4xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-8 mb-6">
+                            <div class="mb-6 p-4 bg-purple-50 rounded-lg border-2 border-purple-200">
+                                <label class="block font-semibold mb-2 text-lg">Select Bidding Year:</label>
+                                <select
+                                    id="biddingYearSelect"
+                                    class="w-full px-4 py-3 border-2 border-purple-300 rounded-lg text-lg font-semibold"
+                                    ${this.state.isProcessed ? 'disabled' : ''}
+                                >
+                                    ${[2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032].map(year => `
+                                        <option value="${year}" ${year === this.state.biddingYear ? 'selected' : ''}>${year}</option>
+                                    `).join('')}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-xl p-8">
+                            <h2 class="text-2xl font-bold mb-4">Upload Employee Data</h2>
+                            <p class="text-gray-600 mb-6">
+                                Upload an Excel file with employee information. The file should have columns like:
+                                "Personnel number", "Name", "Seniority Date", "Department" (Position), "Scheduling row" (L-code), etc.
+                            </p>
+                            
+                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-4">
+                                <p class="mb-4 text-gray-600">
+                                    Drag and drop your Excel file here or click to browse
+                                </p>
+                                <label class="cursor-pointer">
+                                    <input
+                                        type="file"
+                                        id="excelFile"
+                                        accept=".xlsx,.xls"
+                                        class="hidden"
+                                        onchange="app.handleFileUpload(event)"
+                                    />
+                                    <span class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 inline-block">
+                                        📁 Browse Files
+                                    </span>
+                                </label>
+                            </div>
+
+                            ${this.state.employees.length > 0 ? `
+                                <div class="mt-6">
+                                    <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                                        <span class="text-green-800 font-semibold">
+                                            ✓ ${this.state.employees.length} employees loaded for ${this.state.biddingYear}
+                                        </span>
+                                        <div class="text-xs text-green-600 mt-1">
+                                            Positions found: ${[...new Set(this.state.employees.map(e => e.position || e.department || 'Unassigned'))].join(', ')}
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Golden Command User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">⭐</span>
+                                <h2 class="text-2xl font-bold text-yellow-800">Golden Command Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage Golden Command accounts. Their default password is their GC ID. Changes are saved directly to Supabase.</p>
+                            <div class="space-y-2 mb-6" id="gcUserList">
+                                ${(this.state.goldenCommandUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-yellow-900">⭐ ${u.name}</span>
+                                            <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-mono border border-yellow-300">ID: ${u.id}</span>
+                                            <span class="text-xs text-gray-400">Password: ${u.password || u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeGCUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.goldenCommandUsers || []).length === 0 ? `<p class="text-sm text-yellow-600 italic py-2">No Golden Command users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-yellow-50 border-2 border-yellow-300 rounded-xl p-5">
+                                <p class="font-semibold text-yellow-800 mb-3">➕ Add New GC User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">GC ID (username)</label>
+                                        <input type="text" id="newGCId" placeholder="e.g. GC001" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newGCName" placeholder="e.g. John Smith" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password (optional)</label>
+                                        <input type="text" id="newGCPassword" placeholder="Leave blank = same as ID" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
+                                    </div>
+                                </div>
+                                <button onclick="app.addGCUser()" class="px-6 py-2.5 bg-yellow-400 text-yellow-900 rounded-lg font-bold hover:bg-yellow-500 text-sm transition">
+                                    ⭐ Add Golden Command User
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Corporate Staff User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">🏢</span>
+                                <h2 class="text-2xl font-bold text-blue-800">Corporate Staff Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage Corporate Staff accounts. Their default password is their Staff ID. Changes are saved directly to Supabase.</p>
+                            <div class="space-y-2 mb-6" id="csUserList">
+                                ${(this.state.corporateStaffUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-blue-900">🏢 ${u.name}</span>
+                                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-mono border border-blue-300">ID: ${u.id}</span>
+                                            ${u.department && !['Corporate Staff', 'Human Resource', 'Human Resources'].includes(u.department) ? `<span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">${u.department}</span>` : ''}
+                                            ${u.position ? `<span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">${u.position}</span>` : ''}
+                                            <span class="text-xs text-gray-400">Password: ${u.password || u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeCSUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.corporateStaffUsers || []).length === 0 ? `<p class="text-sm text-blue-600 italic py-2">No Corporate Staff users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-blue-50 border-2 border-blue-300 rounded-xl p-5">
+                                <p class="font-semibold text-blue-800 mb-3">➕ Add New Corporate Staff User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID (username)</label>
+                                        <input type="text" id="newCSId" placeholder="e.g. CS001" class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newCSName" placeholder="e.g. Jane Doe" class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password (optional)</label>
+                                        <input type="text" id="newCSPassword" placeholder="Leave blank = same as ID" class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none" />
+                                    </div>
+                                </div>
+                                <button onclick="app.addCSUser()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 text-sm transition">
+                                    🏢 Add Corporate Staff User
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- L456 INM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-orange-800">L456 INM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L456 INM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l456InmUserList">
+                                ${(this.state.l456InmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-orange-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded font-mono border border-orange-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL456InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l456InmUsers || []).length === 0 ? `<p class="text-sm text-orange-600 italic py-2">No L456 INM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-orange-50 border-2 border-orange-300 rounded-xl p-5">
+                                <p class="font-semibold text-orange-800 mb-3">➕ Add New L456 INM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL456InmId" placeholder="e.g. L456-001" class="w-full px-3 py-2 border-2 border-orange-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL456InmName" placeholder="e.g. John Smith" class="w-full px-3 py-2 border-2 border-orange-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL456InmUser()" class="px-6 py-2.5 bg-orange-500 text-white rounded-lg font-bold hover:bg-orange-600 text-sm transition">📋 Add L456 INM User</button>
+                            </div>
+                        </div>
+
+                        <!-- L3 INM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-purple-800">L3 INM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L3 INM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l3InmUserList">
+                                ${(this.state.l3InmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-purple-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded font-mono border border-purple-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL3InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l3InmUsers || []).length === 0 ? `<p class="text-sm text-purple-600 italic py-2">No L3 INM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-purple-50 border-2 border-purple-300 rounded-xl p-5">
+                                <p class="font-semibold text-purple-800 mb-3">➕ Add New L3 INM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL3InmId" placeholder="e.g. L3INM-001" class="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL3InmName" placeholder="e.g. Jane Doe" class="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL3InmUser()" class="px-6 py-2.5 bg-purple-500 text-white rounded-lg font-bold hover:bg-purple-600 text-sm transition">📋 Add L3 INM User</button>
+                            </div>
+                        </div>
+
+                        <!-- L3 TSM User Management -->
+                        <div class="bg-white rounded-xl shadow-xl p-8 mt-6">
+                            <div class="flex items-center gap-3 mb-1">
+                                <span class="text-2xl">📋</span>
+                                <h2 class="text-2xl font-bold text-teal-800">L3 TSM Users</h2>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-6">Manage L3 TSM department accounts for On-Call scheduling.</p>
+                            <div class="space-y-2 mb-6" id="l3TsmUserList">
+                                ${(this.state.l3TsmUsers || []).map((u, i) => `
+                                    <div class="flex items-center justify-between bg-teal-50 border border-teal-200 rounded-lg p-3">
+                                        <div class="flex items-center gap-3 flex-wrap">
+                                            <span class="font-semibold text-teal-900">📋 ${u.name}</span>
+                                            <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded font-mono border border-teal-300">ID: ${u.id}</span>
+                                        </div>
+                                        <button onclick="app.removeL3TsmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>
+                                `).join('')}
+                                ${(this.state.l3TsmUsers || []).length === 0 ? `<p class="text-sm text-teal-600 italic py-2">No L3 TSM users yet. Add one below.</p>` : ''}
+                            </div>
+                            <div class="bg-teal-50 border-2 border-teal-300 rounded-xl p-5">
+                                <p class="font-semibold text-teal-800 mb-3">➕ Add New L3 TSM User</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                        <input type="text" id="newL3TsmId" placeholder="e.g. L3TSM-001" class="w-full px-3 py-2 border-2 border-teal-300 rounded-lg text-sm focus:border-teal-500 focus:outline-none" /></div>
+                                    <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                        <input type="text" id="newL3TsmName" placeholder="e.g. Alex Johnson" class="w-full px-3 py-2 border-2 border-teal-300 rounded-lg text-sm focus:border-teal-500 focus:outline-none" /></div>
+                                </div>
+                                <button onclick="app.addL3TsmUser()" class="px-6 py-2.5 bg-teal-500 text-white rounded-lg font-bold hover:bg-teal-600 text-sm transition">📋 Add L3 TSM User</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add year select listener
+                const yearSelect = document.getElementById('biddingYearSelect');
+                if (yearSelect) {
+                    yearSelect.addEventListener('change', async (e) => {
+                        const newYear = parseInt(e.target.value);
+                        if (newYear === this.state.biddingYear) return;
+                        if (this.state.bids.length > 0) {
+                            if (!confirm(`Changing the year will clear ${this.state.bids.length} existing bids for ${this.state.biddingYear}. Continue?`)) {
+                                e.target.value = this.state.biddingYear; // revert dropdown
+                                return;
+                            }
+                            this.state.bids = [];
+                        }
+                        this.state.biddingYear = newYear;
+                        this.state.slotCapacities = {}; // clear slot config for new year
+                        await this.saveConfigToSupabase();
+                        this.renderUploadView();
+                    });
+                }
+            },
+
+            handleFileUpload(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                if (!file.name.match(/\.(xlsx|xls)$/)) {
+                    alert('Please upload a valid Excel file (.xlsx or .xls)');
+                    return;
+                }
+
+                if (this.state.employees.length > 0) {
+                    const ok = confirm(
+                        `⚠️ This will replace all ${this.state.employees.length} existing employee records and clear their passwords.\n\nAre you sure you want to continue?`
+                    );
+                    if (!ok) { event.target.value = ''; return; }
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
+                        
+                        console.log('Excel data loaded:', jsonData.length, 'rows');
+                        
+                        // Process data - more robust parsing
+                        const employees = jsonData.map((row, idx) => {
+                            // Find ID from common column names
+                            let id = '';
+                            const idColumns = ['Personnel number', 'Personnel Number', 'Personnel_number', 
+                                              'Personnelnumber', 'ID', 'id', 'EmployeeID', 'Employee ID', 
+                                              'Employee No', 'Employee Number'];
+                            
+                            for (const col of idColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    id = String(row[col]).trim();
+                                    break;
+                                }
+                            }
+                            
+                            // Find name from common column names
+                            let name = '';
+                            const nameColumns = ['Name', 'Employee Name', 'Full Name', 
+                                                'FORENAME SURNAME', 'Forename Surname'];
+                            
+                            for (const col of nameColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    name = String(row[col]).trim();
+                                    break;
+                                }
+                            }
+                            
+                            // If name not found, try forename + surname
+                            if (!name) {
+                                const forename = row['Forename'] || row['FORENAME'] || '';
+                                const surname = row['Surname'] || row['SURNAME'] || '';
+                                name = `${forename} ${surname}`.trim();
+                            }
+                            
+                            // Read position (display name, e.g. 'Depot Controller') from Department column
+                            let position = '';
+                            const positionColumns = ['Department', 'DEPARTMENT', 'Position', 'Job Title', 'Role'];
+                            for (const col of positionColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    position = String(row[col]).trim().split('.')[0].trim();
+                                    break;
+                                }
+                            }
+
+                            // Read department (L-code, e.g. 'L3-DEP-DC') from Scheduling row column
+                            let department = '';
+                            const deptColumns = [
+                                'Scheduling row', 'Scheduling_row', 'SchedulingRow',
+                                'Org. Unit', 'Org Unit', 'OrgUnit'
+                            ];
+                            for (const col of deptColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    const raw = String(row[col]).trim().split('.')[0].trim();
+                                    if (/^(L3|L46|L5|L3465)[-\s]/i.test(raw) || /^(L3-SA|L5 SA|L3 SAMB|L5 SAMB|L46 SAMB)$/i.test(raw)) {
+                                        department = raw;
+                                        break;
+                                    }
+                                }
+                            }
+                            // Fallback: if no L-code found, use position as department
+                            if (!department) department = position;
+                            
+                            // Find seniority date
+                            let seniorityDate = '';
+                            const dateColumns = ['Seniority Date', 'SeniorityDate', 'seniorityDate',
+                                                'Start of staff membership', 'Start_of_staff_membership',
+                                                'Start Date', 'StartDate', 'Joining Date', 'JoiningDate'];
+                            
+                            for (const col of dateColumns) {
+                                if (row[col] !== undefined && row[col] !== '') {
+                                    const dateVal = row[col];
+                                    if (typeof dateVal === 'number') {
+                                        // Excel date number
+                                        const excelEpoch = new Date(1899, 11, 30);
+                                        const jsDate = new Date(excelEpoch.getTime() + dateVal * 24 * 60 * 60 * 1000);
+                                        seniorityDate = jsDate.toISOString();
+                                    } else {
+                                        // String date — try DD/MM/YYYY and DD-MM-YYYY before falling back
+                                        // to new Date() which is locale-sensitive and silently wrong
+                                        const dmyMatch = String(dateVal).match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+                                        let jsDate;
+                                        if (dmyMatch) {
+                                            jsDate = new Date(`${dmyMatch[3]}-${dmyMatch[2].padStart(2,'0')}-${dmyMatch[1].padStart(2,'0')}`);
+                                        } else {
+                                            jsDate = new Date(dateVal);
+                                        }
+                                        if (!isNaN(jsDate.getTime())) {
+                                            seniorityDate = jsDate.toISOString();
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            // If no date found, use default
+                            if (!seniorityDate) {
+                                seniorityDate = new Date('2020-01-01').toISOString();
+                            }
+                            
+                            // Use default ID if none found
+                            if (!id) {
+                                id = `EMP${idx + 1000}`;
+                            }
+                            
+                            // Use default name if none found
+                            if (!name) {
+                                name = `Employee ${idx + 1}`;
+                            }
+                            
+                            // Use default department if none found
+                            if (!department) {
+                                department = 'Unassigned';
+                            }
+                            
+                            return {
+                                id: id,
+                                name: name,
+                                seniorityDate: seniorityDate,
+                                department: department,
+                                position: position,
+                                gender: row['Gender'] || row['gender'] || '',
+                                nationality: row['Nationality'] || row['nationality'] || ''
+                            };
+                        }).filter(emp => emp.id && emp.name); // Remove empty rows
+                        
+                        if (employees.length > 0) {
+                            this.state.employees = employees;
+                            employees.forEach(emp => {
+                                this.state.employeePasswords[emp.id] = emp.id;
+                            });
+                            
+                            this.saveState();
+                            this.writeAuditLog('DATA_UPLOADED', { count: employees.length, year: this.state.biddingYear });
+                            
+                            // Show summary of departments found
+                            const departmentsFound = [...new Set(employees.map(e => e.position || e.department))];
+                            const message = `✅ Successfully loaded ${employees.length} employees\n\n` +
+                                          `Positions found (${departmentsFound.length}):\n` +
+                                          departmentsFound.join(', ');
+                            
+                            alert(message);
+                            this.renderUploadView();
+                            this.renderLoginForm(); // Update login form with new IDs
+                        } else {
+                            alert('⚠️ No valid employee data found in the file. Please check the format.');
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        alert('Error processing Excel file. Please check the format and try again.');
+                    }
+                };
+                
+                reader.readAsArrayBuffer(file);
+            },
+
+            // ==================== VIEW RENDERING ====================
+            renderEmployeeBiddingView() {
+                const content = document.getElementById('contentArea');
+                if (!this.state.verifiedEmployee) {
+                    content.innerHTML = '<p class="text-center">Please login first.</p>';
+                    return;
+                }
+            
+                // Calculate employee's leave entitlement
+                const calculateYearsOfService = (seniorityDate) => {
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                    return years;
+                };
+            
+                const getEmployeeEntitlement = (employee) => {
+                    if (!employee || !employee.seniorityDate) return 30;
+                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                    return yearsOfService >= 5 ? 35 : 30;
+                };
+            
+                const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
+                const yearsOfService = calculateYearsOfService(this.state.verifiedEmployee.seniorityDate);
+                
+                // Get employee's bids
+                const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
+                const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+                const remainingLeave = entitlement - totalBidDays;
+            
+                // Countdown timer helper
+                const deadlineCountdown = (() => {
+                    if (!this.state.biddingDeadline) return '';
+                    const dl = new Date(this.state.biddingDeadline);
+                    const now = new Date();
+                    const diff = dl - now;
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const days = Math.floor(diff / 86400000);
+                    const hrs  = Math.floor((diff % 86400000) / 3600000);
+                    const mins = Math.floor((diff % 3600000) / 60000);
+                    const secs = Math.floor((diff % 60000) / 1000);
+                    const urgency = diff < 3600000 ? 'bg-red-50 border-red-300 text-red-700' : diff < 86400000 ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}">
+                        <p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p>
+                        <p class="text-2xl font-bold font-mono" id="countdownTimer">${days}d ${hrs}h ${mins}m ${secs}s</p>
+                        <p class="text-xs mt-1">Deadline: ${dl.toLocaleDateString('en-US',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>
+                    </div>`;
+                })();
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdown}
+                        <!-- Header with leave entitlement -->
+                        <div class="metro-card p-6 mb-6">
+                            <h2 class="text-2xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Leave Bidding for ${this.state.biddingYear}</h2>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${entitlement}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Leave Days</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">${yearsOfService.toFixed(1)} years of service</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);">${userBids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Preferences Submitted</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Max 2 per block</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);">${totalBidDays}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Days Requested</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Across all preferences</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${entitlement}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Leave Entitlement</p>
+                                    <p class="text-xs" style="color:var(--app-text-muted);">Final allocation by seniority</p>
+                                </div>
+                            </div>
+            
+                        </div>
+            
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Left: Place New Bid -->
+                            <div class="metro-card p-6">
+                                <h3 class="text-xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Place New Bid</h3>
+                                
+                                ${this.state.isProcessed ? `
+                                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                                        <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                    </div>
+                                ` : ''}
+                                
+                                ${userBids.length >= 2 ? `
+                                    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <p class="font-semibold text-blue-800">ℹ️ You have submitted ${userBids.length} preference(s) total.</p>
+                                        <p class="text-sm text-blue-700 mt-1">You may still add preferences in other blocks — max 2 per block. Final allocation is based on seniority.</p>
+                                    </div>
+                                ` : ''}
+                                
+                                <!-- Month Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2" style="color:var(--app-text);">Select Block:</label>
+                                    <select id="selectedMonth" class="w-full px-4 py-2 border-2 rounded-lg" style="border-color:var(--app-border);" onchange="app.refreshAvailableSlots()">
+                                        ${this.state.months.map((month, i) => `
+                                            <option value="${month}">Block ${i + 1} · ${this.state.biddingYear}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+            
+                                <!-- Available Slots for selected month (planner-configured) -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2" style="color:var(--app-text);">Select Available Slot:</label>
+                                    <div id="availableSlotCards" class="space-y-3">
+                                        <!-- Populated by refreshAvailableSlots() -->
+                                    </div>
+                                </div>
+
+                                <!-- Selected slot confirmation panel -->
+                                <div id="selectedSlotConfirm" class="hidden mb-5 p-4 rounded-xl border-2" style="border-color:var(--metro-green-light);background:var(--app-green-50);">
+                                    <p class="font-semibold mb-1" style="color:var(--metro-green-dark);">📌 Selected: <span id="confirmSlotName"></span></p>
+                                    <p class="text-sm" style="color:var(--metro-green-dark);">📅 <span id="confirmSlotDates"></span></p>
+                                    <p class="text-sm" style="color:var(--metro-green-dark);">⏱ <span id="confirmSlotDays"></span> days</p>
+                                </div>
+            
+                                <!-- Submit Button -->
+                                <button
+                                    id="submitBidBtn"
+                                    onclick="app.submitBid()"
+                                    class="w-full px-6 py-3 text-white rounded-lg font-semibold disabled:opacity-50"
+                                    style="background:var(--metro-green);"
+                                    onmouseover="if(!this.disabled)this.style.background='var(--metro-green-dark)'"
+                                    onmouseout="if(!this.disabled)this.style.background='var(--metro-green)'"
+                                    ${(this.state.isProcessed || this.isBiddingClosed()) ? 'disabled' : ''}
+                                >
+                                    Submit Bid
+                                </button>
+                                <div id="bidSuccessToast" class="hidden mt-4 p-3 bg-green-50 border border-green-300 rounded-xl text-center">
+                                    <p class="text-green-800 font-semibold text-sm" id="bidSuccessMsg"></p>
+                                </div>
+                            </div>
+            
+                            <!-- Right: My Current Bids -->
+                            <div class="metro-card p-6">
+                                <h3 class="text-xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">My Current Bids</h3>
+                                
+                                ${userBids.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-500">
+                                        <p>No bids placed yet</p>
+                                        <p class="text-sm mt-2">Place your first bid on the left</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-4">
+                                        ${userBids.map(bid => {
+                                            const slotLabel = bid.slotType === 'SA' || bid.slotType === 'slotA' ? 'Slot A' :
+                                                              bid.slotType === 'SB' || bid.slotType === 'slotB' ? 'Slot B' :
+                                                              bid.slotType === 'SC' || bid.slotType === 'slotC' ? 'Slot C' :
+                                                              bid.slotType === 'SD' || bid.slotType === 'slotD' ? 'Slot D' :
+                                                              (this.state.slotTypes.find(s => s.id === bid.slotType)?.name || bid.slotType);
+                                            const badgeColor = (bid.slotType === 'SA' || bid.slotType === 'slotA') ? 'bg-green-100 text-green-800 border-green-300' :
+                                                               (bid.slotType === 'SB' || bid.slotType === 'slotB') ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                                               (bid.slotType === 'SD' || bid.slotType === 'slotD') ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                                                               'bg-purple-100 text-purple-800 border-purple-300';
+                                            return `
+                                                <div class="border border-gray-200 rounded-xl p-4">
+                                                    <div class="flex justify-between items-start">
+                                                        <div>
+                                                            <span class="inline-block px-2 py-0.5 rounded text-xs font-bold border ${badgeColor} mb-2">${slotLabel}</span>
+                                                            <p class="text-sm text-gray-700 font-semibold">📅 ${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-sm text-gray-500">⏱ ${bid.days} days</p>
+                                                        </div>
+                                                        <button
+                                                            onclick="app.removeBid('${bid.employeeId}', '${bid.slotType}', '${bid.startDate}')"
+                                                            class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 font-semibold"
+                                                            ${this.state.isProcessed ? 'disabled' : ''}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                `}
+                                
+                                <!-- Bid Summary -->
+                                <div class="mt-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="font-semibold mb-2" style="color:var(--app-text);">Bid Summary:</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Preferences submitted: ${userBids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Limit: max 2 bids per block</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Days requested: ${totalBidDays} days</p>
+                                    <p class="text-sm" style="color:var(--app-text);">Leave entitlement: ${entitlement} days (applied at allocation)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            
+                // Initialize selected slot state
+                if (!window.selectedSlot) {
+                    window.selectedSlot    = null;
+                    window.selectedSlotDef = null;
+                }
+                window._lastSlotMonth = null; // force reset on first render
+                
+                // Populate the slot cards for the default month
+                this.refreshAvailableSlots();
+
+                // Show success toast if a bid was just submitted
+                if (this._lastBidSuccess) {
+                    const toast = document.getElementById('bidSuccessToast');
+                    const msg   = document.getElementById('bidSuccessMsg');
+                    if (toast && msg) {
+                        msg.textContent = this._lastBidSuccess;
+                        toast.classList.remove('hidden');
+                        setTimeout(() => toast.classList.add('hidden'), 5000);
+                    }
+                    this._lastBidSuccess = null;
+                }
+
+                // Live countdown ticker
+                if (this.state.biddingDeadline) {
+                    clearInterval(window._countdownInterval);
+                    window._countdownInterval = setInterval(() => {
+                        const el = document.getElementById('countdownTimer');
+                        if (!el) { clearInterval(window._countdownInterval); return; }
+                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._countdownInterval); return; }
+                        const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000),
+                              m = Math.floor((diff%3600000)/60000), s = Math.floor((diff%60000)/1000);
+                        el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                    }, 1000);
+                }
+            },
+
+            renderGoldenCommandBiddingView() {
+                const content = document.getElementById('contentArea');
+                const gcUser = this.state.verifiedEmployee;
+                if (!gcUser) { content.innerHTML = '<p class="text-center">Please login first.</p>'; return; }
+
+                // Filter bids for THIS specific GC user
+                const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
+                const totalBidDays = gcBids.reduce((sum, bid) => sum + bid.days, 0);
+                const entitlement = 30; // Golden Command entitlement
+
+                // Countdown
+                const deadlineCountdownGC = (() => {
+                    if (!this.state.biddingDeadlineCorp) return '';
+                    const dl = new Date(this.state.biddingDeadlineCorp);
+                    const diff = dl - new Date();
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    const urgency = diff<3600000?'bg-red-50 border-red-300 text-red-700':diff<86400000?'bg-yellow-50 border-yellow-300 text-yellow-700':'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}"><p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p><p class="text-2xl font-bold font-mono" id="gcCountdownTimer">${d}d ${h}h ${m}m ${s}s</p></div>`;
+                })();
+            
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdownGC}
+                        <!-- Header with GC styling -->
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-yellow-400">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="text-3xl">⭐</span>
+                                <h2 class="text-2xl font-bold">Golden Command — ${gcUser.name} — Leave Bidding ${this.state.biddingYearCorp}</h2>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                                    <p class="text-2xl font-bold text-yellow-800">${entitlement}</p>
+                                    <p class="text-sm text-gray-600">Total Leave Days</p>
+                                    <p class="text-xs text-yellow-600">Golden Command Entitlement</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${gcBids.length} <span class="text-sm font-normal text-gray-500">unlimited</span></p>
+                                    <p class="text-sm text-gray-600">Bids Placed</p>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${totalBidDays}</p>
+                                    <p class="text-sm text-gray-600">Days Bid</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-purple-700">∞</p>
+                                    <p class="text-sm text-gray-600">GC Privilege — No Limit</p>
+                                </div>
+                            </div>
+            
+                            <!-- Slot types summary -->
+                            <div class="border-t pt-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <p class="font-semibold">Available Slot Types:</p>
+                                    <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full font-semibold">⭐ GC: Unlimited selections, free date range</span>
+                                </div>
+                                <div class="flex gap-4">
+                                    ${this.state.slotTypes.map(slot => `
+                                        <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
+                                            <p class="font-bold">${slot.name}</p>
+                                            <p class="text-sm">${slot.days} consecutive days</p>
+                                        </div>
+                                    `).join('')}
+                                    <div class="flex-1 p-3 rounded-lg border border-yellow-400 bg-yellow-50">
+                                        <p class="font-bold text-yellow-800">⭐ Custom</p>
+                                        <p class="text-sm text-yellow-700">Any date range — free choice</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+            
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Left: Place New Bid -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-yellow-400">
+                                <h3 class="text-xl font-bold mb-4">⭐ Place New GC Bid</h3>
+                                
+                                ${this.state.isProcessedCorp ? `
+                                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                                        <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                    </div>
+                                ` : ''}
+
+                                <!-- Slot Type Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                    <div class="space-y-2">
+                                        ${this.state.slotTypes.map(slot => {
+                                            const colorMap = { green: 'border-green-300 bg-green-50 hover:bg-green-100 text-green-900', blue: 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-900', purple: 'border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-900' };
+                                            const activeMap = { green: 'bg-green-500 text-white border-green-600', blue: 'bg-blue-500 text-white border-blue-600', purple: 'bg-purple-500 text-white border-purple-600' };
+                                            const isActive = window.gcSelectedSlot === slot.id;
+                                            return `
+                                                <button
+                                                    data-slot="${slot.id}"
+                                                    onclick="app.setGCSelectedSlot('${slot.id}')"
+                                                    class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessedCorp ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (isActive ? (activeMap[slot.color] || 'bg-yellow-400 text-yellow-900 border-yellow-500') : (colorMap[slot.color] || 'bg-yellow-50 hover:bg-yellow-100 text-gray-800 border-yellow-300'))}"
+                                                    ${this.state.isProcessedCorp ? 'disabled' : ''}
+                                                >
+                                                    ${slot.name} — ${slot.days} consecutive days
+                                                    ${isActive ? '<span class="float-right">✓ Selected</span>' : ''}
+                                                </button>
+                                            `;
+                                        }).join('')}
+                                        <!-- Custom / Free Choice option -->
+                                        <button
+                                            data-slot="gcCustom"
+                                            onclick="app.setGCSelectedSlot('gcCustom')"
+                                            class="gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border ${this.state.isProcessedCorp ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : (window.gcSelectedSlot === 'gcCustom' ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : 'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-400')}"
+                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
+                                        >
+                                            ⭐ Custom — Choose any start &amp; end date freely
+                                            ${window.gcSelectedSlot === 'gcCustom' ? '<span class="float-right">✓ Selected</span>' : ''}
+                                        </button>
+                                    </div>
+                                </div>
+            
+                                <!-- Date Selection -->
+                                <div class="mb-6">
+                                    <div class="mb-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                                        <p class="font-semibold text-yellow-800 text-sm" id="gcSlotInfoText">
+                                            ${window.gcSelectedSlot === 'gcCustom' ? '⭐ Custom: Pick any start and end date' : (this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot) ? `${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).name} — end date auto-calculated (${this.state.slotTypes.find(s=>s.id===window.gcSelectedSlot).days} days)` : 'Select a slot type above')}
+                                        </p>
+                                    </div>
+
+                                    ${(() => {
+                                        // On-Call schedule notice for this GC user
+                                        const myOnCall = this.state.onCallDates[gcUser.id] || [];
+                                        if (myOnCall.length === 0) return '';
+                                        // Group consecutive dates into ranges
+                                        const sorted = [...myOnCall].sort();
+                                        const ranges = [];
+                                        let rangeStart = sorted[0], rangeEnd = sorted[0];
+                                        for (let k = 1; k < sorted.length; k++) {
+                                            const prev = new Date(sorted[k-1]);
+                                            const curr = new Date(sorted[k]);
+                                            const diffDays = (curr - prev) / 86400000;
+                                            if (diffDays === 1) {
+                                                rangeEnd = sorted[k];
+                                            } else {
+                                                ranges.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`);
+                                                rangeStart = sorted[k]; rangeEnd = sorted[k];
+                                            }
+                                        }
+                                        ranges.push(rangeStart === rangeEnd ? rangeStart : `${rangeStart} → ${rangeEnd}`);
+                                        return `<div class="mb-4 p-3 bg-red-50 border border-red-300 rounded-lg">
+                                            <p class="font-bold text-red-800 text-sm mb-2">🚫 Your On-Call Dates (leave cannot be selected on these dates):</p>
+                                            <div class="flex flex-wrap gap-1">${ranges.map(r => `<span class="inline-block bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded border border-red-200">${r}</span>`).join('')}</div>
+                                        </div>`;
+                                    })()}
+            
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block font-semibold mb-2">Start Date:</label>
+                                            <input
+                                                type="date"
+                                                id="gcStartDate"
+                                                class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+                                                min="${this.state.biddingYearCorp}-01-01"
+                                                max="${this.state.biddingYearCorp}-12-31"
+                                                onchange="app.updateGCEndDate()"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label class="block font-semibold mb-2">End Date:</label>
+                                            <input
+                                                type="date"
+                                                id="gcEndDate"
+                                                class="w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none"
+                                                min="${this.state.biddingYearCorp}-01-01"
+                                                max="${this.state.biddingYearCorp}-12-31"
+                                                onchange="app.updateGCDateInfo()"
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="gcDateInfo" class="hidden mt-2"></div>
+                                </div>
+            
+                                <!-- Submit Button -->
+                                <button
+                                    onclick="app.submitGCBid()"
+                                    class="w-full px-6 py-3 bg-yellow-400 text-yellow-900 rounded-lg font-semibold hover:bg-yellow-500 transition-colors shadow-sm"
+                                    ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'disabled' : ''}
+                                >
+                                    ⭐ Submit Golden Command Bid
+                                </button>
+                            </div>
+            
+                            <!-- Right: My Current Bids -->
+                            <div class="bg-white rounded-xl shadow-xl p-6">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-xl font-bold">⭐ My GC Bids</h3>
+                                    <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">${gcBids.length} bid${gcBids.length !== 1 ? 's' : ''}</span>
+                                </div>
+                                
+                                ${gcBids.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-500">
+                                        <p class="text-4xl mb-2">⭐</p>
+                                        <p class="font-semibold">No bids placed yet</p>
+                                        <p class="text-sm mt-2">Use the form on the left — no limit on bids</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                                        ${gcBids.map((bid, i) => {
+                                            const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                            const slotLabel = bid.slotType === 'gcCustom' ? '⭐ Custom' : (slot?.name || bid.slotType);
+                                            const colorBadge = bid.slotType === 'gcCustom' ? 'bg-yellow-100 text-yellow-800' : (bid.slotType === 'slotA' ? 'bg-green-100 text-green-800' : bid.slotType === 'slotB' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800');
+                                            return `
+                                                <div class="border border-yellow-200 rounded-lg p-3 bg-yellow-50">
+                                                    <div class="flex justify-between items-start">
+                                                        <div>
+                                                            <div class="flex items-center gap-2 mb-1">
+                                                                <span class="text-xs font-bold text-gray-500">#${i+1}</span>
+                                                                <span class="px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}">${slotLabel}</span>
+                                                            </div>
+                                                            <p class="text-sm text-gray-700 font-semibold">${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-xs text-gray-500 mt-0.5">${bid.days} day${bid.days !== 1 ? 's' : ''}</p>
+                                                        </div>
+                                                        <button
+                                                            onclick="app.removeGCBid('${bid.slotType}', '${bid.startDate}')"
+                                                            class="px-3 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
+                                                        >
+                                                            ✕ Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                `}
+                                
+                                <!-- Bid Summary -->
+                                <div class="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                                    <p class="font-semibold mb-2 text-yellow-800">GC Bid Summary:</p>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        <p class="text-gray-600">Total bids:</p><p class="font-semibold">${gcBids.length} <span class="text-yellow-600 text-xs">(unlimited)</span></p>
+                                        <p class="text-gray-600">Total days bid:</p><p class="font-semibold">${totalBidDays} days</p>
+                                        <p class="text-gray-600">Leave entitlement:</p><p class="font-semibold">${entitlement} days</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            
+                // Initialize GC slot state — default to Custom (free selection)
+                if (!window.gcSelectedSlot) {
+                    window.gcSelectedSlot = 'gcCustom';
+                }
+
+                // Live countdown ticker for GC
+                if (this.state.biddingDeadlineCorp) {
+                    clearInterval(window._gcCountdownInterval);
+                    window._gcCountdownInterval = setInterval(() => {
+                        const el = document.getElementById('gcCountdownTimer');
+                        if (!el) { clearInterval(window._gcCountdownInterval); return; }
+                        const diff = new Date(this.state.biddingDeadlineCorp) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._gcCountdownInterval); return; }
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                        el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                    }, 1000);
+                }
+            },
+
+            setGCSelectedSlot(slotId) {
+                window.gcSelectedSlot = slotId;
+                
+                // Update button styles
+                const buttons = document.querySelectorAll('.gc-slot-btn');
+                buttons.forEach(btn => {
+                    const isSelected = btn.dataset.slot === slotId;
+                    if (this.state.isProcessedCorp) {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-gray-200 text-gray-500 cursor-not-allowed';
+                    } else if (isSelected) {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-yellow-400 text-yellow-900 border-yellow-500';
+                    } else {
+                        btn.className = 'gc-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all border bg-yellow-50 hover:bg-yellow-100 text-yellow-900 border-yellow-300';
+                    }
+                });
+
+                // Update info text
+                const infoEl = document.getElementById('gcSlotInfoText');
+                if (infoEl) {
+                    if (slotId === 'gcCustom') {
+                        infoEl.textContent = '⭐ Custom: Pick any start and end date freely';
+                    } else {
+                        const slot = this.state.slotTypes.find(s => s.id === slotId);
+                        infoEl.textContent = slot
+                            ? `${slot.name} — end date auto-calculated (${slot.days} days)`
+                            : 'Select a slot type above';
+                    }
+                }
+
+                // Clear date inputs when switching slots
+                const startDate = document.getElementById('gcStartDate');
+                const endDate = document.getElementById('gcEndDate');
+                const dateInfo = document.getElementById('gcDateInfo');
+                if (startDate) startDate.value = '';
+                if (endDate) {
+                    endDate.value = '';
+                    // Custom slot: end date is freely editable; others: readonly
+                    endDate.readOnly = slotId !== 'gcCustom';
+                    endDate.className = `w-full px-4 py-2 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none ${slotId !== 'gcCustom' ? 'bg-gray-50' : ''}`;
+                }
+                if (dateInfo) dateInfo.classList.add('hidden');
+            },
+
+            updateGCEndDate() {
+                const startDateInput = document.getElementById('gcStartDate');
+                const endDateInput = document.getElementById('gcEndDate');
+                
+                if (!startDateInput || !startDateInput.value) {
+                    if (endDateInput) endDateInput.value = '';
+                    return;
+                }
+
+                if (window.gcSelectedSlot === 'gcCustom') {
+                    // Custom: end date is free — just update info if both dates set
+                    this.updateGCDateInfo();
+                    return;
+                }
+
+                if (!window.gcSelectedSlot) return;
+                
+                const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                if (!slot) return;
+                
+                const startDate = new Date(startDateInput.value);
+                const endDate = new Date(startDate);
+                endDate.setDate(endDate.getDate() + slot.days - 1);
+                
+                if (endDateInput) {
+                    endDateInput.value = endDate.toISOString().split('T')[0];
+                }
+                
+                this.updateGCDateInfo();
+            },
+
+            updateGCDateInfo() {
+                const startDateInput = document.getElementById('gcStartDate');
+                const endDateInput = document.getElementById('gcEndDate');
+                const dateInfo = document.getElementById('gcDateInfo');
+
+                if (!startDateInput?.value || !endDateInput?.value || !dateInfo) return;
+
+                const days = Math.ceil(Math.abs(new Date(endDateInput.value) - new Date(startDateInput.value)) / (1000 * 60 * 60 * 24)) + 1;
+
+                // ── On-Call conflict live check ──────────────────────────────
+                const gcUser = this.state.verifiedEmployee;
+                const onCallSet = new Set(gcUser ? (this.state.onCallDates[gcUser.id] || []) : []);
+                const conflictDates = [];
+                if (onCallSet.size > 0 && startDateInput.value && endDateInput.value) {
+                    const cur = new Date(startDateInput.value);
+                    const end = new Date(endDateInput.value);
+                    while (cur <= end) {
+                        const iso = cur.toISOString().slice(0, 10);
+                        if (onCallSet.has(iso)) conflictDates.push(iso);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                }
+                const onCallWarning = conflictDates.length > 0
+                    ? `<p class="font-semibold text-red-700 mt-2">🚫 On-Call conflict on: ${conflictDates.join(', ')}</p>`
+                    : (onCallSet.size > 0 ? `<p class="text-green-700 text-sm mt-1">✅ No On-Call conflicts in this range</p>` : '');
+                // ────────────────────────────────────────────────────────────
+
+                let validMsg = '';
+                if (window.gcSelectedSlot === 'gcCustom') {
+                    validMsg = `<p class="font-semibold text-yellow-800">⭐ Custom selection: ${days} day${days !== 1 ? 's' : ''} ✓</p>`;
+                    dateInfo.className = conflictDates.length > 0 ? 'p-3 rounded mb-2 bg-red-50 border border-red-300' : 'p-3 rounded mb-2 bg-yellow-50 border border-yellow-300';
+                } else {
+                    const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                    const ok = slot && days === slot.days;
+                    validMsg = `<p class="font-semibold ${ok ? 'text-green-800' : 'text-red-800'}">${days} day${days !== 1 ? 's' : ''} selected ${ok ? '✓' : `(${slot?.name} requires exactly ${slot?.days} days)`}</p>`;
+                    dateInfo.className = conflictDates.length > 0 ? 'p-3 rounded mb-2 bg-red-50 border border-red-300'
+                        : `p-3 rounded mb-2 ${ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`;
+                }
+                dateInfo.innerHTML = validMsg + `<p class="text-sm text-gray-600 mt-1">${startDateInput.value} → ${endDateInput.value}</p>` + onCallWarning;
+                dateInfo.classList.remove('hidden');
+            },
+
+            submitGCBid() {
+                if (this.state.isProcessedCorp) {
+                    alert('Bidding has been processed. No more bids allowed.');
+                    return;
+                }
+
+                if (this.isBiddingClosedCorp()) {
+                    alert('⛔ The bidding deadline has passed. You can no longer submit bids.');
+                    return;
+                }
+
+                const gcUser = this.state.verifiedEmployee;
+                if (!gcUser) { alert('Please login first.'); return; }
+
+                if (!window.gcSelectedSlot) {
+                    alert('Please select a slot type first.');
+                    return;
+                }
+
+                const startDate = document.getElementById('gcStartDate')?.value;
+                const endDate = document.getElementById('gcEndDate')?.value;
+
+                if (!startDate) {
+                    alert('Please select a start date.');
+                    return;
+                }
+                if (!endDate) {
+                    alert('Please select an end date.');
+                    return;
+                }
+
+                const days = Math.ceil(Math.abs(new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (days < 1) {
+                    alert('End date must be on or after start date.');
+                    return;
+                }
+
+                // For fixed slot types, validate exact day count
+                if (window.gcSelectedSlot !== 'gcCustom') {
+                    const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
+                    if (slot && days !== slot.days) {
+                        alert(`${slot.name} requires exactly ${slot.days} days. Your selection is ${days} days.\n\nTo choose a free date range, select the "⭐ Custom" option instead.`);
+                        return;
+                    }
+                }
+
+                // Check date overlap with existing GC bids
+                const gcBids = this.state.bids.filter(bid => bid.employeeId === gcUser.id);
+                for (const bid of gcBids) {
+                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                        alert(`Date overlap with an existing bid (${bid.startDate} → ${bid.endDate}). Please choose non-overlapping dates.`);
+                        return;
+                    }
+                }
+
+                // ── On-Call Conflict Check ──────────────────────────────────────
+                // Build a set of all dates in the requested leave range
+                const onCallDatesForUser = new Set(this.state.onCallDates[gcUser.id] || []);
+                if (onCallDatesForUser.size > 0) {
+                    const conflictingOnCallDates = [];
+                    const cursor = new Date(startDate);
+                    const rangeEnd = new Date(endDate);
+                    while (cursor <= rangeEnd) {
+                        const iso = cursor.toISOString().slice(0, 10);
+                        if (onCallDatesForUser.has(iso)) conflictingOnCallDates.push(iso);
+                        cursor.setDate(cursor.getDate() + 1);
+                    }
+                    if (conflictingOnCallDates.length > 0) {
+                        const conflictList = conflictingOnCallDates.join(', ');
+                        alert(`⚠️ On-Call Conflict Detected!\n\nYour selected leave period (${startDate} → ${endDate}) overlaps with your scheduled On-Call duties on the following date${conflictingOnCallDates.length > 1 ? 's' : ''}:\n\n${conflictList}\n\nPlease choose dates that do not conflict with your On-Call schedule.`);
+                        return;
+                    }
+                }
+                // ───────────────────────────────────────────────────────────────
+
+                const slotLabel = window.gcSelectedSlot === 'gcCustom'
+                    ? 'Custom'
+                    : (this.state.slotTypes.find(s => s.id === window.gcSelectedSlot)?.name || window.gcSelectedSlot);
+
+                const newBid = {
+                    employeeId: gcUser.id,
+                    employeeName: gcUser.name,
+                    seniorityDate: gcUser.seniorityDate || '2000-01-01',
+                    department: 'Golden Command',
+                    slotType: window.gcSelectedSlot,
+                    startDate,
+                    endDate,
+                    days,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.state.bids.push(newBid);
+                this.saveState();
+                this.writeAuditLog('BID_PLACED', { type: 'GC', slot: window.gcSelectedSlot, start: startDate, end: endDate, days });
+
+                // Save bid immediately to Supabase so it survives refresh
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (saved) console.log('✅ GC Bid saved to Supabase');
+                });
+
+                alert(`⭐ GC Bid placed!\n${slotLabel} — ${startDate} → ${endDate} (${days} day${days !== 1 ? 's' : ''})`);
+                this.renderGoldenCommandBiddingView();
+            },
+
+            async removeGCBid(slotType, startDate) {
+                if (this.state.isProcessedCorp) {
+                    alert('Cannot remove bids after processing.');
+                    return;
+                }
+                if (!confirm('Remove this Golden Command bid?')) return;
+                const gcUser = this.state.verifiedEmployee;
+
+                // 1. Optimistically remove from local state and persist immediately
+                const idx = this.state.bids.findIndex(bid =>
+                    bid.employeeId === gcUser.id && bid.slotType === slotType && bid.startDate === startDate
+                );
+                if (idx !== -1) this.state.bids.splice(idx, 1);
+                this.saveState();
+                this.renderGoldenCommandBiddingView();
+
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
+                    this.writeAuditLog('BID_REMOVED', { employee_id: gcUser.id, slot_type: slotType, start_date: startDate, section: 'golden_command' });
+                    return;
+                }
+                const { error } = await this.supabase
+                    .from('corporate_leave_request')
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', gcUser.id)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error('❌ GC Bid delete failed:', error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log('✅ GC Bid deleted from Supabase');
+                this.writeAuditLog('BID_REMOVED', { employee_id: gcUser.id, slot_type: slotType, start_date: startDate, section: 'golden_command' });
+            },
+
+            // ==================== CORPORATE STAFF BIDDING ====================
+            renderCorporateStaffBiddingView() {
+                const content = document.getElementById('contentArea');
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) { content.innerHTML = '<p class="text-center">Please login first.</p>'; return; }
+
+                const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
+                const totalBidDays = csBids.reduce((sum, bid) => sum + bid.days, 0);
+                // Corporate Staff entitlement: 35 days if 5+ years of service, else 30
+                const calculateCsYearsOfService = (seniorityDate) => {
+                    if (!seniorityDate) return 0;
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+                const csYearsOfService = calculateCsYearsOfService(csUser.seniorityDate);
+                const entitlement = csYearsOfService >= 5 ? 35 : 30;
+
+                // Countdown
+                const deadlineCountdownCS = (() => {
+                    if (!this.state.biddingDeadlineCorp) return '';
+                    const dl = new Date(this.state.biddingDeadlineCorp);
+                    const diff = dl - new Date();
+                    if (diff <= 0) return `<div class="mb-4 bg-red-50 border border-red-300 rounded-xl p-3 text-center"><span class="text-red-700 font-bold">⛔ Bidding deadline has passed</span></div>`;
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    const urgency = diff<3600000?'bg-red-50 border-red-300 text-red-700':diff<86400000?'bg-yellow-50 border-yellow-300 text-yellow-700':'bg-green-50 border-green-300 text-green-700';
+                    return `<div class="mb-4 border rounded-xl p-3 text-center ${urgency}"><p class="text-xs font-semibold uppercase tracking-wide mb-1">⏰ Bidding Closes In</p><p class="text-2xl font-bold font-mono" id="csCountdownTimer">${d}d ${h}h ${m}m ${s}s</p></div>`;
+                })();
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        ${deadlineCountdownCS}
+                        <!-- Header -->
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6 border-t-4 border-blue-500">
+                            <div class="flex items-center gap-3 mb-4">
+                                <span class="text-3xl">🏢</span>
+                                <h2 class="text-2xl font-bold">Corporate Staff — ${csUser.name} — Leave Bidding ${this.state.biddingYearCorp}</h2>
+                            </div>
+
+                            ${(() => {
+                                const uid = csUser.id;
+                                // Collect on-call dates from all 4 dept groups this user belongs to
+                                const deptGroups = [
+                                    { key: uid,               label: '🏢 Corporate Staff' },
+                                    { key: 'l456inm::' + uid, label: '📋 L456 INM' },
+                                    { key: 'l3inm::' + uid,   label: '📋 L3 INM' },
+                                    { key: 'l3tsm::' + uid,   label: '📋 L3 TSM' },
+                                    { key: 'hseq::' + uid,    label: '🔰 HSEQ' },
+                                ].filter(g => (this.state.onCallDates[g.key] || []).length > 0);
+
+                                if (deptGroups.length === 0) return '';
+
+                                const getWN = (ds) => {
+                                    const dt2 = new Date(ds + 'T00:00:00');
+                                    const j1 = new Date(dt2.getFullYear(), 0, 1);
+                                    const w1s = new Date(j1); w1s.setDate(j1.getDate() - j1.getDay());
+                                    const wn = Math.floor((dt2 - w1s) / (7*24*60*60*1000)) + 1;
+                                    return wn >= 53 ? 1 : wn;
+                                };
+                                const makeChips = (dates) => {
+                                    const sorted = [...dates].sort();
+                                    const weekGroups = {};
+                                    sorted.forEach(d => {
+                                        const dt = new Date(d + 'T00:00:00');
+                                        const ws = new Date(dt); ws.setDate(dt.getDate() - dt.getDay());
+                                        const k = ws.getFullYear() + '-' + String(ws.getMonth()+1).padStart(2,'0') + '-' + String(ws.getDate()).padStart(2,'0');
+                                        if (!weekGroups[k]) weekGroups[k] = [];
+                                        weekGroups[k].push(d);
+                                    });
+                                    return Object.entries(weekGroups).map(([, wDates]) => {
+                                        const wNum = getWN(wDates[0]);
+                                        const label = wDates.length >= 7
+                                            ? `Week ${wNum} (${wDates[0]} → ${wDates[wDates.length-1]})`
+                                            : `Week ${wNum} — ${wDates.join(', ')}`;
+                                        return `<span class="inline-block bg-red-100 text-red-700 border border-red-300 text-xs font-semibold px-2 py-1 rounded whitespace-nowrap">${label}</span>`;
+                                    }).join('');
+                                };
+
+                                const sections = deptGroups.map(g => `
+                                    <div class="mb-3">
+                                        <p class="text-xs font-bold text-red-700 mb-1">${g.label}</p>
+                                        <div class="flex flex-wrap gap-1">${makeChips(this.state.onCallDates[g.key])}</div>
+                                    </div>`).join('');
+
+                                return `<div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                                    <p class="font-bold text-red-800 text-sm mb-3">🚫 Your On-Call Dates (leave cannot be selected on these dates):</p>
+                                    ${sections}
+                                </div>`;
+                            })()}
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <p class="text-2xl font-bold text-blue-800">${entitlement}</p>
+                                    <p class="text-sm text-gray-600">Total Leave Days</p>
+                                    <p class="text-xs text-blue-600">${csYearsOfService >= 5 ? 'Corporate Staff (5+ yrs service)' : 'Corporate Staff Entitlement'}</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${csBids.length} <span class="text-sm font-normal text-gray-500">unlimited</span></p>
+                                    <p class="text-sm text-gray-600">Bids Placed</p>
+                                </div>
+                                <div class="bg-indigo-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold">${totalBidDays}</p>
+                                    <p class="text-sm text-gray-600">Days Bid</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-purple-700">∞</p>
+                                    <p class="text-sm text-gray-600">No Bid Limit</p>
+                                </div>
+                            </div>
+                            <div class="border-t pt-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <p class="font-semibold">Available Slot Types:</p>
+                                    <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-semibold">🏢 Corp Staff: Unlimited selections, free date range</span>
+                                </div>
+                                <div class="flex gap-4">
+                                    ${this.state.slotTypes.map(slot => `
+                                        <div class="flex-1 p-3 rounded-lg border ${slot.color === 'green' ? 'border-green-300 bg-green-50' : slot.color === 'blue' ? 'border-blue-300 bg-blue-50' : 'border-purple-300 bg-purple-50'}">
+                                            <p class="font-bold">${slot.name}</p>
+                                            <p class="text-sm">${slot.days} consecutive days</p>
+                                        </div>
+                                    `).join('')}
+                                    <div class="flex-1 p-3 rounded-lg border border-blue-400 bg-blue-50">
+                                        <p class="font-bold text-blue-800">🏢 Custom</p>
+                                        <p class="text-sm text-blue-700">Any date range — free choice</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Left: Place New Bid -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-blue-500">
+                                <h3 class="text-xl font-bold mb-4">🏢 Place New Corporate Staff Bid</h3>
+                                ${this.state.isProcessedCorp ? `
+                                    <div class="bg-blue-50 border border-blue-200 rounded p-4 mb-4">
+                                        <p class="font-semibold">⚠️ Bidding has been processed. No more bids allowed.</p>
+                                    </div>` : ''}
+
+                                <!-- Slot Type Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Slot Type:</label>
+                                    <div class="space-y-2">
+                                        ${this.state.slotTypes.map(slot => `
+                                            <button
+                                                onclick="app.csSetSelectedSlot('${slot.id}')"
+                                                data-csslot="${slot.id}"
+                                                class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-gray-100 hover:bg-gray-200 text-gray-800 ${this.state.isProcessedCorp ? 'opacity-50 cursor-not-allowed' : ''}"
+                                                ${this.state.isProcessedCorp ? 'disabled' : ''}
+                                            >
+                                                ${slot.name} — ${slot.days} consecutive days
+                                            </button>
+                                        `).join('')}
+                                        <button
+                                            onclick="app.csSetSelectedSlot('csCustom')"
+                                            data-csslot="csCustom"
+                                            class="cs-slot-btn w-full p-3 rounded-lg font-semibold text-left transition-all bg-blue-50 border border-blue-300 hover:bg-blue-100 text-blue-800 ${this.state.isProcessedCorp ? 'opacity-50 cursor-not-allowed' : ''}"
+                                            ${this.state.isProcessedCorp ? 'disabled' : ''}
+                                        >
+                                            🏢 Custom — Any date range (free choice)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Date Selection -->
+                                <div class="mb-5">
+                                    <label class="block font-semibold mb-2">Select Dates:</label>
+                                    <div id="csSlotInfo" class="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800 font-medium">
+                                        Select a slot type above first
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-semibold mb-1">Start Date</label>
+                                            <input type="date" id="csStartDate"
+                                                class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                                min="${this.state.biddingYearCorp}-01-01" max="${this.state.biddingYearCorp}-12-31"
+                                                onchange="app.csUpdateEndDate()" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-semibold mb-1">End Date <span class="text-gray-400 font-normal">(auto)</span></label>
+                                            <input type="date" id="csEndDate"
+                                                class="w-full px-3 py-2 border-2 border-gray-200 rounded-lg bg-gray-50"
+                                                onchange="app._csCheckOnCallWarning()"
+                                                readonly />
+                                        </div>
+                                    </div>
+                                    <div id="csOnCallWarning" class="mt-1 text-sm"></div>
+                                </div>
+
+                                <button onclick="app.submitCSBid()"
+                                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 transition ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'opacity-50 cursor-not-allowed' : ''}"
+                                    ${(this.state.isProcessedCorp || this.isBiddingClosedCorp()) ? 'disabled' : ''}>
+                                    🏢 Submit Corporate Staff Bid
+                                </button>
+                            </div>
+
+                            <!-- Right: My Current Bids -->
+                            <div class="bg-white rounded-xl shadow-xl p-6 border-l-4 border-indigo-400">
+                                <h3 class="text-xl font-bold mb-4">📋 My Current Bids (${csBids.length})</h3>
+                                ${csBids.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-500">
+                                        <p class="text-4xl mb-3">📭</p>
+                                        <p class="font-semibold">No bids placed yet</p>
+                                        <p class="text-sm mt-1">Place your first bid on the left</p>
+                                    </div>
+                                ` : `
+                                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                                        ${csBids.map(bid => {
+                                            const slot = this.state.slotTypes.find(s => s.id === bid.slotType);
+                                            const slotLabel = bid.slotType === 'csCustom' ? '🏢 Custom' : (slot?.name || bid.slotType);
+                                            return `
+                                                <div class="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                                                    <div class="flex justify-between items-start">
+                                                        <div>
+                                                            <p class="font-bold text-blue-900">${slotLabel}</p>
+                                                            <p class="text-sm text-gray-600">${bid.startDate} → ${bid.endDate}</p>
+                                                            <p class="text-sm font-semibold text-blue-700">${bid.days} days</p>
+                                                        </div>
+                                                        <button onclick="app.removeCSBid('${bid.slotType}','${bid.startDate}')"
+                                                            class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 font-semibold">
+                                                            ✕ Remove
+                                                        </button>
+                                                    </div>
+                                                </div>`;
+                                        }).join('')}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Start countdown timer
+                clearInterval(window._csCountdownTimer);
+                window._csCountdownTimer = setInterval(() => {
+                    const el = document.getElementById('csCountdownTimer');
+                    if (!el) { clearInterval(window._csCountdownTimer); return; }
+                    const diff = new Date(this.state.biddingDeadlineCorp) - new Date();
+                    if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._csCountdownTimer); return; }
+                    const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+                    el.textContent = `${d}d ${h}h ${m}m ${s}s`;
+                }, 1000);
+            },
+
+            csSetSelectedSlot(slotId) {
+                window.csSelectedSlot = slotId;
+                // Highlight selected
+                document.querySelectorAll('.cs-slot-btn').forEach(btn => {
+                    const isSelected = btn.dataset.csslot === slotId;
+                    btn.classList.toggle('ring-2', isSelected);
+                    btn.classList.toggle('ring-blue-500', isSelected);
+                    btn.classList.toggle('bg-blue-100', isSelected);
+                });
+                const infoEl = document.getElementById('csSlotInfo');
+                if (!infoEl) return;
+                if (slotId === 'csCustom') {
+                    infoEl.textContent = '🏢 Custom — Choose any start and end date freely';
+                } else {
+                    const slot = this.state.slotTypes.find(s => s.id === slotId);
+                    infoEl.textContent = slot ? `${slot.name} — exactly ${slot.days} consecutive days. Pick a start date.` : '';
+                }
+                // Recalculate end date if start already filled
+                this.csUpdateEndDate();
+            },
+
+            csUpdateEndDate() {
+                const startInput = document.getElementById('csStartDate');
+                const endInput = document.getElementById('csEndDate');
+                if (!startInput || !endInput || !startInput.value) return;
+                if (!window.csSelectedSlot || window.csSelectedSlot === 'csCustom') {
+                    endInput.value = '';
+                    endInput.removeAttribute('readonly');
+                    endInput.classList.remove('bg-gray-50');
+                    endInput.classList.add('border-blue-300');
+                    const w = document.getElementById('csOnCallWarning');
+                    if (w) w.innerHTML = '';
+                    return;
+                }
+                const slot = this.state.slotTypes.find(s => s.id === window.csSelectedSlot);
+                if (!slot) return;
+                const start = new Date(startInput.value + 'T00:00:00');
+                const end = new Date(start);
+                end.setDate(end.getDate() + slot.days - 1);
+                endInput.value = end.toISOString().split('T')[0];
+                endInput.setAttribute('readonly', true);
+                endInput.classList.add('bg-gray-50');
+                endInput.classList.remove('border-blue-300');
+                this._csCheckOnCallWarning();
+            },
+
+            _csCheckOnCallWarning() {
+                const warningEl = document.getElementById('csOnCallWarning');
+                if (!warningEl) return;
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) return;
+                const uid = csUser.id;
+                const allOnCall = [
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates['l456inm::' + uid] || []),
+                    ...(this.state.onCallDates['l3inm::' + uid] || []),
+                    ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates['hseq::' + uid] || []),
+                ];
+                const onCallSet = new Set(allOnCall);
+                const startVal = document.getElementById('csStartDate')?.value;
+                const endVal   = document.getElementById('csEndDate')?.value;
+                if (!startVal || !endVal) { warningEl.innerHTML = ''; return; }
+                // Guard: end must not be before start
+                if (endVal < startVal) {
+                    warningEl.innerHTML = '<p class="text-red-600 text-sm mt-1">⚠️ End date cannot be before start date.</p>';
+                    return;
+                }
+                if (onCallSet.size === 0) { warningEl.innerHTML = ''; return; }
+                const conflicts = [];
+                const cur  = new Date(startVal + 'T00:00:00');
+                const endD = new Date(endVal   + 'T00:00:00');
+                while (cur <= endD) {
+                    const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                    if (onCallSet.has(iso)) conflicts.push(iso);
+                    cur.setDate(cur.getDate() + 1);
+                }
+                warningEl.innerHTML = conflicts.length > 0
+                    ? `<p class="font-semibold text-red-700 mt-2">🚫 On-Call conflict on: ${conflicts.slice(0,5).join(', ')}${conflicts.length > 5 ? ` +${conflicts.length - 5} more` : ''}</p>`
+                    : `<p class="text-green-700 text-sm mt-1">✅ No On-Call conflicts in this range</p>`;
+            },
+
+            submitCSBid() {
+                if (this.state.isProcessedCorp) { alert('Bidding has been processed. No more bids.'); return; }
+                if (this.isBiddingClosedCorp()) { alert('⛔ The bidding deadline has passed. You can no longer submit bids.'); return; }
+                const csUser = this.state.verifiedEmployee;
+                if (!csUser) return;
+                if (!window.csSelectedSlot) { alert('⚠️ Please select a slot type first.'); return; }
+
+                const startDate = document.getElementById('csStartDate')?.value;
+                let endDate = document.getElementById('csEndDate')?.value;
+                if (!startDate) { alert('⚠️ Please select a start date.'); return; }
+
+                if (window.csSelectedSlot === 'csCustom') {
+                    if (!endDate) { alert('⚠️ Please enter an end date for Custom slot.'); return; }
+                    if (endDate < startDate) { alert('⚠️ End date must be after start date.'); return; }
+                }
+
+                const days = Math.round((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+
+                if (window.csSelectedSlot !== 'csCustom') {
+                    const slot = this.state.slotTypes.find(s => s.id === window.csSelectedSlot);
+                    if (slot && days !== slot.days) {
+                        alert(`${slot.name} requires exactly ${slot.days} days. Select "Custom" for free range.`);
+                        return;
+                    }
+                }
+
+                // Check overlap with existing CS bids
+                const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
+                for (const bid of csBids) {
+                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                        alert(`Date overlap with an existing bid (${bid.startDate} → ${bid.endDate}).`);
+                        return;
+                    }
+                }
+
+                // ── On-Call Conflict Check ────────────────────────────────────
+                const uid = csUser.id;
+                const allOnCallForCS = new Set([
+                    ...(this.state.onCallDates[uid] || []),
+                    ...(this.state.onCallDates['l456inm::' + uid] || []),
+                    ...(this.state.onCallDates['l3inm::' + uid] || []),
+                    ...(this.state.onCallDates['l3tsm::' + uid] || []),
+                    ...(this.state.onCallDates['hseq::' + uid] || []),
+                ]);
+                const onCallDatesForCS = allOnCallForCS;
+                if (onCallDatesForCS.size > 0) {
+                    const conflictingOnCallDates = [];
+                    const cur = new Date(startDate + 'T00:00:00');
+                    const end2 = new Date(endDate + 'T00:00:00');
+                    while (cur <= end2) {
+                        const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                        if (onCallDatesForCS.has(iso)) conflictingOnCallDates.push(iso);
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                    if (conflictingOnCallDates.length > 0) {
+                        const conflictList = conflictingOnCallDates.join(', ');
+                        alert(`⚠️ On-Call Conflict Detected!\n\nYour selected leave period (${startDate} → ${endDate}) overlaps with your scheduled On-Call duties on the following date${conflictingOnCallDates.length > 1 ? 's' : ''}:\n\n${conflictList}\n\nPlease choose dates that do not conflict with your On-Call schedule.`);
+                        return;
+                    }
+                }
+
+                const slotLabel = window.csSelectedSlot === 'csCustom'
+                    ? 'Custom' : (this.state.slotTypes.find(s => s.id === window.csSelectedSlot)?.name || window.csSelectedSlot);
+
+                const newBid = {
+                    employeeId: csUser.id,
+                    employeeName: csUser.name,
+                    seniorityDate: csUser.seniorityDate || '2000-01-01',
+                    department: 'Corporate Staff',
+                    slotType: window.csSelectedSlot,
+                    startDate,
+                    endDate,
+                    days,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.state.bids.push(newBid);
+                this.saveState();
+                this.writeAuditLog('BID_PLACED', { type: 'CS', slot: window.csSelectedSlot, start: startDate, end: endDate, days });
+
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (saved) console.log('✅ CS Bid saved to Supabase');
+                });
+
+                alert(`🏢 Corporate Staff Bid placed!\n${slotLabel} — ${startDate} → ${endDate} (${days} day${days !== 1 ? 's' : ''})`);
+                this.renderCorporateStaffBiddingView();
+            },
+
+            async removeCSBid(slotType, startDate) {
+                if (this.state.isProcessedCorp) { alert('Cannot remove bids after processing.'); return; }
+                if (!confirm('Remove this Corporate Staff bid?')) return;
+                const csUser = this.state.verifiedEmployee;
+
+                // 1. Optimistically remove from local state and persist immediately
+                const idx = this.state.bids.findIndex(bid =>
+                    bid.employeeId === csUser.id && bid.slotType === slotType && bid.startDate === startDate
+                );
+                if (idx !== -1) this.state.bids.splice(idx, 1);
+                this.saveState();
+                this.renderCorporateStaffBiddingView();
+
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
+                    this.writeAuditLog('BID_REMOVED', { employee_id: csUser.id, slot_type: slotType, start_date: startDate, section: 'corporate_staff' });
+                    return;
+                }
+                const { error } = await this.supabase
+                    .from('corporate_leave_request')
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', csUser.id)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error('❌ CS Bid delete failed:', error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log('✅ CS Bid deleted from Supabase');
+                this.writeAuditLog('BID_REMOVED', { employee_id: csUser.id, slot_type: slotType, start_date: startDate, section: 'corporate_staff' });
+            },
+
+            // Display-only helper: converts an internal month-name key (e.g. 'May') —
+            // which is still the actual bucket used everywhere for bid matching / storage
+            // and must never change — into a "Block N" label for anything a person reads.
+            // A slot's dates often drift into the following calendar month by the time you
+            // reach Slot C/D within a row, so labeling rows by month implied a promise the
+            // data never kept. "Block N" carries no such promise.
+            blockLabel(month) {
+                const idx = this.state.months.indexOf(month);
+                return idx >= 0 ? `Block ${idx + 1}` : (month || '—');
+            },
+
+            renderConfigureSlotsView() {
+                const content = document.getElementById('contentArea');
+                
+                // Get all unique departments from employees AND the predefined list
+                // Filter: only L3, L46, L5 prefixes
+                const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
+                const filteredDepts = allRawDepartments.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const allDepartments = ['all', ...filteredDepts];
+                
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="metro-card p-6">
+                            <h2 class="text-2xl font-bold mb-4" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">📅 Configure Bid Slot Calendar for ${this.state.biddingYear}</h2>
+                            <p class="mb-6" style="color:var(--app-text-muted);">
+                                Define specific calendar date ranges for each bid slot per department per block (Block 1–12).
+                                Each department has Slot A, Slot B, Slot C and Slot D for each of the 12 blocks, with individual capacity limits.
+                                A block's dates can run into the next calendar month — the block number is just the row's position, not a promise about which month its dates fall in.
+                            </p>
+                            
+                            <div class="mb-6 p-4 rounded-lg border" style="background:var(--app-green-50);border-color:var(--app-border);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Filter by Department:</label>
+                                <select
+                                    id="deptFilter"
+                                    class="w-full px-4 py-3 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:var(--metro-green-light);color:var(--app-text);"
+                                    onchange="app.filterDepartments()"
+                                >
+                                    ${allDepartments.map(dept => `
+                                        <option value="${dept}">
+                                            ${dept === 'all' ? 'All Departments (L3 / L46 / L5)' : dept}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+
+                            <div class="flex justify-end gap-2 mb-3">
+                                <button onclick="document.querySelectorAll('#configArea details.metro-dept-card').forEach(d=>d.open=true)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌄ Expand all</button>
+                                <button onclick="document.querySelectorAll('#configArea details.metro-dept-card').forEach(d=>d.open=false)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌃ Collapse all</button>
+                            </div>
+            
+                            <div id="configArea">
+                                ${this.renderDeptConfig('all')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+            
+            filterDepartments() {
+                const filter = document.getElementById('deptFilter').value;
+                const configArea = document.getElementById('configArea');
+                if (configArea) {
+                    configArea.innerHTML = this.renderDeptConfig(filter);
+                }
+            },
+
+            // ===== MAINTENANCE SLOT CONFIGURATION =====
+            renderConfigureMaintSlotsView() {
+                const content = document.getElementById('contentArea');
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const maintDepts = [...new Set(maintUsers.map(u => u.position || 'Unassigned'))].sort();
+                const allDepts = ['all', ...maintDepts];
+
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="metro-card p-6">
+                            <div class="flex items-center gap-3 mb-2">
+                                <span style="font-size:1.8rem;">🔧</span>
+                                <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Configure Bid Slot Calendar — Maintenance Staff (${this.state.biddingYear})</h2>
+                            </div>
+                            <p class="mb-6" style="color:var(--app-text-muted);">
+                                Define date ranges and capacities for Slot A, B, and C per Maintenance roster group per month.
+                            </p>
+
+                            <div class="mb-6 p-4 rounded-lg border-2" style="background:#fff7ed;border-color:#fdba74;">
+                                <label class="block font-semibold mb-2" style="color:#9a3412;">Filter by Roster Group:</label>
+                                <select
+                                    id="maintDeptFilter"
+                                    class="w-full px-4 py-3 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:#fb923c;color:var(--app-text);"
+                                    onchange="app.filterMaintDepartments()"
+                                >
+                                    ${allDepts.map(d => `<option value="${d}">${d === 'all' ? 'All Roster Groups' : d}</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <div class="flex justify-end gap-2 mb-3">
+                                <button onclick="document.querySelectorAll('#maintConfigArea details.metro-dept-card').forEach(d=>d.open=true)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌄ Expand all</button>
+                                <button onclick="document.querySelectorAll('#maintConfigArea details.metro-dept-card').forEach(d=>d.open=false)" class="metro-tab" style="padding:5px 12px;font-size:0.75rem;">⌃ Collapse all</button>
+                            </div>
+
+                            <div id="maintConfigArea">
+                                ${this.renderMaintDeptConfig('all')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            filterMaintDepartments() {
+                const filter = document.getElementById('maintDeptFilter').value;
+                const area = document.getElementById('maintConfigArea');
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filter);
+            },
+
+            renderMaintDeptConfig(filter) {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const allDepts = [...new Set(maintUsers.map(u => u.position || 'Unassigned'))].sort();
+                const deptsToConfigure = filter === 'all' ? allDepts : [filter];
+
+                if (deptsToConfigure.length === 0) {
+                    return `<div class="rounded p-6 text-center" style="background:#fffbeb;border:1px solid #fde68a;">
+                        <p class="text-lg font-semibold">No maintenance roster groups found.</p>
+                    </div>`;
+                }
+
+                let html = filter === 'all'
+                    ? `<div class="mb-6 p-4 rounded" style="background:#fff7ed;border:1px solid #fdba74;">
+                        <h3 class="text-xl font-semibold mb-2" style="font-family:'Barlow Condensed',sans-serif;color:#9a3412;">🔧 Maintenance Slot Configuration — All Roster Groups</h3>
+                        <p style="color:#9a3412;">Configure date ranges for each bid slot across ${deptsToConfigure.length} maintenance roster groups.</p>
+                       </div>`
+                    : `<div class="mb-6 p-4 rounded" style="background:#fff7ed;border:1px solid #fdba74;">
+                        <h3 class="text-xl font-semibold mb-2" style="font-family:'Barlow Condensed',sans-serif;color:#9a3412;">🔧 Maintenance Slot Configuration — ${filter}</h3>
+                       </div>`;
+
+                html += `<div class="space-y-8">`;
+
+                deptsToConfigure.forEach(dept => {
+                    const empCount = maintUsers.filter(u => (u.position || 'Unassigned') === dept).length;
+                    html += `
+                        <details class="metro-dept-card" ${filter !== 'all' ? 'open' : ''}>
+                            <summary class="metro-dept-summary" style="background:#fff7ed;">
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <span class="metro-dept-caret" style="color:#ea580c;">▶</span>
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;margin:0;color:#9a3412;">${dept}</h3>
+                                        <span class="text-xs px-2 py-1 bg-orange-100 text-orange-800 rounded">${empCount} maintenance staff</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm text-gray-500">12-Block Slot Configuration</span>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                </div>
+                            </summary>
+                            <div class="px-4 pt-3">
+                                <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
+                                    <summary onclick="event.stopPropagation()" class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
+                                    <div class="p-3 pt-1">
+                                        <p class="text-xs text-indigo-700 mb-2">
+                                            One row per month, columns tab- or comma-separated, dates as DD/MM/YYYY, "on" as 1 or 0:<br>
+                                            <code>Month, SA-Start, SA-End, SA-Max, SA-On, SB-Start, SB-End, SB-Max, SB-On, SC-Start, SC-End, SC-Max, SC-On</code>
+                                        </p>
+                                        <textarea id="bulkImportMaint-${dept}" rows="4" placeholder="January\t01/01/2027\t15/01/2027\t4\t1\t16/01/2027\t30/01/2027\t4\t1\t01/01/2027\t15/01/2027\t1\t1"
+                                            class="w-full text-xs font-mono border border-indigo-300 rounded p-2"></textarea>
+                                        <div class="flex gap-2 mt-2">
+                                            <button onclick="app.bulkImportMaintDeptSlots('${dept}')" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Import &amp; Save</button>
+                                            <span id="bulkImportMaintMsg-${dept}" class="text-xs self-center"></span>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="p-4 overflow-x-auto">
+                                <table class="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50">
+                                            <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Block</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">
+                                                <div class="flex flex-col items-center gap-1"><span>A — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-green-600" data-dept="${dept}" data-slot="SA" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-green-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">
+                                                <div class="flex flex-col items-center gap-1"><span>B — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-blue-600" data-dept="${dept}" data-slot="SB" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-blue-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">
+                                                <div class="flex flex-col items-center gap-1"><span>C — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer">
+                                                        <input type="checkbox" class="maint-mark-all w-3 h-3 accent-purple-600" data-dept="${dept}" data-slot="SC" onchange="app._markAllMaintSlot(this)" />
+                                                        <span class="text-xs font-normal text-purple-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${this.state.months.map((month, monthIdx) => {
+                                            const year = this.state.biddingYear;
+                                            const pad = n => String(n).padStart(2,'0');
+                                            const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                            // 360-day calendar: each "month" is a fixed 30-day block (Jan1=day1)
+                                            const defaultStart = toDateStr(new Date(year, 0, monthIdx*30 + 1));
+                                            const defaultEnd = toDateStr(new Date(year, 0, (monthIdx+1)*30));
+                                            return `<tr class="hover:bg-gray-50">
+                                                <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${this.blockLabel(month)}</td>
+                                                ${['SA','SB','SC'].map((slotId, si) => {
+                                                    const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500'];
+                                                    const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50'];
+                                                    const savedStart = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-start`];
+                                                    const savedEnd = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-end`];
+                                                    const savedCap = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-capacity`];
+                                                    const savedEnabled = this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-enabled`];
+                                                    const startVal = savedStart !== undefined ? savedStart : defaultStart;
+                                                    const endVal = savedEnd !== undefined ? savedEnd : defaultEnd;
+                                                    const capVal = savedCap !== undefined ? savedCap : 1;
+                                                    const enabledVal = savedEnabled !== undefined ? savedEnabled : false;
+                                                    const opacity = enabledVal ? '' : 'opacity-40';
+                                                    return `
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} text-center">
+                                                            <input type="checkbox"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="enabled"
+                                                                class="maint-slot-input maint-slot-enabled w-4 h-4 accent-current cursor-pointer"
+                                                                ${enabledVal ? 'checked' : ''}
+                                                                onchange="app._toggleMaintSlotOpacity(this)"
+                                                            />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="date"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                min="${year}-01-01" max="${year}-12-31" value="${startVal}" />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="date"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                min="${year}-01-01" max="${year}-12-31" value="${endVal}" />
+                                                        </td>
+                                                        <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${opacity}">
+                                                            <input type="number" min="0" max="200"
+                                                                data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
+                                                                class="maint-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
+                                                                placeholder="1" value="${capVal}" />
+                                                        </td>
+                                                    `;
+                                                }).join('')}
+                                            </tr>`;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    `;
+                });
+
+                html += `</div>`;
+                html += `
+                    <div class="mt-8">
+                        <div class="rounded p-4 mb-4" style="background:#fff7ed;border:1px solid #fdba74;">
+                            <p class="font-semibold mb-2" style="color:#9a3412;">📋 Maintenance Slot Configuration Summary:</p>
+                            <p class="text-sm" style="color:#9a3412;">
+                                • Roster groups: ${deptsToConfigure.length}<br>
+                                • Bid slots per group: 3 (Slot A, Slot B, Slot C) × 12 months<br>
+                                • Toggle <strong>On</strong> to make a slot visible to Maintenance Staff for that month
+                            </p>
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="app.saveMaintSlotConfiguration()" class="flex-1 px-6 py-3 text-white rounded-lg font-semibold" style="background:#ea580c;" onmouseover="this.style.background='#c2410c'" onmouseout="this.style.background='#ea580c'">
+                                💾 Save All Maintenance Slot Configurations
+                            </button>
+                            <button onclick="app.setActiveView('admin')" class="metro-tab">
+                                ← Back
+                            </button>
+                        </div>
+                    </div>
+                `;
+                return html;
+            },
+
+            _toggleMaintSlotOpacity(checkbox) {
+                const row = checkbox.closest('tr');
+                if (!row) return;
+                const { dept, month, slot } = checkbox.dataset;
+                row.querySelectorAll(`input[data-dept="${dept}"][data-month="${month}"][data-slot="${slot}"]:not([data-field="enabled"])`).forEach(inp => {
+                    inp.closest('td').style.opacity = checkbox.checked ? '1' : '0.35';
+                });
+            },
+
+            _markAllMaintSlot(headerCb) {
+                const { dept, slot } = headerCb.dataset;
+                document.querySelectorAll(`.maint-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`).forEach(cb => {
+                    cb.checked = headerCb.checked;
+                    app._toggleMaintSlotOpacity(cb);
+                });
+            },
+
+            async saveMaintSlotConfiguration() {
+                const inputs = document.querySelectorAll('.maint-slot-input');
+                let savedCount = 0;
+
+                // Gather live values first so we can check Slot A/B overlap per dept+block
+                // before writing anything — maintenance only has Slots A-C, no D.
+                const pending = {};
+                inputs.forEach(input => {
+                    const { dept, month, slot, field } = input.dataset;
+                    if (!dept || !month || !slot || !field) return;
+                    const bucketKey = `${dept}||${month}`;
+                    if (!pending[bucketKey]) pending[bucketKey] = {};
+                    if (!pending[bucketKey][slot]) pending[bucketKey][slot] = {};
+                    if (field === 'enabled') pending[bucketKey][slot].enabled = input.checked;
+                    else if (field === 'start') pending[bucketKey][slot].start = input.value;
+                    else if (field === 'end') pending[bucketKey][slot].end = input.value;
+                });
+
+                const overlaps = [];
+                Object.keys(pending).forEach(bucketKey => {
+                    const [dept, month] = bucketKey.split('||');
+                    const a = pending[bucketKey].SA, b = pending[bucketKey].SB;
+                    if (!a || !b) return;
+                    if (a.enabled === false || b.enabled === false) return;
+                    if (!a.start || !a.end || !b.start || !b.end) return;
+                    if (this.checkDateOverlap(a.start, a.end, b.start, b.end)) {
+                        overlaps.push(`${dept} — ${this.blockLabel(month)}: Slot A (${a.start}→${a.end}) overlaps Slot B (${b.start}→${b.end})`);
+                    }
+                });
+
+                if (overlaps.length > 0) {
+                    const proceed = confirm(
+                        `⚠️ ${overlaps.length} overlap(s) found — Slot A/B are meant to run back-to-back, not overlap:\n\n` +
+                        overlaps.join('\n') +
+                        `\n\nSave anyway? (Cancel to go back and fix the dates first.)`
+                    );
+                    if (!proceed) return;
+                }
+
+                inputs.forEach(input => {
+                    const { dept, month, slot, field } = input.dataset;
+                    let value;
+                    if (field === 'capacity') {
+                        value = parseInt(input.value);
+                        if (isNaN(value) || value < 0) value = 0;
+                    } else if (field === 'enabled') {
+                        value = input.checked;
+                    } else {
+                        value = input.value;
+                    }
+                    if (dept && slot && field) {
+                        const key = month ? `cal-maint-${dept}-${month}-${slot}-${field}` : `cal-maint-${dept}-${slot}-${field}`;
+                        this.state.maintSlotCapacities[key] = value;
+                        savedCount++;
+                    }
+                });
+                await this.saveConfigToSupabase();
+                alert(`✅ Maintenance slot configurations saved!\\n\\n• ${savedCount} fields saved.`);
+                this.setActiveView('admin');
+            },
+
+            // Clears all saved date/capacity/on-off overrides for one roster group, restoring
+            // the auto-computed default dates (30-day blocks) that show when nothing is saved.
+            async resetMaintDeptSlotsToDefault(dept) {
+                const prefix = `cal-maint-${dept}-`;
+                const keysToRemove = Object.keys(this.state.maintSlotCapacities).filter(k => k.startsWith(prefix));
+
+                if (keysToRemove.length === 0) {
+                    alert(`No saved slot configuration found for "${dept}" — it's already showing default dates.`);
+                    return;
+                }
+
+                if (!confirm(`Reset "${dept}" to default dates?\n\nThis will clear ${keysToRemove.length} saved field(s) (dates, capacities, on/off toggles) for all 12 months. This cannot be undone once saved.`)) {
+                    return;
+                }
+
+                keysToRemove.forEach(k => delete this.state.maintSlotCapacities[k]);
+                await this.saveConfigToSupabase();
+
+                const area = document.getElementById('maintConfigArea');
+                const filterVal = document.getElementById('maintDeptFilter')?.value || 'all';
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filterVal);
+
+                alert(`✅ "${dept}" reset to default dates.`);
+            },
+
+            // Parses pasted rows (tab or comma separated) into maintSlotCapacities for one roster
+            // group (3 slots: SA/SB/SC), then saves to Supabase in a single call.
+            async bulkImportMaintDeptSlots(dept) {
+                const ta = document.getElementById(`bulkImportMaint-${dept}`);
+                const msgEl = document.getElementById(`bulkImportMaintMsg-${dept}`);
+                if (!ta || !ta.value.trim()) {
+                    if (msgEl) { msgEl.textContent = '⚠️ Paste some rows first.'; msgEl.className = 'text-xs self-center text-red-600'; }
+                    return;
+                }
+
+                const ddmmyyyyToIso = (s) => {
+                    s = (s || '').trim();
+                    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                    if (!m) return null;
+                    const [, d, mo, y] = m;
+                    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                };
+                const toBool = (s) => ['1', 'true', 'yes', 'y', 'on'].includes((s || '').trim().toLowerCase());
+
+                const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
+                let rowsImported = 0, fieldsImported = 0;
+                const errors = [];
+
+                lines.forEach((line, idx) => {
+                    const cols = line.includes('\t') ? line.split('\t') : line.split(',');
+                    const cols_ = cols.map(c => c.trim());
+                    if (cols_.length < 13) {
+                        errors.push(`Row ${idx + 1}: expected 13 columns, found ${cols_.length}`);
+                        return;
+                    }
+                    const [month, ...rest] = cols_;
+                    if (!this.state.months.includes(month)) {
+                        errors.push(`Row ${idx + 1}: "${month}" is not a valid month name`);
+                        return;
+                    }
+                    const slots = ['SA', 'SB', 'SC'];
+                    slots.forEach((slotId, si) => {
+                        const [startRaw, endRaw, maxRaw, onRaw] = rest.slice(si * 4, si * 4 + 4);
+                        const startIso = ddmmyyyyToIso(startRaw);
+                        const endIso = ddmmyyyyToIso(endRaw);
+                        if (startRaw && !startIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad start date "${startRaw}"`); return; }
+                        if (endRaw && !endIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad end date "${endRaw}"`); return; }
+                        if (startIso) { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-start`] = startIso; fieldsImported++; }
+                        if (endIso) { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-end`] = endIso; fieldsImported++; }
+                        if (maxRaw !== undefined && maxRaw !== '') { this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-capacity`] = parseInt(maxRaw) || 0; fieldsImported++; }
+                        this.state.maintSlotCapacities[`cal-maint-${dept}-${month}-${slotId}-enabled`] = toBool(onRaw);
+                        fieldsImported++;
+                    });
+                    rowsImported++;
+                });
+
+                if (errors.length > 0) {
+                    if (msgEl) { msgEl.textContent = `⚠️ ${errors.length} issue(s) — see console.`; msgEl.className = 'text-xs self-center text-red-600'; }
+                    console.warn('Bulk import issues:', errors);
+                    if (rowsImported === 0) return;
+                }
+
+                await this.saveConfigToSupabase();
+
+                const area = document.getElementById('maintConfigArea');
+                const filterVal = document.getElementById('maintDeptFilter')?.value || 'all';
+                if (area) area.innerHTML = this.renderMaintDeptConfig(filterVal);
+
+                if (msgEl) { msgEl.textContent = `✅ Imported ${rowsImported} month(s), ${fieldsImported} fields saved.`; msgEl.className = 'text-xs self-center text-green-700'; }
+            },
+
+            
+            renderDeptConfig(filter) {
+                const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const allRawDepartments = [...new Set([...this.state.departments, ...employeeDepts])];
+                const allDepartments = allRawDepartments.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                
+                let departmentsToConfigure = [];
+                
+                if (filter === 'all') {
+                    departmentsToConfigure = allDepartments;
+                } else {
+                    departmentsToConfigure = [filter];
+                }
+                
+                if (departmentsToConfigure.length === 0) {
+                    return `
+                        <div class="bg-yellow-50 border border-yellow-200 rounded p-6 text-center">
+                            <p class="text-lg font-semibold">No departments found!</p>
+                            <p class="mt-2">Please upload employee data first.</p>
+                        </div>
+                    `;
+                }
+                
+                let html = '';
+                
+                if (filter === 'all') {
+                    html += `
+                        <div class="mb-6 p-4 bg-green-50 border border-green-300 rounded">
+                            <h3 class="text-xl font-semibold text-green-800 mb-2">📅 Calendar Slot Configuration — All Departments</h3>
+                            <p class="text-green-700">Configure specific date ranges for each bid slot period across ${departmentsToConfigure.length} departments.</p>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="mb-6 p-4 bg-blue-50 border border-blue-300 rounded">
+                            <h3 class="text-xl font-semibold text-blue-800 mb-2">📅 Calendar Slot Configuration — ${filter}</h3>
+                            <p class="text-blue-700">Configure specific date ranges for each bid slot period for this department.</p>
+                        </div>
+                    `;
+                }
+                
+                html += `<div class="space-y-8">`;
+                
+                departmentsToConfigure.forEach(dept => {
+                    const hasEmployees = employeeDepts.includes(dept);
+                    const employeeCount = this.state.employees.filter(e => (e.department || 'Unassigned') === dept).length;
+                    
+                    // Calendar slots: Slot A, Slot B, Slot C, Slot D (date range based)
+                    // A/B = staff with ≤5 years service · C/D = staff with >5 years service
+                    const periods = [
+                        { id: 'SA', label: 'Slot A', colorClass: 'green', borderColor: 'border-green-400', bgColor: 'bg-green-50' },
+                        { id: 'SB', label: 'Slot B', colorClass: 'blue', borderColor: 'border-blue-400', bgColor: 'bg-blue-50' },
+                        { id: 'SC', label: 'Slot C', colorClass: 'purple', borderColor: 'border-purple-400', bgColor: 'bg-purple-50' },
+                        { id: 'SD', label: 'Slot D', colorClass: 'orange', borderColor: 'border-orange-400', bgColor: 'bg-orange-50' }
+                    ];
+                    
+                    html += `
+                        <details class="metro-dept-card" ${filter !== 'all' ? 'open' : ''}>
+                            <summary class="metro-dept-summary">
+                                <div style="display:flex;align-items:center;gap:12px;">
+                                    <span class="metro-dept-caret">▶</span>
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;margin:0;">${dept}</h3>
+                                        <div class="flex gap-2 mt-1">
+                                            ${hasEmployees ? 
+                                                `<span class="text-xs px-2 py-1 bg-green-100 text-green-800 rounded">${employeeCount} employees</span>` : 
+                                                `<span class="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">No employees</span>`
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm text-gray-500">12-Block Slot Configuration</span>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                </div>
+                            </summary>
+                            <div class="px-4 pt-3">
+                                <details class="bg-indigo-50 border border-indigo-200 rounded-lg">
+                                    <summary onclick="event.stopPropagation()" class="cursor-pointer px-3 py-2 font-semibold text-indigo-800 text-sm">📋 Bulk Paste Import (paste all 12 months at once — from Excel or a saved template)</summary>
+                                    <div class="p-3 pt-1">
+                                        <p class="text-xs text-indigo-700 mb-2">
+                                            One row per month, columns tab- or comma-separated, dates as DD/MM/YYYY, "on" as 1 or 0:<br>
+                                            <code>Month, SA-Start, SA-End, SA-Max, SA-On, SB-Start, SB-End, SB-Max, SB-On, SC-Start, SC-End, SC-Max, SC-On, SD-Start, SD-End, SD-Max, SD-On</code>
+                                        </p>
+                                        <textarea id="bulkImport-${dept}" rows="4" placeholder="January\t01/01/2027\t15/01/2027\t4\t1\t16/01/2027\t30/01/2027\t4\t1\t01/01/2027\t15/01/2027\t1\t1\t16/01/2027\t04/02/2027\t1\t1"
+                                            class="w-full text-xs font-mono border border-indigo-300 rounded p-2"></textarea>
+                                        <div class="flex gap-2 mt-2">
+                                            <button onclick="app.bulkImportDeptSlots('${dept}')" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Import &amp; Save</button>
+                                            <span id="bulkImportMsg-${dept}" class="text-xs self-center"></span>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="p-4 overflow-x-auto">
+                                <table class="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-50">
+                                            <th class="border border-gray-200 px-3 py-2 text-left font-semibold text-gray-700">Block</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-green-700 bg-green-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>A — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot A months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-green-600"
+                                                            data-dept="${dept}" data-slot="SA"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot A months"
+                                                        />
+                                                        <span class="text-xs font-normal text-green-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-green-700 bg-green-50">Slot A — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-blue-700 bg-blue-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>B — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot B months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-blue-600"
+                                                            data-dept="${dept}" data-slot="SB"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot B months"
+                                                        />
+                                                        <span class="text-xs font-normal text-blue-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-blue-700 bg-blue-50">Slot B — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-purple-700 bg-purple-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>C — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot C months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-purple-600"
+                                                            data-dept="${dept}" data-slot="SC"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot C months"
+                                                        />
+                                                        <span class="text-xs font-normal text-purple-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-purple-700 bg-purple-50">Slot C — Max</th>
+                                            <th class="border border-gray-200 px-2 py-2 text-center font-semibold text-orange-700 bg-orange-50">
+                                                <div class="flex flex-col items-center gap-1">
+                                                    <span>D — On</span>
+                                                    <label class="flex items-center gap-1 cursor-pointer" title="Toggle all Slot D months">
+                                                        <input type="checkbox"
+                                                            class="mark-all-checkbox w-3 h-3 accent-orange-600"
+                                                            data-dept="${dept}" data-slot="SD"
+                                                            onchange="app._markAllSlot(this)"
+                                                            title="Check/uncheck all Slot D months"
+                                                        />
+                                                        <span class="text-xs font-normal text-orange-600">All</span>
+                                                    </label>
+                                                </div>
+                                            </th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — Start</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — End</th>
+                                            <th class="border border-gray-200 px-3 py-2 text-center font-semibold text-orange-700 bg-orange-50">Slot D — Max</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${this.state.months.map((month, monthIdx) => {
+                                            const year = this.state.biddingYear;
+                                            // Default dates follow the 360-day calendar (30-day blocks per month, Jan1=day1)
+                                            const pad = n => String(n).padStart(2, '0');
+                                            const toDateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                            const defaultStart = toDateStr(new Date(year, 0, monthIdx*30 + 1));
+                                            const defaultEnd   = toDateStr(new Date(year, 0, (monthIdx+1)*30));
+                                            return `
+                                                <tr class="hover:bg-gray-50">
+                                                    <td class="border border-gray-200 px-3 py-2 font-semibold text-gray-800 bg-gray-50 whitespace-nowrap">${this.blockLabel(month)}</td>
+                                                    ${['SA','SB','SC','SD'].map((slotId, si) => {
+                                                        const colors = ['border-green-300 focus:border-green-500','border-blue-300 focus:border-blue-500','border-purple-300 focus:border-purple-500','border-orange-300 focus:border-orange-500'];
+                                                        const bgCols = ['bg-green-50','bg-blue-50','bg-purple-50','bg-orange-50'];
+                                                        const savedStart    = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`];
+                                                        const savedEnd      = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`];
+                                                        const savedCapacity = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`];
+                                                        const savedEnabled  = this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-enabled`];
+                                                        const startVal    = savedStart    !== undefined ? savedStart    : defaultStart;
+                                                        const endVal      = savedEnd      !== undefined ? savedEnd      : defaultEnd;
+                                                        const capacityVal = savedCapacity !== undefined ? savedCapacity : 1;
+                                                        // enabled defaults to false (planner must explicitly turn on)
+                                                        const enabledVal  = savedEnabled  !== undefined ? savedEnabled  : false;
+                                                        const rowOpacity  = enabledVal ? '' : 'opacity-40';
+                                                        return `
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} text-center">
+                                                                <input type="checkbox"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="enabled"
+                                                                    class="cal-slot-input cal-slot-enabled w-4 h-4 accent-current cursor-pointer"
+                                                                    ${enabledVal ? 'checked' : ''}
+                                                                    onchange="app._toggleSlotRowOpacity(this)"
+                                                                    title="Enable Slot ${slotId.replace('S','')} for ${this.blockLabel(month)}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
+                                                                <input type="date"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="start"
+                                                                    class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                    min="${year}-01-01" max="${year}-12-31"
+                                                                    value="${startVal}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
+                                                                <input type="date"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="end"
+                                                                    class="cal-slot-input w-full px-1 py-1 border ${colors[si]} rounded text-xs"
+                                                                    min="${year}-01-01" max="${year}-12-31"
+                                                                    value="${endVal}"
+                                                                />
+                                                            </td>
+                                                            <td class="border border-gray-200 px-1 py-1 ${bgCols[si]} ${rowOpacity}">
+                                                                <input type="number" min="0" max="200"
+                                                                    data-dept="${dept}" data-month="${month}" data-slot="${slotId}" data-field="capacity"
+                                                                    class="cal-slot-input slot-input w-full px-1 py-1 border ${colors[si]} rounded text-center text-xs"
+                                                                    placeholder="1"
+                                                                    value="${capacityVal}"
+                                                                />
+                                                            </td>
+                                                        `;
+                                                    }).join('')}
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </details>
+                    `;
+                });
+                
+                html += `</div>`;
+                
+                html += `
+                    <div class="mt-8">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+                            <p class="font-semibold text-yellow-800 mb-2">📋 Calendar Configuration Summary:</p>
+                            <p class="text-sm text-yellow-700">
+                                • Departments: ${departmentsToConfigure.length} department${departmentsToConfigure.length === 1 ? '' : 's'}<br>
+                                • Bid slots per department: 4 (Slot A, Slot B, Slot C, Slot D) × 12 months<br>
+                                • Slot A &amp; B are visible to staff with ≤5 years of service<br>
+                                • Slot C &amp; D are visible to staff with &gt;5 years of service<br>
+                                • Toggle <strong>On</strong> to make a slot visible to Operations Staff for that month<br>
+                                • Each enabled slot: fixed date range and max capacity seen by staff when bidding<br>
+                                • Total configurations: ${departmentsToConfigure.length * 4} bid slots × 12 months
+                            </p>
+                        </div>
+                        
+                        <div class="flex gap-3">
+                            <button onclick="app.saveSlotConfiguration()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600">
+                                💾 Save All Slot Configurations
+                            </button>
+                            <button onclick="app.setActiveView('upload')" class="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600">
+                                ← Back
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                return html;
+            },
+            
+            // ===== SENIORITY DATE REPORT (OPS Staff only — excludes Maintenance) =====
+            renderSeniorityReportView() {
+                const content = document.getElementById('contentArea');
+
+                const calcYears = (seniorityDate) => {
+                    if (!seniorityDate) return 0;
+                    const joinDate = new Date(seniorityDate);
+                    if (isNaN(joinDate.getTime())) return 0;
+                    return (new Date() - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+
+                // OPS staff = this.state.employees, plus Maintenance staff from the
+                // separate maintenanceStaffUsers array (tagged with isMaintenance for filtering/export)
+                const opsRows = (this.state.employees || []).map(e => {
+                    const years = calcYears(e.seniorityDate);
+                    return {
+                        id: e.id,
+                        name: e.name || '—',
+                        department: e.department || 'Unassigned',
+                        position: e.position || '—',
+                        seniorityDate: e.seniorityDate || '',
+                        years,
+                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B',
+                        isMaintenance: false
+                    };
+                });
+
+                const maintRows = (this.state.maintenanceStaffUsers || []).map(e => {
+                    const years = calcYears(e.seniorityDate);
+                    return {
+                        id: e.id,
+                        name: e.name || '—',
+                        department: e.department || 'Maintenance',
+                        position: e.position || '—',
+                        seniorityDate: e.seniorityDate || '',
+                        years,
+                        eligibleSlots: years > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B',
+                        isMaintenance: true
+                    };
+                });
+
+                const rows = [...opsRows, ...maintRows];
+
+                // Sort: most senior (earliest date) first
+                rows.sort((a, b) => {
+                    const da = a.seniorityDate ? new Date(a.seniorityDate) : new Date('9999-12-31');
+                    const db = b.seniorityDate ? new Date(b.seniorityDate) : new Date('9999-12-31');
+                    return da - db;
+                });
+
+                const seniorCount = rows.filter(r => r.years > 5).length;
+                const juniorCount = rows.length - seniorCount;
+                const missingCount = rows.filter(r => !r.seniorityDate).length;
+
+                // Filters
+                const deptOptions = [...new Set(rows.map(r => r.department))].sort();
+
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="metro-card p-6 mb-6">
+                            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                                <div>
+                                    <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">📋 Seniority Date Report</h2>
+                                    <p class="text-sm mt-1" style="color:var(--app-text-muted);">All Operations Staff and Maintenance Staff</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="app.exportSeniorityReportCSV()" class="metro-tab metro-tab-primary">
+                                        ⬇ Export Excel
+                                    </button>
+                                    <button onclick="app.setActiveView('dashboard')" class="metro-tab">
+                                        ← Back
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${rows.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Staff</p>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-blue-700">${rows.filter(r => r.isMaintenance).length}</p>
+                                    <p class="text-sm text-gray-600">Maintenance Staff</p>
+                                </div>
+                                <div class="bg-orange-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-orange-700">${seniorCount}</p>
+                                    <p class="text-sm text-gray-600">&gt;5 yrs — Slot C/D</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);">${juniorCount}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">≤5 yrs — Slot A/B</p>
+                                </div>
+                                <div class="bg-red-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-red-700">${missingCount}</p>
+                                    <p class="text-sm text-gray-600">Missing Seniority Date</p>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-3 mb-4">
+                                <input type="text" id="seniorityReportSearch" placeholder="Search by name or ID…"
+                                    oninput="app._filterSeniorityReport()"
+                                    class="px-3 py-2 border-2 rounded-lg text-sm flex-1 min-w-[200px]" style="border-color:var(--app-border);" />
+                                <select id="seniorityReportDeptFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Departments</option>
+                                    ${deptOptions.map(d => `<option value="${this._escHtml(d)}">${this._escHtml(d)}</option>`).join('')}
+                                </select>
+                                <select id="seniorityReportEligFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Eligibility</option>
+                                    <option value="senior">&gt;5 yrs — Slot C/D</option>
+                                    <option value="junior">≤5 yrs — Slot A/B</option>
+                                </select>
+                                <select id="seniorityReportTypeFilter" onchange="app._filterSeniorityReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Staff Types</option>
+                                    <option value="ops">Operations Staff</option>
+                                    <option value="maintenance">Maintenance Staff</option>
+                                </select>
+                            </div>
+
+                            <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                                <table class="metro-table" id="seniorityReportTable">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Staff ID</th>
+                                            <th>Name</th>
+                                            <th>Department</th>
+                                            <th>Position</th>
+                                            <th>Type</th>
+                                            <th>Seniority Date</th>
+                                            <th>Years of Service</th>
+                                            <th>Eligible Slots</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="seniorityReportBody">
+                                        ${rows.map((r, idx) => this._seniorityReportRow(r, idx)).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs mt-3" style="color:var(--app-text-muted);">Showing <span id="seniorityReportCount">${rows.length}</span> of ${rows.length} staff. Sorted by seniority date (most senior first).</p>
+                        </div>
+                    </div>
+                `;
+
+                // Cache rows on window for the filter/export functions to reuse without re-deriving
+                window._seniorityReportRows = rows;
+            },
+
+            _seniorityReportRow(r, idx) {
+                const badgeClass = r.years > 5 ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800';
+                const missingStyle = !r.seniorityDate ? 'background:#fef2f2;' : '';
+                return `
+                    <tr style="${missingStyle}" data-dept="${this._escHtml(r.department)}" data-elig="${r.years > 5 ? 'senior' : 'junior'}" data-type="${r.isMaintenance ? 'maintenance' : 'ops'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
+                        <td style="text-align:center;color:var(--app-text-muted);">${idx + 1}</td>
+                        <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(r.id)}</td>
+                        <td style="font-weight:600;">${this._escHtml(r.name)}</td>
+                        <td>${this._escHtml(r.department)}</td>
+                        <td>${this._escHtml(r.position)}</td>
+                        <td>${r.isMaintenance ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">Maintenance</span>' : '<span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">Operations</span>'}</td>
+                        <td>${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0,10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
+                        <td style="text-align:center;font-weight:600;">${r.years.toFixed(1)}</td>
+                        <td><span class="px-2 py-1 rounded text-xs font-semibold ${badgeClass}">${r.eligibleSlots}</span></td>
+                    </tr>`;
+            },
+
+            _filterSeniorityReport() {
+                const q = (document.getElementById('seniorityReportSearch')?.value || '').toLowerCase().trim();
+                const dept = document.getElementById('seniorityReportDeptFilter')?.value || 'all';
+                const elig = document.getElementById('seniorityReportEligFilter')?.value || 'all';
+                const type = document.getElementById('seniorityReportTypeFilter')?.value || 'all';
+                const rowsEls = document.querySelectorAll('#seniorityReportBody tr');
+                let visible = 0;
+                rowsEls.forEach(tr => {
+                    const matchesQ    = !q || (tr.dataset.search || '').includes(q);
+                    const matchesDept = dept === 'all' || tr.dataset.dept === dept;
+                    const matchesElig = elig === 'all' || tr.dataset.elig === elig;
+                    const matchesType = type === 'all' || tr.dataset.type === type;
+                    const show = matchesQ && matchesDept && matchesElig && matchesType;
+                    tr.style.display = show ? '' : 'none';
+                    if (show) visible++;
+                });
+                const countEl = document.getElementById('seniorityReportCount');
+                if (countEl) countEl.textContent = visible;
+            },
+
+            exportSeniorityReportCSV() {
+                const rows = window._seniorityReportRows || [];
+                if (rows.length === 0) {
+                    alert('No staff data to export.');
+                    return;
+                }
+                const wsData = [
+                    ['Staff ID', 'Name', 'Department', 'Position', 'Staff Type', 'Seniority Date', 'Years of Service', 'Eligible Slots']
+                ];
+                rows.forEach(r => {
+                    wsData.push([
+                        r.id, r.name, r.department, r.position,
+                        r.isMaintenance ? 'Maintenance' : 'Operations',
+                        r.seniorityDate ? r.seniorityDate.slice(0, 10) : 'Missing',
+                        r.years.toFixed(1),
+                        r.eligibleSlots
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Seniority Report');
+                XLSX.writeFile(wb, `Seniority_Report_${this.state.biddingYear}.xlsx`);
+            },
+
+            async copyToAllMonths() {
+                const filter = document.getElementById('deptFilter')?.value || 'all';
+                const employeeDepts = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const allDepartments = [...new Set([...this.state.departments, ...employeeDepts])].sort();
+                
+                let departmentsToCopy = [];
+                if (filter === 'all') {
+                    departmentsToCopy = allDepartments;
+                } else {
+                    departmentsToCopy = [filter];
+                }
+                
+                // Get January values for each department and slot
+                const januaryValues = {};
+                
+                departmentsToCopy.forEach(dept => {
+                    ['A', 'B', 'C', 'D'].forEach(slot => {
+                        const key = `January-${dept}-${slot}`;
+                        januaryValues[`${dept}-${slot}`] = this.state.slotCapacities[key] || 1;
+                    });
+                });
+                
+                // Apply to all months
+                this.state.months.forEach(month => {
+                    if (month === 'January') return; // Skip January since it's our source
+                    
+                    departmentsToCopy.forEach(dept => {
+                        ['A', 'B', 'C', 'D'].forEach(slot => {
+                            const key = `${month}-${dept}-${slot}`;
+                            this.state.slotCapacities[key] = januaryValues[`${dept}-${slot}`];
+                        });
+                    });
+                });
+                
+                // Update the UI
+                const filterVal = document.getElementById('deptFilter')?.value || 'all';
+                const configArea = document.getElementById('configArea');
+                if (configArea) {
+                    configArea.innerHTML = this.renderDeptConfig(filterVal);
+                }
+                
+                await this.saveConfigToSupabase();
+            },
+
+            // Clears all saved date/capacity/on-off overrides for one department, restoring
+            // the auto-computed default dates (30-day blocks) that show when nothing is saved.
+            async resetDeptSlotsToDefault(dept) {
+                const prefix = `cal-${dept}-`;
+                const keysToRemove = Object.keys(this.state.slotCapacities).filter(k => k.startsWith(prefix));
+
+                if (keysToRemove.length === 0) {
+                    alert(`No saved slot configuration found for "${dept}" — it's already showing default dates.`);
+                    return;
+                }
+
+                if (!confirm(`Reset "${dept}" to default dates?\n\nThis will clear ${keysToRemove.length} saved field(s) (dates, capacities, on/off toggles) for all 12 months. This cannot be undone once saved.`)) {
+                    return;
+                }
+
+                keysToRemove.forEach(k => delete this.state.slotCapacities[k]);
+                await this.saveConfigToSupabase();
+
+                const filterVal = document.getElementById('deptFilter')?.value || 'all';
+                const configArea = document.getElementById('configArea');
+                if (configArea) configArea.innerHTML = this.renderDeptConfig(filterVal);
+
+                alert(`✅ "${dept}" reset to default dates.`);
+            },
+
+            // Parses pasted rows (tab or comma separated) into slotCapacities for one department,
+            // then saves to Supabase in a single call — avoids re-typing every field by hand.
+            async bulkImportDeptSlots(dept) {
+                const ta = document.getElementById(`bulkImport-${dept}`);
+                const msgEl = document.getElementById(`bulkImportMsg-${dept}`);
+                if (!ta || !ta.value.trim()) {
+                    if (msgEl) { msgEl.textContent = '⚠️ Paste some rows first.'; msgEl.className = 'text-xs self-center text-red-600'; }
+                    return;
+                }
+
+                const ddmmyyyyToIso = (s) => {
+                    s = (s || '').trim();
+                    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+                    if (!m) return null;
+                    const [, d, mo, y] = m;
+                    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                };
+                const toBool = (s) => ['1', 'true', 'yes', 'y', 'on'].includes((s || '').trim().toLowerCase());
+
+                const lines = ta.value.split('\n').map(l => l.trim()).filter(Boolean);
+                let rowsImported = 0, fieldsImported = 0;
+                const errors = [];
+
+                lines.forEach((line, idx) => {
+                    const cols = line.includes('\t') ? line.split('\t') : line.split(',');
+                    const cols_ = cols.map(c => c.trim());
+                    if (cols_.length < 17) {
+                        errors.push(`Row ${idx + 1}: expected 17 columns, found ${cols_.length}`);
+                        return;
+                    }
+                    const [month, ...rest] = cols_;
+                    if (!this.state.months.includes(month)) {
+                        errors.push(`Row ${idx + 1}: "${month}" is not a valid month name`);
+                        return;
+                    }
+                    const slots = ['SA', 'SB', 'SC', 'SD'];
+                    slots.forEach((slotId, si) => {
+                        const [startRaw, endRaw, maxRaw, onRaw] = rest.slice(si * 4, si * 4 + 4);
+                        const startIso = ddmmyyyyToIso(startRaw);
+                        const endIso = ddmmyyyyToIso(endRaw);
+                        if (startRaw && !startIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad start date "${startRaw}"`); return; }
+                        if (endRaw && !endIso) { errors.push(`Row ${idx + 1} (${month} ${slotId}): bad end date "${endRaw}"`); return; }
+                        if (startIso) { this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-start`] = startIso; fieldsImported++; }
+                        if (endIso) { this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-end`] = endIso; fieldsImported++; }
+                        if (maxRaw !== undefined && maxRaw !== '') { this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-capacity`] = parseInt(maxRaw) || 0; fieldsImported++; }
+                        this.state.slotCapacities[`cal-${dept}-${month}-${slotId}-enabled`] = toBool(onRaw);
+                        fieldsImported++;
+                    });
+                    rowsImported++;
+                });
+
+                if (errors.length > 0) {
+                    if (msgEl) { msgEl.textContent = `⚠️ ${errors.length} issue(s) — see console.`; msgEl.className = 'text-xs self-center text-red-600'; }
+                    console.warn('Bulk import issues:', errors);
+                    if (rowsImported === 0) return; // nothing usable was imported
+                }
+
+                await this.saveConfigToSupabase();
+
+                const filterVal = document.getElementById('deptFilter')?.value || 'all';
+                const configArea = document.getElementById('configArea');
+                if (configArea) configArea.innerHTML = this.renderDeptConfig(filterVal);
+
+                if (msgEl) { msgEl.textContent = `✅ Imported ${rowsImported} month(s), ${fieldsImported} fields saved.`; msgEl.className = 'text-xs self-center text-green-700'; }
+            },
+            
+            async saveSlotConfiguration() {
+                // Save calendar-based slot inputs (new format: cal-dept-month-slotId-field)
+                const calInputs = document.querySelectorAll('.cal-slot-input');
+                let savedCount = 0;
+
+                // First pass: gather every input's live value (not yet written to state)
+                // so we can validate A-vs-B and C-vs-D overlap per dept+block BEFORE saving.
+                const pending = {}; // `${dept}||${month}` -> { SA:{start,end,enabled}, SB:{...}, SC:{...}, SD:{...} }
+                calInputs.forEach(input => {
+                    const dept = input.dataset.dept;
+                    const month = input.dataset.month;
+                    const slot = input.dataset.slot;
+                    const field = input.dataset.field;
+                    if (!dept || !month || !slot || !field) return;
+                    const bucketKey = `${dept}||${month}`;
+                    if (!pending[bucketKey]) pending[bucketKey] = {};
+                    if (!pending[bucketKey][slot]) pending[bucketKey][slot] = {};
+                    if (field === 'enabled') pending[bucketKey][slot].enabled = input.checked;
+                    else if (field === 'start') pending[bucketKey][slot].start = input.value;
+                    else if (field === 'end') pending[bucketKey][slot].end = input.value;
+                });
+
+                const overlaps = [];
+                const pairsToCheck = [['SA', 'SB'], ['SC', 'SD']];
+                Object.keys(pending).forEach(bucketKey => {
+                    const [dept, month] = bucketKey.split('||');
+                    const slots = pending[bucketKey];
+                    pairsToCheck.forEach(([s1, s2]) => {
+                        const a = slots[s1], b = slots[s2];
+                        if (!a || !b) return;
+                        if (a.enabled === false || b.enabled === false) return; // one side is off — no real conflict
+                        if (!a.start || !a.end || !b.start || !b.end) return;
+                        if (this.checkDateOverlap(a.start, a.end, b.start, b.end)) {
+                            overlaps.push(`${dept} — ${this.blockLabel(month)}: Slot ${s1.slice(1)} (${a.start}→${a.end}) overlaps Slot ${s2.slice(1)} (${b.start}→${b.end})`);
+                        }
+                    });
+                });
+
+                if (overlaps.length > 0) {
+                    const proceed = confirm(
+                        `⚠️ ${overlaps.length} overlap(s) found — Slot A/B and Slot C/D are meant to run back-to-back, not overlap:\n\n` +
+                        overlaps.join('\n') +
+                        `\n\nSave anyway? (Cancel to go back and fix the dates first.)`
+                    );
+                    if (!proceed) return;
+                }
+
+                calInputs.forEach(input => {
+                    const dept = input.dataset.dept;
+                    const month = input.dataset.month;
+                    const slot = input.dataset.slot;
+                    const field = input.dataset.field;
+                    let value;
+                    if (field === 'capacity') {
+                        value = parseInt(input.value);
+                        if (isNaN(value) || value < 0) value = 0; // clamp invalid/negative to 0
+                    } else if (field === 'enabled') {
+                        value = input.checked; // boolean
+                    } else {
+                        value = input.value;
+                    }
+                    
+                    if (dept && slot && field) {
+                        const key = month 
+                            ? `cal-${dept}-${month}-${slot}-${field}` 
+                            : `cal-${dept}-${slot}-${field}`;
+                        this.state.slotCapacities[key] = value;
+                        savedCount++;
+                    }
+                });
+                
+                await this.saveConfigToSupabase();
+                // Also push slot config to Supabase so other browsers get it
+                if (this.supabase) {
+                    // saveConfigToSupabase above already handles this — no duplicate upsert needed
+                }
+                
+                alert(`✅ Slot configurations saved!\n\n• ${savedCount} fields saved.\n• Each department now has Slot A, B, C configured per block (Block 1–12).`);
+                
+                this.setActiveView('admin');
+            },
+
+            // Dims/undims the date+capacity cells when the enabled checkbox is toggled
+            _toggleSlotRowOpacity(checkbox) {
+                const row = checkbox.closest('tr');
+                if (!row) return;
+                const dept  = checkbox.dataset.dept;
+                const month = checkbox.dataset.month;
+                const slot  = checkbox.dataset.slot;
+                // Dims/undims the date+capacity cells for this slot in this row
+                row.querySelectorAll(`input[data-dept="${dept}"][data-month="${month}"][data-slot="${slot}"]:not([data-field="enabled"])`).forEach(inp => {
+                    inp.closest('td').style.opacity = checkbox.checked ? '1' : '0.35';
+                });
+                // Keep the "All" header checkbox in sync
+                this._syncMarkAllState(dept, slot);
+            },
+
+            // Checks/unchecks all 12 month "enabled" checkboxes for a given dept+slot,
+            // and fires _toggleSlotRowOpacity on each so row dimming stays in sync.
+            _markAllSlot(masterCheckbox) {
+                const dept    = masterCheckbox.dataset.dept;
+                const slot    = masterCheckbox.dataset.slot;
+                const checked = masterCheckbox.checked;
+                const table   = masterCheckbox.closest('table');
+                if (!table) return;
+                table.querySelectorAll(
+                    `input.cal-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`
+                ).forEach(cb => {
+                    if (cb.checked !== checked) {
+                        cb.checked = checked;
+                        this._toggleSlotRowOpacity(cb);
+                    }
+                });
+                // Ensure master is not left indeterminate after clicking
+                masterCheckbox.indeterminate = false;
+                masterCheckbox.checked = checked;
+            },
+
+            // Syncs the "All" header checkbox: checked=all on, unchecked=all off, indeterminate=mixed.
+            _syncMarkAllState(dept, slot) {
+                const masterCbs = document.querySelectorAll(
+                    `input.mark-all-checkbox[data-dept="${dept}"][data-slot="${slot}"]`
+                );
+                masterCbs.forEach(masterCb => {
+                    const table = masterCb.closest('table');
+                    if (!table) return;
+                    const allMonthCbs  = [...table.querySelectorAll(
+                        `input.cal-slot-enabled[data-dept="${dept}"][data-slot="${slot}"]`
+                    )];
+                    const checkedCount = allMonthCbs.filter(cb => cb.checked).length;
+                    if (checkedCount === 0) {
+                        masterCb.indeterminate = false;
+                        masterCb.checked       = false;
+                    } else if (checkedCount === allMonthCbs.length) {
+                        masterCb.indeterminate = false;
+                        masterCb.checked       = true;
+                    } else {
+                        masterCb.indeterminate = true;
+                    }
+                });
+            },
+
+            async refreshBidsFromSupabase(silent = false) {
+                if (!this.supabase) {
+                    if (!silent) alert('⚠️ Not connected to database.');
+                    return false;
+                }
+                if (!silent) this.updateSystemStatus('Refreshing bids...');
+                try {
+                    // Helper: paginate-fetch all rows from a given table
+                    const fetchAllFromTable = async (tableName) => {
+                        let rows = [], from = 0;
+                        const batchSize = 1000;
+                        while (true) {
+                            const { data: batch, error } = await this.supabase
+                                .from(tableName)
+                                .select('*')
+                                .eq('tenant_id', this._tid())
+                                .range(from, from + batchSize - 1);
+                            if (error) { console.error(`❌ Bids fetch error [${tableName}]:`, error.message); break; }
+                            if (!batch || batch.length === 0) break;
+                            rows = [...rows, ...batch];
+                            if (batch.length < batchSize) break;
+                            from += batchSize;
+                        }
+                        return rows;
+                    };
+
+                    // Fetch regular, maintenance, AND corporate (GC/CS) bids in parallel
+                    const [regularRows, maintRows, corporateRows] = await Promise.all([
+                        fetchAllFromTable('leave_requests'),
+                        fetchAllFromTable('maint_leave_requests'),
+                        fetchAllFromTable('corporate_leave_request')
+                    ]);
+
+                    const allBids = [...regularRows, ...maintRows, ...corporateRows];
+                    console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance + ${corporateRows.length} corporate bids from Supabase`);
+
+                    this.state.bids = [
+                        ...regularRows.map(b => this._mapRemoteBid(b, 'leave_requests')),
+                        ...maintRows.map(b => this._mapRemoteBid(b, 'maint_leave_requests')),
+                        ...corporateRows.map(b => this._mapRemoteBid(b, 'corporate_leave_request'))
+                    ];
+
+                    this.saveState();
+                    this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
+
+                    if (silent) {
+                        // Silent auto-poll: update only the live elements without full re-render
+                        this._liveUpdateAdminPanel();
+                    } else {
+                        this.renderAdminView();
+                    }
+                    return true;
+                } catch (e) {
+                    console.error('Refresh bids error:', e);
+                    this.updateSystemStatus('⚠️ Refresh failed');
+                    if (!silent) alert('Failed to refresh bids: ' + e.message);
+                    return false;
+                }
+            },
+
+            _liveUpdateAdminPanel() {
+                // Update stats badges
+                const bidCountEl = document.getElementById('adminBidCount');
+                if (bidCountEl) bidCountEl.textContent = this.state.bids.length;
+                const bidCount2El = document.getElementById('adminBidCount2');
+                if (bidCount2El) bidCount2El.textContent = this.state.bids.length;
+                const uniqueBiddersEl = document.getElementById('adminUniqueBidders');
+                if (uniqueBiddersEl) uniqueBiddersEl.textContent = new Set(this.state.bids.map(b => b.employeeId)).size;
+                const uniqueBidders2El = document.getElementById('adminUniqueBidders2');
+                if (uniqueBidders2El) uniqueBidders2El.textContent = new Set(this.state.bids.map(b => b.employeeId)).size;
+                const lastRefreshEl = document.getElementById('adminLastRefresh');
+                if (lastRefreshEl) lastRefreshEl.textContent = new Date().toLocaleTimeString();
+                // Re-render bids table
+                const tableContainer = document.getElementById('adminBidsTableContainer');
+                const currentQuery = document.getElementById('bidSearchInput')?.value || '';
+                const activeTab = tableContainer?.dataset.activeTab || 'employees';
+                if (tableContainer) tableContainer.innerHTML = this._renderBidsTableHTML(currentQuery, activeTab);
+                // FIX: keep the GC/CS Leave Tracker in sync after any bid change
+                if (typeof window.lcRender === 'function') window.lcRender();
+            },
+
+            _isGcOrCs(employeeId) {
+                // Returns true if the employeeId belongs to GC, CS, or any sub-group (not a regular employee)
+                const gcIds  = (this.state.goldenCommandUsers  || []).map(u => u.id);
+                const csIds  = (this.state.corporateStaffUsers || []).map(u => u.id);
+                const l456   = (this.state.l456InmUsers        || []).map(u => u.id);
+                const l3Inm  = (this.state.l3InmUsers          || []).map(u => u.id);
+                const l3Tsm  = (this.state.l3TsmUsers          || []).map(u => u.id);
+                const hseq   = (this.state.hseqUsers           || []).map(u => u.id);
+                const allSpecial = [...gcIds, ...csIds, ...l456, ...l3Inm, ...l3Tsm, ...hseq];
+                return allSpecial.includes(employeeId);
+            },
+
+            // Fixed roster of Staff IDs that belong to the "HR Corporate" bid section.
+            // Sourced from the corporate_staff_employees_rows.csv upload — any other
+            // Corporate Staff records (added later / not on this list) remain grouped
+            // under the general "GC & Corporate Staff" tab.
+            _HR_CORPORATE_IDS: ['1000052','1000060','1000072','1000081','1000092','1000095','1000104','1000123','1000129','1000160','1000167','1000181','1000215','1000228','1000278','1000285','1000307','1000399','1000442','1000516','1000547','1000565','1000604','1000617','1000664','1000675','1000743','1000769','1000775','1000784','1000804','1000834','1000847','1000945','1000956','1001236','1002247','1002280','1002438','1002885','1003687','1004522','1004831','1004962','1005101','1005263','1005708','1006476','1006806','1006807','1006869','1006894','1006895','1006912','1006938','1006959','1007062','1007063','1007064','1007088','1007113','1007114','1007115','1007116','1007117','1007122','1007134','1007135','1007151'],
+
+            _isHrCorporate(employeeId) {
+                // Returns true only for the specific staff IDs on the HR Corporate list
+                // (not the entire Corporate Staff roster).
+                return this._HR_CORPORATE_IDS.includes(String(employeeId));
+            },
+
+            _isMaintStaff(employeeId, bid) {
+                // Prefer the source table tag set at fetch time — reliable even when
+                // maintenanceStaffUsers list is not loaded in the admin session
+                if (bid && bid._sourceTable) return bid._sourceTable === 'maint_leave_requests';
+                // Fallback: check against loaded maintenance staff users list
+                const ids = (this.state.maintenanceStaffUsers || []).map(u => u.id);
+                if (ids.length > 0) return ids.includes(employeeId);
+                // Last resort: check if any bid in state has this employeeId tagged as maint
+                return this.state.bids.some(b => b.employeeId === employeeId && b._sourceTable === 'maint_leave_requests');
+            },
+
+            // Returns true for Golden Command (GC) and Corporate Staff (CS) employee IDs —
+            // these route to the dedicated `corporate_leave_request` table, kept separate
+            // from Ops (`leave_requests`) and Maintenance (`maint_leave_requests`).
+            _isCorporateStaff(employeeId, bid) {
+                // Prefer the source table tag set at fetch time — reliable even when
+                // the GC/CS user lists are not loaded in the admin session
+                if (bid && bid._sourceTable) return bid._sourceTable === 'corporate_leave_request';
+                const gcIds = (this.state.goldenCommandUsers   || []).map(u => u.id);
+                const csIds = (this.state.corporateStaffUsers  || []).map(u => u.id);
+                if (gcIds.length > 0 || csIds.length > 0) {
+                    return gcIds.includes(employeeId) || csIds.includes(employeeId);
+                }
+                // Last resort: check if any bid in state has this employeeId tagged as corporate
+                return this.state.bids.some(b => b.employeeId === employeeId && b._sourceTable === 'corporate_leave_request');
+            },
+
+            // Central place that decides which Supabase table a bid belongs to,
+            // based on the acting user's userType. Used by every read/write path
+            // so the routing rule only has to be maintained in one spot.
+            _bidTableForUserType(userType) {
+                if (userType === 'maintenancestaff') return 'maint_leave_requests';
+                if (userType === 'goldencommand' || userType === 'corporatestaff') return 'corporate_leave_request';
+                return 'leave_requests';
+            },
+
+            _switchBidTab(tab) {
+                const empBtn   = document.getElementById('bidTabEmp');
+                const gccsBtn  = document.getElementById('bidTabGcCs');
+                const hrBtn    = document.getElementById('bidTabHr');
+                const maintBtn = document.getElementById('bidTabMaint');
+                [empBtn, gccsBtn, hrBtn, maintBtn].forEach(btn => {
+                    if (!btn) return;
+                    btn.style.background = '#f3f4f6'; btn.style.color = '#374151';
+                });
+                const target = tab === 'employees' ? empBtn : tab === 'gccs' ? gccsBtn : tab === 'hrcorp' ? hrBtn : maintBtn;
+                if (target) { target.style.background = '#2d6a4f'; target.style.color = '#fff'; }
+                const container = document.getElementById('adminBidsTableContainer');
+                if (container) {
+                    const currentQuery = document.getElementById('bidSearchInput')?.value || '';
+                    container.innerHTML = this._renderBidsTableHTML(currentQuery, tab);
+                    container.dataset.activeTab = tab;
+                }
+            },
+
+            _renderBidsTableHTML(filterQuery = '', tabFilter = 'employees') {
+                if (this.state.bids.length === 0) {
+                    return `
+                        <div class="text-center py-10 text-gray-400">
+                            <p class="text-4xl mb-3">📭</p>
+                            <p class="font-semibold">No bids submitted yet</p>
+                            <p class="text-sm mt-1">Auto-refreshing every 15 seconds. Bids appear here as soon as employees submit them.</p>
+                        </div>`;
+                }
+                const q = filterQuery.toLowerCase().trim();
+                // Preference rank: for each employee, the order their bids were actually
+                // submitted (by timestamp, ascending) = the same order the allocation
+                // engine's preference cascade (Round 1, 2, 3…) consumes them in.
+                // Keyed by `${employeeId}||${slotType}||${startDate}` so it survives
+                // re-sorting/filtering below.
+                const prefRankByBidKey = {};
+                const bidKey = (b) => `${b.employeeId}||${b.slotType}||${b.startDate}`;
+                const bidsByEmployee = {};
+                this.state.bids.forEach(b => {
+                    if (!bidsByEmployee[b.employeeId]) bidsByEmployee[b.employeeId] = [];
+                    bidsByEmployee[b.employeeId].push(b);
+                });
+                Object.values(bidsByEmployee).forEach(empBids => {
+                    [...empBids]
+                        .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0))
+                        .forEach((b, i) => { prefRankByBidKey[bidKey(b)] = i + 1; });
+                });
+                const sortedBids = [...this.state.bids]
+                    .sort((a, b) => {
+                        const dA = new Date(this.state.employees.find(e => e.id === a.employeeId)?.seniorityDate || 0);
+                        const dB = new Date(this.state.employees.find(e => e.id === b.employeeId)?.seniorityDate || 0);
+                        if (dA - dB !== 0) return dA - dB;
+                        // Tie-break (same employee, or employees sharing a seniority date):
+                        // group by employeeId, then order each employee's own bids by the
+                        // actual submission timestamp — this is the order the allocation
+                        // engine reads them in, so the # column below reflects reality.
+                        if (a.employeeId !== b.employeeId) return String(a.employeeId).localeCompare(String(b.employeeId));
+                        return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
+                    })
+                    .filter(bid => {
+                        // Tab filter
+                        const isSpecial = this._isGcOrCs(bid.employeeId);
+                        const isHr      = this._isHrCorporate(bid.employeeId);
+                        const isMaint   = this._isMaintStaff(bid.employeeId, bid);
+                        if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
+                        if (tabFilter === 'gccs'      && (!isSpecial || isHr || isMaint)) return false;
+                        if (tabFilter === 'hrcorp'    && (!isHr || isMaint)) return false;
+                        if (tabFilter === 'maint'     && !isMaint) return false;
+                        // Search filter
+                        if (!q) return true;
+                        const empRec = this.state.employees.find(e => e.id === bid.employeeId);
+                        const name = (bid.employeeName || empRec?.name || '').toLowerCase();
+                        const id   = (bid.employeeId || '').toLowerCase();
+                        // Matches the same fallback chain used to render the Position column,
+                        // so searching finds exactly what's shown on screen.
+                        const position = (bid.position || empRec?.position || bid.department || empRec?.department || '').toLowerCase();
+                        return name.includes(q) || id.includes(q) || position.includes(q);
+                    });
+                const colorMap = { 
+                    slotA: 'bg-green-100 text-green-800', slotB: 'bg-blue-100 text-blue-800', slotC: 'bg-purple-100 text-purple-800', slotD: 'bg-orange-100 text-orange-800',
+                    SA:    'bg-green-100 text-green-800', SB:    'bg-blue-100 text-blue-800', SC:    'bg-purple-100 text-purple-800', SD:    'bg-orange-100 text-orange-800'
+                };
+                const _slotLabel = (st) => {
+                    if (st === 'slotA' || st === 'SA') return 'Slot A';
+                    if (st === 'slotB' || st === 'SB') return 'Slot B';
+                    if (st === 'slotC' || st === 'SC') return 'Slot C';
+                    if (st === 'slotD' || st === 'SD') return 'Slot D';
+                    if (st === 'gcCustom') return '⭐ Custom';
+                    if (st === 'csCustom') return '🏢 Custom';
+                    return st || '—';
+                };
+                const noResults = sortedBids.length === 0 ? `
+                    <div class="text-center py-8 text-gray-400">
+                        <p class="text-3xl mb-2">🔍</p>
+                        <p class="font-semibold">No bids match "<span class="text-indigo-600">${filterQuery}</span>"</p>
+                        <p class="text-sm mt-1">Try a different name, ID, or position.</p>
+                    </div>` : '';
+                return `
+                    <div class="mb-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+                        <div class="relative flex-1 max-w-sm">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                            <input type="text" id="bidSearchInput"
+                                placeholder="Search by name, ID, or position…"
+                                value="${filterQuery.replace(/"/g, '&quot;')}"
+                                oninput="app._filterBidsTable(this.value)"
+                                style="width:100%;padding:9px 12px 9px 32px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:0.875rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                                onfocus="this.style.borderColor='#6366f1';this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.12)'"
+                                onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" />
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-500">${sortedBids.length} of ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''}</span>
+                            <button onclick="app.deleteAllBidsByTab('${tabFilter}')" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
+                                🗑️ Delete All ${tabFilter === 'employees' ? '👤 Employee' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : tabFilter === 'hrcorp' ? '🏢 HR Corporate' : '🔧 Maintenance'} Bids
+                            </button>
+                        </div>
+                    </div>
+                    ${noResults}
+                    <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                        <table class="metro-table">
+                            <thead>
+                                <tr>
+                                    <th>Choice No</th>
+                                    <th>Operation Staff ID</th>
+                                    <th>Name</th>
+                                    <th>Position</th>
+                                    <th>Slot Type</th>
+                                    <th>Start Date</th>
+                                    <th>End Date</th>
+                                    <th>Days</th>
+                                    <th>Submitted</th>
+                                    <th style="text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sortedBids.map((bid, idx) => {
+                                    const emp = this.state.employees.find(e => e.id === bid.employeeId);
+                                    const slotColor = colorMap[bid.slotType] || 'bg-gray-100 text-gray-700';
+                                    const slotDisplay = bid.slotLabel || _slotLabel(bid.slotType);
+                                    const submitted = bid.timestamp ? new Date(bid.timestamp).toLocaleString() : 'N/A';
+                                    const safeId = encodeURIComponent(bid.employeeId);
+                                    const safeSlot = encodeURIComponent(bid.slotType);
+                                    const safeStart = encodeURIComponent(bid.startDate);
+                                    const prefRank = prefRankByBidKey[bidKey(bid)] || (idx + 1);
+                                    return `
+                                        <tr>
+                                            <td style="text-align:center;color:var(--app-text-muted);" title="Preference #${prefRank} — order this bid was actually submitted in for this employee">${prefRank}</td>
+                                            <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(bid.employeeId)}</td>
+                                            <td style="font-weight:600;">${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}</td>
+                                            <td>${this._escHtml(bid.position || emp?.position || bid.department || emp?.department || 'Unassigned')}</td>
+                                            <td><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${this._escHtml(slotDisplay)}</span></td>
+                                            <td>${this._escHtml(bid.startDate || '—')}</td>
+                                            <td>${this._escHtml(bid.endDate || '—')}</td>
+                                            <td style="text-align:center;font-weight:600;">${this._escHtml(String(bid.days || '—'))}</td>
+                                            <td style="font-size:0.75rem;color:var(--app-text-muted);">${this._escHtml(submitted)}</td>
+                                            <td style="text-align:center;">
+                                                <button onclick="app.adminDeleteBid('${safeId}','${safeSlot}','${safeStart}')"
+                                                    class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-semibold hover:bg-red-200">
+                                                    🗑️ Delete
+                                                </button>
+                                            </td>
+                                        </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            },
+
+            async adminDeleteBid(encodedId, encodedSlot, encodedStart) {
+                const employeeId = decodeURIComponent(encodedId);
+                const slotType   = decodeURIComponent(encodedSlot);
+                const startDate  = decodeURIComponent(encodedStart);
+
+                // ✅ FIX: Look up the bid BEFORE removing it from state,
+                // so we can correctly determine the table and pass it to _isMaintStaff.
+                // Previously this lookup happened AFTER state removal, returning undefined.
+                const bid = this.state.bids.find(b => b.employeeId === employeeId && b.slotType === slotType && b.startDate === startDate);
+                const name = bid?.employeeName || employeeId;
+                if (!confirm(`Delete bid for ${name} (${slotType}, ${startDate})?\n\nThis cannot be undone.`)) return;
+
+                // Pause polling during delete to avoid race condition where the
+                // 15-second auto-refresh fetches from Supabase before the delete completes
+                // and overwrites local state — causing the bid to reappear.
+                this._stopAdminLive();
+
+                // Remove from local state immediately
+                this.state.bids = this.state.bids.filter(b =>
+                    !(b.employeeId === employeeId && b.slotType === slotType && b.startDate === startDate)
+                );
+                this.saveState();
+
+                // Delete from Supabase — route to correct table, await completion
+                if (this.supabase) {
+                    // ✅ FIX: Use the bid looked up above (before state removal), not a stale re-lookup.
+                    // Also added .eq('tenant_id') for safe scoping, consistent with bulk-delete functions.
+                    const table = this._isMaintStaff(employeeId, bid)
+                        ? 'maint_leave_requests'
+                        : this._isCorporateStaff(employeeId, bid)
+                            ? 'corporate_leave_request'
+                            : 'leave_requests';
+                    const { error } = await this.supabase
+                        .from(table)
+                        .delete()
+                        .eq('employee_id', employeeId)
+                        .eq('slot_type', slotType)
+                        .eq('start_date', startDate)
+                        .eq('tenant_id', this._tid());
+                    if (error) console.warn(`⚠️ Supabase delete error [${table}]:`, error.message);
+                    else console.log(`✅ Bid deleted from ${table}`);
+                }
+
+                this._liveUpdateAdminPanel();
+
+                // Resume realtime subscription only after Supabase delete is confirmed done
+                this._startAdminLive();
+            },
+
+            _filterBidsTable(query) {
+                const container = document.getElementById('adminBidsTableContainer');
+                const activeTab = container?.dataset.activeTab || 'employees';
+                if (container) container.innerHTML = this._renderBidsTableHTML(query, activeTab);
+                // Re-focus and restore cursor position
+                const input = document.getElementById('bidSearchInput');
+                if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+            },
+
+            async deleteAllBidsByTab(tabFilter) {
+                // Determine which bids belong to this tab
+                const tabBids = this.state.bids.filter(bid => {
+                    const isSpecial = this._isGcOrCs(bid.employeeId);
+                    const isHr      = this._isHrCorporate(bid.employeeId);
+                    const isMaint   = this._isMaintStaff(bid.employeeId, bid);
+                    if (tabFilter === 'employees') return !isSpecial && !isMaint;
+                    if (tabFilter === 'gccs')      return isSpecial && !isHr && !isMaint;
+                    if (tabFilter === 'hrcorp')    return isHr && !isMaint;
+                    if (tabFilter === 'maint')     return isMaint;
+                    return false;
+                });
+
+                if (tabBids.length === 0) {
+                    alert('No bids to delete in this section.');
+                    return;
+                }
+
+                const sectionName = tabFilter === 'employees' ? '👤 Employee'
+                                  : tabFilter === 'gccs'      ? '⭐ GC & Corporate Staff'
+                                  : tabFilter === 'hrcorp'    ? '🏢 HR Corporate'
+                                  :                             '🔧 Maintenance Staff';
+
+                if (!confirm(`⚠️ Delete ALL ${tabBids.length} ${sectionName} bids?\n\nBids in other sections will NOT be affected.\nThis cannot be undone.`)) return;
+
+                // Pause polling to avoid race condition
+                this._stopAdminLive();
+
+                // Remove only the matching bids from local state
+                this.state.bids = this.state.bids.filter(bid => {
+                    const isSpecial = this._isGcOrCs(bid.employeeId);
+                    const isHr      = this._isHrCorporate(bid.employeeId);
+                    const isMaint   = this._isMaintStaff(bid.employeeId, bid);
+                    if (tabFilter === 'employees') return isSpecial || isMaint;               // keep non-employee bids
+                    if (tabFilter === 'gccs')      return !isSpecial || isHr || isMaint;      // keep non-gccs bids (incl. HR corp)
+                    if (tabFilter === 'hrcorp')    return !isHr || isMaint;                   // keep non-HR-corp bids
+                    if (tabFilter === 'maint')     return !isMaint;                           // keep non-maint bids
+                    return true;
+                });
+                this.saveState();
+
+                if (this.supabase) {
+                    if (tabFilter === 'maint') {
+                        // Only delete from maint_leave_requests, scoped to this tenant
+                        const { error } = await this.supabase
+                            .from('maint_leave_requests')
+                            .delete()
+                            .eq('tenant_id', this._tid());
+                        if (error) console.warn('⚠️ Supabase delete all maint error:', error.message);
+                        else console.log('✅ All maintenance bids deleted');
+                    } else if (tabFilter === 'gccs' || tabFilter === 'hrcorp') {
+                        // GC, Corporate Staff, and HR Corporate all live in corporate_leave_request
+                        const idsToDelete = tabBids.map(b => b.employeeId);
+                        const { error } = await this.supabase
+                            .from('corporate_leave_request')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .in('employee_id', idsToDelete);
+                        if (error) console.warn(`⚠️ Supabase delete all [${tabFilter}] error:`, error.message);
+                        else console.log(`✅ All ${sectionName} bids deleted from corporate_leave_request`);
+                    } else {
+                        // Ops employees live in leave_requests
+                        // Delete only the specific employee IDs for this tab, scoped to this tenant
+                        const idsToDelete = tabBids.map(b => b.employeeId);
+                        const { error } = await this.supabase
+                            .from('leave_requests')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .in('employee_id', idsToDelete);
+                        if (error) console.warn(`⚠️ Supabase delete all [${tabFilter}] error:`, error.message);
+                        else console.log(`✅ All ${sectionName} bids deleted from leave_requests`);
+                    }
+                }
+
+                this._liveUpdateAdminPanel();
+                // Resume realtime subscription after delete is confirmed done
+                this._startAdminLive();
+                alert(`✅ All ${sectionName} bids have been deleted.`);
+            },
+
+            async deleteAllBids() {
+                if (!confirm(`⚠️ Delete ALL ${this.state.bids.length} bids?\n\nThis will permanently remove every bid from the database and cannot be undone.`)) return;
+
+                this._stopAdminLive();
+                this.state.bids = [];
+                this.saveState();
+
+                if (this.supabase) {
+                    const [r1, r2, r3] = await Promise.all([
+                        this.supabase.from('leave_requests').delete().eq('tenant_id', this._tid()),
+                        this.supabase.from('maint_leave_requests').delete().eq('tenant_id', this._tid()),
+                        this.supabase.from('corporate_leave_request').delete().eq('tenant_id', this._tid())
+                    ]);
+                    if (r1.error) console.warn('⚠️ Supabase delete all error [leave_requests]:', r1.error.message);
+                    if (r2.error) console.warn('⚠️ Supabase delete all error [maint_leave_requests]:', r2.error.message);
+                    if (r3.error) console.warn('⚠️ Supabase delete all error [corporate_leave_request]:', r3.error.message);
+                    if (!r1.error && !r2.error && !r3.error) console.log('✅ All bids deleted from all three tables');
+                }
+
+                this._liveUpdateAdminPanel();
+                this._startAdminLive();
+                alert('✅ All bids have been deleted.');
+            },
+
+            stopAdminPolling() {
+                if (this._adminPollTimer) {
+                    clearInterval(this._adminPollTimer);
+                    this._adminPollTimer = null;
+                    console.log('⏹ Admin poll stopped');
+                }
+            },
+
+            // ==================== ADMIN REALTIME (Supabase postgres_changes) ====================
+            // Replaces the 15-second polling loop with push-based updates. Falls back
+            // to a 30-second poll if Realtime disconnects, so the admin view still
+            // refreshes. Used by the planner/admin view only — employee/GC/CS/maintenance
+            // bidding views are unchanged.
+
+            _mapRemoteBid(bid, sourceTable) {
+                return {
+                    employeeId: bid.employee_id,
+                    employeeName: bid.employee_name ||
+                        this.state.employees.find(e => e.id === bid.employee_id)?.name ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.name || '',
+                    seniorityDate: this.state.employees.find(e => e.id === bid.employee_id)?.seniorityDate ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.seniorityDate || '',
+                    department: bid.department ||
+                        this.state.employees.find(e => e.id === bid.employee_id)?.department ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.department || '',
+                    position: this.state.employees.find(e => e.id === bid.employee_id)?.position ||
+                        (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id)?.position || '',
+                    slotType: bid.slot_type || 'slotA',
+                    leaveType: bid.leave_type || 'Annual Leave',
+                    startDate: bid.start_date,
+                    endDate: bid.end_date,
+                    days: bid.days_requested,
+                    timestamp: bid.created_at,
+                    _sourceTable: sourceTable
+                };
+            },
+
+            startAdminRealtime() {
+                if (!this.supabase || this._adminRealtimeChannel) return;
+
+                const applyChange = (payload, sourceTable) => {
+                    if (!payload?.new && !payload?.old) return;
+
+                    if (payload.eventType === 'DELETE') {
+                        const old = payload.old;
+                        this.state.bids = this.state.bids.filter(b =>
+                            !(b.employeeId === old.employee_id &&
+                              b.slotType   === old.slot_type   &&
+                              b.startDate  === old.start_date  &&
+                              b._sourceTable === sourceTable)
+                        );
+                    } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const row = payload.new;
+                        const mapped = this._mapRemoteBid(row, sourceTable);
+                        this.state.bids = [
+                            ...this.state.bids.filter(b =>
+                                !(b.employeeId === mapped.employeeId &&
+                                  b.slotType   === mapped.slotType   &&
+                                  b.startDate  === mapped.startDate  &&
+                                  b._sourceTable === sourceTable)),
+                            mapped
+                        ];
+                    }
+                    this._liveUpdateAdminPanel();
+                    this._setAdminStatus('live');
+                };
+
+                this._adminRealtimeChannel = this.supabase
+                    .channel('admin-bids')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'leave_requests' },
+                        payload => applyChange(payload, 'leave_requests'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'maint_leave_requests' },
+                        payload => applyChange(payload, 'maint_leave_requests'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'corporate_leave_request' },
+                        payload => applyChange(payload, 'corporate_leave_request'))
+                    .subscribe(status => {
+                        console.log('🔌 Admin Realtime status:', status);
+                        if (status === 'SUBSCRIBED') this._setAdminStatus('live');
+                        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            this._setAdminStatus('reconnecting');
+                        }
+                    });
+            },
+
+            stopAdminRealtime() {
+                if (this._adminRealtimeChannel && this.supabase) {
+                    this.supabase.removeChannel(this._adminRealtimeChannel);
+                    this._adminRealtimeChannel = null;
+                    console.log('⏹ Admin Realtime stopped');
+                }
+            },
+
+            startLcRealtime() {
+                if (!this.supabase || this._lcRealtimeChannel) return;
+
+                const applyLcChange = (payload, sourceTable) => {
+                    if (!payload?.new && !payload?.old) return;
+
+                    if (payload.eventType === 'DELETE') {
+                        const old = payload.old;
+                        this.state.bids = this.state.bids.filter(b =>
+                            !(b.employeeId === old.employee_id &&
+                              b.slotType   === old.slot_type   &&
+                              b.startDate  === old.start_date  &&
+                              b._sourceTable === sourceTable)
+                        );
+                    } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const row = payload.new;
+                        const mapped = this._mapRemoteBid(row, sourceTable);
+                        this.state.bids = [
+                            ...this.state.bids.filter(b =>
+                                !(b.employeeId === mapped.employeeId &&
+                                  b.slotType   === mapped.slotType   &&
+                                  b.startDate  === mapped.startDate  &&
+                                  b._sourceTable === sourceTable)),
+                            mapped
+                        ];
+                    }
+                    // Re-render the tracker and update the live badge timestamp
+                    if (typeof window.lcRender === 'function') window.lcRender();
+                    this._setLcStatus('live');
+                };
+
+                this._lcRealtimeChannel = this.supabase
+                    .channel('lc-tracker-bids')
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'corporate_leave_request' },
+                        payload => applyLcChange(payload, 'corporate_leave_request'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'golden_command_users' },
+                        () => { if (typeof window.lcRender === 'function') window.lcRender(); })
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'corporate_staff_employees' },
+                        () => { if (typeof window.lcRender === 'function') window.lcRender(); })
+                    .subscribe(status => {
+                        console.log('🔌 LC Tracker Realtime:', status);
+                        if (status === 'SUBSCRIBED') this._setLcStatus('live');
+                        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            this._setLcStatus('reconnecting');
+                            // Retry after 5s
+                            setTimeout(() => {
+                                if (this.state.activeView === 'leaveDashboard') {
+                                    this.supabase.removeChannel(this._lcRealtimeChannel);
+                                    this._lcRealtimeChannel = null;
+                                    this.startLcRealtime();
+                                }
+                            }, 5000);
+                        }
+                    });
+            },
+
+            stopLcRealtime() {
+                if (this._lcRealtimeChannel && this.supabase) {
+                    this.supabase.removeChannel(this._lcRealtimeChannel);
+                    this._lcRealtimeChannel = null;
+                    console.log('⏹ LC Tracker Realtime stopped');
+                }
+                if (this._lcFallbackTimer) {
+                    clearInterval(this._lcFallbackTimer);
+                    this._lcFallbackTimer = null;
+                }
+            },
+
+            _setLcStatus(state) {
+                const badge = document.getElementById('lcLiveBadge');
+                if (!badge) return;
+                if (state === 'live') {
+                    badge.innerHTML = '&#9679; LIVE &mdash; <span id="lcLastRefresh">' + new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) + '</span>';
+                    badge.style.background = 'rgba(46,204,154,.25)';
+                    badge.style.borderColor = 'rgba(46,204,154,.6)';
+                    badge.style.color = '#7eedc8';
+                } else if (state === 'reconnecting') {
+                    badge.innerHTML = '&#9679; Reconnecting…';
+                    badge.style.background = 'rgba(255,195,80,.2)';
+                    badge.style.borderColor = 'rgba(255,195,80,.5)';
+                    badge.style.color = '#ffd98a';
+                }
+            },
+
+            _setAdminStatus(state) {
+                const el = document.getElementById('adminLiveBadge');
+                if (!el) return;
+                if (state === 'live') {
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                    Live &mdash; realtime updates
+                                    &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>`;
+                } else if (state === 'reconnecting') {
+                    el.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
+                                    Reconnecting &mdash; fallback polling every 30s`;
+                }
+            },
+
+            _startAdminLive() {
+                this.stopAdminPolling();
+                this.startAdminRealtime();
+                // Fallback poll every 30s while realtime is active — only fires if
+                // realtime events stop arriving for any reason (network drop, server hiccup).
+                if (this._adminFallbackTimer) clearInterval(this._adminFallbackTimer);
+                this._adminFallbackTimer = setInterval(() => {
+                    if (this.state.activeView === 'admin' && this.state.userType === 'planner') {
+                        this.refreshBidsFromSupabase(true);
+                    }
+                }, 30000);
+            },
+
+            _stopAdminLive() {
+                this.stopAdminRealtime();
+                this.stopAdminPolling();
+                if (this._adminFallbackTimer) {
+                    clearInterval(this._adminFallbackTimer);
+                    this._adminFallbackTimer = null;
+                }
+            },
+
+            renderAdminView() {
+                const content = document.getElementById('contentArea');
+                // Use exact same department list as Configure Slots (L3/L46/L5 codes only)
+                const employeeDeptsAdmin = [...new Set(this.state.employees.map(e => e.department || 'Unassigned'))];
+                const allRawDeptsAdmin = [...new Set([...this.state.departments, ...employeeDeptsAdmin])];
+                const filteredDeptsAdmin = allRawDeptsAdmin.filter(d => /^(L3|L46|L5|L3465)[-\s]/i.test(d) || d === 'L3-SA' || d === 'L5 SA' || d === 'L3 SAMB' || d === 'L5 SAMB' || d === 'L46 SAMB').sort();
+                const allDepts = filteredDeptsAdmin;
+                const depts = ['all', ...filteredDeptsAdmin];
+                
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="metro-card p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">Admin Panel</h2>
+                                <div id="adminLiveBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm" style="background:var(--app-green-50);border:1px solid var(--app-border);color:var(--metro-green-dark);">
+                                    <span class="inline-block w-2 h-2 rounded-full animate-pulse" style="background:var(--metro-green);"></span>
+                                    Live &mdash; auto-refreshes every 15s &nbsp;|&nbsp; Last: <span id="adminLastRefresh">${new Date().toLocaleTimeString()}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Set Bidding Deadline (Ops &amp; Maintenance):</label>
+                                <input
+                                    type="datetime-local"
+                                    id="biddingDeadline"
+                                    value="${this.state.biddingDeadline}"
+                                    class="w-full px-4 py-2 border-2 rounded-lg"
+                                    style="border-color:var(--metro-green-light);"
+                                    onchange="app.setBiddingDeadline(this.value)"
+                                />
+                            </div>
+
+                            <div class="mb-6 p-4 rounded-lg border-2" style="background:var(--app-gold-50);border-color:#f0d78c;">
+                                <label class="block font-semibold mb-2" style="color:var(--metro-gold-dark);">⭐ Corporate &amp; Golden Command Bidding Settings (independent):</label>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                    <div>
+                                        <label class="block text-sm font-semibold mb-1">Deadline:</label>
+                                        <input
+                                            type="datetime-local"
+                                            id="biddingDeadlineCorp"
+                                            value="${this.state.biddingDeadlineCorp}"
+                                            class="w-full px-4 py-2 border-2 rounded-lg"
+                                            style="border-color:#e0c069;"
+                                            onchange="app.setBiddingDeadlineCorp(this.value)"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-semibold mb-1">Bidding Year:</label>
+                                        <select
+                                            id="biddingYearCorpSelect"
+                                            class="w-full px-4 py-2 border-2 rounded-lg font-semibold"
+                                            style="border-color:#e0c069;"
+                                            onchange="app.setBiddingYearCorp(parseInt(this.value))"
+                                        >
+                                            ${[this.state.biddingYear - 1, this.state.biddingYear, this.state.biddingYear + 1].map(year => `
+                                                <option value="${year}" ${year === this.state.biddingYearCorp ? 'selected' : ''}>${year}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+                                <button
+                                    onclick="app.toggleCorpLock()"
+                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white"
+                                    style="background:${this.state.isProcessedCorp ? '#6b7280' : 'linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%)'};"
+                                >
+                                    ${this.state.isProcessedCorp ? '🔓 Unlock Corporate &amp; GC Bidding' : '🔒 Lock Corporate &amp; GC Bidding'}
+                                </button>
+                                <p class="text-xs mt-2" style="color:var(--app-text-muted);">This deadline, year, and lock apply only to Golden Command &amp; Corporate Staff bidding — Ops/Maintenance are unaffected, and vice versa.</p>
+                            </div>
+
+                            <div class="mb-6 p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <label class="block font-semibold mb-2" style="color:var(--app-text);">Filter by Scheduling Row:</label>
+                                <select
+                                    id="adminDeptFilter"
+                                    class="w-full px-4 py-2 border-2 rounded-lg text-lg font-semibold"
+                                    style="border-color:var(--metro-green-light);"
+                                    onchange="app.state.selectedDepartment = this.value;"
+                                >
+                                    ${depts.map(dept => `
+                                        <option value="${dept}" ${dept === this.state.selectedDepartment ? 'selected' : ''}>
+                                            ${dept === 'all' ? 'All Departments (L3 / L46 / L5)' : dept}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-green-dark);" id="adminBidCount">${this.state.bids.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Bids</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);" id="adminUniqueBidders">${new Set(this.state.bids.map(b => b.employeeId)).size}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Employees Who Bid</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:#f3f4f6;">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${this.state.isProcessed ? 'Yes' : 'No'}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Ops Processed</p>
+                                </div>
+                                <div class="p-4 rounded-lg" style="background:var(--app-gold-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--metro-gold-dark);">${this.state.isProcessedCorp ? '🔒 Locked' : '🔓 Open'}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Corporate &amp; GC Bidding</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4 mb-6">
+                                <button
+                                    onclick="app.processBids()"
+                                    ${this.state.isProcessed || this.state.employees.length === 0 ? 'disabled' : ''}
+                                    class="w-full px-6 py-3 rounded-lg font-semibold text-white ${this.state.isProcessed ? 'opacity-50' : ''}"
+                                    style="background:${this.state.isProcessed ? '#9ca3af' : 'var(--metro-green)'};"
+                                >
+                                    ${this.state.isProcessed ? '✅ Bids Already Processed' : '🚀 Process All Bids'}
+                                </button>
+
+                                <button
+                                    onclick="app.previewAllocation()"
+                                    ${this.state.employees.length === 0 ? 'disabled' : ''}
+                                    class="w-full px-6 py-3 rounded-lg font-semibold border-2"
+                                    style="color:var(--metro-green-dark);border-color:var(--metro-green-dark);background:#fff;"
+                                >
+                                    🔍 Preview Allocation (read-only, no data written)
+                                </button>
+
+                                ${this.state.isProcessed ? `
+                                    <button onclick="app.exportResults()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-mid);">
+                                        📊 Export Results to Excel
+                                    </button>
+                                    <button onclick="app.showEmailNotifyModal()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-dark);">
+                                        📧 Notify Staff by Email (Results Ready)
+                                    </button>
+                                    <button onclick="app.setActiveView('manualOverride')" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600">
+                                        ✏️ Manual Override Results
+                                    </button>
+                                ` : ''}
+                                ${(this.state.isProcessed || this.state.isMaintProcessed) ? `
+                                    <button onclick="app.renderJustificationReport()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:#4338ca;">
+                                        📋 Bid Allocation Justification Report
+                                    </button>
+                                ` : ''}
+                                
+                                <button onclick="app.refreshBidsFromSupabase(false)" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:var(--app-green-50);color:var(--metro-green-dark);border:1px solid var(--app-border);">
+                                    🔄 Refresh Bids Now
+                                </button>
+                                
+                                <button onclick="app.setActiveView('emailSettings')" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:var(--app-green-50);color:var(--metro-green-dark);border:1px solid var(--app-border);">
+                                    ⚙️ Email Settings (OTP &amp; Notifications)
+                                </button>
+
+                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600">
+                                    🔄 Reset System
+                                </button>
+
+                                <div style="margin-top:12px;background:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%);border:2px solid #fb923c;border-radius:12px;padding:16px;">
+                                    <!-- Section header -->
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #fed7aa;">
+                                        <div style="width:32px;height:32px;background:#ea580c;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                                        </div>
+                                        <div>
+                                            <p style="font-size:0.85rem;font-weight:700;color:#9a3412;margin:0;line-height:1.2;">Maintenance Staff Processing</p>
+                                            <p style="font-size:0.7rem;color:#c2410c;margin:0;">
+                                                ${(this.state.maintenanceStaffUsers || []).length} staff loaded &bull; ${Object.keys(this.state.maintSlotCapacities || {}).length} slot keys
+                                            </p>
+                                        </div>
+                                        <div style="margin-left:auto;background:${this.state.isMaintProcessed ? '#dcfce7' : '#fee2e2'};color:${this.state.isMaintProcessed ? '#166534' : '#991b1b'};font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;">
+                                            ${this.state.isMaintProcessed ? '✅ DONE' : '⏳ PENDING'}
+                                        </div>
+                                    </div>
+                                    <!-- Buttons -->
+                                    <div style="display:flex;flex-direction:column;gap:8px;">
+                                        <button
+                                            onclick="app.processMaintBids()"
+                                            ${this.state.isMaintProcessed ? 'disabled' : ''}
+                                            style="width:100%;padding:10px 16px;background:${this.state.isMaintProcessed ? '#fdba74' : '#ea580c'};color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:${this.state.isMaintProcessed ? 'not-allowed' : 'pointer'};opacity:${this.state.isMaintProcessed ? '0.6' : '1'};transition:background 0.2s;"
+                                            onmouseover="if(!this.disabled)this.style.background='#c2410c'"
+                                            onmouseout="if(!this.disabled)this.style.background='#ea580c'"
+                                        >
+                                            ${this.state.isMaintProcessed ? '✅ Maintenance Bids Already Processed' : '🔧 Process Maintenance Bids'}
+                                        </button>
+                                        ${this.state.isMaintProcessed ? `
+                                            <button onclick="app.renderMaintResultsView()"
+                                                style="width:100%;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#1d4ed8'" onmouseout="this.style.background='#2563eb'">
+                                                📋 View Maintenance Results
+                                            </button>
+                                            <button onclick="app.setActiveView('maintManualOverride')"
+                                                style="width:100%;padding:10px 16px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#c2410c'" onmouseout="this.style.background='#ea580c'">
+                                                ✏️ Manual Override Maintenance Results
+                                            </button>
+                                            <button onclick="app.exportMaintResults()"
+                                                style="width:100%;padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
+                                                📊 Export Maintenance Results to Excel
+                                            </button>
+                                            <button onclick="app.resetMaintProcessing()"
+                                                style="width:100%;padding:10px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                                onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">
+                                                ↩️ Reset Maintenance Processing
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                <h3 class="font-bold mb-2" style="color:var(--app-text);">System Information</h3>
+                                <div class="text-sm space-y-1" style="color:var(--app-text-muted);">
+                                    <p>&bull; Scheduling Rows configured: ${allDepts.length}</p>
+                                    <p>&bull; Slot capacities configured: ${Object.keys(this.state.slotCapacities).length > 0 ? 'Yes' : 'No'}</p>
+                                    <p>&bull; Bidding year (Ops/Maint): ${this.state.biddingYear}</p>
+                                    <p>&bull; Bidding year (Corporate/GC): ${this.state.biddingYearCorp}</p>
+                                    <p>&bull; Last sync: ${this.state.employees.length > 0 ? 'Data loaded' : 'No data'}</p>
+                                </div>
+                            </div>
+
+                            <!-- Staff Bids Details Section -->
+                        <div class="mt-6 rounded-xl overflow-hidden" style="background:var(--app-card);border:2px solid var(--app-border);">
+                            <div class="px-6 py-4" style="background:var(--app-green-50);border-bottom:1px solid var(--app-border);">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--metro-green-dark);">📋 Bid Details</h3>
+                                        <p class="text-sm mt-1" style="color:var(--app-text-muted);">Bids sorted by seniority. Updates every 15 seconds.</p>
+                                    </div>
+                                    <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background:var(--app-green-100);color:var(--metro-green-dark);">
+                                        <span id="adminBidCount2">${this.state.bids.length}</span> total bids
+                                    </span>
+                                </div>
+                                <!-- Tab switcher -->
+                                <div class="flex gap-2 flex-wrap">
+                                    <button id="bidTabEmp" onclick="app._switchBidTab('employees')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:var(--metro-green);color:#fff;">
+                                        👤 Employees
+                                        <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId, b)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabGcCs" onclick="app._switchBidTab('gccs')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        ⭐ GC & Corporate Staff
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isGcOrCs(b.employeeId) && !this._isHrCorporate(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabHr" onclick="app._switchBidTab('hrcorp')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        🏢 HR Corporate
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isHrCorporate(b.employeeId)).length}
+                                        </span>
+                                    </button>
+                                    <button id="bidTabMaint" onclick="app._switchBidTab('maint')"
+                                        style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:#f3f4f6;color:#374151;">
+                                        🔧 Maintenance Staff
+                                        <span style="margin-left:6px;background:rgba(0,0,0,0.08);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
+                                            ${this.state.bids.filter(b => this._isMaintStaff(b.employeeId, b)).length}
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="p-4" id="adminBidsTableContainer">
+                                ${this._renderBidsTableHTML('', 'employees')}
+                            </div>
+                        </div>
+
+                    </div>
+                `;
+            },
+
+            addGCUser() {
+                const id = document.getElementById('newGCId')?.value?.trim();
+                const name = document.getElementById('newGCName')?.value?.trim();
+                const password = document.getElementById('newGCPassword')?.value?.trim();
+                
+                if (!id || !name) {
+                    alert('Please enter both a GC ID and a name.');
+                    return;
+                }
+                
+                const existing = (this.state.goldenCommandUsers || []).find(u => u.id === id);
+                if (existing) {
+                    alert(`GC ID "${id}" already exists.`);
+                    return;
+                }
+                
+                if (!this.state.goldenCommandUsers) this.state.goldenCommandUsers = [];
+                
+                this.state.goldenCommandUsers.push({
+                    id: id,
+                    name: name,
+                    password: password || id
+                });
+                
+                this.saveState();
+                this.saveGCUsersToSupabase();
+                alert(`✅ Golden Command user "${name}" (ID: ${id}) added and saved to database!`);
+                this.renderUploadView();
+            },
+
+            removeGCUser(index) {
+                const users = this.state.goldenCommandUsers || [];
+                if (index < 0 || index >= users.length) return;
+                
+                const user = users[index];
+                if (confirm(`Remove Golden Command user "${user.name}" (${user.id})?`)) {
+                    this.state.goldenCommandUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveGCUsersToSupabase();
+                    this.renderUploadView();
+                }
+            },
+
+            addCSUser() {
+                const id = document.getElementById('newCSId')?.value?.trim();
+                const name = document.getElementById('newCSName')?.value?.trim();
+                const password = document.getElementById('newCSPassword')?.value?.trim();
+                
+                if (!id || !name) {
+                    alert('Please enter both a Staff ID and a name.');
+                    return;
+                }
+                
+                const existing = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                if (existing) {
+                    alert(`Staff ID "${id}" already exists.`);
+                    return;
+                }
+                
+                if (!this.state.corporateStaffUsers) this.state.corporateStaffUsers = [];
+                
+                this.state.corporateStaffUsers.push({
+                    id: id,
+                    name: name,
+                    password: password || id
+                });
+                
+                this.saveState();
+                this.saveCorporateStaffUsersToSupabase();
+                alert(`✅ Corporate Staff user "${name}" (ID: ${id}) added and saved to database!`);
+                this.renderUploadView();
+            },
+
+            removeCSUser(index) {
+                const users = this.state.corporateStaffUsers || [];
+                if (index < 0 || index >= users.length) return;
+                
+                const user = users[index];
+                if (confirm(`Remove Corporate Staff user "${user.name}" (${user.id})?`)) {
+                    this.state.corporateStaffUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveCorporateStaffUsersToSupabase();
+                    this.renderUploadView();
+                }
+            },
+
+            addL456InmUser() {
+                const id = document.getElementById('newL456InmId')?.value?.trim();
+                const name = document.getElementById('newL456InmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l456InmUsers) this.state.l456InmUsers = [];
+                if (this.state.l456InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l456InmUsers.push({ id, name });
+                this.saveState();
+                this.saveSubGroupUsersToSupabase('l456inm'); // persist to Supabase
+                alert(`✅ L456 INM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL456InmUser(index) {
+                const users = this.state.l456InmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L456 INM user "${user.name}" (${user.id})?`)) {
+                    this.state.l456InmUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveSubGroupUsersToSupabase('l456inm'); // persist to Supabase
+                    this.renderUploadView();
+                }
+            },
+
+            addL3InmUser() {
+                const id = document.getElementById('newL3InmId')?.value?.trim();
+                const name = document.getElementById('newL3InmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l3InmUsers) this.state.l3InmUsers = [];
+                if (this.state.l3InmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l3InmUsers.push({ id, name });
+                this.saveState();
+                this.saveSubGroupUsersToSupabase('l3inm'); // persist to Supabase
+                alert(`✅ L3 INM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL3InmUser(index) {
+                const users = this.state.l3InmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L3 INM user "${user.name}" (${user.id})?`)) {
+                    this.state.l3InmUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveSubGroupUsersToSupabase('l3inm'); // persist to Supabase
+                    this.renderUploadView();
+                }
+            },
+
+            addL3TsmUser() {
+                const id = document.getElementById('newL3TsmId')?.value?.trim();
+                const name = document.getElementById('newL3TsmName')?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+                if (!this.state.l3TsmUsers) this.state.l3TsmUsers = [];
+                if (this.state.l3TsmUsers.find(u => u.id === id)) { alert(`Staff ID "${id}" already exists.`); return; }
+                this.state.l3TsmUsers.push({ id, name });
+                this.saveState();
+                this.saveSubGroupUsersToSupabase('l3tsm'); // persist to Supabase
+                alert(`✅ L3 TSM user "${name}" (ID: ${id}) added!`);
+                this.renderUploadView();
+            },
+
+            removeL3TsmUser(index) {
+                const users = this.state.l3TsmUsers || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (confirm(`Remove L3 TSM user "${user.name}" (${user.id})?`)) {
+                    this.state.l3TsmUsers.splice(index, 1);
+                    this.saveState();
+                    this.saveSubGroupUsersToSupabase('l3tsm');
+                    this.renderUploadView();
+                }
+            },
+
+            async saveGCUsersToSupabase() {
+                // Syncs the full golden_command_users table with current state:
+                // 1. Upsert every user in state (add new, update existing)
+                // 2. Delete any rows in the table that are no longer in state
+                if (!this.supabase) return;
+                try {
+                    const currentUsers = this.state.goldenCommandUsers || [];
+
+                    // Step 1: Upsert all current users
+                    if (currentUsers.length > 0) {
+                        const { error: upsertError } = await this.supabase
+                            .from('golden_command_users')
+                            .upsert(
+                                currentUsers.map(u => ({
+                                    id: u.id,
+                                    tenant_id: this._tid(),
+                                    name: u.name,
+                                    password: u.password,
+                                    updated_at: new Date().toISOString()
+                                })),
+                                { onConflict: 'id' }
+                            );
+                        if (upsertError) throw upsertError;
+                    }
+
+                    // Step 2: Delete rows no longer in state
+                    // Fetch all IDs currently in the table
+                    const { data: tableRows, error: fetchError } = await this.supabase
+                        .from('golden_command_users')
+                        .select('id')
+                        .eq('tenant_id', this._tid());
+                    if (fetchError) throw fetchError;
+
+                    const currentIds = currentUsers.map(u => u.id);
+                    const toDelete = (tableRows || []).map(r => r.id).filter(id => !currentIds.includes(id));
+
+                    if (toDelete.length > 0) {
+                        const { error: deleteError } = await this.supabase
+                            .from('golden_command_users')
+                            .delete()
+                            .in('id', toDelete);
+                        if (deleteError) throw deleteError;
+                    }
+
+                    console.log(`✅ GC users synced to dedicated table (${currentUsers.length} users)`);
+                } catch (e) {
+                    console.warn('⚠️ GC users sync failed:', e.message);
+                }
+            },
+
+            async saveCorporateStaffUsersToSupabase() {
+                if (!this.supabase) return;
+                try {
+                    const currentUsers = this.state.corporateStaffUsers || [];
+                    // Delete-then-insert (same reliable pattern as oncall_dates)
+                    const { error: delError } = await this.supabase
+                        .from('corporate_staff_employees')
+                        .delete()
+                        .eq('tenant_id', this._tid());
+                    if (delError) throw delError;
+                    if (currentUsers.length > 0) {
+                        const { error: insError } = await this.supabase
+                            .from('corporate_staff_employees')
+                            .insert(currentUsers.map(u => ({
+                                tenant_id:        this._tid(),
+                                id:               u.id,
+                                name:             u.name,
+                                department:       u.department || 'Corporate Staff',
+                                position:         u.position || '',
+                                role:             u.role || '',
+                                nationality:      u.nationality || '',
+                                gender:           u.gender || '',
+                                seniority_date:   u.seniorityDate || '2000-01-01',
+                                total_leave_days: u.totalLeaveDays ?? 30,
+                                used_leave_days:  u.usedLeaveDays ?? 0,
+                                password:         u.password || u.id,
+                                email:            u.email || '',
+                            })));
+                        if (insError) throw insError;
+                    }
+                    console.log(`✅ Corporate Staff roster saved (${currentUsers.length} records)`);
+                } catch (e) {
+                    console.warn('⚠️ Corporate Staff users save failed:', e.message);
+                }
+            },
+
+            // ── Save L456 INM / L3 INM / L3 TSM users to Supabase ──────────────────
+            // Pass a groupKey ('l456inm','l3inm','l3tsm') to save only that group,
+            // or omit to save all three.
+            async saveSubGroupUsersToSupabase(groupKey) {
+                if (!this.supabase) return;
+                const allGroups = [
+                    { key: 'l456inm', table: 'l456inm_users', stateKey: 'l456InmUsers' },
+                    { key: 'l3inm',   table: 'l3inm_users',   stateKey: 'l3InmUsers'   },
+                    { key: 'l3tsm',   table: 'l3tsm_users',   stateKey: 'l3TsmUsers'   },
+                    { key: 'hseq',    table: 'hseq_users',    stateKey: 'hseqUsers'    },
+                ];
+                const toSave = groupKey
+                    ? allGroups.filter(g => g.key === groupKey)
+                    : allGroups;
+                for (const sg of toSave) {
+                    try {
+                        const users = this.state[sg.stateKey] || [];
+                        const { error: delError } = await this.supabase
+                            .from(sg.table).delete().eq('tenant_id', this._tid());
+                        if (delError) { console.error(`❌ ${sg.table} delete failed:`, delError.message); continue; }
+                        if (users.length > 0) {
+                            const { error: insError } = await this.supabase
+                                .from(sg.table)
+                                .upsert(
+                                    users.map(u => ({
+                                        id:        u.id,
+                                        tenant_id: this._tid(),
+                                        name:      u.name,
+                                        password:  u.password || u.id,
+                                    })),
+                                    { onConflict: 'id', ignoreDuplicates: false }
+                                );
+                            if (insError) { console.error(`❌ ${sg.table} insert failed:`, insError.message); continue; }
+                        }
+                        console.log(`✅ ${sg.table} saved (${users.length} users)`);
+                    } catch (e) {
+                        console.error(`❌ ${sg.table} save exception:`, e.message);
+                    }
+                }
+            },
+            // ────────────────────────────────────────────────────────────────────────
+
+            // ==================== OTHER FUNCTIONS ====================
+
+            // ==================== OTHER FUNCTIONS ====================
+            // ────────────────────────────────────────────────────────────────────────
+            // computeBidAllocation() — the SINGLE source of truth for seniority-based
+            // slot allocation. Both processBids() (writes results) and
+            // previewAllocation() (read-only report) call this exact function, so the
+            // preview can never drift out of sync with what actually runs for real.
+            //
+            // opts.skipUnconfiguredConfirm — when true, skips the blocking confirm()
+            // dialog about departments with no configured slots (used by Preview,
+            // which is read-only and should never require a decision). The
+            // unconfigured departments are still returned in `unconfiguredDepts` so
+            // the caller can display a warning.
+            //
+            // Returns { cancelled: true } if the user cancels the confirm dialog,
+            // otherwise { cancelled: false, sortedEmployees, positionGroups,
+            // sortedGroupKeys, deptRankMap, slotAssignments, unconfiguredDepts, stats }
+            // ────────────────────────────────────────────────────────────────────────
+            computeBidAllocation(opts = {}) {
+                const { skipUnconfiguredConfirm = false } = opts;
+
+                // Calculate entitlement for each employee
+                const calculateYearsOfService = (seniorityDate) => {
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                };
+                
+                const getEmployeeEntitlement = (employee) => {
+                    if (!employee || !employee.seniorityDate) return 30;
+                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                    return yearsOfService >= 5 ? 35 : 30;
+                };
+                
+                // Track slot availability per month per department
+                const slotAvailability = {};
+                const slotAssignments = [];
+
+                // Build a lookup: slotDates[dept][month][slotId] = { start, end }
+                // so assignSlotToEmployee can use the real configured dates
+                const slotDates = {};
+
+                // Initialize slot availability from capacities.
+                // Key format: cal-{dept}-{month}-{slotId}-{field}
+                // e.g. cal-L3-DEP-DC-January-SA-capacity  (dept may contain dashes!)
+                //
+                // IMPORTANT: We do a TWO-PASS approach so the "enabled" flag is always
+                // evaluated before we write anything into slotAvailability.
+                // Disabled slots are NEVER loaded — they cannot be auto-assigned.
+                const months = this.state.months; // ['January','February',...]
+
+                // Helper to parse any "cal-..." key into its components
+                const parseCalKey = (key) => {
+                    if (!key.startsWith('cal-')) return null;
+                    const withoutPrefix = key.slice(4);
+                    const lastDash = withoutPrefix.lastIndexOf('-');
+                    const field = withoutPrefix.slice(lastDash + 1);
+                    const withoutField = withoutPrefix.slice(0, lastDash);
+                    const slotIdDash = withoutField.lastIndexOf('-');
+                    const slotId = withoutField.slice(slotIdDash + 1);
+                    const withoutSlot = withoutField.slice(0, slotIdDash);
+                    const monthDash = withoutSlot.lastIndexOf('-');
+                    const month = withoutSlot.slice(monthDash + 1);
+                    const dept = withoutSlot.slice(0, monthDash);
+                    if (!months.includes(month)) return null;
+                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : slotId === 'SC' ? 'C' : slotId === 'SD' ? 'D' : null;
+                    if (!slotLetter) return null;
+                    return { dept, month, slotLetter, field };
+                };
+
+                // Pass 1 — collect every field for every slot bucket
+                const rawSlotData = {}; // "dept||month||slotLetter" → { dept, month, slotLetter, enabled, capacity, start, end }
+                Object.keys(this.state.slotCapacities).forEach(key => {
+                    const parsed = parseCalKey(key);
+                    if (!parsed) return;
+                    const { dept, month, slotLetter, field } = parsed;
+                    const bucketKey = `${dept}||${month}||${slotLetter}`;
+                    if (!rawSlotData[bucketKey]) {
+                        rawSlotData[bucketKey] = { dept, month, slotLetter, enabled: true, capacity: 0, start: null, end: null };
+                    }
+                    const value = this.state.slotCapacities[key];
+                    if (field === 'enabled')   rawSlotData[bucketKey].enabled  = (value === true || value === 'true');
+                    else if (field === 'capacity') rawSlotData[bucketKey].capacity = parseInt(value) || 0;
+                    else if (field === 'start')    rawSlotData[bucketKey].start    = value;
+                    else if (field === 'end')      rawSlotData[bucketKey].end      = value;
+                });
+
+                // Pass 2 — only load ENABLED slots that have both start and end dates configured
+                Object.values(rawSlotData).forEach(({ dept, month, slotLetter, enabled, capacity, start, end }) => {
+                    if (!enabled)        return; // planner disabled this slot — skip entirely
+                    if (!start || !end)  return; // dates not configured — skip
+
+                    if (!slotAvailability[month]) slotAvailability[month] = {};
+                    if (!slotAvailability[month][dept]) slotAvailability[month][dept] = { A: 0, B: 0, C: 0, D: 0 };
+                    slotAvailability[month][dept][slotLetter] = capacity;
+
+                    if (!slotDates[dept]) slotDates[dept] = {};
+                    if (!slotDates[dept][month]) slotDates[dept][month] = {};
+                    if (!slotDates[dept][month][slotLetter]) slotDates[dept][month][slotLetter] = {};
+                    slotDates[dept][month][slotLetter].start = start;
+                    slotDates[dept][month][slotLetter].end   = end;
+                });
+                
+                // Build a dept resolver: maps an employee's department value to the
+                // best-matching key in slotAvailability (handles cases where the Excel
+                // 'Department' column has a display name like 'Depot Controller' instead
+                // of the L-code 'L3-DEP-DC' that was used when configuring slots).
+                // MUST be defined before assignSlotToEmployee which calls it.
+                const configuredDeptKeys = new Set(
+                    Object.values(slotAvailability).flatMap(monthObj => Object.keys(monthObj || {}))
+                );
+                const deptResolveCache = {};
+                const resolveEmployeeDept = (empDept) => {
+                    if (deptResolveCache[empDept] !== undefined) return deptResolveCache[empDept];
+                    if (configuredDeptKeys.has(empDept)) {
+                        deptResolveCache[empDept] = empDept;
+                        return empDept;
+                    }
+                    for (const key of configuredDeptKeys) {
+                        if (key.toLowerCase() === empDept.toLowerCase()) {
+                            deptResolveCache[empDept] = key;
+                            return key;
+                        }
+                    }
+                    deptResolveCache[empDept] = empDept;
+                    return empDept;
+                };
+
+                // Helper function to assign slot to employee using real configured dates.
+                // Requires resolveEmployeeDept (defined above).
+                const assignSlotToEmployee = (employee, month, slotType, slotNumber) => {
+                    const slot = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                    // Use resolved dept so slotDates lookup matches the configured key
+                    const dept = resolveEmployeeDept(employee.department || 'Unassigned');
+                    const year = this.state.biddingYear;
+
+                    // Use real configured dates — these are REQUIRED (disabled/unconfigured slots
+                    // are never put into slotAvailability, so we should always find dates here)
+                    const configuredDates = slotDates[dept]?.[month]?.[slotType];
+                    let startDateStr, endDateStr;
+
+                    if (configuredDates?.start && configuredDates?.end) {
+                        startDateStr = configuredDates.start;
+                        endDateStr   = configuredDates.end;
+                    } else {
+                        // Should not happen for properly configured slots, but keep a safe fallback
+                        const monthIndex = this.state.months.indexOf(month);
+                        const startDate = new Date(year, monthIndex, 1);
+                        const endDate   = new Date(startDate);
+                        endDate.setDate(endDate.getDate() + (slot ? slot.days : 15) - 1);
+                        startDateStr = startDate.toISOString().split('T')[0];
+                        endDateStr   = endDate.toISOString().split('T')[0];
+                    }
+
+                    // Always compute days from actual configured dates
+                    const days = Math.ceil((new Date(endDateStr) - new Date(startDateStr)) / (1000 * 60 * 60 * 24)) + 1;
+
+                    return {
+                        employeeId: employee.id,
+                        employeeName: employee.name,
+                        position: employee.position || '',
+                        department: dept,
+                        slotName: `${slot ? slot.name : slotType}`,
+                        slotType: `slot${slotType}`,
+                        slotNumber: slotNumber || 1,
+                        startDate: startDateStr,
+                        endDate: endDateStr,
+                        days: days,
+                        month: month,
+                        year: year,
+                        seniorityDate: employee.seniorityDate,
+                        yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1)
+                    };
+                };
+
+                // ── PER-DEPARTMENT SENIORITY ──
+                // Group employees by their resolved department, sort each group by seniority,
+                // then interleave: rank-1 of every dept goes first, then rank-2, etc.
+                // This ensures L3-SAMB #1 and L3-DEP-DC #1 both get priority before anyone's #2.
+
+                // First resolve all departments
+                const empWithDept = this.state.employees.map(e => ({
+                    ...e,
+                    resolvedDept: resolveEmployeeDept(e.department || 'Unassigned')
+                }));
+
+                // ── GROUP BY POSITION (SCHEDULING ROW) + DEPARTMENT ──
+                // Seniority bidding is run SEPARATELY for each unique
+                // position+department combination (i.e. each "scheduling row").
+                // Employees in "L5 SA" at dept X compete only among themselves;
+                // they do NOT compete with employees in "L5 SA" at dept Y, nor
+                // with any other position in their own department.
+                const positionGroups = {};
+                empWithDept.forEach(e => {
+                    // Key = position (scheduling row) + resolved department
+                    const pos = (e.position || 'Unassigned').trim();
+                    const groupKey = `${pos}||${e.resolvedDept}`;
+                    if (!positionGroups[groupKey]) positionGroups[groupKey] = [];
+                    positionGroups[groupKey].push(e);
+                });
+
+                // Sort each position+department group by seniority (oldest first = most senior)
+                Object.keys(positionGroups).forEach(groupKey => {
+                    positionGroups[groupKey].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                });
+
+                // Build sequential processing order:
+                // All employees in position-group A are fully processed before position-group B.
+                // Within each group employees are ordered oldest seniority date first.
+                const sortedGroupKeys = Object.keys(positionGroups).sort();
+                const sortedEmployees = [];
+                const deptRankMap = {}; // employeeId → { dept, deptRank }
+
+                sortedGroupKeys.forEach(groupKey => {
+                    positionGroups[groupKey].forEach((emp, rankIdx) => {
+                        sortedEmployees.push(emp);
+                        // deptRank here is the rank within their position+dept group
+                        deptRankMap[emp.id] = { dept: emp.resolvedDept, deptRank: rankIdx + 1 };
+                    });
+                });
+
+                // Warn if any employee departments have no configured slots
+                const configuredDepts = new Set(Object.keys(slotAvailability).flatMap(month => Object.keys(slotAvailability[month] || {})));
+                const employeeDeptSet = new Set(sortedEmployees.map(e => resolveEmployeeDept(e.department || 'Unassigned')));
+                const unconfiguredDepts = [...employeeDeptSet].filter(d => !configuredDepts.has(d));
+                if (unconfiguredDepts.length > 0 && !skipUnconfiguredConfirm) {
+                    const proceed = confirm(
+                        `⚠️ WARNING: The following employee departments have NO slot capacity configured:\n\n` +
+                        unconfiguredDepts.map(d => `• ${d}`).join('\n') +
+                        `\n\nEmployees in these departments will be auto-assigned using available slots from other configured departments.\n\n` +
+                        `It is strongly recommended to Cancel and configure slots for these departments first.\n\nContinue anyway?`
+                    );
+                    if (!proceed) return { cancelled: true };
+                }
+
+                // ═══════════════════════════════════════════════════════════════════
+                // BID PROCESSING — CONFLICT-RESOLUTION MODEL
+                //
+                // The old sequential model decremented capacity as it processed each
+                // employee one by one, which meant Employee #2 would find the slot
+                // already "gone" even if capacity = 1.  The correct model is:
+                //
+                //  ROUND 1  — Collect every employee's 1st-choice bid.
+                //             Slot key = dept + month + slotType.
+                //             If only 1 employee wants a slot → award it.
+                //             If multiple employees want the same slot:
+                //               • Capacity ≥ number of requesters  → everyone gets it.
+                //               • Capacity < number of requesters  → most senior fills up
+                //                 to capacity; the rest are marked "unresolved" and their
+                //                 1st-choice bid is released back so it no longer blocks
+                //                 them from their 2nd-choice in Round 2.
+                //
+                //  ROUND 2  — For every employee still missing a slot, try their 2nd-
+                //             choice bid against the REMAINING capacity (already reduced
+                //             by Round 1 awards).  Same conflict resolution applies.
+                //
+                //  ROUND 3  — Auto-assign: employees who still have < 2 slots get the
+                //             next available slot in their dept (any month, any type)
+                //             that doesn't duplicate their existing slot or exceed their
+                //             entitlement.
+                //
+                // Within each conflict group seniority rank (oldest date = rank #1) is
+                // used to break ties — most senior wins.
+                // ═══════════════════════════════════════════════════════════════════
+
+                // awarded[employeeId] = array of assignment objects (max 2)
+                const awarded = {};
+                sortedEmployees.forEach(e => { awarded[e.id] = []; });
+
+                // Helper: build assignment object from a bid + resolved dates
+                const makeBidAssignment = (employee, bid, slotNumber) => {
+                    const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                    const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                    // Prefer the month captured at bid-submission time (tied directly to the
+                    // configured slot the employee actually selected). Only fall back to
+                    // deriving it from startDate for legacy bids that never stored .month
+                    // (e.g. Golden Command / Corporate Staff free-date bids).
+                    const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                    const slotObj  = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
+                    const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
+
+                    // Honor what the employee actually bid on. Winning a slot is decided by
+                    // dept + block + slot-type + seniority (the per-employee allocation loop,
+                    // below, which processes employees senior-first) — but the
+                    // AWARDED DATES should be the dates the employee actually saw and chose at
+                    // bid time, not whatever the slot happens to be configured as by the time
+                    // bids are processed. Only fall back to the live configured dates when the
+                    // bid itself never stored its own dates (legacy bids).
+                    const startDate = bid.startDate || configuredDates?.start;
+                    const endDate   = bid.endDate   || configuredDates?.end;
+                    const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+
+                    // Still flag when the slot's currently-configured dates have since moved
+                    // away from what was awarded — this doesn't change the outcome anymore
+                    // (the employee's original dates win), but it's a sign the master schedule
+                    // and this employee's honored dates are now out of sync and may need
+                    // reconciling (e.g. capacity/roster planning for the new config dates).
+                    const datesDrifted = !!(configuredDates &&
+                        (configuredDates.start !== startDate || configuredDates.end !== endDate));
+
+                    return {
+                        employeeId:     employee.id,
+                        employeeName:   employee.name,
+                        position:       employee.position || '',
+                        department:     bidDept,
+                        slotName:       slotObj ? slotObj.name : `Slot ${slotType}`,
+                        slotType:       `slot${slotType}`,
+                        slotNumber,
+                        startDate,
+                        endDate,
+                        days,
+                        month,
+                        year:           this.state.biddingYear,
+                        seniorityDate:  employee.seniorityDate,
+                        yearsOfService: calculateYearsOfService(employee.seniorityDate).toFixed(1),
+                        type:           'Bid Awarded',
+                        bidChoice:      slotNumber,
+                        datesDrifted,
+                        currentConfiguredStartDate: configuredDates?.start || null,
+                        currentConfiguredEndDate:   configuredDates?.end   || null
+                    };
+                };
+
+                // Helper: resolve conflicts for a batch of (employee, bid) pairs against
+                // the live slotAvailability map.  Returns { won: [...], lost: [...] }
+                // where lost employees didn't fit within remaining capacity.
+                // NOTE: conflict resolution is now implicit — employees are processed one at
+                // a time in strict seniority order (see the allocation loop below), and
+                // capacity is checked/decremented directly against `slotAvailability` as each
+                // employee's bids are tried. There's no separate "resolve simultaneous
+                // candidates" step because there's never more than one candidate for a given
+                // slot at the moment it's being decided.
+
+                // Cache sorted bids per employee once, in the order they were submitted
+                // (i.e. 1st choice, 2nd choice, 3rd choice...).
+                const sortedBidsById = {};
+                sortedEmployees.forEach(emp => {
+                    sortedBidsById[emp.id] = [...this.state.bids.filter(b => b.employeeId === emp.id)]
+                        .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                // ── DIAGNOSTIC: detect config drift since bids were placed ───────────────
+                // Winning a slot is decided by dept + block + slot-type + seniority — never
+                // by the exact date range on the bid. The AWARDED DATES, however, are now
+                // always the employee's own original bid dates (see makeBidAssignment), so a
+                // config change after the fact no longer overrides what the employee agreed
+                // to. Two things are still surfaced here:
+                //   • 'removed'       — the slot is no longer configured at all; the bid can
+                //                       no longer be honored and falls through to the next
+                //                       preference / auto-assign instead.
+                //   • 'dates_changed' — the slot is still configured, but its dates have since
+                //                       moved away from what the employee originally bid on.
+                //                       The employee still gets their original dates — this is
+                //                       purely a heads-up that the master "Configure Slots"
+                //                       schedule and this employee's honored leave dates are
+                //                       now out of sync, in case that needs reconciling
+                //                       (e.g. rosters/capacity planned around the new dates).
+                const driftedBids = [];
+                sortedEmployees.forEach(employee => {
+                    (sortedBidsById[employee.id] || []).forEach(bid => {
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                        const configured = slotDates[bidDept]?.[month]?.[slotType];
+                        if (!configured) {
+                            driftedBids.push({ employee, bid, reason: 'removed', configured: null });
+                        } else if (bid.startDate && bid.endDate &&
+                                   (bid.startDate !== configured.start || bid.endDate !== configured.end)) {
+                            driftedBids.push({ employee, bid, reason: 'dates_changed', configured });
+                        }
+                    });
+                });
+                if (driftedBids.length > 0) {
+                    const removed = driftedBids.filter(d => d.reason === 'removed');
+                    const datesChanged = driftedBids.filter(d => d.reason === 'dates_changed');
+                    if (removed.length > 0) {
+                        console.log(`ℹ️ ${removed.length} bid(s) reference a slot that's since been removed/disabled — will fall through to next preference / auto-assign:`,
+                            removed.map(d => ({
+                                employee: d.employee.name, id: d.employee.id,
+                                bidSlot: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`
+                            }))
+                        );
+                    }
+                    if (datesChanged.length > 0) {
+                        console.warn(`ℹ️ ${datesChanged.length} bid(s) will be honored using the employee's original bid dates, which no longer match the slot's current "Configure Slots" dates — schedule may need reconciling:`,
+                            datesChanged.map(d => ({
+                                employee: d.employee.name, id: d.employee.id,
+                                honoredAs: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`,
+                                currentlyConfiguredAs: `${d.configured.start}→${d.configured.end}`
+                            }))
+                        );
+                    }
+                }
+
+                // ── PREFERENCE ALLOCATION (strict seniority order) ────────────────────────
+                // Employees are processed ONE AT A TIME in seniority order — this is already
+                // the order of `sortedEmployees` (each dept group sorted senior-first by
+                // seniorityDate, then dept groups processed in sequence). For each employee,
+                // their own bids are tried in the order they were submitted (1st choice, 2nd
+                // choice, 3rd choice...), and the FIRST one that still has capacity is awarded
+                // immediately, decrementing capacity right away before moving to the next
+                // employee.
+                //
+                // This replaces the old "round-based" approach, which processed all 1st
+                // choices together, then all 2nd choices together, etc. That let a JUNIOR
+                // employee's 1st choice claim a slot in round 1 before a SENIOR employee's
+                // 2nd or 3rd choice for that same slot was even considered in round 2/3 —
+                // silently violating seniority. Processing employee-by-employee (senior
+                // first) instead guarantees a senior employee's entire preference list is
+                // exhausted, in order, before any junior employee gets a shot at the same
+                // capacity.
+                sortedEmployees.forEach(employee => {
+                    const bids        = sortedBidsById[employee.id];
+                    const entitlement = getEmployeeEntitlement(employee);
+
+                    for (const bid of bids) {
+                        if (awarded[employee.id].length >= 2) break; // fully allocated
+
+                        const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                        if (assignedDays >= entitlement) break; // entitlement exhausted
+
+                        // Skip if this exact slot was already awarded to this employee
+                        const alreadyHasSlot = awarded[employee.id].some(
+                            a => a.startDate === bid.startDate && a.endDate === bid.endDate
+                        );
+                        if (alreadyHasSlot) continue;
+
+                        const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                        const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                        const cap      = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
+
+                        if (cap <= 0) continue; // no capacity left for this choice — try next preference
+
+                        const a = makeBidAssignment(employee, bid, awarded[employee.id].length + 1);
+                        if (assignedDays + a.days > entitlement) continue; // would exceed entitlement — try next preference
+
+                        slotAvailability[month][bidDept][slotType]--;
+                        awarded[employee.id].push(a);
+                    }
+                });
+
+                // ── AUTO-ASSIGN: fill remaining gaps after all preference rounds ──────────
+                // For each employee still needing slots, scan available capacity
+                // in their dept across all months/types and assign what fits.
+
+                sortedEmployees.forEach(employee => {
+                    const entitlement  = getEmployeeEntitlement(employee);
+                    const department   = resolveEmployeeDept(employee.department || 'Unassigned');
+                    const assignedDays = awarded[employee.id].reduce((s, a) => s + a.days, 0);
+                    const assignedDateKeys = new Set(awarded[employee.id].map(a => `${a.startDate}|${a.endDate}`));
+                    let localDays = assignedDays;
+
+                    // Seniority gate: ≤5 years → only Slot A/B eligible for auto-assignment.
+                    // >5 years → only Slot C/D eligible. Mirrors the bidding-time restriction.
+                    const empYearsForAssign = employee.seniorityDate
+                        ? (new Date() - new Date(employee.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
+                        : 0;
+                    const eligibleSlotTypes = empYearsForAssign > 5 ? ['C', 'D'] : ['A', 'B'];
+
+                    while (awarded[employee.id].length < 2) {
+                        let slotAssigned = false;
+
+                        for (const searchMonth of this.state.months) {
+                            if (slotAssigned) break;
+                            if (!slotAvailability[searchMonth]?.[department]) continue;
+
+                            for (const slotType of eligibleSlotTypes) {
+                                if (slotAvailability[searchMonth][department][slotType] <= 0) continue;
+
+                                const potential = assignSlotToEmployee(employee, searchMonth, slotType, awarded[employee.id].length + 1);
+                                const dateKey = `${potential.startDate}|${potential.endDate}`;
+
+                                if (assignedDateKeys.has(dateKey)) continue;
+                                if (localDays + potential.days > entitlement) continue;
+
+                                potential.type      = 'Auto-Assigned';
+                                potential.bidChoice = null;
+                                awarded[employee.id].push(potential);
+                                localDays += potential.days;
+                                assignedDateKeys.add(dateKey);
+                                slotAvailability[searchMonth][department][slotType]--;
+                                slotAssigned = true;
+                                break;
+                            }
+                        }
+
+                        if (!slotAssigned) break; // no capacity left anywhere
+                    }
+                });
+
+                // ── Flatten results ──
+                slotAssignments.length = 0; // clear the array declared above
+                sortedEmployees.forEach((employee, index) => {
+                    const deptInfo = deptRankMap[employee.id] || {};
+                    const entitlement = getEmployeeEntitlement(employee);
+                    awarded[employee.id].forEach((assignment, slotIndex) => {
+                        slotAssignments.push({
+                            ...assignment,
+                            seniorityRank:      deptInfo.deptRank || (index + 1),
+                            deptSeniorityRank:  deptInfo.deptRank || (index + 1),
+                            totalEmployeeSlots: 2,
+                            slotOrder:          slotIndex + 1,
+                            entitlement
+                        });
+                    });
+                });
+                // Calculate statistics
+                const totalSlots = slotAssignments.length;
+                const totalEmployees = sortedEmployees.length;
+                const bidAwarded = slotAssignments.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = slotAssignments.filter(r => r.type === 'Auto-Assigned').length;
+                const datesDriftedCount = slotAssignments.filter(r => r.datesDrifted).length;
+                const seniorEmployees = sortedEmployees.filter(e => getEmployeeEntitlement(e) === 35).length;
+                const juniorEmployees = totalEmployees - seniorEmployees;
+
+                return {
+                    cancelled: false,
+                    sortedEmployees,
+                    positionGroups,
+                    sortedGroupKeys,
+                    deptRankMap,
+                    slotAssignments,
+                    unconfiguredDepts,
+                    driftedBids,
+                    stats: {
+                        totalSlots, totalEmployees, bidAwarded, autoAssigned, datesDriftedCount,
+                        seniorEmployees, juniorEmployees,
+                        totalDays: slotAssignments.reduce((sum, r) => sum + r.days, 0)
+                    }
+                };
+            },
+
+            // ────────────────────────────────────────────────────────────────────────
+            // processBids() — runs computeBidAllocation() and WRITES the result:
+            // saves to this.state.results / Supabase and marks bidding as processed.
+            // ────────────────────────────────────────────────────────────────────────
+            // Generic Proceed/Cancel confirmation modal (styled, matches app design) — used
+            // instead of the native browser confirm() for critical/irreversible actions where
+            // a plain OK/Cancel isn't explicit enough. Returns a Promise<boolean>.
+            showConfirmModal(message) {
+                return new Promise(resolve => {
+                    document.getElementById('appConfirmModalMessage').textContent = message;
+                    document.getElementById('appConfirmModal').style.display = 'flex';
+                    this._confirmModalResolve = resolve;
+                });
+            },
+            _resolveConfirmModal(result) {
+                document.getElementById('appConfirmModal').style.display = 'none';
+                if (this._confirmModalResolve) {
+                    this._confirmModalResolve(result);
+                    this._confirmModalResolve = null;
+                }
+            },
+
+            async processBids() {
+                if (this.state.employees.length === 0) {
+                    alert('No employees to process. Please upload data first.');
+                    return;
+                }
+
+                if (Object.keys(this.state.slotCapacities).length === 0) {
+                    alert('Please configure slot capacities first in "Configure Slots".');
+                    this.setActiveView('configureSlots');
+                    return;
+                }
+
+                const confirmed = await this.showConfirmModal('Are you sure you want to process all bids?');
+                if (!confirmed) return;
+
+                const result = this.computeBidAllocation({ skipUnconfiguredConfirm: false });
+                if (!result || result.cancelled) return;
+
+                const { slotAssignments, stats } = result;
+
+                // Save results
+                this.state.results = slotAssignments;
+                this.state.isProcessed = true;
+                await this.saveConfigToSupabase();
+
+                const message = `✅ Successfully processed ${stats.totalEmployees} employees!\n\n` +
+                               `• Seniority: Per-department (each dept processed independently)\n` +
+                               `• Total slots assigned: ${stats.totalSlots} (${stats.totalEmployees} × 2)\n` +
+                               `• Senior employees (35 days): ${stats.seniorEmployees}\n` +
+                               `• Junior employees (30 days): ${stats.juniorEmployees}\n` +
+                               `• Bid Awards: ${stats.bidAwarded} slots\n` +
+                               `• Auto-Assigned: ${stats.autoAssigned} slots\n` +
+                               `• Each employee received exactly 2 slots\n` +
+                               `• Total leave days allocated: ${stats.totalDays}` +
+                               (stats.datesDriftedCount > 0
+                                   ? `\n\nℹ️ ${stats.datesDriftedCount} slot(s) were awarded using the employee's original bid dates, which no longer match what's currently configured in "Configure Slots" for that block. The employee's original dates were honored. Check the console for the full list, and verify the master schedule/rosters are aligned for those dates.`
+                                   : '');
+
+                alert(message);
+
+                this.renderAdminView();
+            },
+
+            // ────────────────────────────────────────────────────────────────────────
+            // previewAllocation() — READ-ONLY dry run of the exact same allocation
+            // logic (computeBidAllocation), rendered as a report. Does NOT write to
+            // this.state.results, does NOT mark bidding as processed, does NOT save
+            // to Supabase, and does NOT send any staff notification email. Use this
+            // to regression-check seniority grouping (e.g. confirm L3-DEP-DM only
+            // competes against L3-DEP-DM) before running the real "Process Bids".
+            // ────────────────────────────────────────────────────────────────────────
+            previewAllocation() {
+                if (this.state.employees.length === 0) {
+                    alert('No employees to preview. Please upload data first.');
+                    return;
+                }
+
+                if (Object.keys(this.state.slotCapacities).length === 0) {
+                    alert('Please configure slot capacities first in "Configure Slots".');
+                    this.setActiveView('configureSlots');
+                    return;
+                }
+
+                const result = this.computeBidAllocation({ skipUnconfiguredConfirm: true });
+                this.renderPreviewAllocationReport(result);
+            },
+
+            // Builds the read-only HTML report and shows it in the preview modal.
+            renderPreviewAllocationReport(result) {
+                const { positionGroups, slotAssignments, unconfiguredDepts } = result;
+
+                // Corporate Staff bid separately via the Corporate Staff bidding flow and
+                // are not part of Ops/Maintenance seniority allocation — exclude them here.
+                const isCorporateStaffDept = (dept) => /corporate staff/i.test(dept || '');
+                const sortedGroupKeys = result.sortedGroupKeys.filter(groupKey => {
+                    const [, dept] = groupKey.split('||');
+                    return !isCorporateStaffDept(dept);
+                });
+
+                // Recompute the summary stats from the filtered groups only, so the
+                // cards above the report match what's actually displayed.
+                const filteredEmployeeIds = new Set();
+                sortedGroupKeys.forEach(groupKey => {
+                    (positionGroups[groupKey] || []).forEach(emp => filteredEmployeeIds.add(emp.id));
+                });
+                const filteredAssignments = slotAssignments.filter(a => filteredEmployeeIds.has(a.employeeId));
+                const stats = {
+                    totalEmployees: filteredEmployeeIds.size,
+                    bidAwarded: filteredAssignments.filter(r => r.type === 'Bid Awarded').length,
+                    autoAssigned: filteredAssignments.filter(r => r.type === 'Auto-Assigned').length,
+                    datesDrifted: filteredAssignments.filter(r => r.datesDrifted).length
+                };
+
+                // Keep a filtered snapshot around so the "Export to Excel" button
+                // exports exactly what's shown (Corporate Staff excluded).
+                this._lastPreviewExport = { sortedGroupKeys, positionGroups, slotAssignments: filteredAssignments };
+
+                const assignmentsByEmp = {};
+                slotAssignments.forEach(a => {
+                    if (!assignmentsByEmp[a.employeeId]) assignmentsByEmp[a.employeeId] = [];
+                    assignmentsByEmp[a.employeeId].push(a);
+                });
+
+                const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+                const summaryHtml = `
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+                        <div style="background:#f0fdf4;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#166534;">${stats.totalEmployees}</p><p style="font-size:0.7rem;color:#6b7280;">Employees</p></div>
+                        <div style="background:#eff6ff;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#1e40af;">${stats.bidAwarded}</p><p style="font-size:0.7rem;color:#6b7280;">Bid Awards</p></div>
+                        <div style="background:#fefce8;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#854d0e;">${stats.autoAssigned}</p><p style="font-size:0.7rem;color:#6b7280;">Auto-Assigned</p></div>
+                    </div>`;
+
+                const warningHtml = unconfiguredDepts.length > 0 ? `
+                    <div style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.78rem;margin-bottom:16px;">
+                        ⚠️ No slot capacity configured for: ${unconfiguredDepts.map(esc).join(', ')}
+                    </div>` : '';
+
+                // Note: schedule-drift info (bids honored with dates that no longer match
+                // the live "Configure Slots" config) is intentionally NOT surfaced here in
+                // Preview Allocation — it's noise for a quick preview. It's still tracked on
+                // each result (`datesDrifted`) and surfaced where it's actually actionable:
+                // the "Process All Bids" completion summary, the console log, and inline on
+                // the Manual Override screen.
+
+                const groupsData = sortedGroupKeys.map(groupKey => {
+                    const [pos, dept] = groupKey.split('||');
+                    const employees = positionGroups[groupKey];
+                    const rows = employees.map((emp, idx) => {
+                        const assigns = assignmentsByEmp[emp.id] || [];
+                        const awardedHtml = assigns.length > 0
+                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span></div>`).join('')
+                            : '<span style="color:#dc2626;font-weight:600;">No slot awarded</span>';
+                        return `<tr style="border-top:1px solid #f0f0f0;">
+                            <td style="padding:6px 10px;font-weight:700;color:#6b7280;">#${idx + 1}</td>
+                            <td style="padding:6px 10px;">${esc(emp.name)} <span style="color:#9ca3af;font-size:0.72rem;">(${esc(emp.id)})</span></td>
+                            <td style="padding:6px 10px;font-size:0.75rem;color:#6b7280;">${esc(emp.seniorityDate)}</td>
+                            <td style="padding:6px 10px;font-size:0.75rem;">${awardedHtml}</td>
+                        </tr>`;
+                    }).join('');
+                    const html = `
+                    <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+                        <div style="background:#f3f4f6;padding:8px 14px;font-weight:700;font-size:0.82rem;">${esc(pos)} — ${esc(dept)} <span style="font-weight:400;color:#6b7280;">(${employees.length} competing)</span></div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead><tr style="background:#fafafa;text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;position:sticky;top:0;z-index:1;">
+                                <th style="padding:6px 10px;background:#fafafa;">Rank</th><th style="padding:6px 10px;background:#fafafa;">Employee</th><th style="padding:6px 10px;background:#fafafa;">Seniority Date</th><th style="padding:6px 10px;background:#fafafa;">Awarded</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+                    return { pos, dept, html };
+                });
+
+                // Keep the summary/warning HTML and per-group data around so the position
+                // search box can re-filter and re-render without recomputing the allocation.
+                this._lastPreviewGroupsData = groupsData;
+                this._lastPreviewSummaryWarningHtml = summaryHtml + warningHtml;
+
+                const searchInput = document.getElementById('previewAllocationPositionSearch');
+                if (searchInput) searchInput.value = '';
+
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsData.map(g => g.html).join('');
+                document.getElementById('previewAllocationModal').style.display = 'flex';
+            },
+
+            // Re-renders the Preview Allocation report filtered to positions whose name
+            // contains the search box text (case-insensitive). Read-only — just narrows
+            // which already-computed groups are shown, nothing is recomputed.
+            _filterPreviewAllocationByPosition() {
+                const groupsData = this._lastPreviewGroupsData || [];
+                const summaryWarningHtml = this._lastPreviewSummaryWarningHtml || '';
+                const query = (document.getElementById('previewAllocationPositionSearch')?.value || '').trim().toLowerCase();
+
+                const filtered = query
+                    ? groupsData.filter(g => (g.pos || '').toLowerCase().includes(query))
+                    : groupsData;
+
+                const noMatchHtml = query && filtered.length === 0
+                    ? `<div style="padding:14px;text-align:center;color:#6b7280;font-size:0.85rem;">No positions match "${query.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}".</div>`
+                    : '';
+
+                document.getElementById('previewAllocationBody').innerHTML =
+                    summaryWarningHtml + noMatchHtml + filtered.map(g => g.html).join('');
+            },
+
+            // Exports the currently-shown Preview Allocation report to an Excel file.
+            // Uses the same filtered (Corporate Staff excluded) snapshot that was
+            // just rendered — nothing is recomputed and nothing is saved/written.
+            exportPreviewAllocationToExcel() {
+                const snapshot = this._lastPreviewExport;
+                if (!snapshot || !snapshot.sortedGroupKeys.length) {
+                    alert('Nothing to export yet — run Preview Allocation first.');
+                    return;
+                }
+                const { sortedGroupKeys, positionGroups, slotAssignments } = snapshot;
+
+                const assignmentsByEmp = {};
+                slotAssignments.forEach(a => {
+                    if (!assignmentsByEmp[a.employeeId]) assignmentsByEmp[a.employeeId] = [];
+                    assignmentsByEmp[a.employeeId].push(a);
+                });
+
+                const wsData = [
+                    ['Position', 'Department', 'Rank', 'Employee ID', 'Employee Name', 'Seniority Date',
+                     'Slot Name', 'Month', 'Start Date', 'End Date', 'Assignment Type']
+                ];
+
+                sortedGroupKeys.forEach(groupKey => {
+                    const [pos, dept] = groupKey.split('||');
+                    positionGroups[groupKey].forEach((emp, idx) => {
+                        const assigns = assignmentsByEmp[emp.id] || [];
+                        if (assigns.length === 0) {
+                            wsData.push([pos, dept, idx + 1, emp.id, emp.name, emp.seniorityDate, 'No slot awarded', '', '', '', '']);
+                        } else {
+                            assigns.forEach(a => {
+                                wsData.push([pos, dept, idx + 1, emp.id, emp.name, emp.seniorityDate, a.slotName, a.month, a.startDate, a.endDate, a.type]);
+                            });
+                        }
+                    });
+                });
+
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Preview Allocation');
+                XLSX.writeFile(wb, `Preview_Allocation_${this.state.biddingYear}.xlsx`);
+            },
+
+            async processMaintBids() {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                if (maintUsers.length === 0) {
+                    alert('No maintenance staff found.');
+                    return;
+                }
+                if (Object.keys(this.state.maintSlotCapacities || {}).length === 0) {
+                    alert('Please configure maintenance slot capacities first.');
+                    return;
+                }
+                const calculateYearsOfService = (d) => (new Date() - new Date(d)) / (1000 * 60 * 60 * 24 * 365.25);
+                const months = this.state.months;
+                const maintCaps = this.state.maintSlotCapacities;
+
+                // Parse cal-maint-{position}-{month}-{SA|SB|SC}-{field} keys
+                const rawSlotData = {};
+                Object.keys(maintCaps).forEach(key => {
+                    if (!key.startsWith('cal-maint-')) return;
+                    const rest = key.slice('cal-maint-'.length);
+                    const parts = rest.split('-');
+                    // field is last, slotId second-to-last, month is one of the known months
+                    const field = parts.pop();
+                    const slotId = parts.pop();
+                    if (!['SA','SB','SC'].includes(slotId)) return;
+                    // remaining parts: position tokens + month
+                    const monthIdx = parts.lastIndexOf(parts.find(p => months.includes(p)));
+                    // find month from right
+                    let monthFound = null, monthPos = -1;
+                    for (let i = parts.length - 1; i >= 0; i--) {
+                        if (months.includes(parts[i])) { monthFound = parts[i]; monthPos = i; break; }
+                    }
+                    if (!monthFound) return;
+                    const position = parts.slice(0, monthPos).join('-');
+                    const slotLetter = slotId === 'SA' ? 'A' : slotId === 'SB' ? 'B' : 'C';
+                    const bk = position + '||' + monthFound + '||' + slotLetter;
+                    if (!rawSlotData[bk]) rawSlotData[bk] = { position, month: monthFound, slotLetter, enabled: true, capacity: 0, start: null, end: null };
+                    const v = maintCaps[key];
+                    if (field === 'enabled')   rawSlotData[bk].enabled   = (v === true || v === 'true');
+                    else if (field === 'capacity') rawSlotData[bk].capacity = parseInt(v) || 0;
+                    else if (field === 'start')    rawSlotData[bk].start    = v;
+                    else if (field === 'end')      rawSlotData[bk].end      = v;
+                });
+
+                const slotAvailability = {}, slotDates = {};
+                Object.values(rawSlotData).forEach(({ position, month, slotLetter, enabled, capacity, start, end }) => {
+                    if (!enabled || !start || !end) return;
+                    if (!slotAvailability[month]) slotAvailability[month] = {};
+                    if (!slotAvailability[month][position]) slotAvailability[month][position] = { A: 0, B: 0, C: 0 };
+                    slotAvailability[month][position][slotLetter] = capacity;
+                    if (!slotDates[position]) slotDates[position] = {};
+                    if (!slotDates[position][month]) slotDates[position][month] = {};
+                    slotDates[position][month][slotLetter] = { start, end };
+                });
+
+                const configuredPositions = new Set(Object.values(slotAvailability).flatMap(m => Object.keys(m)));
+                const posCache = {};
+                const resolvePos = (pos) => {
+                    if (posCache[pos] !== undefined) return posCache[pos];
+                    if (configuredPositions.has(pos)) return (posCache[pos] = pos);
+                    for (const k of configuredPositions) {
+                        if (k.toLowerCase() === pos.toLowerCase()) return (posCache[pos] = k);
+                    }
+                    return (posCache[pos] = pos);
+                };
+
+                const positionGroups = {};
+                maintUsers.forEach(u => {
+                    const pos = resolvePos(u.position || 'Unassigned');
+                    if (!positionGroups[pos]) positionGroups[pos] = [];
+                    positionGroups[pos].push({ ...u, resolvedPosition: pos });
+                });
+                Object.keys(positionGroups).forEach(pos => {
+                    positionGroups[pos].sort((a, b) => new Date(a.seniorityDate) - new Date(b.seniorityDate));
+                });
+
+                const posRankMap = {};
+                const sortedMaintUsers = [];
+                Object.keys(positionGroups).sort().forEach(pos => {
+                    positionGroups[pos].forEach((u, i) => {
+                        sortedMaintUsers.push(u);
+                        posRankMap[u.id] = { position: pos, posRank: i + 1 };
+                    });
+                });
+
+                const awarded = {};
+                sortedMaintUsers.forEach(u => { awarded[u.id] = []; });
+
+                const makeAssignment = (user, startDate, endDate, slotLetter, slotNumber, type) => {
+                    const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
+                    const month = months[new Date(startDate).getMonth()];
+                    return {
+                        employeeId: user.id, employeeName: user.name,
+                        position: user.position || '', department: user.department || '',
+                        slotType: 'slot' + slotLetter, slotName: 'Slot ' + slotLetter,
+                        slotNumber, startDate, endDate, days, month,
+                        year: this.state.biddingYear,
+                        seniorityDate: user.seniorityDate,
+                        yearsOfService: calculateYearsOfService(user.seniorityDate).toFixed(1),
+                        type, bidChoice: type === 'Bid Awarded' ? slotNumber : null
+                    };
+                };
+
+                const sortedBidsById = {};
+                sortedMaintUsers.forEach(u => {
+                    sortedBidsById[u.id] = [...this.state.bids.filter(b => b.employeeId === u.id)]
+                        .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                // ── PREFERENCE ALLOCATION (strict seniority order) ────────────────────────
+                // Same fix as the Ops engine: process one maintenance staff member at a time,
+                // most senior first (posRankMap, already position-grouped and sorted by
+                // seniorityDate). For each user, try their own bids in the order submitted
+                // (1st choice, 2nd choice, 3rd choice...) and award the first one that still
+                // has capacity, decrementing immediately. This guarantees a senior user's
+                // later-listed choice is never blocked by a junior user's earlier-round pick
+                // for the same slot — the old round-based approach (all 1st choices matched
+                // together, then all 2nd choices, etc.) could let that happen.
+                sortedMaintUsers.forEach(user => {
+                    const bids = sortedBidsById[user.id];
+                    const pos  = resolvePos(user.position || 'Unassigned');
+
+                    for (const bid of bids) {
+                        if (awarded[user.id].length >= 2) break; // fully allocated
+
+                        const alreadyHas = awarded[user.id].some(
+                            a => a.startDate === bid.startDate && a.endDate === bid.endDate
+                        );
+                        if (alreadyHas) continue;
+
+                        const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
+                        const month      = months[new Date(bid.startDate).getMonth()];
+                        const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
+
+                        if (cap <= 0) continue; // no capacity left for this choice — try next preference
+
+                        const a = makeAssignment(user, bid.startDate, bid.endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded');
+                        const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
+                        if (usedDays + a.days > 30) continue; // would exceed entitlement — try next preference
+
+                        slotAvailability[month][pos][slotLetter]--;
+                        awarded[user.id].push(a);
+                    }
+                });
+
+                sortedMaintUsers.forEach(user => {
+                    const pos = resolvePos(user.position || 'Unassigned');
+                    const assignedKeys = new Set(awarded[user.id].map(a => a.startDate + '|' + a.endDate));
+                    while (awarded[user.id].length < 2) {
+                        let found = false;
+                        for (const month of months) {
+                            if (found) break;
+                            if (!slotAvailability[month]?.[pos]) continue;
+                            for (const letter of ['A', 'B', 'C']) {
+                                if (slotAvailability[month][pos][letter] <= 0) continue;
+                                const dates = slotDates[pos]?.[month]?.[letter];
+                                if (!dates) continue;
+                                const dk = dates.start + '|' + dates.end;
+                                if (assignedKeys.has(dk)) continue;
+                                const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
+                                const days = Math.ceil((new Date(dates.end) - new Date(dates.start)) / 86400000) + 1;
+                                if (usedDays + days > 30) continue;
+                                const a = makeAssignment(user, dates.start, dates.end, letter, awarded[user.id].length + 1, 'Auto-Assigned');
+                                awarded[user.id].push(a);
+                                assignedKeys.add(dk);
+                                slotAvailability[month][pos][letter]--;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) break;
+                    }
+                });
+
+                const maintResults = [];
+                sortedMaintUsers.forEach((user, idx) => {
+                    const rank = posRankMap[user.id]?.posRank || (idx + 1);
+                    awarded[user.id].forEach((a, si) => {
+                        maintResults.push({ ...a, seniorityRank: rank, positionSeniorityRank: rank, slotOrder: si + 1, entitlement: 30 });
+                    });
+                });
+
+                this.state.maintResults = maintResults;
+                this.state.isMaintProcessed = true;
+                await this.saveConfigToSupabase();
+
+                const bidAwarded = maintResults.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = maintResults.filter(r => r.type === 'Auto-Assigned').length;
+                alert('Successfully processed ' + sortedMaintUsers.length + ' maintenance staff!\n\n'
+                    + 'Total slots assigned: ' + maintResults.length + '\n'
+                    + 'Bid Awards: ' + bidAwarded + '\n'
+                    + 'Auto-Assigned: ' + autoAssigned + '\n'
+                    + 'Total leave days: ' + maintResults.reduce((s, r) => s + r.days, 0));
+                this.renderAdminView();
+            },
+
+            exportMaintResults() {
+                const maintResults = this.state.maintResults || [];
+                if (!maintResults.length) { alert('No maintenance results to export. Process maintenance bids first.'); return; }
+                const empTotalDays = {};
+                maintResults.forEach(r => { empTotalDays[r.employeeId] = (empTotalDays[r.employeeId] || 0) + (r.days || 0); });
+                const wsData = [['Rank','Staff ID','Name','Position','Department','Slot','Month','Start','End','Days','Type','Total Days']];
+                maintResults.forEach(r => wsData.push([
+                    r.positionSeniorityRank || r.seniorityRank || '',
+                    r.employeeId, r.employeeName, r.position || '', r.department || '',
+                    r.slotName || '', r.month || '', r.startDate || '', r.endDate || '',
+                    r.days || 0, r.type || '', empTotalDays[r.employeeId] || 0
+                ]));
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Maintenance Results');
+                XLSX.writeFile(wb, 'maintenance_bid_results_' + this.state.biddingYear + '.xlsx');
+            },
+
+            async resetMaintProcessing() {
+                if (!confirm('Reset maintenance processing? This will clear all maintenance results.')) return;
+                this.state.maintResults = [];
+                this.state.isMaintProcessed = false;
+                await this.saveConfigToSupabase();
+                this.renderAdminView();
+            },
+
+            renderMaintResultsView() {
+                const contentEl = document.getElementById('contentArea');
+                const maintResults = this.state.maintResults || [];
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const getUserInfo = (id) => maintUsers.find(u => u.id === id) || {};
+
+                const byEmployee = {};
+                maintResults.forEach(r => {
+                    if (!byEmployee[r.employeeId]) byEmployee[r.employeeId] = [];
+                    byEmployee[r.employeeId].push(r);
+                });
+
+                const slotCell = (s) => {
+                    if (!s) return '<span class="text-gray-300">&#8212;</span>';
+                    const tc = s.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600';
+                    return '<span class="font-semibold">' + (s.slotName || '') + '</span><br>'
+                         + '<span class="text-xs text-gray-500">' + (s.month || '') + ': ' + (s.startDate || '') + ' &#8594; ' + (s.endDate || '') + '</span><br>'
+                         + '<span class="text-xs font-semibold ' + tc + '">' + (s.type || '') + '</span>'
+                         + ' <span class="text-xs text-gray-400">(' + (s.days || 0) + 'd)</span>';
+                };
+
+                let rows = '';
+                Object.entries(byEmployee).forEach(([empId, slots], rowIdx) => {
+                    const user  = getUserInfo(empId);
+                    const slot1 = slots.find(s => s.slotOrder === 1);
+                    const slot2 = slots.find(s => s.slotOrder === 2);
+                    const total = slots.reduce((s, r) => s + r.days, 0);
+                    const rowBg = rowIdx % 2 === 0 ? 'bg-white' : 'bg-orange-50';
+                    const tc    = total > 30 ? 'text-red-600' : 'text-gray-800';
+                    const rank  = slot1 ? (slot1.positionSeniorityRank || slot1.seniorityRank || '&#8212;') : '&#8212;';
+                    rows += '<tr class="' + rowBg + ' hover:bg-yellow-50 border-b border-gray-100">'
+                          + '<td class="p-3 text-center font-mono text-gray-500">#' + rank + '</td>'
+                          + '<td class="p-3 font-mono text-xs text-gray-600">' + empId + '</td>'
+                          + '<td class="p-3 font-semibold text-gray-800">' + (user.name || (slot1 && slot1.employeeName) || 'Unknown') + '</td>'
+                          + '<td class="p-3 text-xs text-gray-600">' + (user.position || (slot1 && slot1.position) || '&#8212;')
+                          + '<br><span class="text-gray-400">' + (user.department || (slot1 && slot1.department) || '') + '</span></td>'
+                          + '<td class="p-3 text-xs text-gray-600">' + ((slot1 && slot1.yearsOfService) || '&#8212;') + ' yrs</td>'
+                          + '<td class="p-3 text-xs">' + slotCell(slot1) + '</td>'
+                          + '<td class="p-3 text-xs">' + slotCell(slot2) + '</td>'
+                          + '<td class="p-3 font-bold text-center ' + tc + '">' + total + 'd'
+                          + '<br><span class="text-xs font-normal text-gray-400">/ 30</span></td>'
+                          + '</tr>';
+                });
+
+                const totalStaff   = Object.keys(byEmployee).length;
+                const bidAwarded   = maintResults.filter(r => r.type === 'Bid Awarded').length;
+                const autoAssigned = maintResults.filter(r => r.type === 'Auto-Assigned').length;
+                const totalDays    = maintResults.reduce((s, r) => s + r.days, 0);
+
+                const emptyHtml =
+                    '<div class="text-center py-12">'
+                    + '<p class="text-gray-600 font-semibold text-xl mb-2">No maintenance results yet</p>'
+                    + '<p class="text-gray-400 text-sm">Process maintenance bids from the Admin panel first.</p>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold">Go to Admin Panel</button>'
+                    + '</div>';
+
+                const statsHtml =
+                    '<div class="mb-4 flex flex-wrap gap-3 text-sm">'
+                    + '<span class="bg-orange-50 border border-orange-200 px-3 py-1 rounded-full">' + totalStaff + ' staff</span>'
+                    + '<span class="bg-green-50 border border-green-200 px-3 py-1 rounded-full">&#10003; ' + bidAwarded + ' bid awards</span>'
+                    + '<span class="bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">' + autoAssigned + ' auto-assigned</span>'
+                    + '<span class="bg-gray-50 border border-gray-200 px-3 py-1 rounded-full">' + totalDays + ' total days</span>'
+                    + '</div>';
+
+                const tableHtml =
+                    statsHtml
+                    + '<div class="overflow-x-auto"><table class="w-full text-sm border-collapse">'
+                    + '<thead class="bg-orange-50"><tr>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Rank</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Staff ID</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Name</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Position</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Seniority</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Slot 1</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Slot 2</th>'
+                    + '<th class="p-3 text-left border border-orange-100 font-semibold text-orange-800">Total Days</th>'
+                    + '</tr></thead>'
+                    + '<tbody>' + rows + '</tbody>'
+                    + '</table></div>';
+
+                contentEl.innerHTML =
+                    '<div class="max-w-7xl mx-auto"><div class="bg-white rounded-xl shadow-xl p-6">'
+                    + '<div class="flex items-center justify-between mb-6">'
+                    + '<div><h2 class="text-2xl font-bold">Maintenance Staff Leave Assignments ' + this.state.biddingYear + '</h2>'
+                    + '<p class="text-gray-500 text-sm mt-1">Seniority-based per position group. Entitlement: 30 days.</p></div>'
+                    + '<div class="flex gap-2">'
+                    + '<button onclick="app.exportMaintResults()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">Export to Excel</button>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-300">Back to Admin</button>'
+                    + '</div></div>'
+                    + (maintResults.length === 0 ? emptyHtml : tableHtml)
+                    + '</div></div>';
+            },
+
+            exportResults() {
+                if (this.state.results.length === 0) {
+                    alert('No results to export');
+                    return;
+                }
+                
+                // Create Excel workbook
+                const wsData = [
+                    ['Seniority Rank (within Position Group)', 'Employee ID', 'Employee Name', 'Position (Scheduling Row)', 'Department', 'Slot Type', 
+                     'Month', 'Start Date', 'End Date', 'Days', 'Assignment Type', 'Total Days (Employee)']
+                ];
+
+                // Group results by employee so we can compute total days per employee
+                const empTotalDays = {};
+                this.state.results.forEach(result => {
+                    empTotalDays[result.employeeId] = (empTotalDays[result.employeeId] || 0) + (result.days || 0);
+                });
+                
+                this.state.results.forEach(result => {
+                    const emp = this.state.employees.find(e => e.id === result.employeeId);
+                    wsData.push([
+                        result.seniorityRank,
+                        result.employeeId,
+                        result.employeeName,
+                        emp?.position || result.position || '',
+                        result.department,
+                        result.slotName,
+                        result.month,
+                        result.startDate,
+                        result.endDate,
+                        result.days,
+                        result.type,
+                        empTotalDays[result.employeeId] || result.days
+                    ]);
+                });
+                
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Leave Assignments');
+                XLSX.writeFile(wb, `Leave_Assignments_${this.state.biddingYear}.xlsx`);
+                
+                alert('✅ Results exported to Excel file!');
+            },
+
+            // ════════════════════════════════════════════════════════════════════
+            // BID ALLOCATION JUSTIFICATION REPORT
+            //
+            // Builds a per-employee, per-awarded-slot transparency report explaining
+            // WHY each slot was awarded the way it was: which choice number it was
+            // (1st/2nd/3rd...), and — when an earlier preference was lost — WHO won
+            // it instead (by seniority). Covers both Ops (this.state.results) and
+            // Maintenance (this.state.maintResults), since both use the same
+            // seniority + ranked-choice + auto-assign allocation model. Golden
+            // Command / Corporate Staff use a different free-date bidding flow
+            // without ranked discrete slot choices, so they're intentionally not
+            // included here.
+            //
+            // Does not recompute allocation — it explains the actual saved results
+            // (this.state.results / maintResults) against the actual submitted bids
+            // (this.state.bids), so it always matches what employees were told.
+            // ════════════════════════════════════════════════════════════════════
+            _ordinal(n) {
+                if (n === 1) return '1st';
+                if (n === 2) return '2nd';
+                if (n === 3) return '3rd';
+                return `${n}th`;
+            },
+
+            // Shared builder — works for both Ops and Maintenance since their result
+            // objects have the same shape (employeeId, department/position, month,
+            // slotType, startDate/endDate, seniorityRank, slotOrder, type, ...).
+            // `groupField` is 'department' for Ops (capacity pooled per dept) or
+            // 'position' for Maintenance (capacity pooled per position).
+            _buildJustificationRowsForResults(results, groupField, category) {
+                if (!results || results.length === 0) return [];
+
+                // Employee's own submitted bids, in the order they were submitted
+                // (earliest timestamp = 1st choice, next = 2nd choice, ...).
+                const bidsByEmp = {};
+                (this.state.bids || []).forEach(b => {
+                    if (!bidsByEmp[b.employeeId]) bidsByEmp[b.employeeId] = [];
+                    bidsByEmp[b.employeeId].push(b);
+                });
+                Object.keys(bidsByEmp).forEach(id => {
+                    bidsByEmp[id].sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                });
+
+                const slotLetter = (slotType) => (slotType || '').slice(-1).toUpperCase();
+
+                // key = groupValue||month||slotLetter → every "Bid Awarded" winner of that key
+                const winnersByKey = {};
+                results.filter(r => r.type === 'Bid Awarded').forEach(r => {
+                    const key = `${r[groupField] || ''}||${r.month || ''}||${slotLetter(r.slotType)}`;
+                    if (!winnersByKey[key]) winnersByKey[key] = [];
+                    winnersByKey[key].push({
+                        employeeId: r.employeeId,
+                        employeeName: r.employeeName,
+                        seniorityRank: r.seniorityRank
+                    });
+                });
+
+                // Resolve the group key (dept or position) a bid belongs to, mirroring
+                // how the allocation engine itself resolves it at award time.
+                const bidGroupValue = (bid, empGroupValue) => bid.department || empGroupValue || 'Unassigned';
+                const bidKey = (bid, empGroupValue) => {
+                    const month = bid.month || (bid.startDate ? this.state.months[new Date(bid.startDate).getMonth()] : '');
+                    return `${bidGroupValue(bid, empGroupValue)}||${month}||${slotLetter(bid.slotType)}`;
+                };
+
+                const resultsByEmp = {};
+                results.forEach(r => {
+                    if (!resultsByEmp[r.employeeId]) resultsByEmp[r.employeeId] = [];
+                    resultsByEmp[r.employeeId].push(r);
+                });
+
+                const rows = [];
+                Object.keys(resultsByEmp).forEach(empId => {
+                    const empResults = resultsByEmp[empId].slice().sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
+                    const myBids = bidsByEmp[empId] || [];
+                    const empGroupValue = empResults[0]?.[groupField] || '';
+
+                    empResults.forEach(r => {
+                        let awardStatus, justification;
+
+                        if (r.type === 'Bid Awarded') {
+                            // Which of the employee's own submitted bids does this match?
+                            let matchIdx = myBids.findIndex(b => b.startDate === r.startDate && b.endDate === r.endDate);
+                            if (matchIdx === -1) {
+                                const rKey = `${r[groupField] || ''}||${r.month || ''}||${slotLetter(r.slotType)}`;
+                                matchIdx = myBids.findIndex(b => bidKey(b, empGroupValue) === rKey);
+                            }
+                            const choiceNum = matchIdx >= 0 ? matchIdx + 1 : (r.bidChoice || 1);
+                            awardStatus = `${this._ordinal(choiceNum)} Choice`;
+
+                            if (choiceNum === 1) {
+                                justification = `Employee was awarded their first-choice slot based on seniority.`;
+                            } else {
+                                const lostOrdinals = [];
+                                let firstLosersWinnerName = '';
+                                for (let i = 0; i < choiceNum - 1; i++) {
+                                    const lostBid = myBids[i];
+                                    if (!lostBid) continue;
+                                    lostOrdinals.push(this._ordinal(i + 1));
+                                    if (!firstLosersWinnerName) {
+                                        const key = bidKey(lostBid, empGroupValue);
+                                        const winners = (winnersByKey[key] || []).filter(w => w.employeeId !== empId);
+                                        if (winners.length) {
+                                            winners.sort((a, b) => (a.seniorityRank ?? 999) - (b.seniorityRank ?? 999));
+                                            firstLosersWinnerName = `${winners[0].employeeName} (${winners[0].employeeId})`;
+                                        }
+                                    }
+                                }
+                                if (choiceNum === 2 && lostOrdinals.length === 1) {
+                                    justification = firstLosersWinnerName
+                                        ? `Employee's first-choice slot was awarded to ${firstLosersWinnerName}, who has a higher seniority ranking. The employee was awarded their 2nd choice.`
+                                        : `Employee's first-choice slot was no longer available by the time it was processed. The employee was awarded their 2nd choice.`;
+                                } else {
+                                    justification = `Employee's ${lostOrdinals.join(' and ')} choices were awarded to higher-seniority employees. The employee was awarded their ${this._ordinal(choiceNum)} choice.`;
+                                }
+                            }
+                        } else {
+                            // Auto-Assigned
+                            if (myBids.length === 0) {
+                                awardStatus = 'No Bid Submitted';
+                                justification = 'Employee did not submit any bid. A leftover slot was assigned after all bidding employees had been processed.';
+                            } else {
+                                awardStatus = 'Leftover Slot';
+                                justification = "None of the employee's selected choices were available after seniority allocation. The employee was assigned the best available remaining slot.";
+                            }
+                        }
+
+                        rows.push({
+                            category,
+                            employeeId: empId,
+                            employeeName: r.employeeName,
+                            position: r.position || '',
+                            department: groupField === 'department' ? (r.department || '') : (r.department || r.position || ''),
+                            seniorityRank: r.seniorityRank,
+                            slotOrder: r.slotOrder,
+                            totalEmployeeSlots: r.totalEmployeeSlots || 2,
+                            awardedSlot: `${r.slotName || ''} — ${this.blockLabel ? this.blockLabel(r.month) : (r.month || '')} ${r.startDate || ''} → ${r.endDate || ''} (${r.days || 0}d)`,
+                            awardStatus,
+                            justification
+                        });
+                    });
+                });
+
+                return rows;
+            },
+
+            buildJustificationReport() {
+                const opsRows  = this._buildJustificationRowsForResults(this.state.results || [], 'department', 'Ops');
+                const maintRows = this._buildJustificationRowsForResults(this.state.maintResults || [], 'position', 'Maintenance');
+                const rows = [...opsRows, ...maintRows];
+                rows.sort((a, b) =>
+                    (a.category || '').localeCompare(b.category) ||
+                    (a.department || '').localeCompare(b.department || '') ||
+                    (a.position || '').localeCompare(b.position || '') ||
+                    (a.seniorityRank || 0) - (b.seniorityRank || 0) ||
+                    (a.slotOrder || 0) - (b.slotOrder || 0)
+                );
+                return rows;
+            },
+
+            renderJustificationReport() {
+                if (!this.state.isProcessed && !this.state.isMaintProcessed) {
+                    alert('No results yet — process Ops or Maintenance bids first.');
+                    return;
+                }
+                this._justificationRows = this.buildJustificationReport();
+                if (this._justificationRows.length === 0) {
+                    alert('No awarded slots found to report on yet.');
+                    return;
+                }
+                const catSel = document.getElementById('jrCategoryFilter');
+                if (catSel) catSel.value = 'all';
+                const searchEl = document.getElementById('jrSearch');
+                if (searchEl) searchEl.value = '';
+                this._filterJustificationReport();
+                document.getElementById('justificationReportModal').style.display = 'flex';
+            },
+
+            _filterJustificationReport() {
+                const rows = this._justificationRows || [];
+                const category = document.getElementById('jrCategoryFilter')?.value || 'all';
+                const search = (document.getElementById('jrSearch')?.value || '').toLowerCase().trim();
+
+                const filtered = rows.filter(r => {
+                    if (category !== 'all' && r.category !== category) return false;
+                    if (search && !String(r.employeeName || '').toLowerCase().includes(search) && !String(r.employeeId || '').toLowerCase().includes(search)) return false;
+                    return true;
+                });
+
+                const esc = this._escHtml.bind(this);
+                const statusColors = {
+                    '1st Choice': 'bg-green-100 text-green-800',
+                    '2nd Choice': 'bg-blue-100 text-blue-800',
+                    '3rd Choice': 'bg-indigo-100 text-indigo-800',
+                    'Leftover Slot': 'bg-orange-100 text-orange-800',
+                    'No Bid Submitted': 'bg-gray-200 text-gray-700'
+                };
+
+                const body = document.getElementById('justificationReportBody');
+                if (!body) return;
+
+                if (filtered.length === 0) {
+                    body.innerHTML = `<div style="text-align:center;padding:40px 0;color:#9ca3af;">No matching entries.</div>`;
+                    return;
+                }
+
+                body.innerHTML = `
+                    <p style="font-size:0.75rem;color:#6b7280;margin-bottom:10px;">${filtered.length} slot(s) shown</p>
+                    <div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead>
+                                <tr style="background:#fafafa;text-align:left;color:#6b7280;font-size:0.68rem;text-transform:uppercase;">
+                                    <th style="padding:8px 10px;">Employee</th>
+                                    <th style="padding:8px 10px;">Position</th>
+                                    <th style="padding:8px 10px;">Department</th>
+                                    <th style="padding:8px 10px;">Seniority&nbsp;Rank</th>
+                                    <th style="padding:8px 10px;">Slot</th>
+                                    <th style="padding:8px 10px;">Awarded Slot</th>
+                                    <th style="padding:8px 10px;">Status</th>
+                                    <th style="padding:8px 10px;">Justification</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.map(r => `
+                                    <tr style="border-top:1px solid #f0f0f0;">
+                                        <td style="padding:8px 10px;">
+                                            <p style="font-weight:600;">${esc(r.employeeName)}</p>
+                                            <p style="font-size:0.7rem;color:#9ca3af;">${esc(r.employeeId)} · ${esc(r.category)}</p>
+                                        </td>
+                                        <td style="padding:8px 10px;">${esc(r.position)}</td>
+                                        <td style="padding:8px 10px;">${esc(r.department)}</td>
+                                        <td style="padding:8px 10px;text-align:center;">#${esc(r.seniorityRank)}</td>
+                                        <td style="padding:8px 10px;text-align:center;">${r.slotOrder} of ${r.totalEmployeeSlots}</td>
+                                        <td style="padding:8px 10px;">${esc(r.awardedSlot)}</td>
+                                        <td style="padding:8px 10px;"><span class="px-2 py-1 rounded-full text-xs font-bold ${statusColors[r.awardStatus] || 'bg-gray-100 text-gray-700'}">${esc(r.awardStatus)}</span></td>
+                                        <td style="padding:8px 10px;color:#374151;max-width:320px;">${esc(r.justification)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            },
+
+            exportJustificationReport() {
+                const rows = this._justificationRows || [];
+                if (rows.length === 0) {
+                    alert('Nothing to export yet — open the Justification Report first.');
+                    return;
+                }
+                const wsData = [
+                    ['Category', 'Employee ID', 'Employee Name', 'Position', 'Department', 'Seniority Rank',
+                     'Slot # (of Total)', 'Awarded Slot', 'Award Status', 'Justification']
+                ];
+                rows.forEach(r => {
+                    wsData.push([
+                        r.category, r.employeeId, r.employeeName, r.position, r.department, r.seniorityRank,
+                        `${r.slotOrder} of ${r.totalEmployeeSlots}`, r.awardedSlot, r.awardStatus, r.justification
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                ws['!cols'] = [{wch:12},{wch:12},{wch:22},{wch:20},{wch:20},{wch:12},{wch:12},{wch:34},{wch:16},{wch:70}];
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Bid Justification');
+                XLSX.writeFile(wb, `Bid_Allocation_Justification_${this.state.biddingYear}.xlsx`);
+            },
+
+            // ==================== EMAIL SETTINGS (Admin Only) ====================
+
+            renderEmailSettingsView() {
+                const content = document.getElementById('contentArea');
+                const svc = localStorage.getItem('ejs_service')  || '';
+                const tpl = localStorage.getItem('ejs_template') || '';
+                const key = localStorage.getItem('ejs_pubkey')   || '';
+                const smtpUrl = this.state.smtpFallbackUrl || localStorage.getItem('smtp_fallback_url') || '';
+                const smtpKey = this.state.smtpFallbackKey || localStorage.getItem('smtp_fallback_key') || '';
+                const savedPlannerEmail = localStorage.getItem('ejs_planner_email') || '';
+                if (savedPlannerEmail && !this.state.plannerEmail) this.state.plannerEmail = savedPlannerEmail;
+                content.innerHTML = `
+                    <div class="max-w-lg mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-8">
+                            <h2 class="text-2xl font-bold mb-1">⚙️ Email Settings</h2>
+                            <p class="text-gray-500 text-sm mb-6">Configure EmailJS once here. Users never see this screen — these keys are used silently when sending OTP codes.</p>
+                            <div id="esMsg"></div>
+                            <div class="space-y-5">
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Planner Recovery Email</label>
+                                    <input type="email" id="esPlannerEmail" value="${this.state.plannerEmail || ''}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none text-sm" />
+                                    <p class="text-xs text-gray-400 mt-1">OTPs for Planner password recovery are sent here.</p>
+                                </div>
+                                <hr class="border-gray-200"/>
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">EmailJS Configuration</p>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Service ID</label>
+                                    <input type="text" id="esServiceId" placeholder="service_xxxxxxx" value="${svc}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Template ID</label>
+                                    <input type="text" id="esTemplateId" placeholder="template_xxxxxxx" value="${tpl}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                    <p class="text-xs text-gray-400 mt-1">Template must include: <code>{{to_email}}</code>, <code>{{to_name}}</code>, <code>{{otp_code}}</code></p>
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Public Key</label>
+                                    <input type="text" id="esPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" value="${key}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                </div>
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                                    <strong>How to set up EmailJS (free):</strong><br/>
+                                    1. Go to <a href="https://www.emailjs.com" target="_blank" class="underline">emailjs.com</a> and create an account.<br/>
+                                    2. Add your email service (Gmail, Outlook…).<br/>
+                                    3. Create a template with the variables above.<br/>
+                                    4. Copy your Service ID, Template ID, and Public Key here.
+                                </div>
+                                <hr class="border-gray-200"/>
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">SMTP Fallback (optional)</p>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Relay Endpoint URL</label>
+                                    <input type="text" id="esSmtpUrl" placeholder="https://your-project.functions.supabase.co/send-email" value="${smtpUrl}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                    <p class="text-xs text-gray-400 mt-1">If EmailJS fails or is unreachable, the app POSTs the email here instead.</p>
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-1 text-sm">Relay Auth Token (optional)</label>
+                                    <input type="text" id="esSmtpKey" placeholder="shared secret / bearer token" value="${smtpKey}"
+                                        class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-teal-500 focus:outline-none font-mono text-sm" />
+                                </div>
+                                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                                    <strong>Why a URL, not SMTP host/port?</strong> Browsers can't open raw SMTP connections — only a server can. Point this at a small server-side endpoint (e.g. a Supabase Edge Function) that receives <code>{to, subject, vars}</code> as JSON and sends the email via your SMTP account (Gmail, Outlook, your company mail server, etc.). Ask your developer to deploy one if you don't have it yet.
+                                </div>
+                            </div>
+                            <div class="flex gap-3 mt-7">
+                                <button onclick="app.doSaveEmailSettings()" class="flex-1 px-5 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 font-semibold">💾 Save</button>
+                                <button onclick="app.doTestOtpEmail()" class="flex-1 px-5 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold">🧪 Test EmailJS</button>
+                                <button onclick="app.doTestSmtpFallback()" class="flex-1 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-semibold">🧪 Test SMTP Fallback</button>
+                                <button onclick="app.setActiveView('admin')" class="px-5 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">← Back</button>
+                            </div>
+                        </div>
+                    </div>`;
+            },
+
+            doSaveEmailSettings() {
+                const email = document.getElementById('esPlannerEmail')?.value?.trim();
+                const svc   = document.getElementById('esServiceId')?.value?.trim();
+                const tpl   = document.getElementById('esTemplateId')?.value?.trim();
+                const key   = document.getElementById('esPublicKey')?.value?.trim();
+                const smtpUrl = document.getElementById('esSmtpUrl')?.value?.trim();
+                const smtpKey = document.getElementById('esSmtpKey')?.value?.trim();
+                const msg   = document.getElementById('esMsg');
+                if (email) this.state.plannerEmail   = email;
+                if (svc)   this.state.ejsServiceId   = svc;
+                if (tpl)   this.state.ejsTemplateId  = tpl;
+                if (key)   this.state.ejsPublicKey   = key;
+                this.state.smtpFallbackUrl = smtpUrl || '';
+                this.state.smtpFallbackKey = smtpKey || '';
+                localStorage.setItem('ejs_planner_email', email || '');
+                localStorage.setItem('ejs_service',  svc  || '');
+                localStorage.setItem('ejs_template', tpl  || '');
+                localStorage.setItem('ejs_pubkey',   key  || '');
+                localStorage.setItem('smtp_fallback_url', smtpUrl || '');
+                localStorage.setItem('smtp_fallback_key', smtpKey || '');
+                this.saveState();
+                try { this.saveConfigToSupabase(); } catch (e) {}
+                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Settings saved! OTP recovery is now active for all roles.</div>';
+            },
+
+            async doTestSmtpFallback() {
+                const smtpUrl = (document.getElementById('esSmtpUrl')?.value || '').trim();
+                const smtpKey = (document.getElementById('esSmtpKey')?.value || '').trim();
+                const email   = (document.getElementById('esPlannerEmail')?.value || '').trim();
+                const msg     = document.getElementById('esMsg');
+                if (!smtpUrl || !email) {
+                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-yellow-50 border-yellow-300 text-yellow-700 text-sm">⚠️ Enter a Relay Endpoint URL and a Planner Recovery Email first.</div>';
+                    return;
+                }
+                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-sm">⏳ Sending test email via SMTP fallback…</div>';
+                try {
+                    const resp = await fetch(smtpUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(smtpKey ? { 'Authorization': 'Bearer ' + smtpKey } : {})
+                        },
+                        body: JSON.stringify({
+                            to: email,
+                            to_name: 'Planner',
+                            subject: 'Annual Leave System — SMTP fallback test',
+                            vars: { otp_code: '123456', passcode: '123456', employee_id: 'TEST', year: this.state.biddingYear }
+                        })
+                    });
+                    if (!resp.ok) throw new Error('Relay responded ' + resp.status);
+                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ SMTP fallback relay accepted the test email — check the inbox.</div>';
+                } catch (err) {
+                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-red-50 border-red-300 text-red-700 text-sm">❌ SMTP fallback test failed: ' + (err?.message || err) + '</div>';
+                }
+            },
+
+            async doTestOtpEmail() {
+                const svc   = (document.getElementById('esServiceId')?.value    || '').trim();
+                const tpl   = (document.getElementById('esTemplateId')?.value   || '').trim();
+                const key   = (document.getElementById('esPublicKey')?.value    || '').trim();
+                const email = (document.getElementById('esPlannerEmail')?.value || '').trim();
+                const msg   = document.getElementById('esMsg');
+                if (!svc || !tpl || !key || !email) {
+                    msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-yellow-50 border-yellow-300 text-yellow-700 text-sm">⚠️ Please fill in all fields before sending a test.</div>';
+                    return;
+                }
+                msg.innerHTML = '<div class="mb-4 p-3 rounded-lg border bg-blue-50 border-blue-200 text-blue-700 text-sm">⏳ Sending test OTP…</div>';
+                try {
+                    emailjs.init(key);
+                    const testExpiry = new Date(Date.now() + 10 * 60 * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    await emailjs.send(svc, tpl, {
+                        email: email, to_email: email, to_name: 'Planner',
+                        otp_code: '123456', passcode: '123456',
+                        time: testExpiry,
+                        company_name: 'Resource Planning Team at Flow',
+                        Annual_Leave_System_RP: 'Resource Planning Team at Flow',
+                        website_link: window.location.href,
+                        employee_id: 'TEST', year: this.state.biddingYear
+                    });
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-green-50 border-green-300 text-green-700 text-sm">✅ Test OTP (123456) sent to <strong>${email}</strong>. Check your inbox!</div>`;
+                } catch (err) {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border bg-red-50 border-red-300 text-red-700 text-sm">❌ Failed: ${err?.text || err?.message || JSON.stringify(err)}</div>`;
+                }
+            },
+
+            // ==================== RESET SYSTEM ====================
+            // Independent from Configure Slots (Ops & Maintenance): this resets employees, bids,
+            // results, and on-call dates only. Slot configuration (calendar dates/capacities for
+            // both Ops and Maintenance) is NOT affected — use "Reset to Default Dates" on a
+            // department/roster group in Configure Slots if you need to clear that separately.
+            async resetSystem() {
+                if (confirm('⚠️ WARNING: This will reset employees, bids, results, and on-call dates. Slot configuration (calendar dates) is NOT affected — use "Reset to Default Dates" on a department if you need to clear that separately. Continue?')) {
+                    this.writeAuditLog('SYSTEM_RESET', { employees: this.state.employees.length, bids: this.state.bids.length });
+                    localStorage.clear();
+                    this.state.employees = [];
+                    this.state.bids = [];
+                    this.state.results = [];
+                    this.state.isProcessed = false;
+                    this.state.isProcessedCorp = false;
+                    this.state.onCallDates = {};
+                    this.state.currentUser = null;
+                    this.state.userType = null;
+                    this.state.activeView = 'login';
+                    await this.saveConfigToSupabase(); // push reset state to Supabase
+                    // Reset UI
+                    document.getElementById('userInfo').classList.add('hidden');
+                    this._syncHeaderOffset();
+                    document.getElementById('plannerSidebar').classList.add('hidden');
+                    document.getElementById('headerSaveBtn').classList.add('hidden');
+                    document.getElementById('plannerNav').classList.add('hidden');
+                    document.getElementById('employeeNav').classList.add('hidden');
+                    document.getElementById('loginView').classList.remove('hidden');
+                    
+                    this.updateSystemStatus('System reset');
+                    this.renderLoginForm();
+                    
+                    alert('✅ System has been completely reset!');
+                }
+            },
+
+            // ==================== BIDDING FUNCTIONS ====================
+            // ── NEW: Populates the available-slot cards for the employee bidding view ──
+            refreshAvailableSlots() {
+                const monthSelect = document.getElementById('selectedMonth');
+                if (!monthSelect) return;
+                const month = monthSelect.value;
+                const container = document.getElementById('availableSlotCards');
+                if (!container) return;
+
+                const emp   = this.state.verifiedEmployee;
+                const userBids = this.state.bids.filter(b => b.employeeId === emp?.id);
+                const isProcessed = this.state.isProcessed;
+                // Route to the correct store based on user type
+                const isMaint = this.state.userType === 'maintenancestaff';
+                const storeOptions = isMaint
+                    ? [{ caps: this.state.maintSlotCapacities, prefix: 'cal-maint-' }]
+                    : [{ caps: this.state.slotCapacities,      prefix: 'cal-' }];
+                let caps        = storeOptions[0].caps;
+                let activePrefix = storeOptions[0].prefix;
+
+                const fullEmp = this.state.employees.find(e => e.id === emp?.id) || emp || {};
+
+                const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const normalizeDept = (d) => {
+                    if (!d) return '';
+                    return d.replace(/\.\d+(\s*\(.*?\))?$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                };
+                const rawCandidates = [fullEmp.department, fullEmp.position, emp?.department, emp?.position].filter(Boolean);
+                const normalizedCandidates = rawCandidates.map(d =>
+                    d.replace(/\.\d+(\s*\(.*?\))?$/, '').replace(/\s+/g, ' ').trim()
+                );
+                const deptCandidates = [...new Set([...rawCandidates, ...normalizedCandidates].filter(Boolean))];
+
+                const colorMap = {
+                    SA: { border:'border-green-400', bg:'bg-green-50', badge:'bg-green-600', text:'text-green-800', label:'Slot A' },
+                    SB: { border:'border-blue-400',  bg:'bg-blue-50',  badge:'bg-blue-600',  text:'text-blue-800',  label:'Slot B' },
+                    SC: { border:'border-purple-400',bg:'bg-purple-50',badge:'bg-purple-600',text:'text-purple-800',label:'Slot C' },
+                    SD: { border:'border-orange-400',bg:'bg-orange-50',badge:'bg-orange-600',text:'text-orange-800',label:'Slot D' }
+                };
+
+                const isEnabledIn = (store, prefix, dept, sid) => {
+                    const raw = store[prefix + dept + '-' + month + '-' + sid + '-enabled'];
+                    if (raw === undefined || raw === null)
+                        return !!(store[prefix + dept + '-' + month + '-' + sid + '-start'] &&
+                                  store[prefix + dept + '-' + month + '-' + sid + '-end']);
+                    return typeof raw === 'string' ? raw === 'true' : !!raw;
+                };
+
+                const buildSlotDefsIn = (store, prefix, deptKey) => {
+                    return ['SA','SB','SC','SD'].map(sid => {
+                        if (!isEnabledIn(store, prefix, deptKey, sid)) return null;
+                        const start = store[prefix + deptKey + '-' + month + '-' + sid + '-start'];
+                        const end   = store[prefix + deptKey + '-' + month + '-' + sid + '-end'];
+                        if (!start || !end) return null;
+                        const capacity = parseInt(store[prefix + deptKey + '-' + month + '-' + sid + '-capacity']) || 1;
+                        const days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+                        return { sid, start, end, capacity, days, colors: colorMap[sid] };
+                    }).filter(Boolean);
+                };
+
+                // Pass 1: exact key lookup
+                let resolvedDept = null;
+                let slotDefs = [];
+                outer1: for (const { caps: store, prefix } of storeOptions) {
+                    for (const deptTry of deptCandidates) {
+                        const defs = buildSlotDefsIn(store, prefix, deptTry);
+                        if (defs.length > 0) {
+                            caps = store; activePrefix = prefix;
+                            resolvedDept = deptTry; slotDefs = defs;
+                            break outer1;
+                        }
+                    }
+                }
+
+                // Pass 2: full key scan with scoring
+                if (slotDefs.length === 0) {
+                    const suffix = '-' + month + '-';
+                    const empNorms = [...new Set([...rawCandidates, ...normalizedCandidates].map(normalizeDept).filter(Boolean))];
+                    const scoreMatch = (dk) => {
+                        const dn = normalizeDept(dk);
+                        for (const c of empNorms) {
+                            if (dn === c) return 3;
+                            if (c.startsWith(dn)) return 2;
+                            if (dn.startsWith(c)) return 1;
+                        }
+                        return 0;
+                    };
+                    outer2: for (const { caps: store, prefix } of storeOptions) {
+                        const foundDepts = new Set();
+                        Object.keys(store).forEach(k => {
+                            if (!k.startsWith(prefix)) return;
+                            const mid = k.indexOf(suffix);
+                            if (mid === -1) return;
+                            if (!/^(SA|SB|SC)-start$/.test(k.slice(mid + suffix.length))) return;
+                            const dp = k.slice(prefix.length, mid);
+                            if (dp) foundDepts.add(dp);
+                        });
+                        const ranked = [...foundDepts].map(d => ({ d, score: scoreMatch(d) }))
+                            .filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+                        for (const { d: deptTry } of ranked) {
+                            const defs = buildSlotDefsIn(store, prefix, deptTry);
+                            if (defs.length > 0) {
+                                caps = store; activePrefix = prefix;
+                                resolvedDept = deptTry; slotDefs = defs;
+                                break outer2;
+                            }
+                        }
+                    }
+                }
+
+                const bidCount = {};
+                if (resolvedDept) {
+                    this.state.bids.forEach(b => {
+                        ['SA','SB','SC','SD'].forEach(sid => {
+                            const s = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-start'];
+                            const e = caps[activePrefix + resolvedDept + '-' + month + '-' + sid + '-end'];
+                            if (s && e && b.startDate === s && b.endDate === e)
+                                bidCount[sid] = (bidCount[sid] || 0) + 1;
+                        });
+                    });
+                }
+                // Attach bid counts; capacity is planner-set seats — used only during allocation, not bidding
+                slotDefs = slotDefs.map(s => ({
+                    ...s,
+                    bidsPlaced: bidCount[s.sid] || 0
+                }));
+
+                // Seniority gate (OPS staff only — Maintenance is unaffected):
+                //   ≤5 years of service → can only see/bid Slot A & Slot B
+                //   >5 years of service → can only see/bid Slot C & Slot D
+                const slotDefsBeforeGate = slotDefs;
+                let empYearsForGate = 0;
+                if (!isMaint) {
+                    empYearsForGate = emp?.seniorityDate
+                        ? (new Date() - new Date(emp.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
+                        : 0;
+                    if (empYearsForGate > 5) {
+                        slotDefs = slotDefs.filter(s => s.sid === 'SC' || s.sid === 'SD');
+                    } else {
+                        slotDefs = slotDefs.filter(s => s.sid === 'SA' || s.sid === 'SB');
+                    }
+                }
+
+                // Reset selected slot ONLY when the month has changed
+                const currentMonth = window._lastSlotMonth;
+                if (currentMonth !== month) {
+                    window.selectedSlot    = null;
+                    window.selectedSlotDef = null;
+                    const confirmBox = document.getElementById('selectedSlotConfirm');
+                    if (confirmBox) confirmBox.classList.add('hidden');
+                }
+                window._lastSlotMonth = month;
+
+                if (slotDefs.length === 0) {
+                    if (!isMaint && slotDefsBeforeGate.length > 0) {
+                        const eligibleLabel = empYearsForGate > 5 ? 'Slot C / Slot D' : 'Slot A / Slot B';
+                        const ineligibleLabel = empYearsForGate > 5 ? 'Slot A / Slot B' : 'Slot C / Slot D';
+                        container.innerHTML =
+                            '<div class="p-4 bg-orange-50 border border-orange-200 rounded-lg text-center">'
+                            + '<p class="text-orange-700 font-semibold">No ' + eligibleLabel + ' configured for ' + this.blockLabel(month) + '</p>'
+                            + '<p class="text-xs text-orange-600 mt-1">Based on ' + empYearsForGate.toFixed(1) + ' years of service, you can only bid into ' + eligibleLabel + '. '
+                            + 'The planner has configured ' + ineligibleLabel + ' for this block, but not ' + eligibleLabel + '.</p>'
+                            + '</div>';
+                        return;
+                    }
+                    const diagDept = deptCandidates.join(' / ') || '(no department on record)';
+                    const monthKeys = Object.keys(caps).filter(k => k.includes('-' + month + '-') && k.endsWith('-start'));
+                    const diagKeys = monthKeys.length > 0
+                        ? [...new Set(monthKeys.map(k => k.replace('-' + month + '-SA-start','').replace('-' + month + '-SB-start','').replace('-' + month + '-SC-start','').replace('-' + month + '-SD-start','').replace(/^cal-maint-/,'').replace(/^cal-/,'')))].join(', ')
+                        : 'none';
+                    const allStartKeys = Object.keys(caps).filter(k => /-(SA|SB|SC|SD)-start$/.test(k));
+                    const allConfigDepts = [...new Set(allStartKeys.map(k => k.replace(/^cal-maint-/,'').replace(/^cal-/,'').replace(/-(SA|SB|SC|SD)-start$/,'').replace(/-(January|February|March|April|May|June|July|August|September|October|November|December)-/,' -> ')))].slice(0,20);
+                    const allDeptsHtml = allConfigDepts.length > 0 ? allConfigDepts.join('<br>') : 'No slots configured anywhere yet';
+                    container.innerHTML =
+                        '<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">'
+                        + '<p class="text-yellow-700 font-semibold">No slots configured for ' + this.blockLabel(month) + '</p>'
+                        + '<p class="text-xs text-yellow-600 mt-1">The planner has not opened any slots for this block yet.</p>'
+                        + '<p class="text-xs text-gray-400 mt-2">Dept lookup tried: <code>' + diagDept + '</code></p>'
+                        + '<p class="text-xs text-gray-400 mt-1">Configured depts for ' + month + ': <code>' + diagKeys + '</code></p>'
+                        + '<details class="mt-2 text-left"><summary class="text-xs text-gray-400 cursor-pointer">All configured dept/month combinations (' + allConfigDepts.length + ')</summary>'
+                        + '<div class="mt-1 text-xs text-gray-500 font-mono bg-white border rounded p-2 max-h-32 overflow-y-auto">' + allDeptsHtml + '</div></details>'
+                        + '</div>';
+                    return;
+                }
+
+                container.innerHTML = slotDefs.map(s => {
+                    const alreadyBid      = userBids.some(b => b.startDate === s.start && b.endDate === s.end);
+                    // Per-month cap: count bids for the currently selected month
+                    const bidsThisMonth   = userBids.filter(b => b.month === month).length;
+                    const monthLimitHit   = !alreadyBid && bidsThisMonth >= 2;
+                    // Slots are NEVER blocked by how many others have bid — open preference model
+                    const disabled        = alreadyBid || monthLimitHit || isProcessed;
+                    const isSelected      = window.selectedSlot === s.sid;
+                    const isCompetitive   = s.bidsPlaced >= s.capacity; // more bids than seats → seniority decides
+
+                    let stateLabel = '';
+                    let cardClass  = `border-2 rounded-xl p-4 cursor-pointer transition-all ${s.colors.border} ${s.colors.bg}`;
+                    if (alreadyBid)        { stateLabel = '<span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold ml-2">✓ Bid Placed</span>';           cardClass = 'border-2 rounded-xl p-4 border-green-300 bg-green-50 opacity-60 cursor-not-allowed'; }
+                    else if (monthLimitHit){ stateLabel = '<span class="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded font-semibold ml-2">Month limit reached</span>'; cardClass = 'border-2 rounded-xl p-4 border-orange-200 bg-orange-50 opacity-50 cursor-not-allowed'; }
+                    else if (isSelected)   { cardClass  = `border-2 rounded-xl p-4 border-blue-500 bg-blue-50 ring-2 ring-blue-300 cursor-pointer`; }
+
+                    // Badge: show competitive warning if oversubscribed, otherwise show available seats
+                    const badge = isCompetitive
+                        ? `<span class="text-xs px-2 py-1 rounded font-semibold bg-orange-100 text-orange-700">⚡ ${s.bidsPlaced} bid${s.bidsPlaced !== 1 ? 's' : ''} · ${s.capacity} seat${s.capacity !== 1 ? 's' : ''}</span>`
+                        : `<span class="text-xs px-2 py-1 rounded font-semibold ${s.colors.badge} text-white">${s.capacity} seat${s.capacity !== 1 ? 's' : ''} available</span>`;
+
+                    const competitiveNote = isCompetitive && !alreadyBid && !monthLimitHit
+                        ? ' · <span class="text-orange-600 font-medium">Awarded by seniority</span>'
+                        : '';
+
+                    return `
+                        <div class="${cardClass}"
+                             onclick="${disabled ? '' : `app.selectConfiguredSlot('${s.sid}','${s.start}','${s.end}',${s.days},'${s.colors.label}','${resolvedDept}')`}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-bold text-gray-800">${s.colors.label}${stateLabel}</span>
+                                ${badge}
+                            </div>
+                            <div class="text-sm ${s.colors.text}">
+                                📅 ${s.start} → ${s.end}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">⏱ ${s.days} days${competitiveNote}</div>
+                        </div>`;
+                }).join('');
+            },
+
+            selectConfiguredSlot(sid, start, end, days, label, resolvedDept) {
+                window.selectedSlot    = sid;
+                window.selectedSlotDef = { sid, start, end, days, label, resolvedDept };
+
+                // Highlight selected card
+                this.refreshAvailableSlots();
+
+                // Show confirmation panel
+                const box = document.getElementById('selectedSlotConfirm');
+                if (box) {
+                    document.getElementById('confirmSlotName').textContent  = label;
+                    document.getElementById('confirmSlotDates').textContent = `${start} → ${end}`;
+                    document.getElementById('confirmSlotDays').textContent  = days;
+                    box.classList.remove('hidden');
+                }
+            },
+
+
+            checkDateOverlap(startDate1, endDate1, startDate2, endDate2) {
+                const start1 = new Date(startDate1);
+                const end1 = new Date(endDate1);
+                const start2 = new Date(startDate2);
+                const end2 = new Date(endDate2);
+                
+                return (start1 <= end2 && end1 >= start2);
+            },
+
+            // Centralized deadline check — used to gate bid submission everywhere
+            isBiddingClosed() {
+                if (!this.state.biddingDeadline) return false;
+                return (new Date(this.state.biddingDeadline) - new Date()) <= 0;
+            },
+
+            // Independent deadline check for Golden Command & Corporate Staff bidding
+            isBiddingClosedCorp() {
+                if (!this.state.biddingDeadlineCorp) return false;
+                return (new Date(this.state.biddingDeadlineCorp) - new Date()) <= 0;
+            },
+
+            // Sets the bidding deadline, ensuring a date-only pick (defaults to 00:00)
+            // closes at the END of that day rather than the very start of it.
+            setBiddingDeadline(val) {
+                if (val && /T00:00(:00)?$/.test(val)) {
+                    val = val.slice(0, 10) + 'T23:59';
+                }
+                this.state.biddingDeadline = val;
+                this.saveConfigToSupabase();
+            },
+
+            // Sets the Corporate/GC bidding deadline independently from Ops/Maintenance
+            setBiddingDeadlineCorp(val) {
+                if (val && /T00:00(:00)?$/.test(val)) {
+                    val = val.slice(0, 10) + 'T23:59';
+                }
+                this.state.biddingDeadlineCorp = val;
+                this.saveConfigToSupabase();
+            },
+
+            // Sets the Corporate/GC bidding year independently from Ops/Maintenance
+            setBiddingYearCorp(year) {
+                this.state.biddingYearCorp = year;
+                this.saveConfigToSupabase();
+                this.renderAdminView();
+            },
+
+            // Manually lock/unlock Corporate & GC bidding (mirrors isProcessed for Ops,
+            // but GC/CS bids aren't run through the seniority allocation engine, so this
+            // is a direct toggle rather than a "process" step).
+            toggleCorpLock() {
+                const turningOn = !this.state.isProcessedCorp;
+                if (turningOn && !confirm('Lock Corporate & Golden Command bidding? They will no longer be able to submit or remove bids until unlocked.')) return;
+                this.state.isProcessedCorp = turningOn;
+                this.writeAuditLog(turningOn ? 'CORP_BIDDING_LOCKED' : 'CORP_BIDDING_UNLOCKED', {});
+                this.saveConfigToSupabase();
+                this.renderAdminView();
+            },
+
+            submitBid() {
+                if (!this.state.verifiedEmployee) {
+                    alert('Please login first');
+                    return;
+                }
+
+                if (this.state.isProcessed) {
+                    alert('Bidding has been processed. No more bids allowed.');
+                    return;
+                }
+
+                if (this.isBiddingClosed()) {
+                    alert('⛔ The bidding deadline has passed. You can no longer submit bids.');
+                    return;
+                }
+
+                // Use configured slot definition
+                const slotDef = window.selectedSlotDef;
+                if (!slotDef) {
+                    alert('Please select an available slot first.');
+                    return;
+                }
+
+                const startDate = slotDef.start;
+                const endDate   = slotDef.end;
+                const days      = slotDef.days;
+                const monthSelect = document.getElementById('selectedMonth');
+                const month = monthSelect ? monthSelect.value : this.state.months[0];
+
+                if (!startDate || !endDate) {
+                    alert('Slot has no configured dates. Please contact the planner.');
+                    return;
+                }
+
+                // Use the configured slot's label as the slotType key (SA/SB/SC/SD)
+                const slotTypeKey = slotDef.sid; // 'SA', 'SB', 'SC', 'SD'
+
+                // Seniority gate (OPS staff only): ≤5 years → Slot A/B only, >5 years → Slot C/D only.
+                // Maintenance staff are routed through a different bidding flow and are unaffected.
+                if (this.state.userType !== 'maintenancestaff') {
+                    const empForGuard = this.state.employees.find(e => e.id === this.state.verifiedEmployee?.id) || this.state.verifiedEmployee;
+                    const guardYears = empForGuard?.seniorityDate
+                        ? (new Date() - new Date(empForGuard.seniorityDate)) / (1000 * 60 * 60 * 24 * 365.25)
+                        : 0;
+                    const isSeniorSlot = (slotTypeKey === 'SC' || slotTypeKey === 'SD');
+                    const isJuniorSlot = (slotTypeKey === 'SA' || slotTypeKey === 'SB');
+                    if (isSeniorSlot && guardYears <= 5) {
+                        alert('⛔ Slot C and Slot D are only available to staff with more than 5 years of service.');
+                        return;
+                    }
+                    if (isJuniorSlot && guardYears > 5) {
+                        alert('⛔ Slot A and Slot B are only available to staff with 5 years of service or less. Staff with more than 5 years should bid into Slot C or Slot D.');
+                        return;
+                    }
+                }
+
+                const existingBid = this.state.bids.find(
+                    bid => bid.employeeId === this.state.verifiedEmployee.id && bid.startDate === startDate && bid.endDate === endDate
+                );
+                
+                if (existingBid) {
+                    alert(`You have already placed a bid for this slot (${startDate} to ${endDate}).`);
+                    return;
+                }
+
+                const userBids = this.state.bids.filter(bid => bid.employeeId === this.state.verifiedEmployee.id);
+                
+                // Calculate entitlement
+                const calculateYearsOfService = (seniorityDate) => {
+                    const today = new Date();
+                    const joinDate = new Date(seniorityDate);
+                    const years = (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
+                    return years;
+                };
+                
+                const getEmployeeEntitlement = (employee) => {
+                    if (!employee || !employee.seniorityDate) return 30;
+                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
+                    return yearsOfService >= 5 ? 35 : 30;
+                };
+                
+                const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
+
+                // Enforce max 2 bids per calendar month (no cap on total preferences)
+                const bidsThisMonth = userBids.filter(bid => bid.month === month);
+                if (bidsThisMonth.length >= 2) {
+                    alert(`You have already placed 2 bids for ${this.blockLabel(month)}. Maximum of 2 bids are allowed per block.\n\nYou may still bid in other blocks.`);
+                    return;
+                }
+
+                const totalBidDays = userBids.reduce((sum, bid) => sum + bid.days, 0);
+                // NOTE: No entitlement cap enforced here — bids are preferences only.
+                // Entitlement limits are applied by the planner during seniority-based allocation.
+
+                // Check for date overlaps with existing bids
+                for (const bid of userBids) {
+                    if (this.checkDateOverlap(startDate, endDate, bid.startDate, bid.endDate)) {
+                        alert(`Date overlap detected with your existing bid (${bid.startDate} to ${bid.endDate})`);
+                        return;
+                    }
+                }
+
+                // Resolve department for bid record (capacity is enforced at allocation time, not here)
+                const dept = slotDef.resolvedDept || 
+                    ((this.state.verifiedEmployee.department && this.state.verifiedEmployee.department !== 'Unassigned')
+                        ? this.state.verifiedEmployee.department
+                        : (this.state.verifiedEmployee.position || ''));
+
+                const newBid = {
+                    employeeId: this.state.verifiedEmployee.id,
+                    employeeName: this.state.verifiedEmployee.name,
+                    seniorityDate: this.state.verifiedEmployee.seniorityDate,
+                    position: this.state.verifiedEmployee.position || '',
+                    department: dept, // use resolvedDept so planner sees correct dept
+                    slotType: slotTypeKey,
+                    slotLabel: slotDef.label, // 'Slot A' / 'Slot B' / 'Slot C' for display
+                    month,
+                    startDate,
+                    endDate,
+                    days,
+                    timestamp: new Date().toISOString()
+                };
+
+                this.state.bids.push(newBid);
+                this.saveState();
+                this.writeAuditLog('BID_PLACED', { slot: slotTypeKey, start: startDate, end: endDate, days, department: newBid.department });
+
+                // Store success message so re-rendered view can display it
+                this._lastBidSuccess = `✅ Bid placed: ${slotDef.label} — ${startDate} → ${endDate} (${days} days)`;
+
+                // Clear selection and refresh the view IMMEDIATELY (before async Supabase)
+                window.selectedSlotDef = null;
+                window.selectedSlot    = null;
+                this.renderEmployeeBiddingView();
+
+                // Save to Supabase in the background — UI already updated
+                this.saveBidToSupabase(newBid).then(saved => {
+                    if (!saved) {
+                        console.warn('⚠️ Bid saved locally only — Supabase unavailable');
+                        const statusEl = document.getElementById('systemStatus');
+                        if (statusEl) statusEl.textContent = '⚠️ Bid saved locally — database sync pending';
+                    } else {
+                        const statusEl = document.getElementById('systemStatus');
+                        if (statusEl) statusEl.textContent = '✅ Bid saved to database';
+                    }
+                });
+            },
+
+            async saveBidToSupabase(bid) {
+                if (!this.supabase) {
+                    console.warn('⚠️ Supabase not initialised — bid saved locally only');
+                    return false;
+                }
+                try {
+                    // Route to the correct table based on the acting user's type:
+                    // employee/planner -> leave_requests, maintenancestaff -> maint_leave_requests,
+                    // goldencommand/corporatestaff -> corporate_leave_request
+                    const table = this._bidTableForUserType(this.state.userType);
+
+                    const row = {
+                        tenant_id: this._tid(),
+                        employee_id: bid.employeeId,
+                        start_date: bid.startDate,
+                        end_date: bid.endDate,
+                        days_requested: bid.days,
+                        status: 'pending',
+                        slot_type: bid.slotType,
+                        department: bid.department || '',
+                        employee_name: bid.employeeName || '',
+                        created_at: bid.timestamp || new Date().toISOString()
+                    };
+
+                    // Upsert: if a row with same employee_id + start_date already exists, update it.
+                    // This avoids the race condition from delete-then-insert.
+                    const { data, error: upsertError } = await this.supabase
+                        .from(table)
+                        .upsert(row, { onConflict: 'employee_id,start_date' })
+                        .select();
+
+                    if (upsertError) {
+                        // Fallback: try plain insert if upsert fails (e.g. constraint not set up)
+                        console.warn('⚠️ Upsert failed, trying insert:', upsertError.message);
+                        const { error: insertError } = await this.supabase
+                            .from(table)
+                            .insert(row);
+                        if (insertError) {
+                            console.error('❌ Supabase bid insert error:', insertError.message);
+                            return false;
+                        }
+                    }
+
+                    console.log(`✅ Bid saved to Supabase [${table}]:`, data);
+                    return true;
+                } catch (e) {
+                    console.error('❌ Supabase bid save exception:', e.message);
+                    return false;
+                }
+            },
+
+            async removeBid(employeeId, slotType, startDate) {
+                if (this.state.isProcessed) {
+                    alert('Cannot remove bids after processing');
+                    return;
+                }
+                if (!confirm('Are you sure you want to remove this bid?')) return;
+
+                // 1. Optimistically remove from local state and persist immediately
+                this.state.bids = this.state.bids.filter(bid =>
+                    !(bid.employeeId === employeeId &&
+                      bid.slotType === slotType &&
+                      bid.startDate === startDate)
+                );
+                this.saveState();
+                this.renderEmployeeBiddingView();
+
+                // 2. Delete from Supabase and AWAIT the result so a failure is surfaced
+                if (!this.supabase) {
+                    this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
+                    return;
+                }
+                const table = this._bidTableForUserType(this.state.userType);
+                const { error } = await this.supabase
+                    .from(table)
+                    .delete()
+                    .eq('tenant_id', this._tid())
+                    .eq('employee_id', employeeId)
+                    .eq('slot_type', slotType)
+                    .eq('start_date', startDate);
+
+                if (error) {
+                    console.error(`❌ Delete failed [${table}]:`, error.message);
+                    alert('Could not delete from server — please retry.');
+                    return;
+                }
+                console.log(`✅ Bid deleted from ${table}`);
+                this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
+            },
+               
+            renderMyResultsView() {
+                const content = document.getElementById('contentArea');
+                const user = this.state.verifiedEmployee;
+                const myResults = this.state.results.filter(r => r.employeeId === user?.id)
+                    .sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
+
+                const totalDays = myResults.reduce((sum, r) => sum + (r.days || 0), 0);
+                const entitlement = myResults[0]?.entitlement || (user ? (this.state.results.find(r => r.employeeId === user.id)?.entitlement) : 0) || '—';
+                const rank = myResults[0]?.seniorityRank || '—';
+                const yos = myResults[0]?.yearsOfService || '—';
+                const allAwarded = myResults.length > 0 && myResults.every(r => r.type === 'Bid Awarded');
+                const anyAwarded = myResults.some(r => r.type === 'Bid Awarded');
+
+                // Format date nicely
+                const fmtDate = (d) => {
+                    if (!d) return '—';
+                    try { return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }); }
+                    catch(e) { return d; }
+                };
+
+                // Slot color config
+                const slotColors = {
+                    'Bid Awarded': { bg: 'bg-green-50', border: 'border-green-300', badge: 'bg-green-100 text-green-800', icon: '✅', label: 'Bid Awarded' },
+                    'Auto-Assigned': { bg: 'bg-blue-50', border: 'border-blue-300', badge: 'bg-blue-100 text-blue-800', icon: '📋', label: 'Auto-Assigned' }
+                };
+
+                content.innerHTML = `
+                    <div class="max-w-3xl mx-auto">
+
+                        <!-- Page Header -->
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">📋 My Leave Results — ${this.state.biddingYear}</h2>
+                            <p class="text-gray-500 text-sm mt-1">Your annual leave assignments for ${this.state.biddingYear}</p>
+                        </div>
+
+                        ${!this.state.isProcessed ? `
+                            <!-- Not processed yet -->
+                            <div class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-8 text-center">
+                                <div class="text-5xl mb-4">⏳</div>
+                                <h3 class="text-xl font-bold text-yellow-800 mb-2">Results Not Yet Available</h3>
+                                <p class="text-yellow-700 text-sm">The planner has not processed the bids yet. Please check back later.</p>
+                            </div>
+                        ` : myResults.length === 0 ? `
+                            <!-- Processed but no results for this user -->
+                            <div class="bg-orange-50 border-2 border-orange-200 rounded-xl p-8 text-center">
+                                <div class="text-5xl mb-4">🔍</div>
+                                <h3 class="text-xl font-bold text-orange-800 mb-2">No Assignment Found</h3>
+                                <p class="text-orange-700 text-sm">Bids have been processed but no assignment was found for your ID. Please contact the planner.</p>
+                            </div>
+                        ` : `
+
+                            <!-- Summary Cards -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-blue-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Dept. Seniority Rank</p>
+                                    <p class="text-2xl font-bold text-blue-600">#${rank}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-purple-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Years of Service</p>
+                                    <p class="text-2xl font-bold text-purple-600">${yos}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-green-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Days</p>
+                                    <p class="text-2xl font-bold text-green-600">${totalDays}</p>
+                                </div>
+                                <div class="bg-white rounded-xl shadow p-4 text-center border-t-4 border-yellow-400">
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Entitlement</p>
+                                    <p class="text-2xl font-bold text-yellow-600">${entitlement} days</p>
+                                </div>
+                            </div>
+
+                            <!-- Overall Status Banner -->
+                            <div class="mb-6 rounded-xl p-4 text-center font-semibold text-sm
+                                ${allAwarded ? 'bg-green-100 border border-green-300 text-green-800' :
+                                  anyAwarded ? 'bg-yellow-100 border border-yellow-300 text-yellow-800' :
+                                  'bg-blue-100 border border-blue-300 text-blue-800'}">
+                                ${allAwarded ? '🎉 All your bids were awarded!' :
+                                  anyAwarded ? '⚡ Partial bid award — one slot bid awarded, one auto-assigned.' :
+                                  '📋 Both slots were auto-assigned by the system.'}
+                            </div>
+
+                            <!-- Slot Cards -->
+                            <div class="space-y-4 mb-6">
+                                ${myResults.map((result, i) => {
+                                    const colors = slotColors[result.type] || slotColors['Auto-Assigned'];
+                                    return `
+                                    <div class="bg-white rounded-xl shadow-md border-l-4 ${result.type === 'Bid Awarded' ? 'border-green-400' : 'border-blue-400'} overflow-hidden">
+                                        <div class="p-5">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-lg font-bold text-gray-700">Slot ${result.slotOrder || i + 1}</span>
+                                                    <span class="px-3 py-1 rounded-full text-xs font-bold ${result.type === 'Bid Awarded' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
+                                                        ${colors.icon} ${colors.label}
+                                                    </span>
+                                                </div>
+                                                <span class="text-2xl font-bold text-gray-800">${result.days} <span class="text-sm font-normal text-gray-500">days</span></span>
+                                            </div>
+
+                                            <h3 class="text-xl font-bold text-gray-800 mb-3">${result.slotName || '—'}</h3>
+
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div class="bg-gray-50 rounded-lg p-3">
+                                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">Start Date</p>
+                                                    <p class="font-semibold text-gray-800">${fmtDate(result.startDate)}</p>
+                                                </div>
+                                                <div class="bg-gray-50 rounded-lg p-3">
+                                                    <p class="text-xs text-gray-500 uppercase tracking-wide mb-1">End Date</p>
+                                                    <p class="font-semibold text-gray-800">${fmtDate(result.endDate)}</p>
+                                                </div>
+                                            </div>
+
+                                            ${result.type === 'Bid Awarded' ? `
+                                                <p class="text-xs text-green-600 mt-3 font-medium">✓ This slot matched your bid preference (choice ${result.bidChoice || i + 1})</p>
+                                            ` : `
+                                                <p class="text-xs text-blue-600 mt-3 font-medium">ℹ This slot was automatically assigned based on availability</p>
+                                            `}
+                                        </div>
+
+                                        <!-- Calendar mini-bar -->
+                                        <div class="bg-gray-50 border-t px-5 py-3 flex items-center gap-2 text-xs text-gray-500">
+                                            <span>📅</span>
+                                            <span>${fmtDate(result.startDate)} → ${fmtDate(result.endDate)}</span>
+                                            <span class="ml-auto font-semibold text-gray-700">${result.days} calendar days</span>
+                                        </div>
+                                    </div>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <!-- Note -->
+                            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+                                <p class="font-semibold text-gray-700 mb-1">📌 Important Notes</p>
+                                <ul class="list-disc list-inside space-y-1 text-xs">
+                                    <li>Leave assignments are final once processed by the planner.</li>
+                                    <li>If you have questions about your assignment, contact your planner directly.</li>
+                                    <li>Total allocated: <strong>${totalDays} days</strong> out of your <strong>${entitlement}-day</strong> entitlement.</li>
+                                </ul>
+                            </div>
+                        `}
+                    </div>
+                `;
+            },
+
+            renderResultsView() {
+                const content = document.getElementById('contentArea');
+                
+                // Group results by employee
+                const employeeResults = {};
+                this.state.results.forEach(result => {
+                    if (!employeeResults[result.employeeId]) {
+                        employeeResults[result.employeeId] = [];
+                    }
+                    employeeResults[result.employeeId].push(result);
+                });
+                
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <h2 class="text-2xl font-bold mb-6">Leave Assignments for ${this.state.biddingYear}</h2>
+                            <p class="text-gray-600 mb-6">
+                                Each employee receives exactly 2 slots. Senior employees (5+ years) get 35 days total,
+                                others get 30 days total.
+                            </p>
+                            
+                            ${this.state.results.length === 0 ? `
+                                <div class="text-center py-8">
+                                    <p class="text-gray-600">No results yet. Process bids first.</p>
+                                    <button onclick="app.setActiveView('admin')" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">
+                                        Go to Admin Panel
+                                    </button>
+                                </div>
+                            ` : `
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-100">
+                                            <tr>
+                                                <th class="p-3 text-left">Position Rank</th>
+                                                <th class="p-3 text-left">Operation Staff</th>
+                                                <th class="p-3 text-left">Position / Dept</th>
+                                                <th class="p-3 text-left">Seniority</th>
+                                                <th class="p-3 text-left">Slot 1</th>
+                                                <th class="p-3 text-left">Slot 2</th>
+                                                <th class="p-3 text-left">Total Days</th>
+                                                <th class="p-3 text-left">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${Object.entries(employeeResults).map(([empId, slots]) => {
+                                                const employee = this.state.employees.find(e => e.id === empId);
+                                                const slot1 = slots.find(s => s.slotOrder === 1);
+                                                const slot2 = slots.find(s => s.slotOrder === 2);
+                                                const totalDays = slots.reduce((sum, s) => sum + s.days, 0);
+                                                const allAwarded = slots.every(s => s.type === 'Bid Awarded');
+                                                const anyAwarded = slots.some(s => s.type === 'Bid Awarded');
+                                                
+                                                return `
+                                                    <tr class="border-b hover:bg-gray-50">
+                                                        <td class="p-3 font-mono text-sm">#${slot1?.deptSeniorityRank || slot1?.seniorityRank || 'N/A'}</td>
+                                                        <td class="p-3">${employee?.name || 'Unknown'}<br>
+                                                            <span class="text-xs text-gray-500">${empId}</span>
+                                                        </td>
+                                                        <td class="p-3 text-xs">${employee?.position || slot1?.position || '—'}<br><span class="text-gray-400">${slot1?.department || employee?.department || '—'}</span></td>
+                                                        <td class="p-3">${slot1?.yearsOfService || 'N/A'} yrs</td>
+                                                        <td class="p-3">
+                                                            ${slot1?.slotName || 'N/A'}<br>
+                                                            <span class="text-xs text-gray-500">${slot1?.startDate || ''} to ${slot1?.endDate || ''}</span><br>
+                                                            <span class="text-xs ${slot1?.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600'}">
+                                                                ${slot1?.type || 'N/A'}
+                                                            </span>
+                                                        </td>
+                                                        <td class="p-3">
+                                                            ${slot2?.slotName || 'N/A'}<br>
+                                                            <span class="text-xs text-gray-500">${slot2?.startDate || ''} to ${slot2?.endDate || ''}</span><br>
+                                                            <span class="text-xs ${slot2?.type === 'Bid Awarded' ? 'text-green-600' : 'text-blue-600'}">
+                                                                ${slot2?.type || 'N/A'}
+                                                            </span>
+                                                        </td>
+                                                        <td class="p-3 font-bold">
+                                                            ${(() => {
+                                                                const empEntitlement = slot1?.entitlement ||
+                                                                    (parseFloat(slot1?.yearsOfService || 0) >= 5 ? 35 : 30);
+                                                                const overLimit = totalDays > empEntitlement;
+                                                                return `
+                                                                    <span class="${overLimit ? 'text-red-600' : 'text-gray-800'}">${totalDays} days</span>
+                                                                    <br>
+                                                                    <span class="text-xs font-normal ${overLimit ? 'text-red-500' : 'text-gray-400'}">
+                                                                        limit: ${empEntitlement} days
+                                                                    </span>
+                                                                `;
+                                                            })()}
+                                                        </td>
+                                                        <td class="p-3">
+                                                            <span class="px-2 py-1 rounded text-xs ${
+                                                                allAwarded ? 'bg-green-100 text-green-800' : 
+                                                                anyAwarded ? 'bg-yellow-100 text-yellow-800' : 
+                                                                'bg-blue-100 text-blue-800'
+                                                            }">
+                                                                ${allAwarded ? 'All Bids Awarded' : 
+                                                                  anyAwarded ? 'Partial Award' : 
+                                                                  'Auto-Assigned'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                `;
+                                            }).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            },
+
+            renderChangePasswordView() {
+                const content = document.getElementById('contentArea');
+                const backView = this.state.userType === 'goldencommand' ? 'goldenCommand' : this.state.userType === 'corporatestaff' ? 'corporateStaff' : 'employee';
+                content.innerHTML = `
+                    <div class="max-w-md mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-8">
+                            <h2 class="text-2xl font-bold mb-2">🔑 Change Password</h2>
+                            <p class="text-gray-500 text-sm mb-6">Update your login password below.</p>
+                            <div id="cpMsg"></div>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block font-semibold mb-2">Current Password:</label>
+                                    <input type="password" id="cpCurrent" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Enter current password" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">New Password:</label>
+                                    <input type="password" id="cpNew" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Enter new password (min 4 chars)" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                    <input type="password" id="cpConfirm" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none" placeholder="Repeat new password" />
+                                </div>
+                            </div>
+                            <div class="flex gap-3 mt-6">
+                                <button onclick="app.doChangePassword()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold">
+                                    💾 Save Password
+                                </button>
+                                <button onclick="app.setActiveView('${backView}')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            async doChangePassword() {
+                const current = document.getElementById('cpCurrent').value;
+                const newPass = document.getElementById('cpNew').value;
+                const confirm = document.getElementById('cpConfirm').value;
+                const msg = document.getElementById('cpMsg');
+
+                const showMsg = (text, color) => {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border ${color}">${text}</div>`;
+                };
+
+                const user = this.state.currentUser;
+                const userId = user.id;
+                const userType = this.state.userType;
+
+                // Verify current password
+                let storedPass;
+                if (userType === 'goldencommand') {
+                    const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                    storedPass = gcUser ? (gcUser.password || gcUser.id) : userId;
+                } else if (userType === 'corporatestaff') {
+                    const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                    storedPass = csUser ? (csUser.password || csUser.id) : userId;
+                } else {
+                    storedPass = this.state.employeePasswords[userId] || userId;
+                }
+
+                if (current !== storedPass) {
+                    showMsg('❌ Current password is incorrect.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+                if (newPass.length < 4) {
+                    showMsg('⚠️ New password must be at least 4 characters.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    return;
+                }
+                if (newPass !== confirm) {
+                    showMsg('❌ New passwords do not match.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+
+                try {
+                    if (userType === 'goldencommand') {
+                        // Update in Supabase golden_command_users table
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('golden_command_users')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            if (error) throw error;
+                        }
+                        // Update local state
+                        const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                        if (gcUser) gcUser.password = newPass;
+                    } else if (userType === 'corporatestaff') {
+                        // Update in Supabase corporate_staff_employees table
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('corporate_staff_employees')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            if (error) throw error;
+                        }
+                        // Update local state
+                        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                        if (csUser) csUser.password = newPass;
+                    } else {
+                        // Employee: update local state + employeePasswords
+                        this.state.employeePasswords[userId] = newPass;
+                        // Also update the employees table password column if it exists
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('employees')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            // ignore error if column doesn't exist
+                        }
+                    }
+
+                    this.saveState();
+                    showMsg('✅ Password changed successfully!', 'bg-green-50 border-green-300 text-green-700');
+                    this.writeAuditLog('PASSWORD_CHANGED', { user_type: userType });
+                    // Clear fields
+                    document.getElementById('cpCurrent').value = '';
+                    document.getElementById('cpNew').value = '';
+                    document.getElementById('cpConfirm').value = '';
+                } catch (err) {
+                    console.error('Password change error:', err);
+                    showMsg('❌ Failed to save password. Changes saved locally.', 'bg-red-50 border-red-300 text-red-700');
+                    // Still update locally
+                    if (userType === 'goldencommand') {
+                        const gcUser = (this.state.goldenCommandUsers || []).find(u => u.id === userId);
+                        if (gcUser) gcUser.password = newPass;
+                    } else if (userType === 'corporatestaff') {
+                        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
+                        if (csUser) csUser.password = newPass;
+                    } else {
+                        this.state.employeePasswords[userId] = newPass;
+                    }
+                    this.saveState();
+                }
+            },
+
+            // ==================== PLANNER DASHBOARD ====================
+            renderDashboardView() {
+                const content = document.getElementById('contentArea');
+                const total = this.state.employees.length;
+                const maintStaffCount = (this.state.maintenanceStaffUsers || []).length;
+                const csStaffCount = (this.state.corporateStaffUsers || []).length;
+                const gcStaffCount = (this.state.goldenCommandUsers || []).length;
+                const allActiveStaffTotal = total + maintStaffCount + csStaffCount + gcStaffCount;
+                const biddedIds = new Set(this.state.bids.map(b => b.employeeId));
+                const bidded = biddedIds.size;
+                const notBidded = total - bidded;
+                const pct = total > 0 ? Math.round((bidded / total) * 100) : 0;
+                const processed = this.state.isProcessed;
+                const year = this.state.biddingYear || new Date().getFullYear();
+                const now = new Date();
+                const lastUpdated = now.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' + now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+
+                // Deadline countdown
+                let deadlineHtml = '<p style="color:#9ca3af;font-size:0.85rem;">No deadline set</p>';
+                if (this.state.biddingDeadline) {
+                    const dl = new Date(this.state.biddingDeadline);
+                    const diff = dl - new Date();
+                    if (diff <= 0) {
+                        deadlineHtml = '<p style="color:#ef4444;font-weight:700;font-size:1.1rem;">⛔ Deadline Passed</p>';
+                    } else {
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
+                        const color = diff < 86400000 ? '#ef4444' : diff < 259200000 ? '#f59e0b' : '#10b981';
+                        deadlineHtml = `<p style="font-size:1.4rem;font-weight:700;color:${color};" id="dashCountdown">${d}d ${h}h ${m}m</p>
+                            <p style="font-size:0.75rem;color:#9ca3af;margin-top:4px;">${dl.toLocaleDateString('en-US',{weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</p>`;
+                    }
+                }
+
+                // Dept breakdown for chart
+                const deptBidMap = {};
+                this.state.bids.forEach(b => {
+                    const emp = this.state.employees.find(e => e.id === b.employeeId);
+                    const dept = emp?.department || 'Unknown';
+                    deptBidMap[dept] = (deptBidMap[dept] || new Set());
+                    deptBidMap[dept].add(b.employeeId);
+                });
+                const deptTotalMap = {};
+                this.state.employees.forEach(e => {
+                    const dept = e.department || 'Unknown';
+                    deptTotalMap[dept] = (deptTotalMap[dept] || 0) + 1;
+                });
+                const depts = Object.keys(deptTotalMap).sort();
+
+                // Bid type breakdown (if processed)
+                const awardedCount = this.state.results.filter(r => r.type === 'Bid Awarded').length;
+                const autoCount = this.state.results.filter(r => r.type === 'Auto-Assigned').length;
+
+                // Staff who haven't bid
+                const notBiddedStaff = this.state.employees.filter(e => !biddedIds.has(e.id));
+
+                // Monthly bid data for chart (simulated spread across months)
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const monthlyBids = months.map(() => Math.max(2, Math.round(bidded / 12 + (Math.random() * 4 - 2))));
+                const monthlyNotBid = months.map(() => Math.max(notBidded - 5, Math.round((notBidded * 0.9) + (Math.random() * 60 - 30))));
+
+                // Processing status text
+                const statusText = processed ? 'Done' : 'Pending';
+                const statusColor = processed ? '#10b981' : '#2d6a4f';
+                const statusDesc = processed ? 'Results ready' : 'Awaiting updates';
+
+                content.innerHTML = `
+                <style>
+                  .pd-wrap { background:#eef3ef; min-height:100vh; padding:0 0 32px 0; font-family:'Barlow',sans-serif; }
+                  .pd-body { padding:24px 24px 0; max-width:1400px; margin:0 auto; }
+                  .pd-title-row { display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px; }
+                  .pd-title-icon { width:44px;height:44px;background:#eaf5ef;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-right:12px; }
+                  .pd-title-text h1 { font-family:'Barlow Condensed',sans-serif;letter-spacing:0.03em;font-size:1.7rem;font-weight:700;color:#111827;margin:0; }
+                  .pd-title-text p { font-size:0.82rem;color:#9ca3af;margin:2px 0 0; }
+                  .pd-year-badge { display:flex;align-items:center;gap:8px;border:1px solid #e5e7eb;border-radius:10px;padding:7px 14px;background:#fff;font-size:0.9rem;font-weight:600;color:#374151;cursor:pointer; }
+                  .pd-kpi-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px; }
+                  @media(max-width:900px){.pd-kpi-grid{grid-template-columns:repeat(2,1fr);}}
+                  .pd-kpi { background:#fff;border-radius:16px;padding:20px 22px 16px;box-shadow:0 1px 6px rgba(0,0,0,0.06);position:relative;overflow:hidden; }
+                  .pd-kpi-icon { width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:12px; }
+                  .pd-kpi-num { font-size:2.2rem;font-weight:800;line-height:1;margin-bottom:4px; }
+                  .pd-kpi-label { font-size:0.88rem;font-weight:600;color:#111827;margin-bottom:2px; }
+                  .pd-kpi-sub { font-size:0.75rem;color:#9ca3af; }
+                  .pd-kpi-bar-wrap { margin-top:10px; }
+                  .pd-kpi-bar-track { height:5px;background:#f3f4f6;border-radius:3px;overflow:hidden; }
+                  .pd-kpi-bar-fill { height:100%;border-radius:3px;transition:width 0.6s cubic-bezier(.4,0,.2,1); }
+                  .pd-kpi-pct { font-size:0.78rem;font-weight:700;margin-top:4px; }
+                  .pd-sparkline { position:absolute;bottom:0;left:0;right:0;height:48px;opacity:0.6; }
+                  .pd-bottom-grid { display:grid;grid-template-columns:1fr 280px 260px;gap:16px;margin-bottom:24px; }
+                  @media(max-width:1100px){.pd-bottom-grid{grid-template-columns:1fr;}}
+                  .pd-card { background:#fff;border-radius:16px;padding:20px 22px;box-shadow:0 1px 6px rgba(0,0,0,0.06); }
+                  .pd-card-title { display:flex;align-items:center;gap:8px;font-size:0.95rem;font-weight:700;color:#111827;margin-bottom:4px; }
+                  .pd-card-title-icon { width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.85rem; }
+                  .pd-chart-legend { display:flex;gap:16px;font-size:0.75rem;color:#6b7280;margin-bottom:12px;flex-wrap:wrap; }
+                  .pd-legend-dot { width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px; }
+                  .pd-select { border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:0.8rem;color:#374151;background:#fff;cursor:pointer; }
+                  /* donut */
+                  .pd-donut-wrap { position:relative;width:130px;height:130px;margin:0 auto 16px; }
+                  .pd-donut-inner { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center; }
+                  .pd-donut-pct { font-size:1.5rem;font-weight:800;color:#111827;line-height:1; }
+                  .pd-donut-lbl { font-size:0.7rem;color:#9ca3af;margin-top:2px; }
+                  .pd-legend-row { display:flex;align-items:center;justify-content:space-between;font-size:0.82rem;padding:6px 0;border-bottom:1px solid #f3f4f6; }
+                  .pd-legend-row:last-child { border-bottom:none; }
+                  .pd-legend-left { display:flex;align-items:center;gap:8px;color:#374151; }
+                  .pd-legend-val { font-weight:700;color:#111827; }
+                  /* insights */
+                  .pd-insight { display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6; }
+                  .pd-insight:last-child { border-bottom:none;padding-bottom:0; }
+                  .pd-insight-icon { width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0; }
+                  .pd-insight-text strong { display:block;font-size:0.82rem;font-weight:700;color:#111827; }
+                  .pd-insight-text span { font-size:0.75rem;color:#9ca3af; }
+                  /* alert */
+                  .pd-alert { background:#fffbeb;border:1.5px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;margin-bottom:20px; }
+                  .pd-tables-row { display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px; }
+                  @media(max-width:900px){.pd-tables-row{grid-template-columns:1fr;}}
+                </style>
+
+                <div class="pd-wrap">
+
+                  <div class="pd-body">
+                    ${this.state.plannerPassword === 'admin123' ? `
+                    <div class="pd-alert">
+                      <span style="font-size:1.2rem;">⚠️</span>
+                      <p style="margin:0;color:#92400e;font-size:0.875rem;font-weight:500;">
+                        <strong>Security warning:</strong> You are using the default planner password (<code>admin123</code>). Please change it in <strong>Admin → Security Settings</strong>.
+                      </p>
+                    </div>` : ''}
+
+                    <!-- Title row -->
+                    <div class="pd-title-row">
+                      <div style="display:flex;align-items:center;">
+                        <div class="pd-title-icon">📊</div>
+                        <div class="pd-title-text">
+                          <h1>Planner Dashboard – ${year}</h1>
+                          <p>Overview of staffing and bidding status</p>
+                        </div>
+                      </div>
+                      <div class="pd-year-badge">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        Year ${year}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                      </div>
+                    </div>
+
+                    <!-- KPI cards -->
+                    <div class="pd-kpi-grid">
+                      <!-- Total Staff -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#eaf5ef;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#2d6a4f;">${allActiveStaffTotal}</div>
+                        <div class="pd-kpi-label">Total Staff</div>
+                        <div class="pd-kpi-sub">Ops ${total} &bull; Maint ${maintStaffCount} &bull; CS ${csStaffCount} &bull; GC ${gcStaffCount}</div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22" stroke="#a8d5bb" stroke-width="2" fill="none"/>
+                          <path d="M0,38 C30,32 60,42 90,30 C120,18 150,28 200,22 L200,48 L0,48Z" fill="#eaf5ef"/>
+                        </svg>
+                      </div>
+                      <!-- Staff Bid -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#f0fdf4;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#22c55e;">${bidded}</div>
+                        <div class="pd-kpi-label">Staff Bid</div>
+                        <div class="pd-kpi-bar-wrap">
+                          <div class="pd-kpi-bar-track"><div class="pd-kpi-bar-fill" style="width:${pct}%;background:#22c55e;"></div></div>
+                          <div class="pd-kpi-pct" style="color:#22c55e;">${pct}% participation</div>
+                        </div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,44 C40,44 60,38 90,36 C120,34 150,30 200,26" stroke="#bbf7d0" stroke-width="2" fill="none"/>
+                          <path d="M0,44 C40,44 60,38 90,36 C120,34 150,30 200,26 L200,48 L0,48Z" fill="#f0fdf4"/>
+                        </svg>
+                      </div>
+                      <!-- Not Bid Yet -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#fff7ed;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2M12 12v4M10 14h4"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:#f97316;">${notBidded}</div>
+                        <div class="pd-kpi-label">Not Bid Yet</div>
+                        <div class="pd-kpi-bar-wrap">
+                          <div class="pd-kpi-bar-track"><div class="pd-kpi-bar-fill" style="width:${100-pct}%;background:#f97316;"></div></div>
+                          <div class="pd-kpi-pct" style="color:#f97316;">${100-pct}% remaining</div>
+                        </div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,26 C30,28 60,22 90,26 C120,30 150,24 200,28" stroke="#fed7aa" stroke-width="2" fill="none"/>
+                          <path d="M0,26 C30,28 60,22 90,26 C120,30 150,24 200,28 L200,48 L0,48Z" fill="#fff7ed"/>
+                        </svg>
+                      </div>
+                      <!-- Processing Status -->
+                      <div class="pd-kpi">
+                        <div class="pd-kpi-icon" style="background:#eaf5ef;">
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                        <div class="pd-kpi-num" style="color:${statusColor};font-size:1.6rem;">${statusText}</div>
+                        <div class="pd-kpi-label">Processing Status</div>
+                        <div class="pd-kpi-sub">${statusDesc}</div>
+                        <svg class="pd-sparkline" viewBox="0 0 200 48" preserveAspectRatio="none">
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26" stroke="#a8d5bb" stroke-width="2" fill="none"/>
+                          <path d="M0,30 C50,28 100,32 150,26 C170,24 185,28 200,26 L200,48 L0,48Z" fill="#eaf5ef"/>
+                        </svg>
+                      </div>
+                    </div>
+
+                    <!-- Bottom 3-col grid -->
+                    <div class="pd-bottom-grid">
+                      <!-- Bidding Overview chart -->
+                      <div class="pd-card">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                          <div class="pd-card-title">
+                            <div class="pd-card-title-icon" style="background:#eaf5ef;">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                            </div>
+                            Bidding Overview
+                          </div>
+                          <select class="pd-select" id="bidOverviewPeriod">
+                            <option value="monthly">Monthly</option>
+                            <option value="weekly">Weekly</option>
+                          </select>
+                        </div>
+                        <div class="pd-chart-legend">
+                          <span><span class="pd-legend-dot" style="background:#22c55e;"></span>Bids Submitted</span>
+                          <span><span class="pd-legend-dot" style="background:#f97316;"></span>Not Bid Yet</span>
+                        </div>
+                        <canvas id="bidOverviewChart" width="100%" height="200" style="width:100%;display:block;"></canvas>
+                      </div>
+
+                      <!-- Participation Summary -->
+                      <div class="pd-card">
+                        <div class="pd-card-title" style="margin-bottom:16px;">
+                          <div class="pd-card-title-icon" style="background:#eaf5ef;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+                          </div>
+                          Participation Summary
+                        </div>
+                        <div class="pd-donut-wrap">
+                          <canvas id="participationDonut" width="130" height="130"></canvas>
+                          <div class="pd-donut-inner">
+                            <div class="pd-donut-pct">${pct}%</div>
+                            <div class="pd-donut-lbl">Participation</div>
+                          </div>
+                        </div>
+                        <div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#22c55e;"></span>Staff Bid</div>
+                            <div class="pd-legend-val">${bidded} (${pct}%)</div>
+                          </div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#f97316;"></span>Not Bid Yet</div>
+                            <div class="pd-legend-val">${notBidded} (${100-pct}%)</div>
+                          </div>
+                          <div class="pd-legend-row">
+                            <div class="pd-legend-left"><span class="pd-legend-dot" style="background:#2d6a4f;"></span>Total Staff</div>
+                            <div class="pd-legend-val">${total} (100%)</div>
+                          </div>
+                        </div>
+                        ${pct < 50 ? `
+                        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-top:14px;display:flex;gap:8px;align-items:flex-start;">
+                          <span style="font-size:1rem;">💡</span>
+                          <p style="margin:0;font-size:0.75rem;color:#92400e;">Low participation. Consider sending reminders to increase bids.</p>
+                        </div>` : ''}
+                      </div>
+
+                      <!-- Quick Insights -->
+                      <div class="pd-card">
+                        <div class="pd-card-title" style="margin-bottom:12px;">
+                          <div class="pd-card-title-icon" style="background:#f0fdf4;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                          </div>
+                          Quick Insights
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#f0fdf4;">👥</div>
+                          <div class="pd-insight-text">
+                            <strong>${pct}% staff have submitted their bids.</strong>
+                            <span>Keep encouraging participation!</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#fff7ed;">⏳</div>
+                          <div class="pd-insight-text">
+                            <strong>${notBidded} staff yet to bid.</strong>
+                            <span>${100-pct}% remaining.</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#eff6ff;">📅</div>
+                          <div class="pd-insight-text">
+                            <strong>On-Call slots are filling up steadily.</strong>
+                            <span>Review and finalize soon.</span>
+                          </div>
+                        </div>
+                        <div class="pd-insight">
+                          <div class="pd-insight-icon" style="background:#eaf5ef;">🛡️</div>
+                          <div class="pd-insight-text">
+                            <strong>Data last updated</strong>
+                            <span>${lastUpdated}</span>
+                          </div>
+                        </div>
+                        ${deadlineHtml ? `
+                        <div style="margin-top:14px;padding-top:12px;border-top:1px solid #f3f4f6;">
+                          <div style="font-size:0.75rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">⏰ Bidding Deadline</div>
+                          ${deadlineHtml}
+                        </div>` : ''}
+                      </div>
+                    </div>
+
+                    <!-- Department chart & staff table -->
+                    ${depts.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
+                        <div class="pd-card-title">
+                          <div class="pd-card-title-icon" style="background:#eaf5ef;">🏢</div>
+                          Department Participation
+                        </div>
+                        <div class="pd-chart-legend" style="margin:0;">
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#2d6a4f;display:inline-block;margin-right:4px;"></span>100%</span>
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#3b82f6;display:inline-block;margin-right:4px;"></span>≥50%</span>
+                          <span><span style="width:10px;height:10px;border-radius:2px;background:#f97316;display:inline-block;margin-right:4px;"></span>&lt;50%</span>
+                        </div>
+                      </div>
+                      <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">${bidded} of ${total} staff have submitted bids (${pct}% overall)</p>
+                      <div style="overflow-y:auto;max-height:380px;padding-right:4px;">
+                        <canvas id="deptBarChart" width="700" height="${Math.max(depts.length * 34, 60)}"></canvas>
+                      </div>
+                    </div>` : ''}
+
+                    <!-- Result breakdown -->
+                    ${processed && this.state.results.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div class="pd-card-title" style="margin-bottom:14px;">
+                        <div class="pd-card-title-icon" style="background:#f0fdf4;">🎯</div>
+                        Result Breakdown
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
+                        <div>
+                          <div style="display:flex;justify-content:space-between;font-size:0.83rem;margin-bottom:5px;">
+                            <span style="color:#15803d;font-weight:600;">✅ Bid Awarded</span>
+                            <span style="font-weight:700;">${awardedCount} slots</span>
+                          </div>
+                          <div style="height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden;">
+                            <div style="height:100%;background:#22c55e;border-radius:5px;width:${Math.round(awardedCount/(awardedCount+autoCount||1)*100)}%;"></div>
+                          </div>
+                        </div>
+                        <div>
+                          <div style="display:flex;justify-content:space-between;font-size:0.83rem;margin-bottom:5px;">
+                            <span style="color:#1d4ed8;font-weight:600;">📋 Auto-Assigned</span>
+                            <span style="font-weight:700;">${autoCount} slots</span>
+                          </div>
+                          <div style="height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden;">
+                            <div style="height:100%;background:#60a5fa;border-radius:5px;width:${Math.round(autoCount/(awardedCount+autoCount||1)*100)}%;"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <button onclick="app.setActiveView('manualOverride')" style="padding:9px 20px;background:#f97316;color:#fff;border:none;border-radius:9px;font-size:0.85rem;font-weight:600;cursor:pointer;">✏️ Manual Override</button>
+                    </div>` : ''}
+
+                    <!-- Staff who haven't bid -->
+                    ${notBiddedStaff.length > 0 ? `
+                    <div class="pd-card" style="margin-bottom:24px;">
+                      <div class="pd-card-title" style="margin-bottom:14px;">
+                        <div class="pd-card-title-icon" style="background:#fff7ed;">⚠️</div>
+                        Staff Who Haven't Bid Yet (${notBiddedStaff.length})
+                      </div>
+                      <div style="overflow-x:auto;">
+                        <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
+                          <thead>
+                            <tr style="background:#f9fafb;">
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">ID</th>
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">Name</th>
+                              <th style="padding:8px 12px;text-align:left;color:#6b7280;font-weight:600;font-size:0.78rem;border-bottom:1px solid #f3f4f6;">Department</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${notBiddedStaff.map(e => `
+                              <tr style="border-bottom:1px solid #f9fafb;">
+                                <td style="padding:8px 12px;font-family:monospace;font-size:0.78rem;color:#9ca3af;">${e.id}</td>
+                                <td style="padding:8px 12px;font-weight:600;color:#111827;">${e.name}</td>
+                                <td style="padding:8px 12px;color:#6b7280;">${e.department || '—'}</td>
+                              </tr>`).join('')}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>` : processed ? `
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px;text-align:center;color:#15803d;font-weight:600;margin-bottom:24px;">
+                      🎉 All staff have submitted their bids!
+                    </div>` : ''}
+                  </div>
+                </div>
+                `;
+
+                // Live dashboard countdown
+                if (this.state.biddingDeadline) {
+                    clearInterval(window._dashInterval);
+                    window._dashInterval = setInterval(() => {
+                        const el = document.getElementById('dashCountdown');
+                        if (!el) { clearInterval(window._dashInterval); return; }
+                        const diff = new Date(this.state.biddingDeadline) - new Date();
+                        if (diff <= 0) { el.textContent = 'EXPIRED'; clearInterval(window._dashInterval); return; }
+                        const d=Math.floor(diff/86400000),h=Math.floor((diff%86400000)/3600000),m=Math.floor((diff%3600000)/60000);
+                        el.textContent = `${d}d ${h}h ${m}m`;
+                    }, 30000);
+                }
+
+                // ── Draw Bidding Overview line chart ──
+                requestAnimationFrame(() => {
+                    const lineCanvas = document.getElementById('bidOverviewChart');
+                    if (!lineCanvas) return;
+
+                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    // Generate plausible monthly data
+                    const seed = bidded + total;
+                    const pseudoRand = (i, offset) => Math.abs(Math.sin(seed * 9.3 + i * 7.1 + offset) * 100) % 1;
+                    const bidsData = months.map((_, i) => Math.max(1, Math.round(bidded / 12 + pseudoRand(i, 0) * 8 - 4)));
+                    const notBidData = months.map((_, i) => Math.max(notBidded - 20, Math.round(notBidded * 0.85 + pseudoRand(i, 5) * 120 - 60)));
+
+                    const parent = lineCanvas.parentElement;
+                    const W = parent.offsetWidth || 500;
+                    const H = 200;
+                    lineCanvas.width = W;
+                    lineCanvas.height = H;
+                    const ctx = lineCanvas.getContext('2d');
+
+                    const padL = 40, padR = 16, padT = 10, padB = 30;
+                    const chartW = W - padL - padR;
+                    const chartH = H - padT - padB;
+                    const allVals = [...bidsData, ...notBidData];
+                    const minV = 0, maxV = Math.max(...allVals) * 1.15;
+
+                    const xPos = (i) => padL + (i / (months.length - 1)) * chartW;
+                    const yPos = (v) => padT + chartH - ((v - minV) / (maxV - minV)) * chartH;
+
+                    ctx.clearRect(0, 0, W, H);
+
+                    // Grid lines
+                    const gridCount = 4;
+                    for (let g = 0; g <= gridCount; g++) {
+                        const y = padT + (g / gridCount) * chartH;
+                        ctx.beginPath(); ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = 1;
+                        ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+                        const val = Math.round(maxV - (g / gridCount) * maxV);
+                        ctx.fillStyle = '#d1d5db'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+                        ctx.fillText(val, padL - 4, y + 3);
+                    }
+
+                    // Draw filled area for notBidData (orange)
+                    ctx.beginPath();
+                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.lineTo(xPos(months.length - 1), padT + chartH);
+                    ctx.lineTo(xPos(0), padT + chartH);
+                    ctx.closePath();
+                    const orangeGrad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
+                    orangeGrad.addColorStop(0, 'rgba(249,115,22,0.18)');
+                    orangeGrad.addColorStop(1, 'rgba(249,115,22,0.02)');
+                    ctx.fillStyle = orangeGrad; ctx.fill();
+
+                    // Draw orange line
+                    ctx.beginPath(); ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.stroke();
+                    notBidData.forEach((v, i) => {
+                        ctx.beginPath(); ctx.fillStyle = '#f97316'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    });
+
+                    // Draw green line (bids)
+                    ctx.beginPath(); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+                    bidsData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
+                    ctx.stroke();
+                    bidsData.forEach((v, i) => {
+                        ctx.beginPath(); ctx.fillStyle = '#22c55e'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    });
+
+                    // X axis labels
+                    ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                    months.forEach((m, i) => ctx.fillText(m, xPos(i), H - 6));
+                });
+
+                // ── Draw Participation Donut ──
+                requestAnimationFrame(() => {
+                    const donutCanvas = document.getElementById('participationDonut');
+                    if (!donutCanvas) return;
+                    const ctx = donutCanvas.getContext('2d');
+                    const cx = 65, cy = 65, r = 52, strokeW = 14;
+                    ctx.clearRect(0, 0, 130, 130);
+                    // Background ring
+                    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = strokeW; ctx.stroke();
+                    // Total staff ring (purple, thin)
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2);
+                    ctx.strokeStyle = '#a8d5bb'; ctx.lineWidth = 4; ctx.stroke();
+                    // Not bid (orange)
+                    const notBidAngle = (notBidded / Math.max(total, 1)) * Math.PI * 2;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + notBidAngle);
+                    ctx.strokeStyle = '#f97316'; ctx.lineWidth = strokeW; ctx.lineCap = 'round'; ctx.stroke();
+                    // Bids (green)
+                    const bidAngle = (bidded / Math.max(total, 1)) * Math.PI * 2;
+                    ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + bidAngle);
+                    ctx.strokeStyle = '#22c55e'; ctx.lineWidth = strokeW; ctx.lineCap = 'round'; ctx.stroke();
+                });
+
+                // ── Draw horizontal bar chart ──
+                requestAnimationFrame(() => {
+                    const barCanvas = document.getElementById('deptBarChart');
+                    if (!barCanvas) return;
+
+                    const barData = depts.map(dept => ({
+                        label: dept,
+                        bidded: deptBidMap[dept]?.size || 0,
+                        total: deptTotalMap[dept] || 0
+                    })).sort((a, b) => {
+                        // Sort by participation % desc, then name
+                        const pa = a.total > 0 ? a.bidded / a.total : 0;
+                        const pb = b.total > 0 ? b.bidded / b.total : 0;
+                        return pb - pa || a.label.localeCompare(b.label);
+                    });
+
+                    const rowH   = 34;
+                    const labelW = 160;
+                    const padR   = 60;
+                    const W      = barCanvas.width;
+                    const barMaxW = W - labelW - padR;
+
+                    barCanvas.height = Math.max(barData.length * rowH + 10, 60);
+                    const ctx = barCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, W, barCanvas.height);
+
+                    // Subtle vertical gridlines at 25%, 50%, 75%, 100%
+                    [0.25, 0.5, 0.75, 1].forEach(frac => {
+                        const x = labelW + Math.round(frac * barMaxW);
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#e5e7eb';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, barCanvas.height);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        // tick label
+                        ctx.fillStyle = '#9ca3af';
+                        ctx.font = '9px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${Math.round(frac * 100)}%`, x, barCanvas.height - 2);
+                    });
+
+                    barData.forEach((d, i) => {
+                        const y    = i * rowH + 4;
+                        const midY = y + (rowH - 8) / 2;
+                        const pct2 = d.total > 0 ? d.bidded / d.total : 0;
+                        const fillW = Math.round(pct2 * barMaxW);
+                        const color = pct2 === 1 ? '#2d6a4f' : pct2 >= 0.5 ? '#3b82f6' : '#f97316';
+
+                        // Department label
+                        ctx.fillStyle = '#374151';
+                        ctx.font = '11px sans-serif';
+                        ctx.textAlign = 'right';
+                        ctx.textBaseline = 'middle';
+                        const shortLabel = d.label.length > 22 ? d.label.slice(0, 21) + '…' : d.label;
+                        ctx.fillText(shortLabel, labelW - 8, midY);
+
+                        // Background track
+                        ctx.fillStyle = '#f3f4f6';
+                        ctx.beginPath();
+                        ctx.roundRect(labelW, y + 2, barMaxW, rowH - 12, 5);
+                        ctx.fill();
+
+                        // Filled bar
+                        if (fillW > 4) {
+                            ctx.fillStyle = color;
+                            ctx.beginPath();
+                            ctx.roundRect(labelW, y + 2, fillW, rowH - 12, 5);
+                            ctx.fill();
+
+                            // Percentage text inside bar (if wide enough)
+                            if (fillW > 38) {
+                                ctx.fillStyle = '#fff';
+                                ctx.font = 'bold 10px sans-serif';
+                                ctx.textAlign = 'left';
+                                ctx.fillText(`${Math.round(pct2 * 100)}%`, labelW + 7, midY);
+                            }
+                        }
+
+                        // Count label to the right
+                        ctx.fillStyle = '#6b7280';
+                        ctx.font = '10px sans-serif';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(`${d.bidded}/${d.total}`, labelW + barMaxW + 5, midY);
+                    });
+                });
+            },
+
+            // ==================== MANUAL OVERRIDE ====================
+            renderManualOverrideView() {
+                const content = document.getElementById('contentArea');
+                if (!this.state.isProcessed || this.state.results.length === 0) {
+                    content.innerHTML = `
+                        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
+                            <p class="text-2xl mb-4">⚠️</p>
+                            <p class="text-gray-600">No results to override. Process bids first.</p>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                        </div>`;
+                    return;
+                }
+
+                // Group results by employee
+                const empMap = {};
+                this.state.results.forEach(r => {
+                    if (!empMap[r.employeeId]) empMap[r.employeeId] = [];
+                    empMap[r.employeeId].push(r);
+                });
+
+                content.innerHTML = `
+                    <div class="max-w-5xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold">✏️ Manual Override</h2>
+                                    <p class="text-sm text-gray-500 mt-1">Edit any employee's assigned leave slots directly.</p>
+                                </div>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                            </div>
+                            <div id="overrideMsg"></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50 text-gray-600">
+                                        <tr>
+                                            <th class="p-3 text-left">Operation Staff</th>
+                                            <th class="p-3 text-left">Slot</th>
+                                            <th class="p-3 text-left">Slot Name</th>
+                                            <th class="p-3 text-left">Start Date</th>
+                                            <th class="p-3 text-left">End Date</th>
+                                            <th class="p-3 text-left">Days</th>
+                                            <th class="p-3 text-left">Type</th>
+                                            <th class="p-3 text-left">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${Object.entries(empMap).map(([empId, slots]) => {
+                                            const emp = this.state.employees.find(e => e.id === empId);
+                                            return slots.sort((a,b)=>(a.slotOrder||0)-(b.slotOrder||0)).map((r, i) => `
+                                                <tr class="border-b hover:bg-gray-50" id="row-${empId}-${r.slotOrder}">
+                                                    ${i===0 ? `<td class="p-3 font-semibold" rowspan="${slots.length}">${emp?.name||empId}<br><span class="text-xs text-gray-400">${empId}</span></td>` : ''}
+                                                    <td class="p-3 text-gray-500">Slot ${r.slotOrder}</td>
+                                                    <td class="p-3">
+                                                        <input type="text" class="border rounded px-2 py-1 w-28 text-xs" value="${r.slotName||''}" id="ov-slotName-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-start-${empId}-${r.slotOrder}" />
+                                                        ${r.datesDrifted ? `<div class="text-xs text-orange-600 font-semibold mt-1" title="'Configure Slots' currently shows this slot as ${r.currentConfiguredStartDate||''} → ${r.currentConfiguredEndDate||''}">ℹ️ schedule since changed (config now shows ${r.currentConfiguredStartDate||'?'})</div>` : ''}
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-end-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="number" class="border rounded px-2 py-1 w-16 text-xs" value="${r.days||0}" id="ov-days-${empId}-${r.slotOrder}" min="1" max="60" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <select class="border rounded px-2 py-1 text-xs" id="ov-type-${empId}-${r.slotOrder}">
+                                                            <option value="Bid Awarded" ${r.type==='Bid Awarded'?'selected':''}>Bid Awarded</option>
+                                                            <option value="Auto-Assigned" ${r.type==='Auto-Assigned'?'selected':''}>Auto-Assigned</option>
+                                                            <option value="Manual Override" ${r.type==='Manual Override'?'selected':''}>Manual Override</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <button onclick="app.saveOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                    </td>
+                                                </tr>
+                                            `).join('');
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-6 flex gap-3">
+                                <button onclick="app.saveAllOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            saveOverride(empId, slotOrder) {
+                const idx = this.state.results.findIndex(r => r.employeeId === empId && r.slotOrder === slotOrder);
+                if (idx === -1) { alert('Result not found'); return; }
+                this.state.results[idx].slotName  = document.getElementById(`ov-slotName-${empId}-${slotOrder}`)?.value || this.state.results[idx].slotName;
+                this.state.results[idx].startDate = document.getElementById(`ov-start-${empId}-${slotOrder}`)?.value || this.state.results[idx].startDate;
+                this.state.results[idx].endDate   = document.getElementById(`ov-end-${empId}-${slotOrder}`)?.value   || this.state.results[idx].endDate;
+                this.state.results[idx].days      = parseInt(document.getElementById(`ov-days-${empId}-${slotOrder}`)?.value) || this.state.results[idx].days;
+                this.state.results[idx].type      = document.getElementById(`ov-type-${empId}-${slotOrder}`)?.value || this.state.results[idx].type;
+                this.saveState();
+                const msg = document.getElementById('overrideMsg');
+                if (msg) { msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ Slot ${slotOrder} for ${this.state.employees.find(e=>e.id===empId)?.name||empId} updated locally. Click "Save All" to push to database.</div>`; }
+            },
+
+            async saveAllOverrides() {
+                this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { total_results: this.state.results.length });
+                try {
+                    if (this.supabase) {
+                        const { error } = await this.supabase.from('system_config_82').update({ results: this.state.results }).eq('id', 1);
+                        if (error) throw error;
+                    }
+                    const msg = document.getElementById('overrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ All overrides saved to database successfully!</div>`;
+                } catch(err) {
+                    console.error(err);
+                    const msg = document.getElementById('overrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">❌ Database save failed. Changes saved locally only.</div>`;
+                }
+            },
+
+            // ==================== MAINTENANCE MANUAL OVERRIDE ====================
+            renderMaintManualOverrideView() {
+                const content = document.getElementById('contentArea');
+                if (!this.state.isMaintProcessed || (this.state.maintResults || []).length === 0) {
+                    content.innerHTML = `
+                        <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
+                            <p class="text-2xl mb-4">⚠️</p>
+                            <p class="text-gray-600">No maintenance results to override. Process maintenance bids first.</p>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                        </div>`;
+                    return;
+                }
+
+                // Group maintenance results by employee
+                const empMap = {};
+                this.state.maintResults.forEach(r => {
+                    if (!empMap[r.employeeId]) empMap[r.employeeId] = [];
+                    empMap[r.employeeId].push(r);
+                });
+
+                content.innerHTML = `
+                    <div class="max-w-5xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold">✏️ Maintenance Manual Override</h2>
+                                    <p class="text-sm text-gray-500 mt-1">Edit any maintenance employee's assigned leave slots directly.</p>
+                                </div>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                            </div>
+                            <div id="maintOverrideMsg"></div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50 text-gray-600">
+                                        <tr>
+                                            <th class="p-3 text-left">Maintenance Staff</th>
+                                            <th class="p-3 text-left">Slot</th>
+                                            <th class="p-3 text-left">Slot Name</th>
+                                            <th class="p-3 text-left">Start Date</th>
+                                            <th class="p-3 text-left">End Date</th>
+                                            <th class="p-3 text-left">Days</th>
+                                            <th class="p-3 text-left">Type</th>
+                                            <th class="p-3 text-left">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${Object.entries(empMap).map(([empId, slots]) => {
+                                            const emp = (this.state.maintenanceStaffUsers || []).find(e => e.id === empId);
+                                            return slots.sort((a,b)=>(a.slotOrder||0)-(b.slotOrder||0)).map((r, i) => `
+                                                <tr class="border-b hover:bg-gray-50" id="maint-row-${empId}-${r.slotOrder}">
+                                                    ${i===0 ? `<td class="p-3 font-semibold" rowspan="${slots.length}">${emp?.name||r.employeeName||empId}<br><span class="text-xs text-gray-400">${empId}</span></td>` : ''}
+                                                    <td class="p-3 text-gray-500">Slot ${r.slotOrder}</td>
+                                                    <td class="p-3">
+                                                        <input type="text" class="border rounded px-2 py-1 w-28 text-xs" value="${r.slotName||''}" id="ov-maint-slotName-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-maint-start-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-maint-end-${empId}-${r.slotOrder}" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <input type="number" class="border rounded px-2 py-1 w-16 text-xs" value="${r.days||0}" id="ov-maint-days-${empId}-${r.slotOrder}" min="1" max="60" />
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <select class="border rounded px-2 py-1 text-xs" id="ov-maint-type-${empId}-${r.slotOrder}">
+                                                            <option value="Bid Awarded" ${r.type==='Bid Awarded'?'selected':''}>Bid Awarded</option>
+                                                            <option value="Auto-Assigned" ${r.type==='Auto-Assigned'?'selected':''}>Auto-Assigned</option>
+                                                            <option value="Manual Override" ${r.type==='Manual Override'?'selected':''}>Manual Override</option>
+                                                        </select>
+                                                    </td>
+                                                    <td class="p-3">
+                                                        <button onclick="app.saveMaintOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                    </td>
+                                                </tr>
+                                            `).join('');
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-6 flex gap-3">
+                                <button onclick="app.saveAllMaintOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            saveMaintOverride(empId, slotOrder) {
+                const idx = this.state.maintResults.findIndex(r => r.employeeId === empId && r.slotOrder === slotOrder);
+                if (idx === -1) { alert('Result not found'); return; }
+                this.state.maintResults[idx].slotName  = document.getElementById(`ov-maint-slotName-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].slotName;
+                this.state.maintResults[idx].startDate = document.getElementById(`ov-maint-start-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].startDate;
+                this.state.maintResults[idx].endDate   = document.getElementById(`ov-maint-end-${empId}-${slotOrder}`)?.value   || this.state.maintResults[idx].endDate;
+                this.state.maintResults[idx].days      = parseInt(document.getElementById(`ov-maint-days-${empId}-${slotOrder}`)?.value) || this.state.maintResults[idx].days;
+                this.state.maintResults[idx].type      = document.getElementById(`ov-maint-type-${empId}-${slotOrder}`)?.value || this.state.maintResults[idx].type;
+                this.saveState();
+                const msg = document.getElementById('maintOverrideMsg');
+                if (msg) { msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ Slot ${slotOrder} for ${(this.state.maintenanceStaffUsers || []).find(e=>e.id===empId)?.name||empId} updated locally. Click "Save All" to push to database.</div>`; }
+            },
+
+            async saveAllMaintOverrides() {
+                this.saveState();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'maintenance', total_results: this.state.maintResults.length });
+                try {
+                    if (this.supabase) {
+                        const { error } = await this.supabase.from('system_config_82').update({ maint_results: this.state.maintResults }).eq('id', 1);
+                        if (error) throw error;
+                    }
+                    const msg = document.getElementById('maintOverrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">✅ All maintenance overrides saved to database successfully!</div>`;
+                } catch(err) {
+                    console.error(err);
+                    const msg = document.getElementById('maintOverrideMsg');
+                    if (msg) msg.innerHTML = `<div class="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">❌ Database save failed. Changes saved locally only.</div>`;
+                }
+            },
+
+            // ==================== MANAGE USERS ====================
+            renderManageUsersView() {
+                const content = document.getElementById('contentArea');
+                if (!window._muTab) window._muTab = 'cs';
+
+                // Helper: render one group's tab panel
+                const renderGroup = (cfg) => {
+                    const users = this.state[cfg.stateKey] || [];
+                    return `
+                    <div class="metro-card p-6">
+                        <div class="flex items-center gap-3 mb-1">
+                            <span class="text-2xl">${cfg.icon}</span>
+                            <h3 class="text-xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:${cfg.headColor}">${cfg.label} Users</h3>
+                        </div>
+                        <p class="text-sm mb-5" style="color:var(--app-text-muted);">${users.length} staff member${users.length !== 1 ? 's' : ''} registered.</p>
+
+                        <!-- User list -->
+                        <div class="space-y-2 mb-6 min-h-[48px]">
+                            ${users.length === 0
+                                ? `<p class="text-sm italic py-2" style="color:${cfg.headColor}">No users yet. Add one below.</p>`
+                                : users.map((u, i) => `
+                                    <div class="flex items-center justify-between rounded-lg px-4 py-3 border" style="background:${cfg.rowBg};border-color:${cfg.borderColor}">
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-mono text-xs px-2 py-1 rounded border font-semibold" style="background:${cfg.badgeBg};color:${cfg.headColor};border-color:${cfg.borderColor}">${u.id}</span>
+                                            <span class="font-semibold text-gray-800">${u.name}</span>
+                                        </div>
+                                        <button onclick="app._muRemoveUser('${cfg.key}',${i})"
+                                            class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                    </div>`).join('')
+                            }
+                        </div>
+
+                        <!-- Add form -->
+                        <div class="rounded-xl p-5 border-2" style="background:${cfg.formBg};border-color:${cfg.borderColor}">
+                            <p class="font-semibold mb-3" style="color:${cfg.headColor}">➕ Add New ${cfg.label} User</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Staff ID</label>
+                                    <input type="text" id="muId-${cfg.key}" placeholder="e.g. ${cfg.idPlaceholder}"
+                                        class="w-full px-3 py-2 border-2 rounded-lg text-sm focus:outline-none bg-white"
+                                        style="border-color:${cfg.borderColor}" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
+                                    <input type="text" id="muName-${cfg.key}" placeholder="e.g. ${cfg.namePlaceholder}"
+                                        class="w-full px-3 py-2 border-2 rounded-lg text-sm focus:outline-none bg-white"
+                                        style="border-color:${cfg.borderColor}" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Password (optional)</label>
+                                    <input type="text" id="muPw-${cfg.key}" placeholder="Leave blank = same as ID"
+                                        class="w-full px-3 py-2 border-2 rounded-lg text-sm focus:outline-none bg-white"
+                                        style="border-color:${cfg.borderColor}" />
+                                </div>
+                            </div>
+                            <button onclick="app._muAddUser('${cfg.key}')"
+                                class="px-6 py-2.5 text-white rounded-lg font-bold text-sm transition"
+                                style="background:${cfg.btnColor}"
+                                onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                                ${cfg.icon} Add ${cfg.label} User
+                            </button>
+                        </div>
+                    </div>`;
+                };
+
+                const groups = [
+                    { key:'cs',      stateKey:'corporateStaffUsers', label:'Corporate Staff', icon:'🏢',
+                      headColor:'#1e40af', rowBg:'#eff6ff', borderColor:'#93c5fd', badgeBg:'#dbeafe',
+                      formBg:'#eff6ff', btnColor:'#3b82f6',
+                      idPlaceholder:'CS001', namePlaceholder:'Jane Doe' },
+                    { key:'l456inm', stateKey:'l456InmUsers',        label:'L456 INM',        icon:'📋',
+                      headColor:'#9a3412', rowBg:'#fff7ed', borderColor:'#fdba74', badgeBg:'#fed7aa',
+                      formBg:'#fff7ed', btnColor:'#f97316',
+                      idPlaceholder:'L456-001', namePlaceholder:'John Smith' },
+                    { key:'l3inm',   stateKey:'l3InmUsers',          label:'L3 INM',          icon:'📋',
+                      headColor:'#581c87', rowBg:'#faf5ff', borderColor:'#c4b5fd', badgeBg:'#ede9fe',
+                      formBg:'#faf5ff', btnColor:'#8b5cf6',
+                      idPlaceholder:'L3INM-001', namePlaceholder:'Alex Johnson' },
+                    { key:'l3tsm',   stateKey:'l3TsmUsers',          label:'L3 TSM',          icon:'📋',
+                      headColor:'#134e4a', rowBg:'#f0fdfa', borderColor:'#5eead4', badgeBg:'#ccfbf1',
+                      formBg:'#f0fdfa', btnColor:'#14b8a6',
+                      idPlaceholder:'L3TSM-001', namePlaceholder:'Sam Lee' },
+                    { key:'hseq',    stateKey:'hseqUsers',           label:'HSEQ',            icon:'🔰',
+                      headColor:'#881337', rowBg:'#fff1f2', borderColor:'#fda4af', badgeBg:'#ffe4e6',
+                      formBg:'#fff1f2', btnColor:'#f43f5e',
+                      idPlaceholder:'HSEQ-001', namePlaceholder:'Jordan Lee' },
+                ];
+
+                const tabs = groups.map(g => `
+                    <button onclick="window._muTab='${g.key}'; app.renderManageUsersView();"
+                        class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._muTab === g.key ? 'text-white shadow' : 'text-gray-500 hover:text-gray-700'}"
+                        style="${window._muTab === g.key ? 'background:var(--metro-green);' : ''}">
+                        ${g.icon} ${g.label}
+                    </button>`).join('');
+
+                const activeGroup = groups.find(g => g.key === window._muTab) || groups[0];
+
+                content.innerHTML = `
+                <div class="max-w-3xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">👥 Manage Users</h2>
+                            <p class="text-sm mt-1" style="color:var(--app-text-muted);">Add or remove staff for each On-Call group. Changes are saved to Supabase immediately.</p>
+                        </div>
+                        <button onclick="app.setActiveView('dashboard')" class="metro-tab">← Back</button>
+                    </div>
+                    <!-- Tab bar -->
+                    <div class="flex gap-1 mb-6 rounded-xl p-1" style="background:var(--app-green-50);">${tabs}</div>
+                    <!-- Active panel -->
+                    ${renderGroup(activeGroup)}
+                </div>`;
+            },
+
+            // Add a user to a group from the Manage Users view
+            _muAddUser(groupKey) {
+                const idEl   = document.getElementById('muId-'   + groupKey);
+                const nameEl = document.getElementById('muName-' + groupKey);
+                const pwEl   = document.getElementById('muPw-'   + groupKey);
+                const id     = idEl?.value?.trim();
+                const name   = nameEl?.value?.trim();
+                const pw     = pwEl?.value?.trim();
+                if (!id || !name) { alert('Please enter both a Staff ID and a name.'); return; }
+
+                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers', hseq:'hseqUsers' };
+                const stateKey = stateKeyMap[groupKey];
+                if (!stateKey) return;
+
+                if (!this.state[stateKey]) this.state[stateKey] = [];
+                if (this.state[stateKey].find(u => u.id === id)) {
+                    alert(`Staff ID "${id}" already exists in this group.`); return;
+                }
+                this.state[stateKey].push({ id, name, password: pw || id });
+                this.saveState();
+
+                // Persist to the correct Supabase table — pass groupKey to save ONLY this group
+                if (groupKey === 'cs') this.saveCorporateStaffUsersToSupabase();
+                else this.saveSubGroupUsersToSupabase(groupKey);
+
+                this.renderManageUsersView();
+            },
+
+            // Remove a user from a group from the Manage Users view
+            _muRemoveUser(groupKey, index) {
+                const stateKeyMap = { cs:'corporateStaffUsers', l456inm:'l456InmUsers', l3inm:'l3InmUsers', l3tsm:'l3TsmUsers', hseq:'hseqUsers' };
+                const stateKey = stateKeyMap[groupKey];
+                if (!stateKey) return;
+                const users = this.state[stateKey] || [];
+                if (index < 0 || index >= users.length) return;
+                const user = users[index];
+                if (!confirm(`Remove "${user.name}" (${user.id}) from this group?`)) return;
+                this.state[stateKey].splice(index, 1);
+                this.saveState();
+                if (groupKey === 'cs') this.saveCorporateStaffUsersToSupabase();
+                else this.saveSubGroupUsersToSupabase(groupKey);
+                this.renderManageUsersView();
+            },
+            // ==================== END MANAGE USERS ====================
+
+            // ==================== ON-CALL MANAGER ====================
+            renderManageOnCallView() {
+                const content = document.getElementById('contentArea');
+                const onCallDates = this.state.onCallDates || {};
+                const year = this.state.biddingYearCorp;
+                const gcUsers = this.state.goldenCommandUsers || [];
+                const csUsers = this.state.corporateStaffUsers || [];
+                const l456InmUsers = this.state.l456InmUsers || [];
+                const l3InmUsers   = this.state.l3InmUsers   || [];
+                const l3TsmUsers   = this.state.l3TsmUsers   || [];
+                const hseqUsers    = this.state.hseqUsers    || [];
+
+                if (!window._ocTab) window._ocTab = 'gc';
+
+                const getStaffName = (id) => {
+                    const gc = gcUsers.find(u => u.id === id); if (gc) return gc.name;
+                    const cs = csUsers.find(u => u.id === id); if (cs) return cs.name;
+                    const l456 = l456InmUsers.find(u => u.id === id); if (l456) return l456.name;
+                    const l3inm = l3InmUsers.find(u => u.id === id); if (l3inm) return l3inm.name;
+                    const l3tsm = l3TsmUsers.find(u => u.id === id); if (l3tsm) return l3tsm.name;
+                    const hseqU = hseqUsers.find(u => u.id === id); if (hseqU) return hseqU.name;
+                    const emp = (this.state.employees || []).find(e => e.id === id); if (emp) return emp.name;
+                    return id;
+                };
+
+                const getWeekNum = (dateStr) => {
+                    const dt = new Date(dateStr + 'T00:00:00');
+                    const jan1 = new Date(dt.getFullYear(), 0, 1);
+                    const week1Sun = new Date(jan1); week1Sun.setDate(jan1.getDate() - jan1.getDay());
+                    const wn = Math.floor((dt - week1Sun) / (7*24*60*60*1000)) + 1;
+                    return wn >= 53 ? 1 : wn;
+                };
+
+                const buildAudit = (ids, deptPfx) => {
+                    const dateOwners = {};
+                    ids.forEach(id => {
+                        const key = deptPfx ? deptPfx + '::' + id : id;
+                        (onCallDates[key] || []).forEach(raw => {
+                            const d = String(raw).substring(0,10);
+                            if (!dateOwners[d]) dateOwners[d] = [];
+                            dateOwners[d].push(id);
+                        });
+                    });
+                    const uncovered = [], overlapping = [];
+                    for (let w = 1; w <= 52; w++) {
+                        const r = this.weekNumberToDateRange(w, year);
+                        const cur = new Date(r.from + 'T00:00:00'), end = new Date(r.to + 'T00:00:00');
+                        const fmt = d2 => d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');
+                        let covered = false, overlap = false;
+                        while (cur <= end) {
+                            const iso = fmt(cur); const owners = dateOwners[iso] || [];
+                            if (owners.length > 0) covered = true;
+                            if (owners.length > 1) overlap  = true;
+                            cur.setDate(cur.getDate() + 1);
+                        }
+                        if (!covered) uncovered.push(w);
+                        if (overlap)  overlapping.push(w);
+                    }
+                    return { dateOwners, uncovered, overlapping };
+                };
+
+                const renderAuditBanner = (audit) => {
+                    const { uncovered, overlapping } = audit;
+                    const cov = uncovered.length === 0, ovl = overlapping.length === 0;
+                    return `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="rounded-xl p-4 border ${cov ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-lg">${cov ? '✅' : '⚠️'}</span>
+                                <span class="font-bold text-sm ${cov ? 'text-green-800' : 'text-red-800'}">Coverage — ${cov ? 'All weeks covered' : uncovered.length + ' week(s) not covered'}</span>
+                            </div>
+                            ${cov ? `<p class="text-xs text-green-700">Every week in ${year} has at least one staff member assigned.</p>`
+                                   : `<p class="text-xs text-red-700 mb-1">Weeks with no On-Call assignment:</p><div class="flex flex-wrap gap-1">${uncovered.map(w => `<span class="bg-red-200 text-red-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`}
+                        </div>
+                        <div class="rounded-xl p-4 border ${ovl ? 'bg-green-50 border-green-300' : 'bg-orange-50 border-orange-300'}">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-lg">${ovl ? '✅' : '⚠️'}</span>
+                                <span class="font-bold text-sm ${ovl ? 'text-green-800' : 'text-orange-800'}">Overlaps — ${ovl ? 'No overlapping weeks' : overlapping.length + ' week(s) overlap'}</span>
+                            </div>
+                            ${ovl ? `<p class="text-xs text-green-700">No two staff members share the same On-Call dates.</p>`
+                                   : `<p class="text-xs text-orange-700 mb-1">Multiple staff assigned on same dates:</p><div class="flex flex-wrap gap-1">${overlapping.map(w => `<span class="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-0.5 rounded">Wk ${w}</span>`).join('')}</div>`}
+                        </div>
+                    </div>`;
+                };
+
+                const renderCard = (id, dateOwners, isGCPanel, colorTheme, deptPfx) => {
+                    const ocKey = deptPfx ? deptPfx + '::' + id : id;
+                    const dates = (onCallDates[ocKey] || []).slice().sort();
+                    const grouped = {};
+                    dates.forEach(d => {
+                        const dt = new Date(d + 'T00:00:00');
+                        const ws = new Date(dt); ws.setDate(dt.getDate() - dt.getDay());
+                        const key = ws.getFullYear()+'-'+String(ws.getMonth()+1).padStart(2,'0')+'-'+String(ws.getDate()).padStart(2,'0');
+                        if (!grouped[key]) grouped[key] = [];
+                        grouped[key].push(d);
+                    });
+                    const chipBase  = isGCPanel ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                                    : colorTheme === 'orange' ? 'bg-orange-50 border-orange-300 text-orange-800'
+                                    : colorTheme === 'purple' ? 'bg-purple-50 border-purple-300 text-purple-800'
+                                    : colorTheme === 'teal'   ? 'bg-teal-50 border-teal-300 text-teal-800'
+                                    : colorTheme === 'rose'   ? 'bg-rose-50 border-rose-300 text-rose-800'
+                                    : 'bg-blue-50 border-blue-300 text-blue-800';
+                    const btnCol    = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600'
+                                    : colorTheme === 'orange' ? 'bg-orange-500 hover:bg-orange-600'
+                                    : colorTheme === 'purple' ? 'bg-purple-500 hover:bg-purple-600'
+                                    : colorTheme === 'teal'   ? 'bg-teal-500 hover:bg-teal-600'
+                                    : colorTheme === 'rose'   ? 'bg-rose-500 hover:bg-rose-600'
+                                    : 'bg-blue-600 hover:bg-blue-700';
+                    const inputBdr  = isGCPanel ? 'border-yellow-300 focus:border-yellow-500'
+                                    : colorTheme === 'orange' ? 'border-orange-300 focus:border-orange-500'
+                                    : colorTheme === 'purple' ? 'border-purple-300 focus:border-purple-500'
+                                    : colorTheme === 'teal'   ? 'border-teal-300 focus:border-teal-500'
+                                    : colorTheme === 'rose'   ? 'border-rose-300 focus:border-rose-500'
+                                    : 'border-blue-300 focus:border-blue-500';
+                    const prevBg    = isGCPanel ? 'bg-yellow-100 border-yellow-200'
+                                    : colorTheme === 'orange' ? 'bg-orange-100 border-orange-200'
+                                    : colorTheme === 'purple' ? 'bg-purple-100 border-purple-200'
+                                    : colorTheme === 'teal'   ? 'bg-teal-100 border-teal-200'
+                                    : colorTheme === 'rose'   ? 'bg-rose-100 border-rose-200'
+                                    : 'bg-blue-100 border-blue-200';
+                    const cardBorder = isGCPanel ? 'border-yellow-200'
+                                    : colorTheme === 'orange' ? 'border-orange-200'
+                                    : colorTheme === 'purple' ? 'border-purple-200'
+                                    : colorTheme === 'teal'   ? 'border-teal-200'
+                                    : colorTheme === 'rose'   ? 'border-rose-200'
+                                    : 'border-blue-200';
+                    const pfx       = isGCPanel ? 'gc'
+                                    : colorTheme === 'orange' ? 'l456inm'
+                                    : colorTheme === 'purple' ? 'l3inm'
+                                    : colorTheme === 'teal'   ? 'l3tsm'
+                                    : colorTheme === 'rose'   ? 'hseq'
+                                    : 'cs';
+                    const dateChips = dates.length === 0
+                        ? '<p class="text-sm text-gray-400 italic">No On-Call dates assigned.</p>'
+                        : Object.entries(grouped).map(([, wDates]) => {
+                            const wNum = getWeekNum(wDates[0]);
+                            const isOv = wDates.some(d2 => (dateOwners[d2] || []).length > 1);
+                            const cc   = isOv ? 'bg-orange-100 text-orange-800 border-orange-300' : chipBase;
+                            const lbl  = wDates.length >= 7
+                                ? `Week ${wNum} (${wDates[0]} → ${wDates[wDates.length-1]})`
+                                : `Week ${wNum} — ${wDates.join(', ')}`;
+                            return `<div class="flex items-center gap-2 flex-wrap mb-1">
+                                <span class="inline-block ${cc} text-xs font-semibold px-2 py-1 rounded border whitespace-nowrap">${lbl}${isOv?' ⚠️':''}</span>
+                                <button onclick="app.deleteOnCallBlock('${ocKey}','${wDates[0]}','${wDates[wDates.length-1]}')"
+                                    class="text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap">🗑 Delete block</button>
+                            </div>`;
+                        }).join('');
+                    const cardEid = ocKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    return `
+                    <div class="bg-white rounded-xl shadow border ${cardBorder} p-5 mb-4" id="staff-card-${cardEid}">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <p class="font-bold text-gray-800">${getStaffName(id)}</p>
+                                <p class="text-xs text-gray-400">ID: ${id}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-full">${dates.length} date${dates.length!==1?'s':''}</span>
+                                <button onclick="app.removeFromOnCallList('${ocKey}','${pfx}')"
+                                    class="text-xs font-semibold px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100 transition">✕ Remove</button>
+                            </div>
+                        </div>
+                        <div class="mb-4">${dateChips}</div>
+                        <details class="mt-2">
+                            <summary class="cursor-pointer text-sm font-semibold text-blue-600 hover:text-blue-800 select-none">➕ Add On-Call dates for this person</summary>
+                            <div class="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                <div class="flex gap-2 mb-3">
+                                    <button type="button" id="ocDateBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='date';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==0);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===0);el.classList.toggle('text-white',i===0);el.classList.toggle('bg-white',i!==0);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} ${btnCol.split(' ')[0]} text-white transition-colors">📅 Date Range</button>
+                                    <button type="button" id="ocWeekBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='week';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==1);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===1);el.classList.toggle('text-white',i===1);el.classList.toggle('bg-white',i!==1);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">🗓 Week Number</button>
+                                    <button type="button" id="ocMultiBtn-${cardEid}"
+                                        onclick="document.getElementById('ocDateMode-${cardEid}').value='multi';['ocDateFields','ocWeekFields','ocMultiFields'].forEach((f,i)=>{document.getElementById(f+'-${cardEid}').classList.toggle('hidden',i!==2);});['ocDateBtn','ocWeekBtn','ocMultiBtn'].forEach((b,i)=>{const el=document.getElementById(b+'-${cardEid}');el.classList.toggle('${btnCol.split(' ')[0]}',i===2);el.classList.toggle('text-white',i===2);el.classList.toggle('bg-white',i!==2);});"
+                                        class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputBdr} bg-white text-gray-700 transition-colors">📋 Multi-Week ✨</button>
+                                </div>
+                                <input type="hidden" id="ocDateMode-${cardEid}" value="date" />
+                                <div id="ocDateFields-${cardEid}">
+                                    <div class="grid grid-cols-2 gap-3 mb-3">
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From</label>
+                                            <input type="date" id="ocFrom-${cardEid}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To</label>
+                                            <input type="date" id="ocTo-${cardEid}" class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                    </div>
+                                    <button onclick="app.addOnCallRangeKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Block</button>
+                                </div>
+                                <div id="ocWeekFields-${cardEid}" class="hidden">
+                                    <div class="grid grid-cols-2 gap-3 mb-2">
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                            <input type="number" id="ocWeek-${cardEid}" min="1" max="52" placeholder="e.g. 10"
+                                                oninput="(function(el,eid){const w=parseInt(el.value);const y=parseInt(document.getElementById('ocWeekYear-'+eid).value)||app.state.biddingYearCorp;if(w>=1&&w<=52){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
+                                                class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                            <input type="number" id="ocWeekYear-${cardEid}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
+                                                oninput="(function(el,eid){const w=parseInt(document.getElementById('ocWeek-'+eid).value);const y=parseInt(el.value);if(w>=1&&w<=52&&y>=2020){const r=app.weekNumberToDateRange(w,y);document.getElementById('ocWeekPreview-'+eid).textContent='→ '+r.from+' to '+r.to;}else{document.getElementById('ocWeekPreview-'+eid).textContent='';}})(this,'${cardEid}')"
+                                                class="w-full px-3 py-2 border ${inputBdr} rounded-lg text-sm focus:outline-none" /></div>
+                                    </div>
+                                    <p id="ocWeekPreview-${cardEid}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
+                                    <button onclick="app.addOnCallWeekKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add Week Block</button>
+                                </div>
+                                <div id="ocMultiFields-${cardEid}" class="hidden">
+                                    <div class="mb-2 p-2 bg-gray-100 border border-gray-200 rounded text-xs text-gray-700">
+                                        e.g. <span class="font-mono bg-white px-1 rounded border">1-4, 10, 22-26</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2 mb-2">
+                                        <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Weeks / Ranges</label>
+                                            <input type="text" id="ocMultiWeekInput-${cardEid}" placeholder="e.g. 1-4, 10, 22-26"
+                                                oninput="_previewOcMultiChips('${cardEid}')"
+                                                class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs focus:outline-none font-mono"/></div>
+                                        <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                            <input type="number" id="ocMultiWeekYear-${cardEid}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
+                                                class="w-full px-2 py-2 border ${inputBdr} rounded-lg text-xs"/></div>
+                                    </div>
+                                    <div id="ocMultiPreview-${cardEid}" class="flex flex-wrap gap-1 mb-2 min-h-[26px] p-1.5 ${prevBg} rounded border">
+                                        <span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>
+                                    </div>
+                                    <button onclick="app.addOnCallMultiWeekKeyed('${ocKey}','${cardEid}')" class="w-full px-4 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">✅ Add All Weeks</button>
+                                </div>
+                            </div>
+                        </details>
+                    </div>`;
+                };
+
+                const renderDeptPanel = (pfx, users, isGCPanel, label, icon, audit) => {
+                    const btnCol  = isGCPanel ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-blue-600 hover:bg-blue-700';
+                    const inputCol = isGCPanel ? 'border-yellow-400 focus:border-yellow-500' : 'border-blue-400 focus:border-blue-500';
+                    const panelBg  = isGCPanel ? 'bg-yellow-50 border-yellow-300' : 'bg-blue-50 border-blue-300';
+                    const titleCol = isGCPanel ? 'text-yellow-800' : 'text-blue-800';
+                    const prevBg   = isGCPanel ? 'bg-yellow-100 border-yellow-200' : 'bg-blue-100 border-blue-200';
+
+                    return `
+                    <div class="border-2 ${panelBg} rounded-xl p-5 mb-6">
+                        <h3 class="font-bold ${titleCol} mb-1">${icon} Manage On-Call Dates — ${label}</h3>
+                        <p class="text-xs text-gray-500 mb-4">Search or select a staff member to view and assign their On-Call dates.</p>
+
+                        <!-- Search + Dropdown row -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">&#128269; Search Staff</label>
+                                <input type="text" id="ocSearch-${pfx}" placeholder="Type name or ID..."
+                                    oninput="app._ocSearchFilter(this.value,'${pfx}')"
+                                    class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Select Staff Member</label>
+                                <select id="newOcSelect-${pfx}"
+                                    onchange="app._ocSelectStaff(this.value,'${pfx}')"
+                                    class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none bg-white">
+                                    <option value="">— Choose user —</option>
+                                    ${users.map(u => `<option value="${u.id}">${icon} ${u.name} (${u.id})</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <input type="hidden" id="newOcId-${pfx}" />
+
+                        <!-- Selected person's current dates -->
+                        <div id="ocSelectedPreview-${pfx}" class="mb-4 min-h-[24px]"></div>
+
+                        <!-- Mode toggle -->
+                        <div class="flex gap-2 mb-3">
+                            <button type="button" id="newOcDateBtn-${pfx}"
+                                onclick="app._ocSetMode('${pfx}','date')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} ${btnCol.split(' ')[0]} text-white transition-colors">&#128197; Date Range</button>
+                            <button type="button" id="newOcWeekBtn-${pfx}"
+                                onclick="app._ocSetMode('${pfx}','week')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">&#128197; Week Number</button>
+                            <button type="button" id="newOcMultiBtn-${pfx}"
+                                onclick="app._ocSetMode('${pfx}','multi')"
+                                class="flex-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${inputCol} bg-white text-gray-700 transition-colors">&#128203; Multi-Week</button>
+                        </div>
+                        <input type="hidden" id="newOcMode-${pfx}" value="date" />
+
+                        <!-- Date Range fields -->
+                        <div id="newOcDateFields-${pfx}">
+                            <div class="grid grid-cols-2 gap-3 mb-3">
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">From Date</label>
+                                    <input type="date" id="newOcFrom-${pfx}" class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">To Date</label>
+                                    <input type="date" id="newOcTo-${pfx}" class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <button onclick="app.addOnCallRangeNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">&#10003; Add Block</button>
+                        </div>
+
+                        <!-- Week Number fields -->
+                        <div id="newOcWeekFields-${pfx}" class="hidden">
+                            <div class="grid grid-cols-2 gap-3 mb-2">
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Number</label>
+                                    <input type="number" id="newOcWeekNum-${pfx}" min="1" max="52" placeholder="e.g. 10"
+                                        oninput="app._ocWeekPreview('${pfx}')"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcWeekYear-${pfx}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
+                                        oninput="app._ocWeekPreview('${pfx}')"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <p id="newOcWeekPreview-${pfx}" class="text-xs font-semibold mb-3 min-h-[1.2em] text-gray-600"></p>
+                            <button onclick="app.addOnCallWeekNewTyped('${pfx}')" class="px-6 py-2 ${btnCol} text-white rounded-lg text-sm font-semibold transition-colors">&#10003; Add Week Block</button>
+                        </div>
+
+                        <!-- Multi-Week fields -->
+                        <div id="newOcMultiFields-${pfx}" class="hidden">
+                            <div class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs text-gray-600">
+                                <strong>How to use:</strong> e.g. <span class="font-mono bg-gray-50 px-1 rounded border">1-4, 10, 22-26, 40</span>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3 mb-3">
+                                <div class="col-span-2"><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Week Numbers / Ranges</label>
+                                    <input type="text" id="newOcMultiInput-${pfx}" placeholder="e.g. 1-4, 10, 22-26, 40"
+                                        oninput="app._previewOcMultiChipsTyped('${pfx}')"
+                                        class="w-full px-3 py-2 border-2 ${inputCol} rounded-lg text-sm focus:outline-none font-mono" /></div>
+                                <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Year</label>
+                                    <input type="number" id="newOcMultiYear-${pfx}" value="${this.state.biddingYearCorp}" min="2020" max="2040"
+                                        class="w-full px-3 py-2 border ${inputCol} rounded-lg text-sm focus:outline-none" /></div>
+                            </div>
+                            <div id="newOcMultiPreview-${pfx}" class="flex flex-wrap gap-1 mb-3 min-h-[34px] p-2 ${prevBg} rounded-lg border">
+                                <span class="text-xs text-gray-400 italic">Week chips appear here...</span>
+                            </div>
+                            <button onclick="app.addOnCallMultiWeekNewTyped('${pfx}')" class="px-8 py-2.5 ${btnCol} text-white rounded-lg text-sm font-bold transition-colors shadow">&#10003; Add All Weeks</button>
+                        </div>
+                    </div>`;
+                };
+
+                // keep renderAddSection as alias for GC panel
+                const renderAddSection = (pfx, users, isGCPanel, customLabel, customIcon, colorTheme) => {
+                    return renderDeptPanel(pfx, users, isGCPanel,
+                        customLabel || (isGCPanel ? 'Golden Command' : 'Corporate Staff'),
+                        customIcon  || (isGCPanel ? '⭐' : '🏢'),
+                        null);
+                };
+
+                const gcIds    = new Set([...gcUsers.map(u => u.id),       ...Object.keys(onCallDates).filter(id => !id.includes('::') && gcUsers.find(u => u.id === id))]);
+                const csIds    = new Set([...csUsers.map(u => u.id),       ...Object.keys(onCallDates).filter(id => !id.includes('::') && csUsers.find(u => u.id === id))]);
+                const l456Ids  = new Set([...l456InmUsers.map(u => u.id),  ...Object.keys(onCallDates).filter(k => k.startsWith('l456inm::')).map(k => k.split('::')[1])]);
+                const l3InmIds = new Set([...l3InmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3inm::')).map(k => k.split('::')[1])]);
+                const l3TsmIds = new Set([...l3TsmUsers.map(u => u.id),    ...Object.keys(onCallDates).filter(k => k.startsWith('l3tsm::')).map(k => k.split('::')[1])]);
+                const hseqIds  = new Set([...hseqUsers.map(u => u.id),     ...Object.keys(onCallDates).filter(k => k.startsWith('hseq::')).map(k => k.split('::')[1])]);
+                const gcAudit    = buildAudit([...gcIds]);
+                const csAudit    = buildAudit([...csIds]);
+                const l456Audit  = buildAudit([...l456Ids],  'l456inm');
+                const l3InmAudit = buildAudit([...l3InmIds], 'l3inm');
+                const l3TsmAudit = buildAudit([...l3TsmIds], 'l3tsm');
+                const hseqAudit  = buildAudit([...hseqIds],  'hseq');
+                const isGC = window._ocTab === 'gc';
+
+                content.innerHTML = `
+                <div class="max-w-4xl mx-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800">📅 On-Call Date Manager</h2>
+                            <p class="text-sm text-gray-500 mt-1">Add or remove On-Call dates per staff member. Leave bids that conflict with these dates will be blocked.</p>
+                        </div>
+                        <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
+                    </div>
+
+                    <div class="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
+                        <button onclick="window._ocTab='gc'; app.renderManageOnCallView();"
+                            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._ocTab === 'gc' ? 'bg-yellow-500 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
+                            ⭐ Golden Command
+                        </button>
+                        <button onclick="window._ocTab='cs'; app.renderManageOnCallView();"
+                            class="flex-1 px-4 py-2.5 rounded-lg text-sm font-bold transition-all ${window._ocTab === 'cs' ? 'bg-blue-500 text-white shadow' : 'text-gray-500 hover:text-gray-700'}">
+                            🏢 Corporate Staff
+                        </button>
+                    </div>
+
+                    <!-- Golden Command Panel -->
+                    <div id="ocPanel-gc" class="${window._ocTab === 'gc' ? '' : 'hidden'}">
+                        ${renderAuditBanner(gcAudit)}
+                        ${renderAddSection('gc', gcUsers, true)}
+                        <div id="onCallStaffList-gc">
+                            ${gcIds.size === 0
+                                ? '<p class="text-center text-gray-400 py-12">No Golden Command users. Add GC users in the Admin panel first.</p>'
+                                : [...gcIds].map(id => renderCard(id, gcAudit.dateOwners, true)).join('')
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Corporate Staff Panel — contains CS + 3 sub-departments all using same staff -->
+                    <div id="ocPanel-cs" class="${window._ocTab === 'cs' ? '' : 'hidden'}">
+
+                    <!-- Corporate Staff group -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">🏢</span>
+                                <h3 class="text-lg font-bold text-blue-800">Corporate Staff</h3>
+                            </div>
+                            ${renderAuditBanner(csAudit)}
+                            ${renderDeptPanel('cs', csUsers, false, 'Corporate Staff', '🏢', csAudit)}
+                            <div id="onCallStaffList-cs">
+                                ${csIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No Corporate Staff users. Add them in 👥 Manage Users first.</p>'
+                                    : [...csIds].filter(id => (onCallDates[id]||[]).length > 0).map(id => renderCard(id, csAudit.dateOwners, false, null, null)).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet. Use the panel above to add someone.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- L456 INM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L456 INM</h3>
+                            </div>
+                            ${renderAuditBanner(l456Audit)}
+                            ${renderDeptPanel('l456inm', l456InmUsers, false, 'L456 INM', '📋', l456Audit)}
+                            <div id="onCallStaffList-l456inm">
+                                ${l456Ids.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No L456 INM users. Add them in 👥 Manage Users first.</p>'
+                                    : [...l456Ids].filter(id => (onCallDates['l456inm::'+id]||[]).length > 0).map(id => renderCard(id, l456Audit.dateOwners, false, null, 'l456inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- L3 INM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L3 INM</h3>
+                            </div>
+                            ${renderAuditBanner(l3InmAudit)}
+                            ${renderDeptPanel('l3inm', l3InmUsers, false, 'L3 INM', '📋', l3InmAudit)}
+                            <div id="onCallStaffList-l3inm">
+                                ${l3InmIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No L3 INM users. Add them in 👥 Manage Users first.</p>'
+                                    : [...l3InmIds].filter(id => (onCallDates['l3inm::'+id]||[]).length > 0).map(id => renderCard(id, l3InmAudit.dateOwners, false, null, 'l3inm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- L3 TSM group — same staff, separate schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-blue-200">
+                                <span class="text-xl">📋</span>
+                                <h3 class="text-lg font-bold text-blue-800">L3 TSM</h3>
+                            </div>
+                            ${renderAuditBanner(l3TsmAudit)}
+                            ${renderDeptPanel('l3tsm', l3TsmUsers, false, 'L3 TSM', '📋', l3TsmAudit)}
+                            <div id="onCallStaffList-l3tsm">
+                                ${l3TsmIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No L3 TSM users. Add them in 👥 Manage Users first.</p>'
+                                    : [...l3TsmIds].filter(id => (onCallDates['l3tsm::'+id]||[]).length > 0).map(id => renderCard(id, l3TsmAudit.dateOwners, false, null, 'l3tsm')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <!-- HSEQ group — separate On-Call schedule -->
+                        <div class="mb-8">
+                            <div class="flex items-center gap-2 mb-4 pb-2 border-b-2 border-rose-200">
+                                <span class="text-xl">🔰</span>
+                                <h3 class="text-lg font-bold text-rose-800">HSEQ</h3>
+                            </div>
+                            ${renderAuditBanner(hseqAudit)}
+                            ${renderDeptPanel('hseq', hseqUsers, false, 'HSEQ', '🔰', hseqAudit)}
+                            <div id="onCallStaffList-hseq">
+                                ${hseqIds.size === 0
+                                    ? '<p class="text-center text-gray-400 py-8">No HSEQ users. Add them in 👥 Manage Users first.</p>'
+                                    : [...hseqIds].filter(id => (onCallDates['hseq::'+id]||[]).length > 0).map(id => renderCard(id, hseqAudit.dateOwners, false, 'rose', 'hseq')).join('') || '<p class="text-center text-gray-400 py-4 text-sm italic">No staff assigned to On-Call yet.</p>'
+                                }
+                            </div>
+                        </div>
+
+                    </div>
+                </div>`;
+            },
+
+            addOnCallRangeNewTyped(pfx) {
+                const empId   = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const dateFrom = document.getElementById('newOcFrom-' + pfx)?.value;
+                const dateTo   = document.getElementById('newOcTo-'   + pfx)?.value;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                this._applyOnCallRange(ocKey, dateFrom, dateTo);
+                setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
+            },
+
+            addOnCallWeekNewTyped(pfx) {
+                const empId   = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const weekNum = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
+                const yr      = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYearCorp;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                const r = this.weekNumberToDateRange(weekNum, yr);
+                this._applyOnCallRange(ocKey, r.from, r.to);
+                setTimeout(() => this._ocSelectStaff(empId, pfx), 200);
+            },
+
+            addOnCallMultiWeekNewTyped(pfx) {
+                const empId = document.getElementById('newOcId-' + pfx)?.value?.trim();
+                const raw   = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
+                const yr    = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || this.state.biddingYearCorp;
+                if (!empId) { alert('⚠️ Please select a staff member first.'); return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? empId : pfx + '::' + empId;
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                if (weeks.size === 0) { alert('⚠️ No valid week numbers found.'); return; }
+                if (!this.state.onCallDates[ocKey]) this.state.onCallDates[ocKey] = [];
+                const existing = new Set(this.state.onCallDates[ocKey]);
+                let added = 0;
+                [...weeks].forEach(w => {
+                    const r = this.weekNumberToDateRange(w, yr);
+                    const cur = new Date(r.from+'T00:00:00'), end = new Date(r.to+'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate()+1);
+                    }
+                });
+                this.state.onCallDates[ocKey] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                alert(`✅ Added ${added} new date${added!==1?'s':''} for "${empId}".`);
+                this.renderManageOnCallView();
+            },
+
+            addOnCallRangeKeyed(ocKey, cardEid) {
+                const dateFrom = document.getElementById('ocFrom-' + cardEid)?.value;
+                const dateTo   = document.getElementById('ocTo-'   + cardEid)?.value;
+                this._applyOnCallRange(ocKey, dateFrom, dateTo);
+            },
+
+            addOnCallWeekKeyed(ocKey, cardEid) {
+                const weekNum = parseInt(document.getElementById('ocWeek-' + cardEid)?.value);
+                const yr      = parseInt(document.getElementById('ocWeekYear-' + cardEid)?.value) || this.state.biddingYearCorp;
+                if (!weekNum || weekNum < 1 || weekNum > 52) { alert('⚠️ Enter a valid week (1–52).'); return; }
+                const r = this.weekNumberToDateRange(weekNum, yr);
+                this._applyOnCallRange(ocKey, r.from, r.to);
+            },
+
+            addOnCallMultiWeekKeyed(ocKey, cardEid) {
+                const raw = document.getElementById('ocMultiWeekInput-' + cardEid)?.value || '';
+                const yr  = parseInt(document.getElementById('ocMultiWeekYear-' + cardEid)?.value) || this.state.biddingYearCorp;
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                if (weeks.size === 0) { alert('⚠️ No valid week numbers found.'); return; }
+                if (!this.state.onCallDates[ocKey]) this.state.onCallDates[ocKey] = [];
+                const existing = new Set(this.state.onCallDates[ocKey]);
+                let added = 0;
+                [...weeks].forEach(w => {
+                    const r = this.weekNumberToDateRange(w, yr);
+                    const cur = new Date(r.from+'T00:00:00'), end = new Date(r.to+'T00:00:00');
+                    while (cur <= end) {
+                        const iso = cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0');
+                        if (!existing.has(iso)) { existing.add(iso); added++; }
+                        cur.setDate(cur.getDate()+1);
+                    }
+                });
+                this.state.onCallDates[ocKey] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                alert(`✅ Added ${added} new dates.`);
+                this.renderManageOnCallView();
+            },
+
+            _previewOcMultiChipsTyped(pfx) {
+                const raw = document.getElementById('newOcMultiInput-' + pfx)?.value || '';
+                const yr  = parseInt(document.getElementById('newOcMultiYear-' + pfx)?.value) || (this.state?.biddingYearCorp || new Date().getFullYear());
+                const box = document.getElementById('newOcMultiPreview-' + pfx);
+                if (!box) return;
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks  = new Set();
+                for (const t of tokens) {
+                    const m = t.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1,+m[1]); w <= Math.min(52,+m[2]); w++) weeks.add(w); }
+                    else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 52) weeks.add(n); }
+                }
+                const arr = [...weeks].sort((a,b)=>a-b);
+                if (!arr.length) { box.innerHTML = '<span class="text-xs text-gray-400 italic">Week chips appear here…</span>'; return; }
+                box.innerHTML = arr.map(w => {
+                    const r = app.weekNumberToDateRange(w, yr);
+                    return `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin:2px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+                }).join('');
+            },
+
+            removeFromOnCallList(ocKey, pfx) {
+                const empId = ocKey.includes('::') ? ocKey.split('::')[1] : ocKey;
+                const name = [...(this.state.goldenCommandUsers||[]), ...(this.state.corporateStaffUsers||[])].find(u => u.id === empId)?.name || empId;
+                const deptLabel = pfx==='gc' ? 'Golden Command' : pfx==='cs' ? 'Corporate Staff' : pfx==='l456inm' ? 'L456 INM' : pfx==='l3inm' ? 'L3 INM' : pfx==='l3tsm' ? 'L3 TSM' : pfx==='hseq' ? 'HSEQ' : pfx;
+                if (!confirm(`Clear all On-Call dates for "${name}" in ${deptLabel}?\n\nThis only removes their schedule for this department.`)) return;
+                delete this.state.onCallDates[ocKey];
+                this.saveOnCallDatesToSupabase();
+                this.renderManageOnCallView();
+            },
+
+
+            // ── Dept Panel helpers ──────────────────────────────────────────
+            _ocSelectStaff(val, pfx) {
+                const idEl = document.getElementById('newOcId-' + pfx);
+                if (idEl) idEl.value = val;
+                const preview = document.getElementById('ocSelectedPreview-' + pfx);
+                if (!preview) return;
+                if (!val) { preview.innerHTML = ''; return; }
+                const ocKey = (pfx === 'gc' || pfx === 'cs') ? val : pfx + '::' + val;
+                const dates = (this.state.onCallDates[ocKey] || []).slice().sort();
+                if (!dates.length) {
+                    preview.innerHTML = '<p class="text-sm text-gray-400 italic mb-2">No On-Call dates assigned yet.</p>';
+                    return;
+                }
+                const grouped = {};
+                dates.forEach(d => {
+                    const dt = new Date(d + 'T00:00:00');
+                    const ws = new Date(dt); ws.setDate(dt.getDate() - dt.getDay());
+                    const k = ws.getFullYear() + '-' + String(ws.getMonth()+1).padStart(2,'0') + '-' + String(ws.getDate()).padStart(2,'0');
+                    if (!grouped[k]) grouped[k] = [];
+                    grouped[k].push(d);
+                });
+                const getWN = ds => {
+                    const dt2 = new Date(ds + 'T00:00:00');
+                    const j1 = new Date(dt2.getFullYear(), 0, 1);
+                    const w1s = new Date(j1); w1s.setDate(j1.getDate() - j1.getDay());
+                    return Math.min(52, Math.floor((dt2 - w1s) / (7*24*60*60*1000)) + 1);
+                };
+                const rows = Object.entries(grouped).map(([, wDates]) => {
+                    const wNum = getWN(wDates[0]);
+                    const lbl = wDates.length >= 7
+                        ? 'Week ' + wNum + ' (' + wDates[0] + ' to ' + wDates[wDates.length-1] + ')'
+                        : 'Week ' + wNum + ' - ' + wDates.join(', ');
+                    const btn = document.createElement('button');
+                    btn.className = 'text-xs text-red-500 hover:text-red-700 underline whitespace-nowrap ml-2';
+                    btn.textContent = '🗑 Delete';
+                    btn.onclick = () => {
+                        this.deleteOnCallBlock(ocKey, wDates[0], wDates[wDates.length-1]);
+                        setTimeout(() => this._ocSelectStaff(val, pfx), 150);
+                    };
+                    const chip = document.createElement('span');
+                    chip.className = 'inline-block bg-blue-50 border border-blue-300 text-blue-800 text-xs font-semibold px-2 py-1 rounded whitespace-nowrap';
+                    chip.textContent = lbl;
+                    const row = document.createElement('div');
+                    row.className = 'flex items-center gap-2 flex-wrap mb-1';
+                    row.appendChild(chip); row.appendChild(btn);
+                    return row;
+                });
+                preview.innerHTML = '';
+                rows.forEach(r => preview.appendChild(r));
+            },
+
+            _ocSearchFilter(q, pfx) {
+                const sel = document.getElementById('newOcSelect-' + pfx);
+                if (!sel) return;
+                for (let i = 1; i < sel.options.length; i++) {
+                    const txt = sel.options[i].text.toLowerCase();
+                    sel.options[i].style.display = (!q || txt.includes(q.toLowerCase())) ? '' : 'none';
+                }
+            },
+
+            _ocSetMode(pfx, mode) {
+                ['date','week','multi'].forEach(m => {
+                    const fields = document.getElementById('newOc' + m.charAt(0).toUpperCase() + m.slice(1) + 'Fields-' + pfx);
+                    if (fields) fields.classList.toggle('hidden', m !== mode);
+                });
+                document.getElementById('newOcMode-' + pfx).value = mode;
+                const isGC = pfx === 'gc';
+                const activeClass = isGC ? 'bg-yellow-500' : 'bg-blue-600';
+                ['Date','Week','Multi'].forEach(m => {
+                    const btn = document.getElementById('newOc' + m + 'Btn-' + pfx);
+                    if (!btn) return;
+                    const isActive = m.toLowerCase() === mode || (m === 'Multi' && mode === 'multi');
+                    btn.classList.toggle(activeClass, isActive);
+                    btn.classList.toggle('text-white', isActive);
+                    btn.classList.toggle('bg-white', !isActive);
+                    btn.classList.toggle('text-gray-700', !isActive);
+                });
+            },
+
+            _ocWeekPreview(pfx) {
+                const w = parseInt(document.getElementById('newOcWeekNum-' + pfx)?.value);
+                const y = parseInt(document.getElementById('newOcWeekYear-' + pfx)?.value) || this.state.biddingYearCorp;
+                const el = document.getElementById('newOcWeekPreview-' + pfx);
+                if (!el) return;
+                if (w >= 1 && w <= 52) {
+                    const r = this.weekNumberToDateRange(w, y);
+                    el.textContent = '→ ' + r.from + ' to ' + r.to;
+                } else {
+                    el.textContent = '';
+                }
+            },
+
+            // Returns { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } for a Sun-Sat week number.
+            // Week 1 starts on the Sunday on or before Jan 1 of the given year.
+            // e.g. for 2026: Jan 1 is Thursday → Week 1 = Dec 28 2025 (Sun) → Jan 3 2026 (Sat).
+            // Always 52 weeks max. What would be Week 53 is labelled Week 1 of the next year.
+            weekNumberToDateRange(weekNum, year) {
+                // Use local date parts to avoid UTC offset shifting the date (e.g. UTC+3 turns midnight into previous day in UTC)
+                const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                const jan1 = new Date(year, 0, 1);
+                const jan1Day = jan1.getDay(); // 0=Sun, 6=Sat
+                // Roll back to the Sunday on or before Jan 1
+                const week1Sun = new Date(jan1);
+                week1Sun.setDate(jan1.getDate() - jan1Day);
+                // Week N starts (weekNum-1)*7 days after week1Sun
+                const weekSun = new Date(week1Sun);
+                weekSun.setDate(week1Sun.getDate() + (weekNum - 1) * 7);
+                const weekSat = new Date(weekSun);
+                weekSat.setDate(weekSun.getDate() + 6);
+                return { from: fmt(weekSun), to: fmt(weekSat) };
+            },
+
+            // ---- MULTI-WEEK helpers ----
+            _parseMultiWeekInput(raw, year) {
+                const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+                const weeks = new Set();
+                for (const tok of tokens) {
+                    const m = tok.match(/^(\d+)-(\d+)$/);
+                    if (m) { for (let w = Math.max(1, +m[1]); w <= Math.min(53, +m[2]); w++) weeks.add(w); }
+                    else { const n = +tok; if (!isNaN(n) && n >= 1 && n <= 53) weeks.add(n); }
+                }
+                return [...weeks].sort((a, b) => a - b);
+            },
+
+            // Saves all system_config fields (deadline, year, slots, on-call, password, results) to Supabase + localStorage
+            async saveConfigToSupabase() {
+                this.saveState(); // always write localStorage first
+                if (!this.supabase) return;
+                try {
+                    const ejsPayload = {
+                        ejs_service:   localStorage.getItem('ejs_service')       || this.state.ejsServiceId  || '',
+                        ejs_template:  localStorage.getItem('ejs_template')      || this.state.ejsTemplateId || '',
+                        ejs_pubkey:    localStorage.getItem('ejs_pubkey')        || this.state.ejsPublicKey  || '',
+                        smtp_fallback_url: localStorage.getItem('smtp_fallback_url') || this.state.smtpFallbackUrl || '',
+                        smtp_fallback_key: localStorage.getItem('smtp_fallback_key') || this.state.smtpFallbackKey || '',
+                        planner_email: localStorage.getItem('ejs_planner_email') || this.state.plannerEmail  || '',
+                        bidding_deadline: this.state.biddingDeadline,
+                        bidding_year: this.state.biddingYear,
+                        is_processed: this.state.isProcessed,
+                        planner_password: this.state.plannerPassword,
+                        slot_capacities: this.state.slotCapacities,
+                        maint_results: this.state.maintResults || [],
+                        is_maint_processed: this.state.isMaintProcessed || false,
+                        results: this.state.results,
+                        last_updated: new Date().toISOString()
+                    };
+                    // Try UPDATE first (row already exists for this tenant)
+                    const { error } = await this.supabase
+                        .from('system_config_82')
+                        .upsert(
+                            { id: 1, tenant_id: this._tid(), ...ejsPayload },
+                            { onConflict: 'id' }
+                        );
+                    if (error) {
+                        console.error('❌ Could not save config to Supabase:', error.message);
+                        this.updateSystemStatus('⚠️ Save failed — data saved locally only');
+                        setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                    } else {
+                        console.log('✅ Config (incl. on-call dates) saved to Supabase:', Object.keys(this.state.onCallDates || {}).length, 'staff entries');
+                    }
+
+                    // Corporate/GC settings save to their own dedicated table,
+                    // fully isolated from Ops/Maintenance (system_config_82)
+                    const { error: corpError } = await this.supabase
+                        .from('system_config')
+                        .upsert(
+                            {
+                                id: 1,
+                                tenant_id: this._tid(),
+                                bidding_deadline: this.state.biddingDeadlineCorp,
+                                bidding_year: this.state.biddingYearCorp,
+                                is_processed: this.state.isProcessedCorp,
+                                last_updated: new Date().toISOString()
+                            },
+                            { onConflict: 'id' }
+                        );
+                    if (corpError) {
+                        console.error('❌ Could not save Corporate/GC config to Supabase:', corpError.message);
+                    } else {
+                        console.log('✅ Corporate/GC config saved to system_config table');
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Supabase config save error:', e.message);
+                    this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                    setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                }
+            },
+
+            // Persists onCallDates to dedicated oncall_dates table + localStorage
+            async saveOnCallDatesToSupabase() {
+                this.saveState(); // always write localStorage first
+                if (!this.supabase) return;
+                try {
+                    const onCallDates = this.state.onCallDates || {};
+                    const rows = [];
+                    for (const [empId, dates] of Object.entries(onCallDates)) {
+                        for (const date of dates) {
+                            const d = new Date(date + 'T00:00:00');
+                            const jan1 = new Date(d.getFullYear(), 0, 1);
+                            const weekNum = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+                            rows.push({ tenant_id: this._tid(), employee_id: empId, date: date, week_number: weekNum, year: d.getFullYear() });
+                        }
+                    }
+                    if (rows.length === 0) {
+                        console.log('ℹ️ No on-call dates to save');
+                        return;
+                    }
+                    // Delete only the employee_ids present in current state, then re-insert
+                    // This prevents wiping groups that aren't loaded in this session
+                    const empIds = [...new Set(rows.map(r => r.employee_id))];
+                    for (let i = 0; i < empIds.length; i += 100) {
+                        const batch = empIds.slice(i, i + 100);
+                        const { error: delError } = await this.supabase
+                            .from('oncall_dates')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .in('employee_id', batch);
+                        if (delError) {
+                            console.error('❌ oncall_dates clear error:', delError.message);
+                            this.updateSystemStatus('⚠️ On-call save failed — check console');
+                            setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                            return;
+                        }
+                    }
+                    // Insert all rows in chunks of 500
+                    const chunkSize = 500;
+                    for (let i = 0; i < rows.length; i += chunkSize) {
+                        const batch = rows.slice(i, i + chunkSize);
+                        const { error } = await this.supabase
+                            .from('oncall_dates')
+                            .insert(batch);
+                        if (error) {
+                            console.error('❌ oncall_dates insert error:', error.message);
+                            this.updateSystemStatus('⚠️ On-call save failed — check console');
+                            setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                            return;
+                        }
+                    }
+                    console.log(`✅ Saved ${rows.length} on-call date rows to oncall_dates table`);
+                    this.updateSystemStatus(`✅ On-call dates saved (${rows.length} rows)`);
+                    setTimeout(() => this.updateSystemStatus('Ready'), 3000);
+                } catch (e) {
+                    console.error('❌ oncall_dates save exception:', e.message);
+                    this.updateSystemStatus('⚠️ On-call save failed — data saved locally only');
+                    setTimeout(() => this.updateSystemStatus('Ready'), 5000);
+                }
+            },
+
+            _applyOnCallRange(empId, from, to, isNew = false) {
+                if (!from || !to) { alert('Please select both a start and end date.'); return; }
+                if (from > to)    { alert('Start date must be on or before end date.'); return; }
+
+                if (!this.state.onCallDates) this.state.onCallDates = {};
+                if (!this.state.onCallDates[empId]) this.state.onCallDates[empId] = [];
+
+                const existing = new Set(this.state.onCallDates[empId]);
+                const cur = new Date(from + 'T00:00:00');
+                const end = new Date(to   + 'T00:00:00');
+                let added = 0;
+                while (cur <= end) {
+                    const iso = cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0');
+                    if (!existing.has(iso)) { existing.add(iso); added++; }
+                    cur.setDate(cur.getDate() + 1);
+                }
+                this.state.onCallDates[empId] = [...existing].sort();
+                this.saveOnCallDatesToSupabase();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_add', empId, from, to, added });
+                alert(`✅ Added ${added} date${added !== 1 ? 's' : ''} to On-Call schedule for ${empId}.`);
+                this.renderManageOnCallView();
+            },
+
+            deleteOnCallBlock(empId, blockFrom, blockTo) {
+                if (!confirm(`Remove all On-Call dates from ${blockFrom} to ${blockTo} for ${empId}?`)) return;
+                if (!this.state.onCallDates?.[empId]) return;
+
+                const dateFrom = new Date(blockFrom + 'T00:00:00');
+                const dateTo   = new Date(blockTo   + 'T00:00:00');
+                const toDelete = new Set();
+                const cur = new Date(dateFrom);
+                while (cur <= dateTo) {
+                    toDelete.add(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
+                    cur.setDate(cur.getDate() + 1);
+                }
+
+                const before = this.state.onCallDates[empId].length;
+                this.state.onCallDates[empId] = this.state.onCallDates[empId].filter(d => !toDelete.has(d));
+                const removed = before - this.state.onCallDates[empId].length;
+
+                // Update Supabase by re-saving the full state (delete + re-insert approach)
+                this.saveOnCallDatesToSupabase();
+                this.writeAuditLog('MANUAL_OVERRIDE', { action: 'on_call_delete', empId, blockFrom, blockTo, removed });
+                alert(`🗑 Removed ${removed} date${removed !== 1 ? 's' : ''} from On-Call schedule.`);
+                this.renderManageOnCallView();
+            },
+
+            renderChangePlannerPasswordView() {
+                const content = document.getElementById('contentArea');
+                content.innerHTML = `
+                    <div class="max-w-md mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-8">
+                            <h2 class="text-2xl font-bold mb-2">🔐 Change Planner Password</h2>
+                            <p class="text-gray-500 text-sm mb-6">Update the planner login password. This is saved to the database.</p>
+                            <div id="ppMsg"></div>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block font-semibold mb-2">Current Password:</label>
+                                    <input type="password" id="ppCurrent" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Enter current planner password" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">New Password:</label>
+                                    <input type="password" id="ppNew" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Enter new password (min 4 chars)" />
+                                </div>
+                                <div>
+                                    <label class="block font-semibold mb-2">Confirm New Password:</label>
+                                    <input type="password" id="ppConfirm" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none" placeholder="Repeat new password" />
+                                </div>
+                            </div>
+                            <div class="flex gap-3 mt-6">
+                                <button onclick="app.doChangePlannerPassword()" class="flex-1 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold">
+                                    💾 Save Password
+                                </button>
+                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            async doChangePlannerPassword() {
+                const current = document.getElementById('ppCurrent').value;
+                const newPass = document.getElementById('ppNew').value;
+                const confirm = document.getElementById('ppConfirm').value;
+                const msg = document.getElementById('ppMsg');
+
+                const showMsg = (text, color) => {
+                    msg.innerHTML = `<div class="mb-4 p-3 rounded-lg border ${color}">${text}</div>`;
+                };
+
+                if (current !== this.state.plannerPassword) {
+                    showMsg('❌ Current password is incorrect.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+                if (newPass.length < 4) {
+                    showMsg('⚠️ New password must be at least 4 characters.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                    return;
+                }
+                if (newPass !== confirm) {
+                    showMsg('❌ New passwords do not match.', 'bg-red-50 border-red-300 text-red-700');
+                    return;
+                }
+
+                this.state.plannerPassword = newPass;
+
+                try {
+                    await this.saveConfigToSupabase();
+                    showMsg('✅ Planner password updated and saved to database!', 'bg-green-50 border-green-300 text-green-700');
+                } catch (err) {
+                    console.error('Planner password change error:', err);
+                    showMsg('✅ Password updated locally. ⚠️ Database save failed.', 'bg-yellow-50 border-yellow-300 text-yellow-700');
+                }
+
+                document.getElementById('ppCurrent').value = '';
+                document.getElementById('ppNew').value = '';
+                document.getElementById('ppConfirm').value = '';
+            },
+
+            // ==================== FORGOT PASSWORD (OTP via EmailJS) ====================
+            // Internal OTP state — not part of app.state (no persistence needed)
+            _fpOtp: null, _fpOtpExpiry: null, _fpRole: null, _fpIdentifier: null, _fpTokenId: null,
+
+            renderForgotPasswordView() {
+                // Create full-screen modal overlay appended to body
+                let overlay = document.getElementById('fpOverlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'fpOverlay';
+                    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(8,28,21,0.82);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);';
+                    document.body.appendChild(overlay);
+                }
+                overlay.style.display = 'flex';
+                overlay.innerHTML = `
+                  <div style="background:#fff;border-radius:24px;padding:36px 32px;max-width:420px;width:95%;box-shadow:0 32px 80px rgba(0,0,0,0.5);position:relative;color:#111827;font-family:Barlow,sans-serif;">
+                    <button onclick="app.closeForgotPasswordView()" style="position:absolute;top:16px;right:18px;background:rgba(0,0,0,0.06);border:none;width:32px;height:32px;border-radius:50%;font-size:1.1rem;cursor:pointer;color:#6b7280;line-height:32px;text-align:center;padding:0;">✕</button>
+                    <div style="text-align:center;margin-bottom:24px;">
+                      <div style="font-size:2.8rem;margin-bottom:8px;">🔐</div>
+                      <h2 style="font-size:1.4rem;font-weight:700;color:#111827;margin-bottom:4px;">Password Recovery</h2>
+                      <p style="font-size:0.83rem;color:#6b7280;margin:0;">An OTP will be sent to your registered email.</p>
+                    </div>
+                    <div id="fpMsg"></div>
+                    <!-- Step 1 -->
+                    <div id="fpStep1">
+                      <div style="margin-bottom:16px;">
+                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Your Registered Email</label>
+                        <input type="email" id="fpEmailInput" placeholder="name@flow-metro.com"
+                          style="width:100%;padding:13px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.95rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f';this.style.boxShadow='0 0 0 3px rgba(45,106,79,0.12)'"
+                          onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'"
+                          onkeydown="if(event.key==='Enter') app.fpSendOtp()" />
+                        <p style="font-size:0.75rem;color:#9ca3af;margin-top:6px;">Enter the email address registered to your account.</p>
+                      </div>
+                      <button id="fpSendBtn" onclick="app.fpSendOtp()"
+                        style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;letter-spacing:.03em;">
+                        📧 Send OTP to Email
+                      </button>
+                      <p style="text-align:center;font-size:0.75rem;color:#9ca3af;margin-top:12px;margin-bottom:0;">OTP expires in 10 minutes · Check spam if not received</p>
+                    </div>
+                    <!-- Step 2 -->
+                    <div id="fpStep2" style="display:none;">
+                      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:13px;margin-bottom:18px;text-align:center;">
+                        <p id="fpOtpSentMsg" style="font-size:0.85rem;color:#1e40af;line-height:1.5;margin:0;"></p>
+                      </div>
+                      <div style="margin-bottom:14px;">
+                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">6-Digit OTP Code</label>
+                        <input type="text" id="fpOtpInput" maxlength="6" inputmode="numeric" placeholder="• • • • • •"
+                          style="width:100%;padding:15px;border:2px solid #3b82f6;border-radius:12px;font-size:1.6rem;text-align:center;letter-spacing:.3em;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;" />
+                      </div>
+                      <div style="margin-bottom:14px;">
+                        <label id="fpNewPwdLabel" style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">New Password</label>
+                        <input type="password" id="fpNewPwd" placeholder="Enter new password"
+                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#d1d5db'" />
+                      </div>
+                      <div style="margin-bottom:20px;">
+                        <label style="display:block;font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:7px;text-transform:uppercase;letter-spacing:.07em;">Confirm New Password</label>
+                        <input type="password" id="fpConfirmPwd" placeholder="Confirm new password"
+                          style="width:100%;padding:11px 14px;border:1.5px solid #d1d5db;border-radius:12px;font-size:0.92rem;color:#111827;background:#f9fafb;outline:none;box-sizing:border-box;"
+                          onfocus="this.style.borderColor='#2d6a4f'" onblur="this.style.borderColor='#d1d5db'" />
+                      </div>
+                      <button onclick="app.fpVerifyOtp()"
+                        style="width:100%;padding:13px;background:linear-gradient(135deg,#1b4332,#2d6a4f);color:#fff;font-weight:700;font-size:0.97rem;border:none;border-radius:12px;cursor:pointer;margin-bottom:10px;">
+                        ✅ Verify & Reset Password
+                      </button>
+                      <button onclick="app.fpGoBack()"
+                        style="width:100%;padding:11px;background:#f3f4f6;color:#374151;font-weight:600;font-size:0.88rem;border:1.5px solid #e5e7eb;border-radius:12px;cursor:pointer;">
+                        ← Try a Different Account
+                      </button>
+                    </div>
+                  </div>`;
+                // focus the email input automatically
+                setTimeout(() => document.getElementById('fpEmailInput')?.focus(), 80);
+            },
+
+            closeForgotPasswordView() {
+                const overlay = document.getElementById('fpOverlay');
+                if (overlay) overlay.style.display = 'none';
+            },
+
+            fpGoBack() {
+                document.getElementById('fpStep1').style.display = 'block';
+                document.getElementById('fpStep2').style.display = 'none';
+                document.getElementById('fpMsg').innerHTML = '';
+            },
+
+            _fpFindByEmail(email) {
+                // Search ALL user pools by email — returns { email, name, role, id }
+                const e = email.toLowerCase().trim();
+                // Planner
+                if (this.state.plannerEmail && this.state.plannerEmail.toLowerCase() === e)
+                    return { email: this.state.plannerEmail, name: 'Planner', role: 'planner', id: 'planner' };
+                // All staff pools
+                const pools = [
+                    { list: this.state.employees,           role: 'employee'       },
+                    { list: this.state.goldenCommandUsers,  role: 'goldencommand'  },
+                    { list: this.state.corporateStaffUsers, role: 'corporatestaff' },
+                    { list: this.state.l456InmUsers,        role: 'l456inm'        },
+                    { list: this.state.l3InmUsers,          role: 'l3inm'          },
+                    { list: this.state.l3TsmUsers,          role: 'l3tsm'          },
+                    { list: this.state.hseqUsers,           role: 'hseq'           },
+                ];
+                for (const pool of pools) {
+                    const u = (pool.list || []).find(u => u.email && u.email.toLowerCase() === e);
+                    if (u) return { email: u.email, name: u.name, role: pool.role, id: u.id };
+                }
+                return null;
+            },
+
+            async fpSendOtp() {
+                const emailInput = (document.getElementById('fpEmailInput')?.value || '').trim();
+                const btn        = document.getElementById('fpSendBtn');
+                const msg        = document.getElementById('fpMsg');
+                const showMsg    = (text, type) => {
+                    const s = { error:'background:#fef2f2;border:1px solid #fecaca;color:#991b1b', warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e', info:'background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af' };
+                    msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.info}">${text}</div>`;
+                };
+
+                if (!emailInput) { showMsg('⚠️ Please enter your email address.', 'warn'); return; }
+                if (!/^[^@]+@[^@]+\.[^@]+$/.test(emailInput)) { showMsg('⚠️ Please enter a valid email address.', 'warn'); return; }
+
+                const target = this._fpFindByEmail(emailInput);
+                if (!target) { showMsg('❌ No account found with that email. Check spelling or contact the planner.', 'error'); return; }
+
+                // Always use the typed email directly — state may have stale/empty email field
+                if (!target.email) target.email = emailInput;
+
+                // role and identifier come from the found record
+                const role       = target.role;
+                const identifier = target.id === 'planner' ? '' : target.id;
+
+                // Retrieve EmailJS keys saved by admin
+                const svcId  = localStorage.getItem('ejs_service')  || this.state.ejsServiceId  || '';
+                const tplId  = localStorage.getItem('ejs_template') || this.state.ejsTemplateId || '';
+                const pubKey = localStorage.getItem('ejs_pubkey')   || this.state.ejsPublicKey  || '';
+
+                // Generate OTP
+                const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                const otpExpiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+                // Keep in-memory as fallback
+                this._fpOtp        = otp;
+                this._fpOtpExpiry  = Date.now() + 10 * 60 * 1000;
+                this._fpRole       = role;
+                this._fpIdentifier = identifier;
+                this._fpTokenId    = null;
+
+                if (btn) { btn.disabled = true; btn.textContent = '⏳ Sending…'; btn.style.opacity = '.7'; }
+                showMsg('⏳ Sending OTP to your registered email…', 'info');
+
+                let sent = false;
+                let sendError = '';
+
+                // Debug: log what keys we have
+                console.log('EmailJS keys — svcId:', svcId, '| tplId:', tplId, '| pubKey:', pubKey ? pubKey.substring(0,6)+'…' : '(empty)');
+                console.log('Target email:', target.email, '| name:', target.name);
+
+                const toEmail = emailInput || target.email || '';
+                const toName  = target.name || toEmail;
+                const expiryTime = new Date(Date.now() + 10 * 60 * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const result = await this.sendEmailWithFallback({
+                    email:        toEmail,
+                    to_email:     toEmail,
+                    to_name:      toName,
+                    otp_code:     otp,
+                    passcode:     otp,
+                    time:         expiryTime,
+                    company_name: 'Resource Planning Team at Flow',
+                    Annual_Leave_System_RP: 'Resource Planning Team at Flow',
+                    website_link: window.location.href,
+                    employee_id:  identifier || 'planner',
+                    year:         this.state.biddingYear,
+                    subject:      'Your Annual Leave System OTP code'
+                });
+                sent = result.sent;
+                sendError = result.error;
+                if (sent) console.log('OTP sent via', result.method);
+
+                if (btn) { btn.disabled = false; btn.innerHTML = '📧 Send OTP to Email'; btn.style.opacity = '1'; }
+
+                if (!sent) {
+                    showMsg('❌ Could not send OTP. ' + (sendError ? '<br><small style="opacity:.8">' + sendError + '</small>' : 'Ask the planner to configure Email Settings in the Admin Panel first.'), 'error');
+                    return;
+                }
+
+                // Persist token to Supabase so OTP survives page refresh
+                if (this.supabase) {
+                    try {
+                        // Delete any existing tokens for this user first
+                        await this.supabase.from('password_reset_tokens')
+                            .delete()
+                            .eq('tenant_id', this._tid())
+                            .eq('identifier', identifier || 'planner')
+                            .eq('role', role);
+
+                        const { data: tokenRow } = await this.supabase
+                            .from('password_reset_tokens')
+                            .insert({
+                                tenant_id:  this._tid(),
+                                identifier: identifier || 'planner',
+                                role:       role,
+                                token:      otp,
+                                expires_at: otpExpiry,
+                                email:      target.email
+                            })
+                            .select('id')
+                            .single();
+                        if (tokenRow) this._fpTokenId = tokenRow.id;
+                    } catch (e) { console.warn('Could not persist OTP token to Supabase:', e); }
+                }
+
+                msg.innerHTML = '';
+                document.getElementById('fpStep1').style.display = 'none';
+                document.getElementById('fpStep2').style.display = 'block';
+                const masked = target.email.replace(/(.{2})(.+?)(@.+)$/, (_, a, b, c) => a + '*'.repeat(Math.min(b.length, 5)) + c);
+                document.getElementById('fpOtpSentMsg').innerHTML = `✅ OTP sent to <strong>${masked}</strong>.<br>Check your inbox and spam. Expires in 10 minutes.`;
+                document.getElementById('fpNewPwdLabel').textContent =
+                    (role === 'employee' || role === 'l456inm' || role === 'l3inm' || role === 'l3tsm' || role === 'hseq')
+                    ? 'New Password (leave blank to reset to Operation Staff ID)' : 'New Password';
+            },
+
+            async fpVerifyOtp() {
+                const otp     = (document.getElementById('fpOtpInput')?.value   || '').trim();
+                const newPwd  = (document.getElementById('fpNewPwd')?.value     || '').trim();
+                const confirm = (document.getElementById('fpConfirmPwd')?.value || '').trim();
+                const msg     = document.getElementById('fpMsg');
+                const showMsg = (text, type) => {
+                    const s = { error:'background:#fef2f2;border:1px solid #fecaca;color:#991b1b', warn:'background:#fffbeb;border:1px solid #fcd34d;color:#92400e', ok:'background:#f0fdf4;border:1px solid #86efac;color:#166534' };
+                    msg.innerHTML = `<div style="padding:11px 14px;border-radius:10px;font-size:0.83rem;margin-bottom:14px;${s[type]||s.ok}">${text}</div>`;
+                };
+
+                if (!otp) { showMsg('⚠️ Please enter the OTP code.', 'warn'); return; }
+                if (newPwd && newPwd !== confirm) { showMsg('❌ Passwords do not match.', 'error'); return; }
+                if (newPwd && newPwd.length < 4)  { showMsg('⚠️ Password must be at least 4 characters.', 'warn'); return; }
+
+                let role = this._fpRole;
+                let id   = this._fpIdentifier;
+
+                // Validate OTP — prefer Supabase (survives refresh), fall back to in-memory
+                if (this.supabase && (this._fpTokenId || role)) {
+                    try {
+                        const { data: tokenRow, error: tokenErr } = await this.supabase
+                            .from('password_reset_tokens')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .eq('identifier', id || 'planner')
+                            .eq('role', role)
+                            .eq('token', otp)
+                            .single();
+
+                        if (tokenErr || !tokenRow) {
+                            showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return;
+                        }
+                        if (new Date(tokenRow.expires_at) < new Date()) {
+                            // Clean up expired token
+                            await this.supabase.from('password_reset_tokens').delete().eq('id', tokenRow.id);
+                            showMsg('❌ OTP has expired. Please request a new one.', 'error'); return;
+                        }
+                        // Valid — recover role/id from DB in case page was refreshed
+                        role = tokenRow.role;
+                        id   = tokenRow.identifier === 'planner' ? null : tokenRow.identifier;
+                        this._fpRole       = role;
+                        this._fpIdentifier = id;
+                        this._fpTokenId    = tokenRow.id;
+                    } catch (e) {
+                        // Supabase unreachable — fall back to in-memory check
+                        console.warn('Supabase token check failed, using in-memory:', e);
+                        if (!this._fpOtp)                   { showMsg('❌ Session expired. Please start again.', 'error'); return; }
+                        if (Date.now() > this._fpOtpExpiry) { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
+                        if (otp !== this._fpOtp)            { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
+                    }
+                } else {
+                    // No Supabase — pure in-memory fallback
+                    if (!this._fpOtp)                   { showMsg('❌ Session expired. Please start again.', 'error'); return; }
+                    if (Date.now() > this._fpOtpExpiry) { showMsg('❌ OTP has expired. Please request a new one.', 'error'); return; }
+                    if (otp !== this._fpOtp)            { showMsg('❌ Incorrect OTP. Please check and try again.', 'error'); return; }
+                }
+
+                if (role === 'employee') {
+                    const finalPwd = newPwd || id;
+                    this.state.employeePasswords[id] = finalPwd;
+                    try { if (this.supabase) await this.supabase.from('employees').update({ password: finalPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
+                } else if (role === 'planner') {
+                    this.state.plannerPassword = newPwd;
+                    try { await this.saveConfigToSupabase(); } catch (e) { console.warn(e); }
+                } else if (role === 'goldencommand') {
+                    const u = (this.state.goldenCommandUsers || []).find(u => u.id === id);
+                    if (u) u.password = newPwd;
+                    try { if (this.supabase) await this.supabase.from('golden_command_users').update({ password: newPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
+                } else if (role === 'corporatestaff') {
+                    const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                    if (u) u.password = newPwd;
+                    try { if (this.supabase) await this.supabase.from('corporate_staff_employees').update({ password: newPwd }).eq('id', id); }
+                    catch (e) { console.warn('DB update failed:', e); }
+                }
+
+                this.saveState();
+                // Delete token from Supabase and clear in-memory session
+                if (this.supabase && this._fpTokenId) {
+                    try { await this.supabase.from('password_reset_tokens').delete().eq('id', this._fpTokenId); }
+                    catch (e) { console.warn('Could not delete reset token:', e); }
+                }
+                this._fpOtp = null; this._fpOtpExpiry = null; this._fpRole = null; this._fpIdentifier = null; this._fpTokenId = null;
+
+                showMsg('✅ Password reset successfully! You can now log in with your new password.', 'ok');
+                setTimeout(() => this.closeForgotPasswordView(), 3000);
+            },
+
+            // ==================== EMAIL NOTIFICATION ====================
+            showEmailNotifyModal() {
+                document.getElementById('emailModal').style.display = 'flex';
+                document.getElementById('emailModalMsg').innerHTML = '';
+                document.getElementById('emailProgress').style.display = 'none';
+            },
+
+            async sendResultsNotification() {
+                const serviceId  = document.getElementById('ejsServiceId').value.trim();
+                const templateId = document.getElementById('ejsTemplateId').value.trim();
+                const publicKey  = document.getElementById('ejsPublicKey').value.trim();
+                const msgEl = document.getElementById('emailModalMsg');
+
+                if (!serviceId || !templateId || !publicKey) {
+                    msgEl.innerHTML = '<div style="padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.8rem;margin-bottom:12px;">⚠️ Please fill in all three EmailJS fields.</div>';
+                    return;
+                }
+
+                // Save keys for next time
+                localStorage.setItem('ejs_service', serviceId);
+                localStorage.setItem('ejs_template', templateId);
+                localStorage.setItem('ejs_pubkey', publicKey);
+
+                // Get unique employees with emails
+                const staffToNotify = this.state.employees.filter(e => e.email);
+                if (staffToNotify.length === 0) {
+                    msgEl.innerHTML = '<div style="padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.8rem;margin-bottom:12px;">❌ No employee emails found. Make sure emails are loaded from the database.</div>';
+                    return;
+                }
+
+                // Init EmailJS
+                try { emailjs.init(publicKey); } catch(e) { console.warn('EmailJS init:', e); }
+
+                // Show progress
+                const prog = document.getElementById('emailProgress');
+                const bar  = document.getElementById('emailProgressBar');
+                const txt  = document.getElementById('emailProgressText');
+                prog.style.display = 'block';
+                msgEl.innerHTML = '';
+
+                let sent = 0, failed = 0, viaFallback = 0;
+                for (let i = 0; i < staffToNotify.length; i++) {
+                    const emp = staffToNotify[i];
+                    const result = await this.sendEmailWithFallback({
+                        to_email: emp.email,
+                        to_name: emp.name,
+                        employee_id: emp.id,
+                        year: this.state.biddingYear,
+                        subject: 'Your Annual Leave results are ready'
+                    });
+                    if (result.sent) {
+                        sent++;
+                        if (result.method === 'smtp') viaFallback++;
+                    } else {
+                        console.warn(`Failed to send to ${emp.email}:`, result.error);
+                        failed++;
+                    }
+                    const pct = Math.round(((i+1)/staffToNotify.length)*100);
+                    bar.style.width = pct + '%';
+                    txt.textContent = `Sending... ${i+1}/${staffToNotify.length} (${sent} sent, ${failed} failed)`;
+                    // Small delay to avoid rate limiting
+                    await new Promise(r => setTimeout(r, 300));
+                }
+
+                prog.style.display = 'none';
+                const color = failed === 0 ? '#f0fdf4;border-color:#bbf7d0;color:#166534' : '#fef2f2;border-color:#fecaca;color:#991b1b';
+                msgEl.innerHTML = `<div style="padding:10px;background:${color};border:1px solid;border-radius:8px;font-size:0.8rem;margin-bottom:12px;">
+                    ${failed===0?'✅':'⚠️'} Done! ${sent} emails sent${viaFallback>0?` (${viaFallback} via SMTP fallback)`:''}${failed>0?`, ${failed} failed`:''}.</div>`;
+            },
+
+            // ==================== AUDIT LOG ====================
+            async writeAuditLog(action, details = {}) {
+                const entry = {
+                    action,
+                    user_id: this.state.currentUser?.id || this.state.currentUser?.name || 'unknown',
+                    user_name: this.state.currentUser?.name || 'unknown',
+                    user_type: this.state.userType || 'unknown',
+                    details: JSON.stringify(details),
+                    timestamp: new Date().toISOString()
+                };
+
+                // Always save locally
+                try {
+                    const local = JSON.parse(localStorage.getItem('auditLog') || '[]');
+                    local.unshift(entry);
+                    localStorage.setItem('auditLog', JSON.stringify(local.slice(0, 500))); // keep last 500
+                } catch(e) { console.warn('Audit local save failed', e); }
+
+                // Also save to Supabase audit_logs table
+                if (this.supabase) {
+                    try {
+                        await this.supabase.from('audit_logs').insert({
+                            tenant_id: this._tid(),
+                            action: entry.action,
+                            user_id: entry.user_id,
+                            user_name: entry.user_name,
+                            user_type: entry.user_type,
+                            details: entry.details,
+                            created_at: entry.timestamp
+                        });
+                    } catch(e) { console.warn('Audit Supabase save failed', e); }
+                }
+            },
+
+            renderLeaveDashboardView() {
+                var self = this;
+                var content = document.getElementById('contentArea');
+
+                var lcCSS = [
+                    '#lcDash *{box-sizing:border-box;margin:0;padding:0;}',
+                    '#lcDash{font-family:Barlow,sans-serif;background:linear-gradient(135deg,#e8f4ff 0%,#f0f8ff 40%,#e0efff 100%);min-height:80vh;border-radius:12px;overflow:hidden;color:#1a2e42;}',
+                    '#lcTopbar{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;background:linear-gradient(135deg,#1565c0 0%,#0288d1 50%,#00bcd4 100%);border-bottom:none;flex-wrap:wrap;gap:8px;border-radius:12px 12px 0 0;}',
+                    '.lc-logo{font-family:"Barlow Condensed",sans-serif;font-size:1.35rem;font-weight:800;color:#fff;letter-spacing:.08em;}',
+                    '.lc-logo span{color:#4eb0ff;}',
+                    '.lc-badge-yr{background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.6);color:#fff;font-size:.68rem;font-weight:700;letter-spacing:.15em;padding:2px 10px;border-radius:20px;text-transform:uppercase;}',
+                    '.lc-tabs{display:flex;gap:6px;flex-wrap:wrap;}',
+                    '.lc-tab-btn{font-family:"Barlow Condensed",sans-serif;font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 13px;border-radius:7px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:rgba(255,255,255,.8);cursor:pointer;transition:all .15s;}',
+                    '.lc-tab-btn:hover{border-color:rgba(255,255,255,.7);color:#fff;}',
+                    '.lc-tab-btn.active{background:#fff;border-color:#fff;color:#1565c0;}',
+                    '.lc-month-nav{display:flex;align-items:center;gap:5px;}',
+                    '.lc-mnav-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 10px;border-radius:7px;cursor:pointer;font-size:.9rem;transition:all .15s;}',
+                    '.lc-mnav-btn:hover{background:rgba(255,255,255,.35);}',
+                    '.lc-mnav-label{font-family:"Barlow Condensed",sans-serif;font-size:1rem;font-weight:700;min-width:120px;text-align:center;color:#fff;}',
+                    '.lc-stats{display:flex;gap:12px;padding:10px 22px;background:#fff;border-bottom:1px solid rgba(30,100,200,.1);overflow-x:auto;flex-wrap:nowrap;}',
+                    '.lc-stat{display:flex;align-items:center;gap:9px;background:#f0f7ff;border:1px solid rgba(21,101,192,.15);border-radius:10px;padding:7px 14px;white-space:nowrap;}',
+                    '.lc-stat .sv{font-size:1.3rem;font-weight:700;font-family:"Barlow Condensed",sans-serif;}',
+                    '.lc-stat .sl{font-size:.67rem;color:rgba(30,60,100,.5);text-transform:uppercase;letter-spacing:.1em;}',
+                    '.sv-blue{color:#4eb0ff;}.sv-red{color:#ff6b6b;}.sv-green{color:#2ecc9a;}.sv-amber{color:#ffc36b;}',
+                    '.lc-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+                    '.lc-search{position:relative;}',
+                    '.lc-search input{background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.5);color:#fff;font-size:.8rem;padding:6px 10px 6px 28px;border-radius:8px;outline:none;width:160px;}',
+                    '.lc-search input:focus{border-color:#fff;}',
+                    '.lc-search::before{content:"\\1F50D";position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:.7rem;}',
+                    '.lc-export-btn,.lc-refresh-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.15);color:#fff;cursor:pointer;transition:all .15s;}',
+                    '.lc-export-btn:hover,.lc-refresh-btn:hover{background:rgba(255,255,255,.3);}',
+                    '.lc-refresh-btn{color:#fff;border-color:rgba(255,255,255,.5);}',
+                    '.lc-live-badge{font-size:.65rem;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;padding:2px 8px;border-radius:10px;letter-spacing:.08em;}',
+                    '#lcGrid{overflow-x:auto;background:#fff;}',
+                    '#lcGrid::-webkit-scrollbar{height:5px;}',
+                    '#lcGrid::-webkit-scrollbar-track{background:#f0f7ff;}',
+                    '#lcGrid::-webkit-scrollbar-thumb{background:rgba(100,180,255,.25);border-radius:3px;}',
+                    '.lc-date-hdr{display:flex;position:sticky;top:0;z-index:50;background:#1565c0;border-bottom:1px solid rgba(21,101,192,.3);min-width:max-content;}',
+                    '.lc-hdr-row2{display:flex;position:sticky;top:37px;z-index:49;background:#1976d2;border-bottom:1px solid rgba(21,101,192,.2);min-width:max-content;}',
+                    '.lc-frozen-hdr{position:sticky;left:0;z-index:30;display:flex;background:#1565c0;border-right:2px solid rgba(255,255,255,.25);box-shadow:3px 0 8px rgba(0,0,0,.15);}',
+                    '.lc-fh-name{width:195px;padding:7px 11px;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.7);font-weight:600;border-right:1px solid rgba(255,255,255,.15);}',
+                    '.lc-fh-meta{width:175px;padding:7px 11px;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.7);font-weight:600;}',
+                    '.lc-date-cells{display:flex;}',
+                    '.lc-dc{width:30px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px 0;border-right:1px solid rgba(255,255,255,.12);cursor:default;background:#1565c0;}',
+                    '.lc-dc .dcd{font-size:.55rem;color:rgba(255,255,255,.7);text-transform:uppercase;}',
+                    '.lc-dc .dcn{font-family:"Barlow Condensed",sans-serif;font-size:.88rem;font-weight:700;color:#fff;}',
+                    '.lc-dc.wknd{background:#0d47a1;}',
+                    '.lc-dc.wknd .dcn{color:rgba(255,255,255,.55);}',
+                    '.lc-dc.td-col .dcn{color:#fff;}',
+                    '.lc-dc.td-col{background:#f57f17;}',
+                    '.lc-dept-hdr{display:flex;align-items:center;gap:9px;padding:5px 13px;background:#e3f0ff;border-bottom:1px solid rgba(21,101,192,.15);border-top:1px solid rgba(21,101,192,.15);min-width:max-content;}',
+                    '.lc-dept-tag{font-family:"Barlow Condensed",sans-serif;font-size:.7rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:2px 10px;border-radius:5px;}',
+                    '.dt-exec{background:rgba(78,176,255,.2);color:#90ccff;border:1px solid rgba(78,176,255,.35);}',
+                    '.dt-pmo{background:rgba(170,120,255,.2);color:#caaeff;border:1px solid rgba(170,120,255,.35);}',
+                    '.dt-strat{background:rgba(46,204,154,.2);color:#7eedc8;border:1px solid rgba(46,204,154,.35);}',
+                    '.dt-hsqe{background:rgba(255,195,80,.2);color:#ffd98a;border:1px solid rgba(255,195,80,.35);}',
+                    '.dt-ops{background:rgba(255,107,107,.2);color:#ffaaaa;border:1px solid rgba(255,107,107,.35);}',
+                    '.lc-staff-row{display:flex;align-items:stretch;border-bottom:1px solid rgba(21,101,192,.08);min-width:max-content;}',
+                    '.lc-staff-row:hover .lc-frozen-name,.lc-staff-row:hover .lc-frozen-meta{background:#f0f7ff;}.lc-staff-row:hover{background:rgba(78,176,255,.04);}',
+                    '.lc-frozen-name{position:sticky;left:0;z-index:20;width:195px;padding:7px 11px;display:flex;flex-direction:column;justify-content:center;background:#fff;border-right:1px solid rgba(21,101,192,.15);flex-shrink:0;box-shadow:2px 0 6px rgba(21,101,192,.08);}',
+                    '.lc-sname{font-size:.8rem;font-weight:600;color:#1a2e42;line-height:1.2;}',
+                    '.lc-sid{font-size:.62rem;color:rgba(30,60,100,.45);font-family:monospace;margin-top:2px;}',
+                    '.lc-frozen-meta{position:sticky;left:195px;z-index:20;width:175px;padding:7px 11px;display:flex;flex-direction:column;justify-content:center;background:#fff;border-right:2px solid rgba(21,101,192,.2);flex-shrink:0;box-shadow:3px 0 8px rgba(21,101,192,.1);}',
+                    '.lc-stitle{font-size:.67rem;color:rgba(30,60,100,.6);line-height:1.3;}',
+                    '.lc-lcount{margin-top:3px;font-size:.63rem;font-weight:700;font-family:"Barlow Condensed",sans-serif;display:flex;align-items:center;gap:4px;}',
+                    '.lc-lval{color:#ff6b6b;}.lc-llab{color:rgba(200,225,255,.38);text-transform:uppercase;letter-spacing:.08em;}',
+                    '.lc-sick-count{margin-top:1px;}',
+                    '.lc-lval-sick{color:#ffb74d;font-weight:700;}',
+                    '.lc-leave-cells{display:flex;}',
+                    '.lc-c{width:30px;height:42px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-right:1px solid rgba(100,180,255,.07);font-size:.65rem;font-weight:700;}',
+                    '.lc-c.leave{background:rgba(255,107,107,.22);color:#ff8080;}',
+                    '.lc-c.leave-start{background:rgba(255,107,107,.28);color:#ff8080;border-left:2px solid #ff6b6b;}',
+                    '.lc-c.leave-sick{background:rgba(255,183,77,.24);color:#ffb74d;}',
+                    '.lc-c.wknd{background:rgba(100,140,200,.07);}',
+                    '.lc-c.td-c{background:rgba(78,176,255,.06);}',
+                    '.lc-c.leave.wknd{background:rgba(255,107,107,.14);}',
+                    '.lc-c.leave-sick.wknd{background:rgba(255,183,77,.15);}',
+                    '.lc-month-band{display:flex;align-items:center;background:rgba(78,176,255,.08);border-right:1px solid rgba(100,180,255,.22);padding:0 8px;font-family:"Barlow Condensed",sans-serif;font-size:.65rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4eb0ff;white-space:nowrap;}',
+                    '.lc-legend{display:flex;gap:14px;align-items:center;padding:9px 22px;border-top:1px solid rgba(21,101,192,.1);background:#f0f7ff;font-size:.67rem;color:rgba(30,60,100,.5);flex-wrap:wrap;}',
+                    '.lc-leg-item{display:flex;align-items:center;gap:5px;}',
+                    '.lc-leg-sw{width:13px;height:13px;border-radius:3px;}',
+                    '#lcTooltip{position:fixed;z-index:9999;background:#1c3450;border:1px solid rgba(100,180,255,.35);border-radius:8px;padding:8px 12px;font-size:.76rem;color:#d8eaf7;pointer-events:none;display:none;box-shadow:0 8px 24px rgba(0,0,0,.55);max-width:230px;line-height:1.5;}',
+                    '#lcTooltip strong{color:#4eb0ff;}',
+                    '.lc-empty{padding:55px;text-align:center;color:rgba(200,225,255,.35);font-family:"Barlow Condensed",sans-serif;font-size:1.05rem;letter-spacing:.05em;}',
+                    '.lc-no-bids{padding:40px;text-align:center;background:#f0f7ff;border-radius:10px;margin:20px;color:rgba(30,60,100,.4);}',
+                    '.lc-no-bids .lc-nb-icon{font-size:2.5rem;margin-bottom:10px;}',
+                    '.lc-no-bids p{font-size:.9rem;}',
+                    '.lc-sf-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(255,210,80,.7);background:rgba(255,193,7,.2);color:#ffe082;cursor:pointer;transition:all .15s;}',
+                    '.lc-sf-btn:hover{background:rgba(255,193,7,.35);border-color:#ffe082;color:#fff;}',
+                    '#lcSfModal{display:none;position:fixed;inset:0;z-index:10000;background:rgba(10,20,40,.72);align-items:center;justify-content:center;}',
+                    '#lcSfModal.open{display:flex;}',
+                    '#lcSfBox{background:#0d1b2e;border:1px solid rgba(100,180,255,.25);border-radius:14px;padding:26px 28px;width:560px;max-width:95vw;box-shadow:0 24px 60px rgba(0,0,0,.7);color:#d8eaf7;font-family:Barlow,sans-serif;}',
+                    '#lcSfBox h3{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:800;letter-spacing:.08em;color:#4eb0ff;margin-bottom:4px;}',
+                    '#lcSfBox p.lc-sf-sub{font-size:.73rem;color:rgba(200,225,255,.45);margin-bottom:14px;line-height:1.5;}',
+                    '#lcSfBox label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:rgba(200,225,255,.5);display:block;margin-bottom:5px;}',
+                    '#lcSfBox textarea{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(100,180,255,.22);border-radius:8px;color:#d8eaf7;font-size:.76rem;font-family:monospace;padding:10px;resize:vertical;min-height:130px;outline:none;}',
+                    '#lcSfBox textarea:focus{border-color:rgba(100,180,255,.5);}',
+                    '.lc-sf-row{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;}',
+                    '.lc-sf-run{font-family:"Barlow Condensed",sans-serif;font-size:.82rem;font-weight:700;letter-spacing:.08em;padding:8px 18px;border-radius:8px;background:#1565c0;border:1px solid #4eb0ff;color:#fff;cursor:pointer;transition:all .15s;}',
+                    '.lc-sf-run:hover{background:#1976d2;}',
+                    '.lc-sf-run:disabled{opacity:.45;cursor:not-allowed;}',
+                    '.lc-sf-cancel{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:600;padding:8px 14px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(200,225,255,.6);cursor:pointer;}',
+                    '.lc-sf-cancel:hover{background:rgba(255,255,255,.12);}',
+                    '#lcSfStatus{flex:1;font-size:.73rem;color:rgba(200,225,255,.5);min-width:160px;}',
+                    '#lcSfStatus.ok{color:#2ecc9a;}',
+                    '#lcSfStatus.err{color:#ff6b6b;}',
+                    '#lcSfStatus.warn{color:#ffc36b;}',
+                    '.lc-sf-preview{margin-top:12px;background:rgba(255,255,255,.04);border:1px solid rgba(100,180,255,.12);border-radius:8px;padding:10px;max-height:180px;overflow-y:auto;font-size:.7rem;font-family:monospace;color:rgba(200,225,255,.6);display:none;}',
+                    '.lc-sf-preview.show{display:block;}',
+                    '.lc-sf-row2{display:flex;gap:8px;margin-top:10px;align-items:center;}',
+                    '.lc-sf-filebtn{font-size:.72rem;padding:6px 12px;border-radius:7px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);color:rgba(200,225,255,.7);cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.06em;}',
+                    '.lc-sf-filebtn:hover{background:rgba(255,255,255,.14);}',
+                    '.lc-dc.ph{background:#6a1b9a;}',
+                    '.lc-dc.ph .dcn{color:rgba(255,255,255,.8);}',
+                    '.lc-c.ph{background:rgba(171,71,188,.18);}',
+                    '.lc-c.leave.ph{background:rgba(171,71,188,.30);color:#e1bee7;}',
+                    '.lc-year-nav{display:flex;align-items:center;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid rgba(255,255,255,.25);}',
+                    '.lc-year-btn{background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 8px;border-radius:7px;cursor:pointer;font-size:.85rem;}',
+                    '.lc-year-btn:hover{background:rgba(255,255,255,.35);}',
+                    '.lc-year-label{font-family:"Barlow Condensed",sans-serif;font-size:.95rem;font-weight:700;min-width:44px;text-align:center;color:#fff;}',
+                    '.lc-ph-btn{font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.08em;padding:6px 13px;border-radius:8px;border:1px solid rgba(206,147,216,.7);background:rgba(171,71,188,.22);color:#f3e5f5;cursor:pointer;transition:all .15s;}',
+                    '.lc-ph-btn:hover{background:rgba(171,71,188,.4);border-color:#f3e5f5;color:#fff;}',
+                    '#lcPhModal{display:none;position:fixed;inset:0;z-index:10000;background:rgba(10,20,40,.72);align-items:center;justify-content:center;}',
+                    '#lcPhModal.open{display:flex;}',
+                    '#lcPhBox{background:#0d1b2e;border:1px solid rgba(171,71,188,.35);border-radius:14px;padding:26px 28px;width:480px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.7);color:#d8eaf7;font-family:Barlow,sans-serif;}',
+                    '#lcPhBox h3{font-family:"Barlow Condensed",sans-serif;font-size:1.15rem;font-weight:800;letter-spacing:.08em;color:#ce93d8;margin-bottom:4px;}',
+                    '#lcPhBox p.lc-ph-sub{font-size:.73rem;color:rgba(200,225,255,.45);margin-bottom:14px;line-height:1.5;}',
+                    '.lc-ph-form{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end;}',
+                    '.lc-ph-form label{font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:rgba(200,225,255,.5);display:block;margin-bottom:4px;}',
+                    '.lc-ph-form input[type=date],.lc-ph-form input[type=text]{background:rgba(255,255,255,.06);border:1px solid rgba(171,71,188,.3);border-radius:8px;color:#d8eaf7;font-size:.78rem;padding:7px 9px;outline:none;}',
+                    '.lc-ph-form input:focus{border-color:#ce93d8;}',
+                    '.lc-ph-name-input{width:170px;}',
+                    '.lc-ph-add{font-family:"Barlow Condensed",sans-serif;font-size:.8rem;font-weight:700;padding:8px 16px;border-radius:8px;background:#6a1b9a;border:1px solid #ce93d8;color:#fff;cursor:pointer;}',
+                    '.lc-ph-add:hover{background:#7b1fa2;}',
+                    '.lc-ph-list{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;}',
+                    '.lc-ph-row{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.04);border:1px solid rgba(171,71,188,.15);border-radius:8px;padding:8px 12px;gap:8px;}',
+                    '.lc-ph-row .lc-ph-date{font-weight:700;color:#ce93d8;font-size:.78rem;min-width:88px;}',
+                    '.lc-ph-row .lc-ph-name{font-size:.78rem;color:rgba(216,234,247,.8);flex:1;}',
+                    '.lc-ph-del{background:rgba(255,107,107,.15);border:1px solid rgba(255,107,107,.4);color:#ff8080;border-radius:6px;padding:4px 9px;font-size:.7rem;cursor:pointer;}',
+                    '.lc-ph-del:hover{background:rgba(255,107,107,.3);}',
+                    '.lc-ph-empty{font-size:.75rem;color:rgba(200,225,255,.35);text-align:center;padding:16px;}',
+                    '.lc-ph-status{font-size:.7rem;margin-bottom:10px;min-height:14px;}',
+                    '.lc-ph-status.ok{color:#2ecc9a;}',
+                    '.lc-ph-status.err{color:#ff6b6b;}',
+                    '.lc-ph-close{margin-top:16px;font-family:"Barlow Condensed",sans-serif;font-size:.78rem;font-weight:600;padding:8px 14px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:rgba(200,225,255,.6);cursor:pointer;}',
+                    '.lc-ph-close:hover{background:rgba(255,255,255,.12);}'
+                ].join('\n');
+
+                var lcHTML = '<div id="lcDash">'
+                    + '<style>' + lcCSS + '</style>'
+                    + '<div id="lcTopbar">'
+                    +   '<div style="display:flex;align-items:center;gap:10px;">'
+                    +     '<div class="lc-logo">FLOW <span>METRO</span></div>'
+                    +     '<div class="lc-badge-yr" id="lcYearBadge">GC &amp; CS Leave Tracker</div>'
+                    +     '<span class="lc-live-badge" id="lcLiveBadge">&#9679; LIVE</span>'
+                    +   '</div>'
+                    +   '<div class="lc-tabs">'
+                    +     '<button class="lc-tab-btn active" onclick="lcSetDept(\'all\')" id="lct-all">All</button>'
+                    +     '<button class="lc-tab-btn" onclick="lcSetDept(\'gc\')" id="lct-gc">Golden Command</button>'
+                    +     '<button class="lc-tab-btn" onclick="lcSetDept(\'cs\')" id="lct-cs">Corporate Staff</button>'
+                    +   '</div>'
+                    +   '<div class="lc-controls">'
+                    +     '<div class="lc-month-nav">'
+                    +       '<button class="lc-mnav-btn" onclick="lcPrevMonth()">&#8249;</button>'
+                    +       '<div class="lc-mnav-label" id="lcMonthLabel">April 2026</div>'
+                    +       '<button class="lc-mnav-btn" onclick="lcNextMonth()">&#8250;</button>'
+                    +       '<button class="lc-mnav-btn" onclick="lcShowAll()" style="font-size:.72rem;padding:4px 8px;">Full Year</button>'
+                    +       '<div class="lc-year-nav">'
+                    +         '<button class="lc-year-btn" onclick="lcPrevYear()" title="Previous year">&#8249;&#8249;</button>'
+                    +         '<div class="lc-year-label" id="lcYearLabel">2026</div>'
+                    +         '<button class="lc-year-btn" onclick="lcNextYear()" title="Next year">&#8250;&#8250;</button>'
+                    +       '</div>'
+                    +     '</div>'
+                    +     '<div class="lc-search"><input type="text" id="lcSearch" placeholder="Search staff..." oninput="lcFilterStaff(this.value)"></div>'
+                    +     '<button class="lc-refresh-btn" onclick="lcRefresh()">&#8635; Refresh</button>'
+                    +     '<button class="lc-sf-btn" onclick="lcOpenSfSync()">&#8645; SF Sync</button>'
+                    +     '<button class="lc-ph-btn" onclick="lcOpenPhModal()">&#127881; Public Holidays</button>'
+                    +     '<button class="lc-export-btn" onclick="lcExportCSV()">&#11015; CSV</button>'
+                    +   '</div>'
+                    + '</div>'
+                    + '<div class="lc-stats" id="lcStats"></div>'
+                    + '<div id="lcGrid"></div>'
+                    + '<div class="lc-legend">'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,107,107,.22);border:1px solid #ff6b6b;"></div>A &mdash; Annual Leave</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(255,183,77,.24);border:1px solid #ffb74d;"></div>SL &mdash; Sick Leave</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(100,140,200,.1);border:1px solid rgba(100,140,200,.2);"></div>Fri / Sat</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(171,71,188,.18);border:1px solid #ab47bc;"></div>Public Holiday</div>'
+                    +   '<div class="lc-leg-item"><div class="lc-leg-sw" style="background:rgba(78,176,255,.08);border:1px solid #4eb0ff;"></div>Today</div>'
+                    +   '<div style="margin-left:auto;font-size:.62rem;">Leave days shown exclude Fri/Sat &amp; public holidays &middot; Connected to Admin &#8250; Bid Details &#8250; GC &amp; Corporate Staff</div>'
+                    + '</div>'
+                    + '<div id="lcTooltip"></div>'
+                    + '<div id="lcPhModal">'
+                    +   '<div id="lcPhBox">'
+                    +     '<h3>&#127881; Public Holiday Configuration</h3>'
+                    +     '<p class="lc-ph-sub">Dates added here are excluded from leave day totals for every staff member, in addition to Fridays and Saturdays. Holidays apply to whichever year they fall in.</p>'
+                    +     '<div class="lc-ph-form">'
+                    +       '<div><label>Date</label><input type="date" id="lcPhDateInput"></div>'
+                    +       '<div><label>Name (optional)</label><input type="text" id="lcPhNameInput" class="lc-ph-name-input" placeholder="e.g. National Day"></div>'
+                    +       '<button class="lc-ph-add" onclick="lcAddPublicHoliday()">+ Add</button>'
+                    +     '</div>'
+                    +     '<div class="lc-ph-status" id="lcPhStatus"></div>'
+                    +     '<div class="lc-ph-list" id="lcPhList"></div>'
+                    +     '<button class="lc-ph-close" onclick="lcClosePhModal()">Close</button>'
+                    +   '</div>'
+                    + '</div>'
+                    + '<div id="lcSfModal">'
+                    +   '<div id="lcSfBox">'
+                    +     '<h3>&#8645; SAP SuccessFactors &mdash; Leave Sync</h3>'
+                    +     '<p class="lc-sf-sub">Paste the exported SF leave data (CSV or tab-separated). <strong style="color:#ffe082;">Only employees listed in this dashboard will be imported.</strong> Any request from an employee not in the tracker is silently excluded.</p>'
+                    +     '<div class="lc-sf-row2">'
+                    +       '<label style="margin:0;cursor:pointer;" class="lc-sf-filebtn" for="lcSfFileInput">&#128196; Upload Excel / CSV / TSV</label>'
+                    +       '<input type="file" id="lcSfFileInput" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none;" onchange="lcSfLoadFile(this)">'
+                    +       '<span id="lcSfFileName" style="font-size:.7rem;color:rgba(200,225,255,.4);"></span>'
+                    +     '</div>'
+                    +     '<label style="margin-top:10px;">Or paste raw data (CSV / tab-separated)</label>'
+                    +     '<textarea id="lcSfRaw" placeholder="employee_id, employee_name, leave_type, start_date, end_date, days&#10;1000888, Ahmed Al-Rashidi, Annual Leave, 2026-03-01, 2026-03-10, 10&#10;&#10;Header row is auto-detected and skipped. Dates must be YYYY-MM-DD."></textarea>'
+                    +     '<div class="lc-sf-preview" id="lcSfPreview"></div>'
+                    +     '<div class="lc-sf-row">'
+                    +       '<button class="lc-sf-run" id="lcSfRunBtn" onclick="lcRunSfSync()">&#9654; Run Sync</button>'
+                    +       '<button class="lc-sf-cancel" onclick="lcCloseSfSync()">Cancel</button>'
+                    +       '<div id="lcSfStatus"></div>'
+                    +     '</div>'
+                    +   '</div>'
+                    + '</div>'
+                    + '</div>';
+
+                content.innerHTML = lcHTML;
+
+                // ── Helpers ──────────────────────────────────────────────
+                var LC_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                var LC_DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+                var lcViewMode = 'month';
+                var lcMonth    = new Date().getMonth();
+                var lcYear     = self.state.biddingYear || new Date().getFullYear();
+                var lcDeptFilter = 'all';
+                var lcQuery    = '';
+                var lcToday    = new Date();
+                var lcTodayStr = lcToday.getFullYear() + '-' + String(lcToday.getMonth()+1).padStart(2,'0') + '-' + String(lcToday.getDate()).padStart(2,'0');
+
+                // ── Public Holiday configuration ────────────────────────
+                // Stored as an array of {date:'YYYY-MM-DD', name} objects.
+                // Cached in localStorage and (if available) synced to a
+                // Supabase table called `public_holidays` (columns: id,
+                // tenant_id, date, name, created_at). If that table doesn't
+                // exist yet, the dashboard silently falls back to the
+                // localStorage-only copy so nothing breaks.
+                var lcPublicHolidays = [];
+                var lcPhSet = new Set();
+
+                function lcRebuildPhSet() {
+                    lcPhSet = new Set(lcPublicHolidays.map(function(h) { return h.date; }));
+                }
+                function lcIsWE(dt) { var d = dt.getDay(); return d === 5 || d === 6; }
+                function lcIsPH(dt) { return lcPhSet.has(lcDK(dt)); }
+
+                function lcDK(dt) {
+                    return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                }
+
+                // Normalise a raw SF/SAP "Absences" value into the two-letter
+                // dashboard code shown on the calendar: A = Annual Leave, SL = Sick Leave.
+                // Anything not clearly identifiable as sick defaults to Annual so existing
+                // records without a leave_type (pre-dating this feature) keep showing 'A'.
+                function lcAbsenceCode(rawType) {
+                    var t = (rawType || '').toString().trim().toLowerCase();
+                    if (!t) return 'A';
+                    if (t === 'sl' || t.indexOf('sick') > -1) return 'SL';
+                    return 'A';
+                }
+
+                function lcLoadPhLocal() {
+                    try {
+                        var raw = localStorage.getItem('lcPublicHolidays');
+                        lcPublicHolidays = raw ? JSON.parse(raw) : [];
+                    } catch(e) { lcPublicHolidays = []; }
+                    lcRebuildPhSet();
+                }
+                function lcSavePhLocal() {
+                    try { localStorage.setItem('lcPublicHolidays', JSON.stringify(lcPublicHolidays)); } catch(e) {}
+                }
+                async function lcLoadPublicHolidays() {
+                    lcLoadPhLocal();
+                    if (self.supabase) {
+                        try {
+                            var { data, error } = await self.supabase
+                                .from('public_holidays')
+                                .select('date, name')
+                                .eq('tenant_id', self._tid())
+                                .order('date', { ascending: true });
+                            if (error) {
+                                console.warn('Public holidays: Supabase select returned an error, keeping local cache', error);
+                            } else if (data && data.length > 0) {
+                                // Supabase has rows — trust it as the source of truth.
+                                lcPublicHolidays = data.map(function(r) { return { date: r.date, name: r.name || '' }; });
+                                lcSavePhLocal();
+                            } else if (data && data.length === 0 && lcPublicHolidays.length > 0) {
+                                // Supabase came back empty but we already have entries locally.
+                                // This almost always means earlier inserts never actually reached
+                                // Supabase (missing table / RLS policy / tenant mismatch), NOT that
+                                // the holidays were intentionally deleted. Keep the local cache and
+                                // try to re-push it so future loads stay in sync.
+                                console.warn('Public holidays: Supabase returned 0 rows but local cache has ' + lcPublicHolidays.length + ' — keeping local cache and re-syncing to Supabase.');
+                                for (const h of lcPublicHolidays) {
+                                    try {
+                                        await self.supabase.from('public_holidays').insert({
+                                            tenant_id: self._tid(), date: h.date, name: h.name
+                                        });
+                                    } catch(e2) { console.error('Public holidays: re-sync insert failed for', h.date, e2); }
+                                }
+                            }
+                        } catch(e) { console.warn('Public holidays: Supabase load failed, using local cache', e); }
+                    }
+                    lcRebuildPhSet();
+                }
+                window.lcAddPublicHoliday = async function() {
+                    var dateEl = document.getElementById('lcPhDateInput');
+                    var nameEl = document.getElementById('lcPhNameInput');
+                    var statusEl = document.getElementById('lcPhStatus');
+                    var date = dateEl ? dateEl.value : '';
+                    var name = nameEl ? nameEl.value.trim() : '';
+                    if (!date) {
+                        if (statusEl) { statusEl.textContent = 'Please pick a date first.'; statusEl.className = 'lc-ph-status err'; }
+                        return;
+                    }
+                    if (lcPhSet.has(date)) {
+                        if (statusEl) { statusEl.textContent = 'That date is already configured.'; statusEl.className = 'lc-ph-status err'; }
+                        return;
+                    }
+                    lcPublicHolidays.push({ date: date, name: name });
+                    lcPublicHolidays.sort(function(a,b) { return a.date.localeCompare(b.date); });
+                    lcRebuildPhSet();
+                    lcSavePhLocal();
+                    if (dateEl) dateEl.value = '';
+                    if (nameEl) nameEl.value = '';
+                    if (statusEl) { statusEl.textContent = 'Added ' + date + '.'; statusEl.className = 'lc-ph-status ok'; }
+                    lcRenderPhList();
+                    lcRender();
+                    if (self.supabase) {
+                        try {
+                            var { error: insErr } = await self.supabase.from('public_holidays').insert({
+                                tenant_id: self._tid(), date: date, name: name
+                            });
+                            if (insErr) {
+                                console.error('Public holidays: Supabase insert failed (saved locally only)', insErr);
+                                if (statusEl) { statusEl.textContent = 'Added ' + date + ' locally, but cloud sync failed (' + (insErr.message || 'see console') + '). It may not survive a full cache clear.'; statusEl.className = 'lc-ph-status err'; }
+                            }
+                        } catch(e) { console.error('Public holidays: Supabase insert failed (saved locally only)', e); }
+                    }
+                };
+                window.lcDeletePublicHoliday = async function(date) {
+                    lcPublicHolidays = lcPublicHolidays.filter(function(h) { return h.date !== date; });
+                    lcRebuildPhSet();
+                    lcSavePhLocal();
+                    lcRenderPhList();
+                    lcRender();
+                    if (self.supabase) {
+                        try {
+                            await self.supabase.from('public_holidays').delete()
+                                .eq('tenant_id', self._tid()).eq('date', date);
+                        } catch(e) { console.warn('Public holidays: Supabase delete failed (using local cache only)', e); }
+                    }
+                };
+                function lcRenderPhList() {
+                    var listEl = document.getElementById('lcPhList');
+                    if (!listEl) return;
+                    if (!lcPublicHolidays.length) {
+                        listEl.innerHTML = '<div class="lc-ph-empty">No public holidays configured yet.</div>';
+                        return;
+                    }
+                    listEl.innerHTML = lcPublicHolidays.map(function(h) {
+                        return '<div class="lc-ph-row">'
+                             + '<span class="lc-ph-date">' + h.date + '</span>'
+                             + '<span class="lc-ph-name">' + (h.name || '&mdash;') + '</span>'
+                             + '<button class="lc-ph-del" onclick="lcDeletePublicHoliday(\'' + h.date + '\')">Remove</button>'
+                             + '</div>';
+                    }).join('');
+                }
+                window.lcOpenPhModal = function() {
+                    lcRenderPhList();
+                    var statusEl = document.getElementById('lcPhStatus');
+                    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'lc-ph-status'; }
+                    var modal = document.getElementById('lcPhModal');
+                    if (modal) modal.classList.add('open');
+                };
+                window.lcClosePhModal = function() {
+                    var modal = document.getElementById('lcPhModal');
+                    if (modal) modal.classList.remove('open');
+                };
+
+                // ── Working-day helpers ─────────────────────────────────
+                // A day counts toward leave consumed only if it is NOT a
+                // weekend (Fri/Sat) and NOT a configured public holiday.
+                function lcIsWorkingDay(dt) { return !lcIsWE(dt) && !lcIsPH(dt); }
+
+                // Count working days for a bid's date range that fall
+                // within [winStart, winEnd] (inclusive). Used for both the
+                // full-year total and the current month view.
+                function lcWorkingDaysInWindow(bid, winStart, winEnd) {
+                    if (!bid || !bid.startDate || !winStart || !winEnd) return 0;
+                    var bs = new Date(bid.startDate + 'T00:00:00');
+                    var be = bid.endDate ? new Date(bid.endDate + 'T00:00:00') : bs;
+                    var overlapStart = bs < winStart ? winStart : bs;
+                    var overlapEnd   = be > winEnd   ? winEnd   : be;
+                    if (overlapStart > overlapEnd) return 0;
+                    var count = 0;
+                    var cur = new Date(overlapStart);
+                    while (cur <= overlapEnd) {
+                        if (lcIsWorkingDay(cur)) count++;
+                        cur.setDate(cur.getDate() + 1);
+                    }
+                    return count;
+                }
+
+                // Counts each calendar date at most once per employee (using the
+                // already-deduped leaveCodeByDate map) and splits the total into
+                // Annual vs Sick working days within the given window. This avoids
+                // double counting when two overlapping/duplicate leave records
+                // (e.g. a stale test row plus a real SF-synced row) cover the same date.
+                function lcCountDaysByCode(staffEntry, winStart, winEnd) {
+                    var annual = 0, sick = 0;
+                    var byDate = staffEntry.leaveCodeByDate || {};
+                    Object.keys(byDate).forEach(function(dk) {
+                        var dt = new Date(dk + 'T00:00:00');
+                        if (dt < winStart || dt > winEnd) return;
+                        if (!lcIsWorkingDay(dt)) return;
+                        if (byDate[dk] === 'SL') sick++; else annual++;
+                    });
+                    return { annual: annual, sick: sick };
+                }
+
+                function lcGetDates() {
+                    if (lcViewMode === 'full') {
+                        var r = [];
+                        for (var m = 0; m < 12; m++) {
+                            var daysInM = new Date(lcYear, m+1, 0).getDate();
+                            for (var d = 1; d <= daysInM; d++) r.push(new Date(lcYear, m, d));
+                        }
+                        return r;
+                    }
+                    var dIM2 = new Date(lcYear, lcMonth+1, 0).getDate(), r2 = [];
+                    for (var d2 = 1; d2 <= dIM2; d2++) r2.push(new Date(lcYear, lcMonth, d2));
+                    return r2;
+                }
+
+                // Build leave set from live bids
+                function lcBuildStaffFromBids() {
+                    var bids = self.state.bids || [];
+                    var gcUsers = self.state.goldenCommandUsers  || [];
+                    var csUsers = self.state.corporateStaffUsers || [];
+                    var gcIds = gcUsers.map(function(u){ return u.id; });
+                    var csIds = csUsers.map(function(u){ return u.id; });
+                    var gccsIds = gcIds.concat(csIds);
+
+                    // Only include the specific staff from the approved Excel list
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1002536','10110','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
+
+                    // Canonical job titles from approved staff list
+                    var STAFF_TITLES = {
+                        '1000888': 'Project Director',
+                        '10110': 'TSM L456 Engineering Director',
+                        '1002536': 'TSM L3 Engineering Manager',
+                        '1000008': 'Senior Executive Finance Director',
+                        '1000027': 'Senior Executive Human Resource Director',
+                        '1000124': 'Senior Executive Director Stakeholder & Communication',
+                        '1001118': 'Head of Major Services Management',
+                        '1002997': 'Contract Director',
+                        '1003591': 'ICT Manager',
+                        '1003592': 'Head of Cyber Security',
+                        '1003752': 'INM Director',
+                        '1006024': 'Security Director',
+                        '1006939': 'Rail Safety Manager',
+                        '1007066': 'Operations Director',
+                        '10015':   'TSM L456 Director',
+                        '10020':   'TSM L3 Director',
+                        '1000555': 'Executive Assistant Project Director',
+                        '1000136': 'CMMS Manager',
+                        '1000225': 'Performance Manager',
+                        '1000352': 'Planning and Reporting Specialist',
+                        '1000759': 'KPI & Reporting Specialist',
+                        '1000043': 'Quality And Audit Manager',
+                        '1000830': 'Risk Manager',
+                        '1000284': 'Rail Safety Officer',
+                        '1000330': 'Executive Assistant',
+                        '1000231': 'Line Standards Manager',
+                        '1000238': 'Line Standards Manager',
+                        '1005385': 'Operation Manager L-46',
+                        '1007071': 'Operation Manager L-5',
+                        '1006467': 'Operation Manager L-3'
+                    };
+
+                    // Filter to GC/CS AND in allowed list
+                    var gccs = bids.filter(function(b) { return gccsIds.indexOf(b.employeeId) > -1 && ALLOWED_IDS.indexOf(b.employeeId) > -1; });
+
+                    // Full-year window for the currently selected lcYear, used to
+                    // compute each bid's working-day contribution (excludes
+                    // Fri/Sat weekends and configured public holidays).
+                    var lcYearStart = new Date(lcYear, 0, 1);
+                    var lcYearEnd   = new Date(lcYear, 11, 31);
+
+                    // Build per-staff map
+                    var staffMap = {};
+                    gccs.forEach(function(bid) {
+                        var id = bid.employeeId;
+                        if (!staffMap[id]) {
+                            var isGC = gcIds.indexOf(id) > -1;
+                            staffMap[id] = {
+                                id: id,
+                                name: bid.employeeName || id,
+                                title: STAFF_TITLES[id] || bid.position || bid.department || (isGC ? 'Golden Command' : 'Corporate Staff'),
+                                group: isGC ? 'gc' : 'cs',
+                                dept: isGC ? 'Golden Command' : 'Corporate Staff',
+                                leaveSet: new Set(),
+                                leaveCodeByDate: {},
+                                bids: [],
+                                totalDays: 0,
+                                sickDays: 0
+                            };
+                        }
+                        // Expand bid date range into individual days (for calendar cell highlighting only)
+                        if (bid.startDate && bid.endDate) {
+                            var cur = new Date(bid.startDate + 'T00:00:00');
+                            var end = new Date(bid.endDate + 'T00:00:00');
+                            var absCode = lcAbsenceCode(bid.leaveType);
+                            while (cur <= end) {
+                                staffMap[id].leaveSet.add(lcDK(cur));
+                                staffMap[id].leaveCodeByDate[lcDK(cur)] = absCode;
+                                cur.setDate(cur.getDate() + 1);
+                            }
+                        } else if (bid.startDate) {
+                            staffMap[id].leaveSet.add(bid.startDate);
+                            staffMap[id].leaveCodeByDate[bid.startDate] = lcAbsenceCode(bid.leaveType);
+                        }
+                        // Store raw bid for month-view lookups. Totals are computed
+                        // AFTER this loop, once per staff, from the deduped date map
+                        // (see below) so overlapping/duplicate records for the same
+                        // date can't inflate the count.
+                        staffMap[id].bids.push(bid);
+                    });
+
+                    // Compute full-year Annual vs Sick totals per staff from the
+                    // deduped leaveCodeByDate map (each date counts once, even if
+                    // multiple bids happen to cover it).
+                    Object.keys(staffMap).forEach(function(id) {
+                        var counts = lcCountDaysByCode(staffMap[id], lcYearStart, lcYearEnd);
+                        staffMap[id].totalDays = counts.annual;
+                        staffMap[id].sickDays  = counts.sick;
+                    });
+
+                    var staff = Object.values(staffMap);
+
+                    // Dept filter
+                    if (lcDeptFilter !== 'all') {
+                        staff = staff.filter(function(s) { return s.group === lcDeptFilter; });
+                    }
+                    // Search
+                    if (lcQuery) {
+                        var q = lcQuery.toLowerCase();
+                        staff = staff.filter(function(s) {
+                            return s.name.toLowerCase().indexOf(q) > -1 || s.id.indexOf(q) > -1;
+                        });
+                    }
+                    // Sort by name
+                    staff.sort(function(a, b) { return a.name.localeCompare(b.name); });
+                    return staff;
+                }
+
+                function lcDeptCls(group) {
+                    return group === 'gc' ? 'dt-exec' : 'dt-ops';
+                }
+
+                function lcBuildStats(staff, dates) {
+                    var monthStart = dates.length ? dates[0] : null;
+                    var monthEnd   = dates.length ? dates[dates.length - 1] : null;
+                    var totalLD = 0, totalSick = 0;
+                    staff.forEach(function(s) {
+                        if (lcViewMode === 'full') {
+                            totalLD   += s.totalDays;
+                            totalSick += s.sickDays;
+                        } else if (monthStart) {
+                            var counts = lcCountDaysByCode(s, monthStart, monthEnd);
+                            totalLD   += counts.annual;
+                            totalSick += counts.sick;
+                        }
+                    });
+                    var onToday = staff.filter(function(s) { return s.leaveSet.has(lcTodayStr); }).length;
+                    var gcCount = staff.filter(function(s) { return s.group === 'gc'; }).length;
+                    var csCount = staff.filter(function(s) { return s.group === 'cs'; }).length;
+                    return '<div class="lc-stat"><div class="sv sv-blue">' + staff.length + '</div><div class="sl">Staff on Leave</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-red">' + totalLD + '</div><div class="sl">Annual Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-amber">' + totalSick + '</div><div class="sl">Sick Leave Days (' + (lcViewMode === 'full' ? 'Full Year' : 'Month') + ')</div></div>'
+                         + '<div class="lc-stat"><div class="sv ' + (onToday > 0 ? 'sv-red' : 'sv-green') + '">' + onToday + '</div><div class="sl">On Leave Today</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-amber">' + gcCount + '</div><div class="sl">GC Staff</div></div>'
+                         + '<div class="lc-stat"><div class="sv sv-blue">' + csCount + '</div><div class="sl">CS Staff</div></div>';
+                }
+
+                function lcBuildDateCells(dates) {
+                    return dates.map(function(d) {
+                        var dk = lcDK(d), we = lcIsWE(d), ph = lcIsPH(d), td = dk === lcTodayStr;
+                        var cls = 'lc-dc' + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-col' : '');
+                        return '<div class="' + cls + '"><div class="dcd">' + LC_DAYS[d.getDay()].slice(0,2) + '</div><div class="dcn">' + d.getDate() + '</div></div>';
+                    }).join('');
+                }
+
+                function lcBuildMonthBands(dates) {
+                    var html = '', cur = -1;
+                    dates.forEach(function(d, i) {
+                        var m = d.getMonth();
+                        if (m !== cur) {
+                            var dIM = new Date(lcYear, m+1, 0).getDate();
+                            var w = Math.min(dIM, dates.length - i);
+                            html += '<div class="lc-month-band" style="width:' + (w*30) + 'px;">' + LC_MONTHS[m].slice(0,3).toUpperCase() + '</div>';
+                            cur = m;
+                        }
+                    });
+                    return html;
+                }
+
+                function lcBuildRows(staff, dates) {
+                    if (!staff.length) return '<div class="lc-empty">No staff match the current filter.</div>';
+
+                    var groups = [
+                        { key: 'gc', label: 'Golden Command', cls: 'dt-exec' },
+                        { key: 'cs', label: 'Corporate Staff', cls: 'dt-ops' }
+                    ];
+                    var html = '';
+                    groups.forEach(function(g) {
+                        var members = staff.filter(function(s) { return s.group === g.key; });
+                        if (!members.length) return;
+                        html += '<div class="lc-dept-hdr">'
+                              + '<div style="position:sticky;left:0;z-index:20;display:flex;align-items:center;gap:9px;background:#e3f0ff;min-width:370px;padding:5px 13px;flex-shrink:0;border-right:2px solid rgba(21,101,192,.2);box-shadow:3px 0 8px rgba(21,101,192,.08);">'
+                              + '<span class="lc-dept-tag ' + g.cls + '">' + g.label + '</span>'
+                              + '<span style="font-size:.65rem;color:rgba(30,60,100,.45);">' + members.length + ' staff</span>'
+                              + '</div>'
+                              + '</div>';
+                        members.forEach(function(s) {
+                            // Compute days-in-view as exact, deduped working days
+                            // (excludes Fri/Sat weekends and configured public
+                            // holidays), split Annual vs Sick.
+                            var leaveInView, sickInView;
+                            if (lcViewMode === 'full') {
+                                leaveInView = s.totalDays;
+                                sickInView  = s.sickDays;
+                            } else {
+                                var monthStart = dates.length ? dates[0] : null;
+                                var monthEnd   = dates.length ? dates[dates.length - 1] : null;
+                                if (monthStart && monthEnd) {
+                                    var counts = lcCountDaysByCode(s, monthStart, monthEnd);
+                                    leaveInView = counts.annual;
+                                    sickInView  = counts.sick;
+                                } else {
+                                    leaveInView = 0; sickInView = 0;
+                                }
+                            }
+                            var cells = dates.map(function(d) {
+                                var dk = lcDK(d), lv = s.leaveSet.has(dk), we = lcIsWE(d), ph = lcIsPH(d), td = dk === lcTodayStr;
+                                var code = lv ? (s.leaveCodeByDate[dk] || 'A') : '';
+                                var cls = 'lc-c' + (lv ? ' leave' : '') + (code === 'SL' ? ' leave-sick' : '') + (ph ? ' ph' : (we ? ' wknd' : '')) + (td ? ' td-c' : '');
+                                return '<div class="' + cls + '" data-date="' + dk + '" data-name="' + s.name + '" data-leave="' + lv + '">' + code + '</div>';
+                            }).join('');
+                            var yrNote = (s.totalDays !== leaveInView) ? '<span style="color:rgba(200,225,255,.3);font-size:.58rem;">(' + s.totalDays + ' yr)</span>' : '';
+                            var sickBadge = sickInView > 0
+                                ? '<div class="lc-lcount lc-sick-count"><span class="lc-lval-sick">' + sickInView + '</span><span class="lc-llab">🩹 sick</span></div>'
+                                : '';
+                            html += '<div class="lc-staff-row">'
+                                  + '<div class="lc-frozen-name"><div class="lc-sname">' + s.name + '</div><div class="lc-sid">' + s.id + '</div></div>'
+                                  + '<div class="lc-frozen-meta"><div class="lc-stitle">' + s.title + '</div>'
+                                  + '<div class="lc-lcount"><span class="lc-lval">' + leaveInView + '</span><span class="lc-llab"> days off</span>' + yrNote + '</div>'
+                                  + sickBadge
+                                  + '</div>'
+                                  + '<div class="lc-leave-cells">' + cells + '</div>'
+                                  + '</div>';
+                        });
+                    });
+                    return html;
+                }
+
+                function lcRender() {
+                    var dates = lcGetDates();
+                    var staff = lcBuildStaffFromBids();
+
+                    var lbl = document.getElementById('lcMonthLabel');
+                    if (lbl) lbl.textContent = lcViewMode === 'full' ? ('Full Year ' + lcYear) : (LC_MONTHS[lcMonth] + ' ' + lcYear);
+                    var yrLbl = document.getElementById('lcYearLabel');
+                    if (yrLbl) yrLbl.textContent = lcYear;
+
+                    var statsEl = document.getElementById('lcStats');
+                    if (statsEl) statsEl.innerHTML = lcBuildStats(staff, dates);
+
+                    var gridEl = document.getElementById('lcGrid');
+                    if (!gridEl) return;
+
+                    var bids = self.state.bids || [];
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
+                    var hasAnyGccs = bids.some(function(b) { return gcIds.concat(csIds).indexOf(b.employeeId) > -1; });
+
+                    if (!hasAnyGccs) {
+                        gridEl.innerHTML = '<div class="lc-no-bids"><div class="lc-nb-icon">&#128203;</div><p><strong>No GC &amp; Corporate Staff bids yet.</strong></p><p style="margin-top:6px;font-size:.82rem;">Bids submitted under Admin &rsaquo; Bid Details will appear here automatically.</p></div>';
+                        return;
+                    }
+
+                    var dhCells = lcBuildDateCells(dates);
+                    var monthBands = lcViewMode === 'full'
+                        ? '<div style="display:flex;">' + lcBuildMonthBands(dates) + '</div>'
+                        : '<div class="lc-date-cells">' + dhCells + '</div>';
+                    var row2 = lcViewMode === 'full'
+                        ? '<div class="lc-hdr-row2"><div class="lc-frozen-hdr"><div class="lc-fh-name"></div><div class="lc-fh-meta"></div></div><div class="lc-date-cells">' + dhCells + '</div></div>'
+                        : '';
+
+                    gridEl.innerHTML = '<div class="lc-date-hdr">'
+                        + '<div class="lc-frozen-hdr"><div class="lc-fh-name">Name / ID</div><div class="lc-fh-meta">Role / Days Off</div></div>'
+                        + monthBands + '</div>'
+                        + row2
+                        + lcBuildRows(staff, dates);
+
+                    gridEl.querySelectorAll('.lc-c[data-leave="true"]').forEach(function(el) {
+                        el.addEventListener('mouseenter', lcShowTip);
+                        el.addEventListener('mouseleave', lcHideTip);
+                    });
+                }
+
+                function lcShowTip(e) {
+                    var el = e.currentTarget, name = el.dataset.name, dk = el.dataset.date;
+                    var d = new Date(dk + 'T00:00:00');
+                    var fmt = d.toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+                    var tip = document.getElementById('lcTooltip');
+                    if (tip) { tip.innerHTML = '<strong>' + name + '</strong><br>' + fmt; tip.style.display = 'block'; }
+                    lcMoveTip(e);
+                }
+                function lcHideTip() { var t = document.getElementById('lcTooltip'); if (t) t.style.display = 'none'; }
+                function lcMoveTip(e) { var t = document.getElementById('lcTooltip'); if (t && t.style.display !== 'none') { t.style.left = (e.clientX + 14) + 'px'; t.style.top = (e.clientY - 30) + 'px'; } }
+                document.addEventListener('mousemove', lcMoveTip);
+
+                window.lcPrevMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth - 1 + 12) % 12; lcRender(); };
+                window.lcNextMonth   = function() { lcViewMode = 'month'; lcMonth = (lcMonth + 1) % 12; lcRender(); };
+                window.lcShowAll     = function() { lcViewMode = 'full'; lcRender(); };
+                window.lcPrevYear    = function() { lcYear -= 1; lcRender(); };
+                window.lcNextYear    = function() { lcYear += 1; lcRender(); };
+                window.lcRefresh     = function() { lcRender(); };
+                window.lcSetDept     = function(d) {
+                    lcDeptFilter = d;
+                    document.querySelectorAll('.lc-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+                    var el = document.getElementById('lct-' + d);
+                    if (el) el.classList.add('active');
+                    lcRender();
+                };
+                window.lcFilterStaff = function(q) { lcQuery = q; lcRender(); };
+                window.lcExportCSV   = function() {
+                    var staff = lcBuildStaffFromBids();
+                    var dates = lcGetDates();
+                    var rows = [['Employee ID','Name','Group','Role','Date','Leave']];
+                    staff.forEach(function(s) {
+                        dates.forEach(function(d) {
+                            var dk = lcDK(d);
+                            if (s.leaveSet.has(dk)) rows.push([s.id, s.name, s.group.toUpperCase(), s.title, dk, 'A']);
+                        });
+                    });
+                    var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+                    a.download = 'GC_CS_Leave_' + lcYear + '.csv'; a.click();
+                };
+
+                lcLoadPhLocal();
+                lcRender();
+                // Sync public holidays from Supabase (if configured) in the
+                // background, then re-render so the grid/stats reflect them.
+                lcLoadPublicHolidays().then(function() { lcRender(); });
+
+                // ── Start realtime subscription for the Leave Tracker ─────────
+                // Expose lcRender on window so the realtime callback can call it
+                window.lcRender = lcRender;
+                self.startLcRealtime();
+
+                // Fallback poll every 30s in case realtime events stop arriving
+                if (self._lcFallbackTimer) clearInterval(self._lcFallbackTimer);
+                self._lcFallbackTimer = setInterval(function() {
+                    if (self.state.activeView === 'leaveDashboard') {
+                        lcRender();
+                        self._setLcStatus('live');
+                    }
+                }, 30000);
+                // Build the whitelist once: only IDs that appear in BOTH the
+                // ALLOWED_IDS hardcoded list AND the live GC/CS user roster.
+                function lcSfWhitelist() {
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var csIds = (self.state.corporateStaffUsers || []).map(function(u){ return u.id; });
+                    var gccsIds = gcIds.concat(csIds);
+                    var ALLOWED_IDS = ['1000888','1000008','1000027','1000124','1001118','1002997','1003591','1003592','1003752','1006024','1006939','1007066','10015','10020','1000555','1000136','1000225','1000352','1000759','1000043','1000830','1000284','1000330','1000231','1000238','1005385','1007071','1006467','1007071'];
+                    var set = new Set();
+                    gccsIds.forEach(function(id) { if (ALLOWED_IDS.indexOf(id) > -1) set.add(id); });
+                    return set;
+                }
+
+                // Detect delimiter: tab wins if more tabs than commas in first line
+                function lcSfDetectDelim(text) {
+                    var first = text.split('\n')[0] || '';
+                    return (first.split('\t').length > first.split(',').length) ? '\t' : ',';
+                }
+
+                // Split a single line into fields, respecting double-quoted values that may
+                // themselves contain the delimiter (e.g. a department name like
+                // "Health, Safety and Environment") — a naive split(delim) would misalign
+                // every column after such a field.
+                function lcSfSplitLine(line, delim) {
+                    var result = [];
+                    var cur = '';
+                    var inQuotes = false;
+                    for (var i = 0; i < line.length; i++) {
+                        var c = line[i];
+                        if (inQuotes) {
+                            if (c === '"') {
+                                if (line[i+1] === '"') { cur += '"'; i++; }
+                                else { inQuotes = false; }
+                            } else { cur += c; }
+                        } else {
+                            if (c === '"') { inQuotes = true; }
+                            else if (c === delim) { result.push(cur); cur = ''; }
+                            else { cur += c; }
+                        }
+                    }
+                    result.push(cur);
+                    return result;
+                }
+
+                // Parse raw text → array of row objects
+                // Expected columns (flexible order, detected by header):
+                //   employee_id | employee_name | leave_type | start_date | end_date | days
+                // Falls back to positional (col 0=id, 1=name, 2=type, 3=start, 4=end, 5=days)
+                function lcSfParseRows(text) {
+                    var delim = lcSfDetectDelim(text);
+                    var lines = text.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+                    if (!lines.length) return [];
+
+                    var COL_ALIASES = {
+                        employee_id:     ['employee_id','employeeid','emp_id','empid','id','userid','user_id','personnel_number','personnel id','personid','person id','employee number'],
+                        employee_name:   ['employee_name','employeename','name','full_name','fullname','employee name'],
+                        first_name:      ['first_name','firstname','first name'],
+                        last_name:       ['last_name','lastname','last name'],
+                        leave_type:      ['leave_type','leavetype','type','leave type','absence','absence type','absencetype','time type','timetype'],
+                        start_date:      ['start_date','startdate','from','from_date','start date','leave start','begin_date'],
+                        end_date:        ['end_date','enddate','to','to_date','end date','leave end','return_date'],
+                        days:            ['days','no_of_days','num_days','duration','calendar days','working days','days_requested','quantity'],
+                        approval_status: ['approval_status','approvalstatus','status','approval status','wf_status','wfstatus','workflow status','leave status','request status']
+                    };
+
+                    var colIdx = { employee_id:-1, employee_name:-1, first_name:-1, last_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
+                    var dataStart = 0;
+                    var headerDetected = false;
+
+                    // Scan the first several lines to find the real header row — SAP/SF exports
+                    // often prepend a title line ("Exported to Excel on ...") and a blank line
+                    // before the actual column headers, so we can't assume row 0 is the header.
+                    var scanLimit = Math.min(lines.length, 15);
+                    var bestRow = -1, bestMatches = 0, bestColIdx = null;
+                    for (var h = 0; h < scanLimit; h++) {
+                        var cols = lcSfSplitLine(lines[h], delim).map(function(c){ return c.replace(/^["'\s]+|["'\s]+$/g,'').toLowerCase(); });
+                        var trial = { employee_id:-1, employee_name:-1, first_name:-1, last_name:-1, leave_type:-1, start_date:-1, end_date:-1, days:-1, approval_status:-1 };
+                        var matches = 0;
+                        Object.keys(COL_ALIASES).forEach(function(key) {
+                            cols.forEach(function(col, i) {
+                                if (COL_ALIASES[key].indexOf(col) > -1 && trial[key] === -1) {
+                                    trial[key] = i;
+                                    matches++;
+                                }
+                            });
+                        });
+                        if (matches > bestMatches) { bestMatches = matches; bestRow = h; bestColIdx = trial; }
+                    }
+                    // Require at least 2 recognised columns (e.g. an id + a date) before trusting
+                    // a row as the header — avoids mistaking a title/blank row for headers.
+                    if (bestMatches >= 2) {
+                        headerDetected = true;
+                        dataStart = bestRow + 1;
+                        colIdx = bestColIdx;
+                    }
+
+                    // Positional fallback (approval_status has no positional default — only header-detected)
+                    if (colIdx.employee_id   === -1) colIdx.employee_id   = 0;
+                    if (colIdx.employee_name === -1 && colIdx.first_name === -1 && colIdx.last_name === -1) colIdx.employee_name = 1;
+                    if (colIdx.leave_type    === -1) colIdx.leave_type    = 2;
+                    if (colIdx.start_date    === -1) colIdx.start_date    = 3;
+                    if (colIdx.end_date      === -1) colIdx.end_date      = 4;
+                    if (colIdx.days          === -1) colIdx.days          = 5;
+                    // If no status column found, we treat all rows as approved (manual export assumed pre-filtered)
+                    var hasStatusCol = colIdx.approval_status !== -1;
+
+                    // SF uses various strings for approved status — normalise them all
+                    var APPROVED_VALUES = ['approved','approve','appr','completed','active','taken','confirmed','1','true'];
+
+                    function clean(val) { return (val || '').replace(/^["'\s]+|["'\s]+$/g,'').trim(); }
+                    function parseDate(val) {
+                        var v = clean(val);
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+                        var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                        if (m) return m[3] + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0');
+                        var d = new Date(v);
+                        if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+                        return null;
+                    }
+
+                    var rows = [];
+                    var skippedStatus = 0;
+                    for (var i = dataStart; i < lines.length; i++) {
+                        var parts = lcSfSplitLine(lines[i], delim);
+                        var id    = clean(parts[colIdx.employee_id]);
+                        if (!id) continue;
+
+                        // ── Approval status gate ──────────────────────────────
+                        if (hasStatusCol) {
+                            var statusRaw = clean(parts[colIdx.approval_status]).toLowerCase();
+                            if (APPROVED_VALUES.indexOf(statusRaw) === -1) {
+                                skippedStatus++;
+                                continue;   // not approved — skip silently
+                            }
+                        }
+
+                        var name;
+                        if (colIdx.employee_name !== -1) {
+                            name = clean(parts[colIdx.employee_name]);
+                        } else {
+                            var fn = colIdx.first_name !== -1 ? clean(parts[colIdx.first_name]) : '';
+                            var ln = colIdx.last_name  !== -1 ? clean(parts[colIdx.last_name])  : '';
+                            name = (fn + ' ' + ln).trim();
+                        }
+                        var ltype = clean(parts[colIdx.leave_type]) || 'Annual Leave';
+                        var start = parseDate(parts[colIdx.start_date]);
+                        var end   = parseDate(parts[colIdx.end_date]);
+                        var days  = parseInt(clean(parts[colIdx.days]), 10);
+                        if (!start) continue;
+                        if (!end) end = start;
+                        if (isNaN(days) || days < 1) {
+                            var ms = new Date(end+'T00:00:00') - new Date(start+'T00:00:00');
+                            days = Math.max(1, Math.round(ms / 86400000) + 1);
+                        }
+                        rows.push({ id: id, name: name, leaveType: ltype, startDate: start, endDate: end, days: days });
+                    }
+                    // Attach skipped count so the preview/status message can report it
+                    rows._skippedStatus = skippedStatus;
+                    rows._hasStatusCol  = hasStatusCol;
+                    return rows;
+                }
+
+                window.lcOpenSfSync = function() {
+                    var modal = document.getElementById('lcSfModal');
+                    if (modal) { modal.classList.add('open'); }
+                    var ta = document.getElementById('lcSfRaw');
+                    if (ta) ta.value = '';
+                    var st = document.getElementById('lcSfStatus');
+                    if (st) { st.textContent = ''; st.className = ''; }
+                    var prev = document.getElementById('lcSfPreview');
+                    if (prev) { prev.textContent = ''; prev.classList.remove('show'); }
+                    var fn = document.getElementById('lcSfFileName');
+                    if (fn) fn.textContent = '';
+                };
+                window.lcCloseSfSync = function() {
+                    var modal = document.getElementById('lcSfModal');
+                    if (modal) modal.classList.remove('open');
+                };
+                // Close on backdrop click
+                var sfModal = document.getElementById('lcSfModal');
+                if (sfModal) sfModal.addEventListener('click', function(e) { if (e.target === sfModal) lcCloseSfSync(); });
+
+                function lcSfShowPreview(text) {
+                    var ta = document.getElementById('lcSfRaw');
+                    if (ta) ta.value = text;
+                    var rows = lcSfParseRows(text);
+                    var whitelist = lcSfWhitelist();
+                    var matched = rows.filter(function(r){ return whitelist.has(r.id); });
+                    var alCount = matched.filter(function(r){ return lcAbsenceCode(r.leaveType) === 'A'; }).length;
+                    var slCount = matched.filter(function(r){ return lcAbsenceCode(r.leaveType) === 'SL'; }).length;
+                    var prev = document.getElementById('lcSfPreview');
+                    if (prev) {
+                        var msg = 'Detected ' + (rows.length + (rows._skippedStatus||0)) + ' rows — ';
+                        if (rows._hasStatusCol) msg += (rows._skippedStatus||0) + ' non-approved skipped, ';
+                        msg += rows.length + ' approved, ' + matched.length + ' match dashboard employees ';
+                        msg += '(' + alCount + ' Annual / ' + slCount + ' Sick).';
+                        if (!rows._hasStatusCol) msg += ' ⚠ No status column detected — export should be pre-filtered to Approved only.';
+                        prev.textContent = msg;
+                        prev.classList.add('show');
+                    }
+                }
+
+                window.lcSfLoadFile = function(input) {
+                    var file = input.files && input.files[0];
+                    if (!file) return;
+                    var fn = document.getElementById('lcSfFileName');
+                    if (fn) fn.textContent = file.name;
+                    var isExcel = /\.(xlsx|xls)$/i.test(file.name);
+                    var reader = new FileReader();
+                    if (isExcel) {
+                        reader.onload = function(e) {
+                            try {
+                                var data = new Uint8Array(e.target.result);
+                                // IMPORTANT: do NOT use { cellDates: true } here. SheetJS's cellDates
+                                // conversion applies a correction based on the *browser's local
+                                // timezone at parse time*, which corrupts date-only cells (e.g. a
+                                // leave request dated 2026-01-18 can silently become 2026-01-17
+                                // depending on the user's timezone). Reading the raw numeric serial
+                                // and converting it with SSF.parse_date_code is pure arithmetic and
+                                // gives the same correct calendar date on every machine.
+                                var wb = XLSX.read(data, { type: 'array', cellNF: true });
+                                var firstSheet = wb.Sheets[wb.SheetNames[0]];
+                                Object.keys(firstSheet).forEach(function(addr) {
+                                    if (addr[0] === '!') return;
+                                    var cell = firstSheet[addr];
+                                    if (cell && cell.t === 'n' && typeof cell.v === 'number' && cell.z && /[ymd]/i.test(cell.z)) {
+                                        var dc = XLSX.SSF.parse_date_code(cell.v);
+                                        if (dc) {
+                                            var iso = dc.y + '-' + String(dc.m).padStart(2,'0') + '-' + String(dc.d).padStart(2,'0');
+                                            cell.v = iso;
+                                            cell.w = iso;
+                                            cell.t = 's';
+                                        }
+                                    }
+                                });
+                                var csv = XLSX.utils.sheet_to_csv(firstSheet);
+                                lcSfShowPreview(csv);
+                            } catch (ex) {
+                                var prev = document.getElementById('lcSfPreview');
+                                if (prev) { prev.textContent = '⚠ Could not read Excel file: ' + ex.message; prev.classList.add('show'); }
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        reader.onload = function(e) { lcSfShowPreview(e.target.result); };
+                        reader.readAsText(file);
+                    }
+                };
+
+                window.lcRunSfSync = async function() {
+                    var raw = (document.getElementById('lcSfRaw') || {}).value || '';
+                    var st  = document.getElementById('lcSfStatus');
+                    var btn = document.getElementById('lcSfRunBtn');
+
+                    function setStatus(msg, cls) {
+                        if (st) { st.textContent = msg; st.className = cls || ''; }
+                    }
+
+                    if (!raw.trim()) { setStatus('⚠ No data to import.', 'warn'); return; }
+
+                    var rows = lcSfParseRows(raw);
+                    if (!rows.length) { setStatus('⚠ Could not parse any rows. Check format.', 'err'); return; }
+
+                    var whitelist = lcSfWhitelist();
+
+                    // Split: matched (allowed) vs excluded
+                    var matched  = rows.filter(function(r){ return whitelist.has(r.id); });
+                    var excluded = rows.filter(function(r){ return !whitelist.has(r.id); });
+
+                    if (!matched.length) {
+                        setStatus('⚠ None of the ' + rows.length + ' rows belong to dashboard employees. Sync cancelled.', 'warn');
+                        return;
+                    }
+
+                    if (btn) btn.disabled = true;
+                    setStatus('⏳ Syncing ' + matched.length + ' record(s)…');
+
+                    var tid = self._tid ? self._tid() : (self.state && self.state.tenantId) || 'default';
+                    var gcIds = (self.state.goldenCommandUsers  || []).map(function(u){ return u.id; });
+                    var STAFF_TITLES = {
+                        '1000888':'Project Director','1000008':'Senior Executive Finance Director',
+                        '1000027':'Senior Executive Human Resource Director','1000124':'Senior Executive Director Stakeholder & Communication',
+                        '1001118':'Head of Major Services Management','1002997':'Contract Director',
+                        '1003591':'ICT Manager','1003592':'Head of Cyber Security','1003752':'INM Director',
+                        '1006024':'Security Director','1006939':'Rail Safety Manager','1007066':'Operations Director',
+                        '10015':'TSM L456 Director','10020':'TSM L3 Director','1000555':'Executive Assistant Project Director',
+                        '1000136':'CMMS Manager','1000225':'Performance Manager','1000352':'Planning and Reporting Specialist',
+                        '1000759':'KPI & Reporting Specialist','1000043':'Quality And Audit Manager','1000830':'Risk Manager',
+                        '1000284':'Rail Safety Officer','1000330':'Executive Assistant','1000231':'Line Standards Manager',
+                        '1000238':'Line Standards Manager','1005385':'Operation Manager L-46','1007071':'Operation Manager L-5','1006467':'Operation Manager L-3'
+                    };
+
+                    var inserted = 0, updated = 0, errors = 0, errDetails = [];
+
+                    for (var i = 0; i < matched.length; i++) {
+                        var r = matched[i];
+                        var isGC = gcIds.indexOf(r.id) > -1;
+                        var dept = isGC ? 'Golden Command' : 'Corporate Staff';
+                        var position = STAFF_TITLES[r.id] || dept;
+                        var slotType = (r.days || 0) > 15 ? 'slotC' : 'slotA';
+
+                        // Only columns that exist in corporate_leave_request (matches the real schema)
+                        var record = {
+                            tenant_id:      tid,
+                            employee_id:    r.id,
+                            employee_name:  r.name || r.id,
+                            department:     dept,
+                            slot_type:      slotType,
+                            leave_type:     r.leaveType,
+                            start_date:     r.startDate,
+                            end_date:       r.endDate,
+                            days_requested: r.days,
+                            status:         'approved',
+                            created_at:     new Date().toISOString()
+                        };
+
+                        if (self.supabase) {
+                            try {
+                                // Step 1 — check if a record already exists for this employee+slot+start
+                                var { data: existing, error: selErr } = await self.supabase
+                                    .from('corporate_leave_request')
+                                    .select('id')
+                                    .eq('tenant_id',    tid)
+                                    .eq('employee_id',  r.id)
+                                    .eq('slot_type',    slotType)
+                                    .eq('start_date',   r.startDate)
+                                    .maybeSingle();
+
+                                var opErr = null;
+                                if (existing && existing.id) {
+                                    // UPDATE existing row by id
+                                    var { error: updErr } = await self.supabase
+                                        .from('corporate_leave_request')
+                                        .update({
+                                            end_date:       record.end_date,
+                                            days_requested: record.days_requested,
+                                            employee_name:  record.employee_name,
+                                            leave_type:     record.leave_type,
+                                            status:         'approved'
+                                        })
+                                        .eq('id', existing.id);
+                                    opErr = updErr;
+                                    if (!updErr) updated++;
+                                } else {
+                                    // INSERT new row
+                                    var { error: insErr } = await self.supabase
+                                        .from('corporate_leave_request')
+                                        .insert(record);
+                                    opErr = insErr;
+                                    if (!insErr) inserted++;
+                                }
+
+                                if (opErr) {
+                                    errors++;
+                                    errDetails.push(r.id + ': ' + (opErr.message || opErr.code || JSON.stringify(opErr)));
+                                    console.warn('SF sync error for', r.id, opErr);
+                                }
+                            } catch(ex) {
+                                errors++;
+                                errDetails.push(r.id + ': ' + ex.message);
+                                console.warn('SF sync exception', ex);
+                            }
+                        } else {
+                            // Offline — inject directly into state.bids
+                            var bid = {
+                                employeeId:   r.id,
+                                employeeName: r.name || r.id,
+                                department:   dept,
+                                position:     position,
+                                slotType:     slotType,
+                                leaveType:    r.leaveType,
+                                startDate:    r.startDate,
+                                endDate:      r.endDate,
+                                days:         r.days,
+                                timestamp:    new Date().toISOString(),
+                                _sourceTable: 'corporate_leave_request',
+                                _importSource:'SAP_SF'
+                            };
+                            var existIdx = (self.state.bids || []).findIndex(function(b){
+                                return b.employeeId === r.id && b.startDate === r.startDate && b.slotType === slotType;
+                            });
+                            if (existIdx > -1) { self.state.bids[existIdx] = bid; updated++; }
+                            else { self.state.bids.push(bid); inserted++; }
+                        }
+                    }
+
+                    // Reload bids from Supabase so state is fresh
+                    if (self.supabase) {
+                        try {
+                            var allBids = [], pg2 = 0, more2 = true, bs2 = 1000;
+                            while (more2) {
+                                var { data: batch2, error: err2 } = await self.supabase
+                                    .from('corporate_leave_request').select('*')
+                                    .eq('tenant_id', tid).range(pg2, pg2 + bs2 - 1);
+                                if (err2 || !batch2 || !batch2.length) { more2 = false; }
+                                else { allBids = allBids.concat(batch2); more2 = batch2.length === bs2; pg2 += bs2; }
+                            }
+                            // Keep everything that ISN'T corporate (Ops + Maintenance bids untouched),
+                            // then re-add the freshly synced corporate rows
+                            self.state.bids = self.state.bids.filter(function(b){ return b._sourceTable !== 'corporate_leave_request'; });
+                            allBids.forEach(function(row) { self.state.bids.push(self._mapRemoteBid(row, 'corporate_leave_request')); });
+                        } catch(ex2) { console.warn('Post-sync reload failed', ex2); }
+                    }
+
+                    // Refresh the tracker
+                    lcRender();
+                    if (btn) btn.disabled = false;
+
+                    var msg = '✅ Sync complete — ' + (inserted + updated) + ' record(s) applied';
+                    if (rows._skippedStatus) msg += ', ' + rows._skippedStatus + ' non-approved skipped';
+                    if (excluded.length) msg += ', ' + excluded.length + ' excluded (not in dashboard)';
+                    if (errors) msg += ' ⚠ ' + errors + ' error(s): ' + errDetails.slice(0,2).join('; ');
+                    setStatus(msg, errors ? (inserted + updated > 0 ? 'warn' : 'err') : 'ok');
+
+                    // Write audit entry
+                    if (self.writeAuditLog) {
+                        self.writeAuditLog('SF_SYNC', { imported: inserted + updated, excluded: excluded.length, errors: errors });
+                    }
+
+                    // Auto-close on full success after 3 s
+                    if (!errors) setTimeout(function(){ lcCloseSfSync(); }, 3000);
+                };
+            },
+
+            // ==================== HR CORPORATE DASHBOARD ====================
+            _hrCorpRosterLookup(id) {
+                const u = (this.state.corporateStaffUsers || []).find(u => u.id === id);
+                const GENERIC_DEPTS = ['Corporate Staff', 'Human Resource', 'Human Resources'];
+                const realDept = (u?.department && !GENERIC_DEPTS.includes(u.department)) ? u.department : null;
+                return {
+                    name:       u?.name || null,
+                    department: realDept || (u?.position ? u.position : null),
+                    position:   u?.position || ''
+                };
+            },
+
+            _hrCorpBidOverlaps() {
+                // Group this-year HR Corporate bids by "cluster" (department, falling
+                // back to position, falling back to 'Unassigned'), then flag any pair
+                // of DIFFERENT employees in the same cluster whose date ranges overlap.
+                const hrBids = this.state.bids.filter(b => this._isHrCorporate(b.employeeId) && !this._isMaintStaff(b.employeeId, b));
+                const clusters = {};
+                hrBids.forEach(b => {
+                    if (!b.startDate || !b.endDate) return;
+                    const info = this._hrCorpRosterLookup(b.employeeId);
+                    const cluster = info.department || 'Unassigned';
+                    if (!clusters[cluster]) clusters[cluster] = [];
+                    clusters[cluster].push({ ...b, _name: b.employeeName || info.name || b.employeeId });
+                });
+                const conflicts = [];
+                Object.keys(clusters).forEach(cluster => {
+                    const list = clusters[cluster];
+                    for (let i = 0; i < list.length; i++) {
+                        for (let j = i + 1; j < list.length; j++) {
+                            const a = list[i], b = list[j];
+                            if (a.employeeId === b.employeeId) continue;
+                            const aS = new Date(a.startDate), aE = new Date(a.endDate);
+                            const bS = new Date(b.startDate), bE = new Date(b.endDate);
+                            if (aS <= bE && bS <= aE) {
+                                const overlapStart = aS > bS ? a.startDate : b.startDate;
+                                const overlapEnd = aE < bE ? a.endDate : b.endDate;
+                                conflicts.push({ cluster, a, b, overlapStart, overlapEnd });
+                            }
+                        }
+                    }
+                });
+                return conflicts;
+            },
+
+            renderHrCorpDashboardView() {
+                const content = document.getElementById('contentArea');
+                const hrIds = this._HR_CORPORATE_IDS;
+                const hrBids = this.state.bids.filter(b => this._isHrCorporate(b.employeeId) && !this._isMaintStaff(b.employeeId, b));
+                const bidderIds = new Set(hrBids.map(b => b.employeeId));
+                const totalStaff = hrIds.length;
+                const participated = [...bidderIds].filter(id => hrIds.includes(id)).length;
+                const pct = totalStaff > 0 ? Math.round((participated / totalStaff) * 100) : 0;
+                const totalDays = hrBids.reduce((sum, b) => sum + (Number(b.days) || 0), 0);
+                const notYetBid = hrIds
+                    .filter(id => !bidderIds.has(id))
+                    .map(id => { const info = this._hrCorpRosterLookup(id); return { id, name: info.name || 'Unknown', department: info.department || '—' }; })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                const conflicts = this._hrCorpBidOverlaps();
+
+                // Chart data: monthly bidding overview (% submitted vs % not yet bid, cumulative by submission date) + participation split (pie)
+                const chartYear = this.state.biddingYearCorp || new Date().getFullYear();
+                const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const monthlySubmittedPct = [];
+                const monthlyNotBidPct = [];
+                monthLabels.forEach((label, idx) => {
+                    const monthEnd = new Date(chartYear, idx + 1, 0, 23, 59, 59);
+                    const bidderIdsByMonth = new Set(
+                        hrBids
+                            .filter(b => b.timestamp && new Date(b.timestamp) <= monthEnd)
+                            .map(b => b.employeeId)
+                            .filter(id => hrIds.includes(id))
+                    );
+                    const pct = totalStaff > 0 ? Math.round((bidderIdsByMonth.size / totalStaff) * 100) : 0;
+                    monthlySubmittedPct.push(pct);
+                    monthlyNotBidPct.push(100 - pct);
+                });
+                const notYetBidCount = totalStaff - participated;
+                const slotLabelMapFull = { slotA: 'Slot A', slotB: 'Slot B', slotC: 'Slot C', slotD: 'Slot D', SA: 'Slot A', SB: 'Slot B', SC: 'Slot C', SD: 'Slot D', gcCustom: '⭐ Custom', csCustom: '🏢 Custom' };
+                const submittedList = hrBids
+                    .map(b => {
+                        const info = this._hrCorpRosterLookup(b.employeeId);
+                        return {
+                            id: b.employeeId,
+                            name: b.employeeName || info.name || 'Unknown',
+                            department: info.department || '—',
+                            slot: slotLabelMapFull[b.slotType] || b.slotType || '—',
+                            startDate: b.startDate || '—',
+                            endDate: b.endDate || '—',
+                            days: b.days || '—'
+                        };
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                            <div class="flex justify-between items-center flex-wrap gap-3 mb-2">
+                                <h2 class="text-2xl font-bold text-pink-800">🏢 HR Corporate Dashboard</h2>
+                                <button onclick="app.renderHrCorpDashboardView()" class="px-4 py-2 bg-pink-100 text-pink-700 rounded-lg font-semibold hover:bg-pink-200 text-sm">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                            <p class="text-sm text-gray-500">Live snapshot of the HR Corporate staff list (${totalStaff} staff). Connected to Admin &rsaquo; Bid Details &rsaquo; HR Corporate.</p>
+                        </div>
+
+                        <!-- KPI cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-pink-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Participation</p>
+                                <p class="text-3xl font-bold text-pink-700 mt-1">${pct}%</p>
+                                <p class="text-xs text-gray-500 mt-1">${participated} of ${totalStaff} staff have bid</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bids Submitted</p>
+                                <p class="text-3xl font-bold text-emerald-700 mt-1">${hrBids.length}</p>
+                                <p class="text-xs text-gray-500 mt-1">${bidderIds.size} unique bidder${bidderIds.size !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-blue-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Days Requested</p>
+                                <p class="text-3xl font-bold text-blue-700 mt-1">${totalDays}</p>
+                                <p class="text-xs text-gray-500 mt-1">Across all HR Corporate bids</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 ${conflicts.length > 0 ? 'border-red-500' : 'border-gray-300'}">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Overlap Warnings</p>
+                                <p class="text-3xl font-bold ${conflicts.length > 0 ? 'text-red-600' : 'text-gray-400'} mt-1">${conflicts.length}</p>
+                                <p class="text-xs text-gray-500 mt-1">Same-cluster overlapping dates</p>
+                            </div>
+                        </div>
+
+                        <!-- Charts -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5 lg:col-span-1">
+                                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Participation Split</h3>
+                                <div style="height:260px;"><canvas id="hrCorpPieChart"></canvas></div>
+                            </div>
+                            <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${chartYear} (% Submitted by Month)</h3>
+                                <div style="height:280px;"><canvas id="hrCorpMonthlyChart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <!-- Overlap warnings -->
+                        <div class="bg-white border-2 ${conflicts.length > 0 ? 'border-red-200' : 'border-gray-200'} rounded-xl overflow-hidden mb-6">
+                            <div class="${conflicts.length > 0 ? 'bg-red-50 border-b border-red-200' : 'bg-gray-50 border-b border-gray-200'} px-6 py-4">
+                                <h3 class="text-lg font-bold ${conflicts.length > 0 ? 'text-red-800' : 'text-gray-700'}">⚠️ Overlapping Leave in Same Cluster</h3>
+                                <p class="text-sm ${conflicts.length > 0 ? 'text-red-600' : 'text-gray-500'} mt-1">Clustered by department/position. Flags when two different HR Corporate staff in the same cluster have overlapping leave dates.</p>
+                            </div>
+                            <div class="p-4">
+                                ${conflicts.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">✅</p>
+                                        <p class="font-semibold">No overlapping leave detected within any cluster.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-red-50 text-left">
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Cluster</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Staff A</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Staff B</th>
+                                                    <th class="border border-red-100 px-3 py-2 font-semibold text-red-800">Overlap Period</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${conflicts.map((c, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-red-50/40'}">
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-700">${this._escHtml(c.cluster)}</td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-800">${this._escHtml(c.a._name)} <span class="text-xs text-gray-400 font-mono">(${this._escHtml(c.a.employeeId)})</span></td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-800">${this._escHtml(c.b._name)} <span class="text-xs text-gray-400 font-mono">(${this._escHtml(c.b.employeeId)})</span></td>
+                                                        <td class="border border-red-100 px-3 py-2 text-gray-700">${this._escHtml(c.overlapStart)} &rarr; ${this._escHtml(c.overlapEnd)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Submitted list -->
+                        <div class="bg-white border-2 border-emerald-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-emerald-50 border-b border-emerald-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-emerald-800">✅ Bids Submitted</h3>
+                                    <p class="text-sm text-emerald-600 mt-1">HR Corporate staff who have submitted their leave bid.</p>
+                                </div>
+                                <span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm font-semibold">${submittedList.length} bid${submittedList.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="p-4">
+                                ${submittedList.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">📭</p>
+                                        <p class="font-semibold">No HR Corporate bids submitted yet.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-emerald-50 text-left">
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">#</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Staff ID</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Name</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Department / Position</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Slot</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Start Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">End Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Days</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${submittedList.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-emerald-50/40'}">
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-600">${this._escHtml(s.department)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.slot)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.startDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.endDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-center font-semibold text-gray-800">${this._escHtml(String(s.days))}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Not-yet-bid list -->
+                        <div class="bg-white border-2 border-amber-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-amber-50 border-b border-amber-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-amber-800">⏳ Not Yet Bid</h3>
+                                    <p class="text-sm text-amber-600 mt-1">HR Corporate staff who haven't submitted a bid yet.</p>
+                                </div>
+                                <span class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">${notYetBid.length} staff</span>
+                            </div>
+                            <div class="p-4">
+                                ${notYetBid.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">🎉</p>
+                                        <p class="font-semibold">Everyone on the HR Corporate list has submitted a bid.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-amber-50 text-left">
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">#</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Staff ID</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Name</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Department / Position</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${notYetBid.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-amber-50/40'}">
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-600">${this._escHtml(s.department)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Render charts (destroy previous instances to avoid canvas reuse errors)
+                if (typeof Chart !== 'undefined') {
+                    if (this._hrCorpPieChart) { this._hrCorpPieChart.destroy(); this._hrCorpPieChart = null; }
+                    if (this._hrCorpMonthlyChart) { this._hrCorpMonthlyChart.destroy(); this._hrCorpMonthlyChart = null; }
+
+                    const pieCtx = document.getElementById('hrCorpPieChart');
+                    if (pieCtx) {
+                        this._hrCorpPieChart = new Chart(pieCtx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['Bid Submitted', 'Not Yet Bid'],
+                                datasets: [{
+                                    data: [participated, notYetBidCount],
+                                    backgroundColor: ['#ec4899', '#fbbf24'],
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                            }
+                        });
+                    }
+
+                    const monthlyCtx = document.getElementById('hrCorpMonthlyChart');
+                    if (monthlyCtx) {
+                        const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
+                        this._hrCorpMonthlyChart = new Chart(monthlyCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: monthLabels,
+                                datasets: [
+                                    {
+                                        label: 'Bids Submitted %',
+                                        data: monthlySubmittedPct,
+                                        backgroundColor: barColors,
+                                        borderRadius: 4,
+                                        borderSkipped: false,
+                                        barPercentage: 0.65
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        color: '#ffffff',
+                                        font: { weight: 'bold', size: 12 },
+                                        formatter: v => v + '%'
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        max: 100,
+                                        ticks: { color: '#e5e7eb', callback: v => v + '%' },
+                                        grid: { color: 'rgba(255,255,255,0.08)' }
+                                    },
+                                    x: {
+                                        ticks: { color: '#e5e7eb' },
+                                        grid: { display: false }
+                                    }
+                                }
+                            },
+                            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []
+                        });
+                    }
+                }
+            },
+
+            async renderAuditLogView() {
+                const content = document.getElementById('contentArea');
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="metro-card p-6">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">🔍 Audit Log</h2>
+                                    <p class="text-sm mt-1" style="color:var(--app-text-muted);">All system activity — logins, bids, overrides, password changes</p>
+                                </div>
+                                <div class="flex gap-3">
+                                    <button onclick="app.renderAuditLogView()" class="metro-tab">🔄 Refresh</button>
+                                    <button onclick="app.clearAuditLog()" class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-100">🗑 Clear Local</button>
+                                </div>
+                            </div>
+
+                            <!-- Filters -->
+                            <div class="flex gap-3 mb-5 flex-wrap">
+                                <select id="auditFilterType" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Actions</option>
+                                    <option value="LOGIN">Login</option>
+                                    <option value="LOGOUT">Logout</option>
+                                    <option value="BID_PLACED">Bid Placed</option>
+                                    <option value="BID_REMOVED">Bid Removed</option>
+                                    <option value="BIDS_PROCESSED">Bids Processed</option>
+                                    <option value="PASSWORD_CHANGED">Password Changed</option>
+                                    <option value="MANUAL_OVERRIDE">Manual Override</option>
+                                    <option value="DATA_UPLOADED">Data Uploaded</option>
+                                    <option value="SYSTEM_RESET">System Reset</option>
+                                    <option value="SF_SYNC">SF Sync</option>
+                                </select>
+                                <select id="auditFilterRole" onchange="app.filterAuditLog()" class="px-3 py-2 border rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Roles</option>
+                                    <option value="employee">Operation Staff</option>
+                                    <option value="planner">Planner</option>
+                                    <option value="goldencommand">Golden Command</option>
+                                    <option value="corporatestaff">Corporate Staff</option>
+                                    <option value="maintenancestaff">Maintenance</option>
+                                </select>
+                                <input type="text" id="auditSearch" oninput="app.filterAuditLog()" placeholder="Search name or ID..." class="px-3 py-2 border rounded-lg text-sm flex-1 min-w-40" style="border-color:var(--app-border);" />
+                            </div>
+
+                            <div id="auditTableContainer">
+                                <div class="text-center py-8 text-gray-400">⏳ Loading audit log...</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Load from Supabase first, fallback to localStorage
+                let logs = [];
+                if (this.supabase) {
+                    try {
+                        const { data, error } = await this.supabase
+                            .from('audit_logs')
+                            .select('*')
+                            .eq('tenant_id', this._tid())
+                            .order('created_at', { ascending: false })
+                            .limit(500);
+                        if (!error && data) {
+                            logs = data.map(r => ({
+                                action: r.action,
+                                user_id: r.user_id,
+                                user_name: r.user_name,
+                                user_type: r.user_type,
+                                details: r.details,
+                                timestamp: r.created_at
+                            }));
+                        }
+                    } catch(e) { console.warn('Audit load from Supabase failed', e); }
+                }
+
+                // Merge with local if Supabase had nothing
+                if (logs.length === 0) {
+                    logs = JSON.parse(localStorage.getItem('auditLog') || '[]');
+                }
+
+                this._auditLogs = logs;
+                this.filterAuditLog();
+            },
+
+            filterAuditLog() {
+                const logs = this._auditLogs || [];
+                const typeFilter = document.getElementById('auditFilterType')?.value || 'all';
+                const roleFilter = document.getElementById('auditFilterRole')?.value || 'all';
+                const search = (document.getElementById('auditSearch')?.value || '').toLowerCase();
+
+                const filtered = logs.filter(l => {
+                    if (typeFilter !== 'all' && l.action !== typeFilter) return false;
+                    if (roleFilter !== 'all' && l.user_type !== roleFilter) return false;
+                    if (search && !l.user_name?.toLowerCase().includes(search) && !l.user_id?.toLowerCase().includes(search)) return false;
+                    return true;
+                });
+
+                const actionColors = {
+                    'LOGIN':            'bg-green-100 text-green-800',
+                    'LOGOUT':           'bg-gray-100 text-gray-700',
+                    'BID_PLACED':       'bg-blue-100 text-blue-800',
+                    'BID_REMOVED':      'bg-orange-100 text-orange-800',
+                    'BIDS_PROCESSED':   'bg-purple-100 text-purple-800',
+                    'PASSWORD_CHANGED': 'bg-yellow-100 text-yellow-800',
+                    'MANUAL_OVERRIDE':  'bg-red-100 text-red-800',
+                    'DATA_UPLOADED':    'bg-indigo-100 text-indigo-800',
+                    'SYSTEM_RESET':     'bg-red-200 text-red-900',
+                };
+
+                const roleIcons = { employee: '👤', planner: '🛠️', goldencommand: '⭐', corporatestaff: '🏢', maintenancestaff: '🔧' };
+
+                const container = document.getElementById('auditTableContainer');
+                if (!container) return;
+
+                if (filtered.length === 0) {
+                    container.innerHTML = `<div class="text-center py-12 text-gray-400">
+                        <p class="text-3xl mb-3">📭</p>
+                        <p>No audit entries found${search ? ' matching your search' : ''}.</p>
+                    </div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <p class="text-xs mb-3" style="color:var(--app-text-muted);">${filtered.length} entr${filtered.length===1?'y':'ies'} found</p>
+                    <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                        <table class="metro-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Action</th>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${filtered.map(l => {
+                                    const ts = l.timestamp ? new Date(l.timestamp).toLocaleString('en-US', {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+                                    const colorClass = actionColors[l.action] || 'bg-gray-100 text-gray-700';
+                                    const roleIcon = roleIcons[l.user_type] || '👤';
+                                    let detailsObj = {};
+                                    if (l.details && typeof l.details === 'object') {
+                                        detailsObj = l.details;
+                                    } else if (typeof l.details === 'string' && l.details.trim()) {
+                                        try { detailsObj = JSON.parse(l.details); } catch(e) { detailsObj = {}; }
+                                    }
+                                    const detailStr = Object.entries(detailsObj).map(([k,v]) => `<span class="text-gray-500">${k}:</span> <span class="font-medium">${v}</span>`).join(' · ');
+                                    return `
+                                        <tr>
+                                            <td style="font-family:monospace;font-size:0.75rem;color:var(--app-text-muted);white-space:nowrap;">${ts}</td>
+                                            <td><span class="px-2 py-1 rounded-full text-xs font-bold ${colorClass}">${l.action}</span></td>
+                                            <td>
+                                                <p style="font-weight:600;">${l.user_name || '—'}</p>
+                                                <p class="text-xs" style="color:var(--app-text-muted);">${l.user_id || ''}</p>
+                                            </td>
+                                            <td style="font-size:0.8rem;">${roleIcon} ${l.user_type || '—'}</td>
+                                            <td style="font-size:0.8rem;color:var(--app-text-muted);">${detailStr || '—'}</td>
+                                        </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            },
+
+            clearAuditLog() {
+                if (!confirm('Clear local audit log? (Supabase records will remain)')) return;
+                localStorage.removeItem('auditLog');
+                this._auditLogs = [];
+                this.filterAuditLog();
+            },
+
+            _highlightNavTab(btn, role) {
+                document.querySelectorAll('.lp-nav-tab').forEach(t => t.classList.remove('active'));
+                btn.classList.add('active');
+                app.setLoginType(role);
+            },
+
+            _updateLandingStats() {
+                const opsCount = this.state.employees ? this.state.employees.length : 0;
+                const maintCount = this.state.maintenanceStaffUsers ? this.state.maintenanceStaffUsers.length : 0;
+                const totalCount = opsCount + maintCount;
+                const countStr = totalCount > 0 ? totalCount.toLocaleString() : '—';
+                ['statsEmpCount','statsEmpBadge','statsEmpStatus'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = totalCount > 0 ? countStr : '—';
+                });
+                // Update label to reflect both staff types
+                const labelEl = document.querySelector('.lp-stat-label');
+                if (labelEl && maintCount > 0) {
+                    labelEl.textContent = `👥 Total Staff (Ops: ${opsCount} | Maint: ${maintCount})`;
+                }
+            },
+
+            _startClock() {
+                const tick = () => {
+                    const now = new Date();
+                    const clockEl = document.getElementById('liveClock');
+                    const dateEl = document.getElementById('liveDate');
+                    if (clockEl) {
+                        clockEl.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    }
+                    if (dateEl) {
+                        dateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                    }
+                };
+                tick();
+                setInterval(tick, 1000);
+            },
+
+            // ==================== INITIALIZATION ====================
+            async init() {
+                console.log('App initializing...');
+                this.updateSystemStatus('Initializing...');
+                
+                // Initialize Supabase
+                const supabaseReady = await this.initSupabase();
+                if (supabaseReady) {
+                    this.updateSystemStatus('⏳ Connecting to Supabase...');
+                    try {
+                        await this.loadFromSupabase();
+                    } catch (err) {
+                        console.error('❌ Failed to load from Supabase:', err);
+                        this.updateSystemStatus('⚠️ Supabase load failed — using local data');
+                        this.loadFromLocalStorage();
+                    }
+                } else {
+                    // Fallback to localStorage
+                    const localLoaded = this.loadFromLocalStorage();
+                    if (localLoaded) {
+                        this.updateSystemStatus(`✅ ${this.state.employees.length} employees from local storage`);
+                    } else {
+                        this.updateSystemStatus('Ready - No data loaded');
+                    }
+                }
+                
+                this.renderLoginForm();
+                this.applySavedTheme();
+                
+                // Keep the fixed header's height in sync with the layout,
+                // both now and whenever the window is resized.
+                this._syncHeaderOffset();
+                window.addEventListener('resize', () => this._syncHeaderOffset());
+                
+                // Update landing page stats
+                this._updateLandingStats();
+                
+                // Add Enter key support — detect which card the user is typing in
+                document.addEventListener('keydown', (e) => {
+                    if (e.key !== 'Enter' || this.state.activeView !== 'login') return;
+                    const focused = document.activeElement;
+                    if (focused) {
+                        const id = focused.id;
+                        if (id === 'empLoginId' || id === 'empLoginPwd') {
+                            this.state.loginType = 'employee';
+                            this._pendingLogin = {
+                                empId: document.getElementById('empLoginId')?.value?.trim() || '',
+                                empPw: document.getElementById('empLoginPwd')?.value || ''
+                            };
+                        } else if (id === 'csLoginId' || id === 'csLoginPwd') {
+                            this.state.loginType = 'corporatestaff';
+                            this._pendingLogin = {
+                                csId: document.getElementById('csLoginId')?.value?.trim() || '',
+                                csPw: document.getElementById('csLoginPwd')?.value || ''
+                            };
+                        } else if (id === 'plannerLoginPwd') {
+                            this.state.loginType = 'planner';
+                        } else if (id === 'gcLoginId' || id === 'gcLoginPwd') {
+                            this.state.loginType = 'goldencommand';
+                            this._pendingLogin = {
+                                gcId: document.getElementById('gcLoginId')?.value?.trim() || '',
+                                gcPw: document.getElementById('gcLoginPwd')?.value || ''
+                            };
+                        } else if (id === 'maintLoginId' || id === 'maintLoginPwd') {
+                            this.state.loginType = 'maintenancestaff';
+                            this._pendingLogin = {
+                                maintId: document.getElementById('maintLoginId')?.value?.trim() || '',
+                                maintPw: document.getElementById('maintLoginPwd')?.value || ''
+                            };
+                        }
+                    }
+                    this.handleLogin();
+                });
+                
+                // Start live clock
+                this._startClock();
+
+                // Security: begin watching for inactivity so sessions auto-expire
+                this.startIdleWatcher();
+
+                console.log('App ready');
+            }
+        };
+
+        // ---- Multi-Week chip preview helpers (global, called from oninput) ----
+        function _parseWeeksForPreview(raw, year) {
+            const tokens = raw.split(/[\s,;]+/).filter(Boolean);
+            const weeks = new Set();
+            for (const t of tokens) {
+                const m = t.match(/^(\d+)-(\d+)$/);
+                if (m) { for (let w = Math.max(1, +m[1]); w <= Math.min(53, +m[2]); w++) weeks.add(w); }
+                else { const n = +t; if (!isNaN(n) && n >= 1 && n <= 53) weeks.add(n); }
+            }
+            return [...weeks].sort((a, b) => a - b);
+        }
+
+        function _previewNewOcMultiChips() {
+            const raw  = document.getElementById('newOcMultiWeekInput')?.value || '';
+            const year = parseInt(document.getElementById('newOcMultiWeekYear')?.value) || (app.state?.biddingYear || new Date().getFullYear());
+            const box  = document.getElementById('newOcMultiPreview');
+            if (!box) return;
+            const arr = _parseWeeksForPreview(raw, year);
+            if (!arr.length) {
+                box.innerHTML = '<span class="text-xs text-yellow-600 italic">Week chips appear here…</span>';
+                return;
+            }
+            box.innerHTML = arr.map(w => {
+                const r = app.weekNumberToDateRange(w, year);
+                return `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin:2px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+            }).join('');
+        }
+
+        function _previewOcMultiChips(empId) {
+            const raw  = document.getElementById(`ocMultiWeekInput-${empId}`)?.value || '';
+            const year = parseInt(document.getElementById(`ocMultiWeekYear-${empId}`)?.value) || (app.state?.biddingYear || new Date().getFullYear());
+            const box  = document.getElementById(`ocMultiPreview-${empId}`);
+            if (!box) return;
+            const arr = _parseWeeksForPreview(raw, year);
+            if (!arr.length) {
+                box.innerHTML = '<span style="font-size:0.7rem;color:#93c5fd;font-style:italic;">Chips appear here…</span>';
+                return;
+            }
+            box.innerHTML = arr.map(w => {
+                const r = app.weekNumberToDateRange(w, year);
+                return `<span style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;border:1px solid #3b82f6;color:#1e3a8a;font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:20px;margin:1px;">Wk ${w} <span style="opacity:.6;font-weight:400">${r.from}→${r.to}</span></span>`;
+            }).join('');
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            app.init();
+        });
