@@ -1376,7 +1376,6 @@
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-start-${empId}-${r.slotOrder}" />
-                                                        ${r.datesDrifted ? `<div class="text-xs text-orange-600 font-semibold mt-1" title="'Configure Slots' currently shows this slot as ${r.currentConfiguredStartDate||''} → ${r.currentConfiguredEndDate||''}">ℹ️ schedule since changed (config now shows ${r.currentConfiguredStartDate||'?'})</div>` : ''}
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-end-${empId}-${r.slotOrder}" />
