@@ -1914,7 +1914,7 @@
                         <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
                             <div class="flex justify-between items-center flex-wrap gap-3 mb-2">
                                 <h2 class="text-2xl font-bold text-pink-800">🏢 HR Corporate Dashboard</h2>
-                                <button onclick="app.renderHrCorpDashboardView()" class="px-4 py-2 bg-pink-100 text-pink-700 rounded-lg font-semibold hover:bg-pink-200 text-sm">
+                                <button onclick="app.renderHrCorpDashboardView()" class="px-4 py-2 rounded-lg font-semibold text-sm" style="background:#fce7f3; color:#be185d;">
                                     🔄 Refresh
                                 </button>
                             </div>
