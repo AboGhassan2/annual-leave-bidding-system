@@ -455,7 +455,7 @@
                                             <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-mono border border-yellow-300">ID: ${u.id}</span>
                                             <span class="text-xs text-gray-400">Password: ${u.password || u.id}</span>
                                         </div>
-                                        <button onclick="app.removeGCUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                        <button onclick="app.removeGCUser(${i})" class="px-3 py-1.5 text-sm rounded-lg font-semibold" style="background:#fee2e2; color:#b91c1c;">✕ Remove</button>
                                     </div>
                                 `).join('')}
                                 ${(this.state.goldenCommandUsers || []).length === 0 ? `<p class="text-sm text-yellow-600 italic py-2">No Golden Command users yet. Add one below.</p>` : ''}
@@ -476,7 +476,7 @@
                                         <input type="text" id="newGCPassword" placeholder="Leave blank = same as ID" class="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg text-sm focus:border-yellow-500 focus:outline-none" />
                                     </div>
                                 </div>
-                                <button onclick="app.addGCUser()" class="px-6 py-2.5 bg-yellow-400 text-yellow-900 rounded-lg font-bold hover:bg-yellow-500 text-sm transition">
+                                <button onclick="app.addGCUser()" class="px-6 py-2.5 rounded-lg font-bold text-sm transition" style="background:#facc15; color:#713f12;">
                                     ⭐ Add Golden Command User
                                 </button>
                             </div>
@@ -499,7 +499,7 @@
                                             ${u.position ? `<span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">${u.position}</span>` : ''}
                                             <span class="text-xs text-gray-400">Password: ${u.password || u.id}</span>
                                         </div>
-                                        <button onclick="app.removeCSUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                        <button onclick="app.removeCSUser(${i})" class="px-3 py-1.5 text-sm rounded-lg font-semibold" style="background:#fee2e2; color:#b91c1c;">✕ Remove</button>
                                     </div>
                                 `).join('')}
                                 ${(this.state.corporateStaffUsers || []).length === 0 ? `<p class="text-sm text-blue-600 italic py-2">No Corporate Staff users yet. Add one below.</p>` : ''}
@@ -520,7 +520,7 @@
                                         <input type="text" id="newCSPassword" placeholder="Leave blank = same as ID" class="w-full px-3 py-2 border-2 border-blue-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none" />
                                     </div>
                                 </div>
-                                <button onclick="app.addCSUser()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-bold hover:bg-blue-600 text-sm transition">
+                                <button onclick="app.addCSUser()" class="px-6 py-2.5 rounded-lg font-bold text-sm transition" style="background:#3b82f6; color:#ffffff;">
                                     🏢 Add Corporate Staff User
                                 </button>
                             </div>
@@ -540,7 +540,7 @@
                                             <span class="font-semibold text-orange-900">📋 ${u.name}</span>
                                             <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded font-mono border border-orange-300">ID: ${u.id}</span>
                                         </div>
-                                        <button onclick="app.removeL456InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                        <button onclick="app.removeL456InmUser(${i})" class="px-3 py-1.5 text-sm rounded-lg font-semibold" style="background:#fee2e2; color:#b91c1c;">✕ Remove</button>
                                     </div>
                                 `).join('')}
                                 ${(this.state.l456InmUsers || []).length === 0 ? `<p class="text-sm text-orange-600 italic py-2">No L456 INM users yet. Add one below.</p>` : ''}
@@ -553,7 +553,7 @@
                                     <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
                                         <input type="text" id="newL456InmName" placeholder="e.g. John Smith" class="w-full px-3 py-2 border-2 border-orange-300 rounded-lg text-sm focus:border-orange-500 focus:outline-none" /></div>
                                 </div>
-                                <button onclick="app.addL456InmUser()" class="px-6 py-2.5 bg-orange-500 text-white rounded-lg font-bold hover:bg-orange-600 text-sm transition">📋 Add L456 INM User</button>
+                                <button onclick="app.addL456InmUser()" class="px-6 py-2.5 rounded-lg font-bold text-sm transition" style="background:#f97316; color:#ffffff;">📋 Add L456 INM User</button>
                             </div>
                         </div>
 
@@ -571,7 +571,7 @@
                                             <span class="font-semibold text-purple-900">📋 ${u.name}</span>
                                             <span class="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded font-mono border border-purple-300">ID: ${u.id}</span>
                                         </div>
-                                        <button onclick="app.removeL3InmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                        <button onclick="app.removeL3InmUser(${i})" class="px-3 py-1.5 text-sm rounded-lg font-semibold" style="background:#fee2e2; color:#b91c1c;">✕ Remove</button>
                                     </div>
                                 `).join('')}
                                 ${(this.state.l3InmUsers || []).length === 0 ? `<p class="text-sm text-purple-600 italic py-2">No L3 INM users yet. Add one below.</p>` : ''}
@@ -584,7 +584,7 @@
                                     <div><label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Full Name</label>
                                         <input type="text" id="newL3InmName" placeholder="e.g. Jane Doe" class="w-full px-3 py-2 border-2 border-purple-300 rounded-lg text-sm focus:border-purple-500 focus:outline-none" /></div>
                                 </div>
-                                <button onclick="app.addL3InmUser()" class="px-6 py-2.5 bg-purple-500 text-white rounded-lg font-bold hover:bg-purple-600 text-sm transition">📋 Add L3 INM User</button>
+                                <button onclick="app.addL3InmUser()" class="px-6 py-2.5 rounded-lg font-bold text-sm transition" style="background:#a855f7; color:#ffffff;">📋 Add L3 INM User</button>
                             </div>
                         </div>
 
@@ -602,7 +602,7 @@
                                             <span class="font-semibold text-teal-900">📋 ${u.name}</span>
                                             <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded font-mono border border-teal-300">ID: ${u.id}</span>
                                         </div>
-                                        <button onclick="app.removeL3TsmUser(${i})" class="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 font-semibold">✕ Remove</button>
+                                        <button onclick="app.removeL3TsmUser(${i})" class="px-3 py-1.5 text-sm rounded-lg font-semibold" style="background:#fee2e2; color:#b91c1c;">✕ Remove</button>
                                     </div>
                                 `).join('')}
                                 ${(this.state.l3TsmUsers || []).length === 0 ? `<p class="text-sm text-teal-600 italic py-2">No L3 TSM users yet. Add one below.</p>` : ''}
