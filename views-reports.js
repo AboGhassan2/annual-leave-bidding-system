@@ -504,7 +504,7 @@
                                 </div>
                                 <div class="flex gap-3">
                                     <button onclick="app.renderAuditLogView()" class="metro-tab">🔄 Refresh</button>
-                                    <button onclick="app.clearAuditLog()" class="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-100">🗑 Clear Local</button>
+                                    <button onclick="app.clearAuditLog()" class="px-4 py-2 border border-red-200 rounded-lg text-sm font-semibold" style="background:#fef2f2; color:#dc2626;">🗑 Clear Local</button>
                                 </div>
                             </div>
 
