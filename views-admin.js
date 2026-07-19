@@ -214,7 +214,7 @@
                         </div>
                         <div class="flex items-center gap-3">
                             <span class="text-sm text-gray-500">${sortedBids.length} of ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''}</span>
-                            <button onclick="app.deleteAllBidsByTab('${tabFilter}')" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600">
+                            <button onclick="app.deleteAllBidsByTab('${tabFilter}')" class="px-4 py-2 rounded-lg text-sm font-semibold" style="background:#ef4444; color:#ffffff;">
                                 🗑️ Delete All ${tabFilter === 'employees' ? '👤 Employee' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : tabFilter === 'hrcorp' ? '🏢 HR Corporate' : '🔧 Maintenance'} Bids
                             </button>
                         </div>
@@ -774,7 +774,7 @@
                                     <button onclick="app.showEmailNotifyModal()" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:var(--metro-green-dark);">
                                         📧 Notify Staff by Email (Results Ready)
                                     </button>
-                                    <button onclick="app.setActiveView('manualOverride')" class="w-full px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600">
+                                    <button onclick="app.setActiveView('manualOverride')" class="w-full px-6 py-3 rounded-lg font-semibold text-white" style="background:#c2620a;">
                                         ✏️ Manual Override Results
                                     </button>
                                 ` : ''}
@@ -792,7 +792,7 @@
                                     ⚙️ Email Settings (OTP &amp; Notifications)
                                 </button>
 
-                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600">
+                                <button onclick="app.resetSystem()" class="w-full px-6 py-3 rounded-lg font-semibold" style="background:#ef4444; color:#ffffff;">
                                     🔄 Reset System
                                 </button>
 
@@ -1175,7 +1175,7 @@
                     '<div class="text-center py-12">'
                     + '<p class="text-gray-600 font-semibold text-xl mb-2">No maintenance results yet</p>'
                     + '<p class="text-gray-400 text-sm">Process maintenance bids from the Admin panel first.</p>'
-                    + '<button onclick="app.setActiveView(\'admin\')" class="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold">Go to Admin Panel</button>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="mt-4 px-4 py-2 rounded-lg text-sm font-semibold" style="background:#f97316; color:#ffffff;">Go to Admin Panel</button>'
                     + '</div>';
 
                 const statsHtml =
@@ -1208,8 +1208,8 @@
                     + '<div><h2 class="text-2xl font-bold">Maintenance Staff Leave Assignments ' + this.state.biddingYear + '</h2>'
                     + '<p class="text-gray-500 text-sm mt-1">Seniority-based per position group. Entitlement: 30 days.</p></div>'
                     + '<div class="flex gap-2">'
-                    + '<button onclick="app.exportMaintResults()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">Export to Excel</button>'
-                    + '<button onclick="app.setActiveView(\'admin\')" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-300">Back to Admin</button>'
+                    + '<button onclick="app.exportMaintResults()" class="px-4 py-2 rounded-lg text-sm font-semibold" style="background:#16a34a; color:#ffffff;">Export to Excel</button>'
+                    + '<button onclick="app.setActiveView(\'admin\')" class="px-4 py-2 rounded-lg text-sm font-semibold" style="background:#e5e7eb; color:#374151;">Back to Admin</button>'
                     + '</div></div>'
                     + (maintResults.length === 0 ? emptyHtml : tableHtml)
                     + '</div></div>';
@@ -1327,7 +1327,7 @@
                         <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
                             <p class="text-2xl mb-4">⚠️</p>
                             <p class="text-gray-600">No results to override. Process bids first.</p>
-                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 rounded-lg" style="background:#3b82f6; color:#ffffff;">Go to Admin Panel</button>
                         </div>`;
                     return;
                 }
@@ -1347,7 +1347,7 @@
                                     <h2 class="text-2xl font-bold">✏️ Manual Override</h2>
                                     <p class="text-sm text-gray-500 mt-1">Edit any employee's assigned leave slots directly.</p>
                                 </div>
-                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 rounded-lg text-sm" style="background:#f3f4f6; color:#374151;">← Back</button>
                             </div>
                             <div id="overrideMsg"></div>
                             <div class="overflow-x-auto">
@@ -1392,7 +1392,7 @@
                                                         </select>
                                                     </td>
                                                     <td class="p-3">
-                                                        <button onclick="app.saveOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                        <button onclick="app.saveOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 rounded text-xs font-semibold" style="background:#f97316; color:#ffffff;">Save</button>
                                                     </td>
                                                 </tr>
                                             `).join('');
@@ -1401,8 +1401,8 @@
                                 </table>
                             </div>
                             <div class="mt-6 flex gap-3">
-                                <button onclick="app.saveAllOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
-                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                                <button onclick="app.saveAllOverrides()" class="px-6 py-3 rounded-lg font-semibold" style="background:#22c55e; color:#ffffff;">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 rounded-lg font-semibold" style="background:#9ca3af; color:#ffffff;">Cancel</button>
                             </div>
                         </div>
                     </div>
@@ -1446,7 +1446,7 @@
                         <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-xl p-8 text-center">
                             <p class="text-2xl mb-4">⚠️</p>
                             <p class="text-gray-600">No maintenance results to override. Process maintenance bids first.</p>
-                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg">Go to Admin Panel</button>
+                            <button onclick="app.setActiveView('admin')" class="mt-4 px-6 py-2 rounded-lg" style="background:#3b82f6; color:#ffffff;">Go to Admin Panel</button>
                         </div>`;
                     return;
                 }
@@ -1466,7 +1466,7 @@
                                     <h2 class="text-2xl font-bold">✏️ Maintenance Manual Override</h2>
                                     <p class="text-sm text-gray-500 mt-1">Edit any maintenance employee's assigned leave slots directly.</p>
                                 </div>
-                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm">← Back</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-4 py-2 rounded-lg text-sm" style="background:#f3f4f6; color:#374151;">← Back</button>
                             </div>
                             <div id="maintOverrideMsg"></div>
                             <div class="overflow-x-auto">
@@ -1510,7 +1510,7 @@
                                                         </select>
                                                     </td>
                                                     <td class="p-3">
-                                                        <button onclick="app.saveMaintOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 font-semibold">Save</button>
+                                                        <button onclick="app.saveMaintOverride('${empId}', ${r.slotOrder})" class="px-3 py-1 rounded text-xs font-semibold" style="background:#f97316; color:#ffffff;">Save</button>
                                                     </td>
                                                 </tr>
                                             `).join('');
@@ -1519,8 +1519,8 @@
                                 </table>
                             </div>
                             <div class="mt-6 flex gap-3">
-                                <button onclick="app.saveAllMaintOverrides()" class="px-6 py-3 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600">💾 Save All Changes to Database</button>
-                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold hover:bg-gray-500">Cancel</button>
+                                <button onclick="app.saveAllMaintOverrides()" class="px-6 py-3 rounded-lg font-semibold" style="background:#22c55e; color:#ffffff;">💾 Save All Changes to Database</button>
+                                <button onclick="app.setActiveView('dashboard')" class="px-6 py-3 rounded-lg font-semibold" style="background:#9ca3af; color:#ffffff;">Cancel</button>
                             </div>
                         </div>
                     </div>
