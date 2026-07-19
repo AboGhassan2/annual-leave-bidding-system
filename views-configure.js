@@ -147,7 +147,7 @@
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <span class="text-sm text-gray-500">12-Block Slot Configuration</span>
-                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetMaintDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 text-xs font-semibold rounded" style="background:#e5e7eb; color:#374151;" title="Clears saved dates/capacities/on-off for this roster group and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
                                 </div>
                             </summary>
                             <div class="px-4 pt-3">
@@ -161,7 +161,7 @@
                                         <textarea id="bulkImportMaint-${dept}" rows="4" placeholder="January\t01/01/2027\t15/01/2027\t4\t1\t16/01/2027\t30/01/2027\t4\t1\t01/01/2027\t15/01/2027\t1\t1"
                                             class="w-full text-xs font-mono border border-indigo-300 rounded p-2"></textarea>
                                         <div class="flex gap-2 mt-2">
-                                            <button onclick="app.bulkImportMaintDeptSlots('${dept}')" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Import &amp; Save</button>
+                                            <button onclick="app.bulkImportMaintDeptSlots('${dept}')" class="px-4 py-1.5 text-xs font-semibold rounded" style="background:#4f46e5; color:#ffffff;">Import &amp; Save</button>
                                             <span id="bulkImportMaintMsg-${dept}" class="text-xs self-center"></span>
                                         </div>
                                     </div>
@@ -522,7 +522,7 @@
                                 </div>
                                 <div class="flex items-center gap-3">
                                     <span class="text-sm text-gray-500">12-Block Slot Configuration</span>
-                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded hover:bg-gray-300" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
+                                    <button onclick="event.stopPropagation();event.preventDefault();app.resetDeptSlotsToDefault('${dept}')" class="px-3 py-1.5 text-xs font-semibold rounded" style="background:#e5e7eb; color:#374151;" title="Clears saved dates/capacities/on-off for this department and restores the auto-computed default 30-day blocks">↺ Reset to Default Dates</button>
                                 </div>
                             </summary>
                             <div class="px-4 pt-3">
@@ -536,7 +536,7 @@
                                         <textarea id="bulkImport-${dept}" rows="4" placeholder="January\t01/01/2027\t15/01/2027\t4\t1\t16/01/2027\t30/01/2027\t4\t1\t01/01/2027\t15/01/2027\t1\t1\t16/01/2027\t04/02/2027\t1\t1"
                                             class="w-full text-xs font-mono border border-indigo-300 rounded p-2"></textarea>
                                         <div class="flex gap-2 mt-2">
-                                            <button onclick="app.bulkImportDeptSlots('${dept}')" class="px-4 py-1.5 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Import &amp; Save</button>
+                                            <button onclick="app.bulkImportDeptSlots('${dept}')" class="px-4 py-1.5 text-xs font-semibold rounded" style="background:#4f46e5; color:#ffffff;">Import &amp; Save</button>
                                             <span id="bulkImportMsg-${dept}" class="text-xs self-center"></span>
                                         </div>
                                     </div>
@@ -705,10 +705,10 @@
                         </div>
                         
                         <div class="flex gap-3">
-                            <button onclick="app.saveSlotConfiguration()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600">
+                            <button onclick="app.saveSlotConfiguration()" class="flex-1 px-6 py-3 rounded-lg font-semibold" style="background:#3b82f6; color:#ffffff;">
                                 💾 Save All Slot Configurations
                             </button>
-                            <button onclick="app.setActiveView('upload')" class="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600">
+                            <button onclick="app.setActiveView('upload')" class="px-6 py-3 rounded-lg font-semibold" style="background:#6b7280; color:#ffffff;">
                                 ← Back
                             </button>
                         </div>
