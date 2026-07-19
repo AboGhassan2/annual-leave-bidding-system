@@ -436,10 +436,10 @@
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
-                                <button onclick="app.doChangePassword()" class="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold">
+                                <button onclick="app.doChangePassword()" class="flex-1 px-6 py-3 rounded-lg font-semibold" style="background:#3b82f6; color:#ffffff;">
                                     💾 Save Password
                                 </button>
-                                <button onclick="app.setActiveView('${backView}')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
+                                <button onclick="app.setActiveView('${backView}')" class="flex-1 px-6 py-3 rounded-lg font-semibold" style="background:#9ca3af; color:#ffffff;">
                                     Cancel
                                 </button>
                             </div>
@@ -570,10 +570,10 @@
                                 </div>
                             </div>
                             <div class="flex gap-3 mt-6">
-                                <button onclick="app.doChangePlannerPassword()" class="flex-1 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold">
+                                <button onclick="app.doChangePlannerPassword()" class="flex-1 px-6 py-3 rounded-lg font-semibold" style="background:#a855f7; color:#ffffff;">
                                     💾 Save Password
                                 </button>
-                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 font-semibold">
+                                <button onclick="app.setActiveView('admin')" class="flex-1 px-6 py-3 rounded-lg font-semibold" style="background:#9ca3af; color:#ffffff;">
                                     Cancel
                                 </button>
                             </div>
