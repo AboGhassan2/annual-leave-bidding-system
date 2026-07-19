@@ -1833,7 +1833,7 @@
                             ${this.state.results.length === 0 ? `
                                 <div class="text-center py-8">
                                     <p class="text-gray-600">No results yet. Process bids first.</p>
-                                    <button onclick="app.setActiveView('admin')" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg">
+                                    <button onclick="app.setActiveView('admin')" class="mt-4 px-4 py-2 rounded-lg" style="background:#3b82f6; color:#ffffff;">
                                         Go to Admin Panel
                                     </button>
                                 </div>
