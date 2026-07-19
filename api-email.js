@@ -152,9 +152,9 @@
                             </div>
                             <div class="flex gap-3 mt-7">
                                 <button onclick="app.doSaveEmailSettings()" class="flex-1 px-5 py-3 bg-teal-500 text-white rounded-lg hover:bg-teal-600 font-semibold">💾 Save</button>
-                                <button onclick="app.doTestOtpEmail()" class="flex-1 px-5 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold">🧪 Test EmailJS</button>
-                                <button onclick="app.doTestSmtpFallback()" class="flex-1 px-5 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-semibold">🧪 Test SMTP Fallback</button>
-                                <button onclick="app.setActiveView('admin')" class="px-5 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">← Back</button>
+                                <button onclick="app.doTestOtpEmail()" class="flex-1 px-5 py-3 rounded-lg font-semibold" style="background:#6366f1; color:#ffffff;">🧪 Test EmailJS</button>
+                                <button onclick="app.doTestSmtpFallback()" class="flex-1 px-5 py-3 rounded-lg font-semibold" style="background:#f97316; color:#ffffff;">🧪 Test SMTP Fallback</button>
+                                <button onclick="app.setActiveView('admin')" class="px-5 py-3 rounded-lg font-semibold" style="background:#e5e7eb; color:#374151;">← Back</button>
                             </div>
                         </div>
                     </div>`;
