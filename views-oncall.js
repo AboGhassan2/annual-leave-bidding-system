@@ -360,7 +360,7 @@
                             <h2 class="text-2xl font-bold text-gray-800">📅 On-Call Date Manager</h2>
                             <p class="text-sm text-gray-500 mt-1">Add or remove On-Call dates per staff member. Leave bids that conflict with these dates will be blocked.</p>
                         </div>
-                        <button onclick="app.setActiveView('admin')" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">← Back</button>
+                        <button onclick="app.setActiveView('admin')" class="px-4 py-2 rounded-lg text-sm font-semibold" style="background:#f3f4f6; color:#374151;">← Back</button>
                     </div>
 
                     <div class="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1">
