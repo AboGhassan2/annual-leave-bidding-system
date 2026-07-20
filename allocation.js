@@ -856,6 +856,9 @@
                     return;
                 }
 
+                const confirmed = await this.showConfirmModal('Are you sure you want to process all bids?');
+                if (!confirmed) return;
+
                 const result = this.computeMaintBidAllocation();
                 const maintResults = result.maintResults;
 
