@@ -1669,11 +1669,21 @@
             app.renderMyResultsView = function() {
                 const content = document.getElementById('contentArea');
                 const user = this.state.verifiedEmployee;
-                const myResults = this.state.results.filter(r => r.employeeId === user?.id)
+                // Route to the correct results store based on user type — Maintenance
+                // staff's awarded slots live entirely in maintResults/isMaintProcessed,
+                // completely separate from Ops's results/isProcessed. Without this check,
+                // a Maintenance staff member would always see "not processed yet" (or "no
+                // assignment found") even after Process Maintenance Bids has genuinely run,
+                // since their real results were never in the array this view was checking.
+                const isMaint = this.state.userType === 'maintenancestaff';
+                const myResultsPool = isMaint ? (this.state.maintResults || []) : this.state.results;
+                const myIsProcessed = isMaint ? this.state.isMaintProcessed : this.state.isProcessed;
+
+                const myResults = myResultsPool.filter(r => r.employeeId === user?.id)
                     .sort((a, b) => (a.slotOrder || 0) - (b.slotOrder || 0));
 
                 const totalDays = myResults.reduce((sum, r) => sum + (r.days || 0), 0);
-                const entitlement = myResults[0]?.entitlement || (user ? (this.state.results.find(r => r.employeeId === user.id)?.entitlement) : 0) || '—';
+                const entitlement = myResults[0]?.entitlement || (user ? (myResultsPool.find(r => r.employeeId === user.id)?.entitlement) : 0) || '—';
                 const rank = myResults[0]?.seniorityRank || '—';
                 const yos = myResults[0]?.yearsOfService || '—';
                 const allAwarded = myResults.length > 0 && myResults.every(r => r.type === 'Bid Awarded');
@@ -1701,7 +1711,7 @@
                             <p class="text-gray-500 text-sm mt-1">Your annual leave assignments for ${this.state.biddingYear}</p>
                         </div>
 
-                        ${!this.state.isProcessed ? `
+                        ${!myIsProcessed ? `
                             <!-- Not processed yet -->
                             <div class="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-8 text-center">
                                 <div class="text-5xl mb-4">⏳</div>
