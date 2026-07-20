@@ -823,6 +823,13 @@
                                         >
                                             ${this.state.isMaintProcessed ? '✅ Maintenance Bids Already Processed' : '🔧 Process Maintenance Bids'}
                                         </button>
+                                        <button
+                                            onclick="app.previewMaintAllocation()"
+                                            ${(this.state.maintenanceStaffUsers || []).length === 0 ? 'disabled' : ''}
+                                            style="width:100%;padding:10px 16px;background:#fff;color:#c2410c;border:2px solid #c2410c;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
+                                        >
+                                            🔍 Preview Allocation (read-only, no data written)
+                                        </button>
                                         ${this.state.isMaintProcessed ? `
                                             <button onclick="app.renderMaintResultsView()"
                                                 style="width:100%;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;cursor:pointer;"
@@ -928,6 +935,98 @@
                     this._confirmModalResolve = null;
                 }
             };
+
+            app.previewMaintAllocation = function() {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                if (maintUsers.length === 0) {
+                    alert('No maintenance staff to preview.');
+                    return;
+                }
+
+                if (Object.keys(this.state.maintSlotCapacities || {}).length === 0) {
+                    alert('Please configure maintenance slot capacities first in "Configure Maint Slots".');
+                    this.setActiveView('configureMaintSlots');
+                    return;
+                }
+
+                const result = this.computeMaintBidAllocation();
+                this.renderPreviewMaintAllocationReport(result);
+            };
+
+            app.renderPreviewMaintAllocationReport = function(result) {
+                const { positionGroups, sortedGroupKeys, maintResults, unconfiguredPositions } = result;
+
+                const stats = {
+                    totalEmployees: result.totalEmployees,
+                    bidAwarded: result.bidAwarded,
+                    autoAssigned: result.autoAssigned,
+                };
+
+                // Keep a filtered snapshot around so the shared "Export to Excel" button
+                // (exportPreviewAllocationToExcel, reused from the Ops preview) exports
+                // exactly what's shown here.
+                this._lastPreviewExport = { sortedGroupKeys, positionGroups, slotAssignments: maintResults };
+
+                const assignmentsByEmp = {};
+                maintResults.forEach(a => {
+                    if (!assignmentsByEmp[a.employeeId]) assignmentsByEmp[a.employeeId] = [];
+                    assignmentsByEmp[a.employeeId].push(a);
+                });
+
+                const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+                const summaryHtml = `
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+                        <div style="background:#fff7ed;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#9a3412;">${stats.totalEmployees}</p><p style="font-size:0.7rem;color:#6b7280;">Maintenance Staff</p></div>
+                        <div style="background:#eff6ff;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#1e40af;">${stats.bidAwarded}</p><p style="font-size:0.7rem;color:#6b7280;">Bid Awards</p></div>
+                        <div style="background:#fefce8;border-radius:8px;padding:10px;"><p style="font-size:1.3rem;font-weight:700;color:#854d0e;">${stats.autoAssigned}</p><p style="font-size:0.7rem;color:#6b7280;">Auto-Assigned</p></div>
+                    </div>`;
+
+                const warningHtml = unconfiguredPositions.length > 0 ? `
+                    <div style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:0.78rem;margin-bottom:16px;">
+                        ⚠️ No slot capacity configured for: ${unconfiguredPositions.map(esc).join(', ')}
+                    </div>` : '';
+
+                const groupsData = sortedGroupKeys.map(pos => {
+                    const employees = positionGroups[pos];
+                    const rows = employees.map((emp, idx) => {
+                        const assigns = assignmentsByEmp[emp.id] || [];
+                        const awardedHtml = assigns.length > 0
+                            ? assigns.map(a => `<div>${esc(a.slotName)} · ${esc(this.blockLabel(a.month))} ${esc(a.startDate)}→${esc(a.endDate)} <span style="color:${a.type === 'Bid Awarded' ? '#166534' : '#854d0e'};font-weight:600;">(${esc(a.type)})</span></div>`).join('')
+                            : '<span style="color:#dc2626;font-weight:600;">No slot awarded</span>';
+                        return `<tr style="border-top:1px solid #f0f0f0;">
+                            <td style="padding:6px 10px;font-weight:700;color:#6b7280;">#${idx + 1}</td>
+                            <td style="padding:6px 10px;">${esc(emp.name)} <span style="color:#9ca3af;font-size:0.72rem;">(${esc(emp.id)})</span></td>
+                            <td style="padding:6px 10px;font-size:0.75rem;color:#6b7280;">${esc(emp.seniorityDate)}</td>
+                            <td style="padding:6px 10px;font-size:0.75rem;">${awardedHtml}</td>
+                        </tr>`;
+                    }).join('');
+                    const html = `
+                    <div style="margin-bottom:16px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+                        <div style="background:#fff7ed;padding:8px 14px;font-weight:700;font-size:0.82rem;">${esc(pos)} <span style="font-weight:400;color:#6b7280;">(${employees.length} competing)</span></div>
+                        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                            <thead><tr style="background:#fafafa;text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;position:sticky;top:0;z-index:1;">
+                                <th style="padding:6px 10px;background:#fafafa;">Rank</th><th style="padding:6px 10px;background:#fafafa;">Employee</th><th style="padding:6px 10px;background:#fafafa;">Seniority Date</th><th style="padding:6px 10px;background:#fafafa;">Awarded</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
+                    return { pos, dept: '', html };
+                });
+
+                // Reuses the exact same modal/search/export DOM as the Ops preview
+                // (_filterPreviewAllocationByPosition, exportPreviewAllocationToExcel) —
+                // both just operate on whatever was stored here most recently.
+                this._lastPreviewGroupsData = groupsData;
+                this._lastPreviewSummaryWarningHtml = summaryHtml + warningHtml;
+
+                const searchInput = document.getElementById('previewAllocationPositionSearch');
+                if (searchInput) searchInput.value = '';
+
+                document.getElementById('previewAllocationBody').innerHTML = summaryHtml + warningHtml + groupsData.map(g => g.html).join('');
+                document.getElementById('previewAllocationModal').style.display = 'flex';
+            };
+
 
             app.previewAllocation = function() {
                 if (this.state.employees.length === 0) {
@@ -1376,6 +1475,7 @@
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.startDate||''}" id="ov-start-${empId}-${r.slotOrder}" />
+                                                        ${r.datesDrifted ? `<div class="text-xs text-orange-600 font-semibold mt-1" title="'Configure Slots' currently shows this slot as ${r.currentConfiguredStartDate||''} → ${r.currentConfiguredEndDate||''}">ℹ️ schedule since changed (config now shows ${r.currentConfiguredStartDate||'?'})</div>` : ''}
                                                     </td>
                                                     <td class="p-3">
                                                         <input type="date" class="border rounded px-2 py-1 text-xs" value="${r.endDate||''}" id="ov-end-${empId}-${r.slotOrder}" />
