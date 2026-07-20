@@ -702,6 +702,61 @@
                         .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
                 });
 
+                // ── DIAGNOSTIC: detect config drift since bids were placed ───────────────
+                // Mirrors the same check in computeBidAllocation (Ops). Winning a slot is
+                // decided by position + block + slot-type + seniority — never by the exact
+                // date range on the bid. The AWARDED DATES are always the employee's own
+                // original bid dates (see makeAssignment), so a config change after the fact
+                // no longer overrides what the employee agreed to. Two things are still
+                // surfaced here:
+                //   • 'removed'       — the slot is no longer configured at all; the bid can
+                //                       no longer be honored and falls through to the next
+                //                       preference / auto-assign instead.
+                //   • 'dates_changed' — the slot is still configured, but its dates have since
+                //                       moved away from what the employee originally bid on.
+                //                       The employee still gets their original dates — this is
+                //                       purely a heads-up that the master "Configure Maint
+                //                       Slots" schedule and this employee's honored leave
+                //                       dates are now out of sync, in case that needs
+                //                       reconciling (e.g. rosters/capacity planned around the
+                //                       new dates).
+                const driftedMaintBids = [];
+                sortedMaintUsers.forEach(user => {
+                    (sortedBidsById[user.id] || []).forEach(bid => {
+                        const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
+                        const pos = resolvePos(user.position || 'Unassigned');
+                        const month = bid.month || months[new Date(bid.startDate).getMonth()];
+                        const configured = slotDates[pos]?.[month]?.[slotLetter];
+                        if (!configured) {
+                            driftedMaintBids.push({ user, bid, reason: 'removed', configured: null });
+                        } else if (bid.startDate && bid.endDate &&
+                                   (bid.startDate !== configured.start || bid.endDate !== configured.end)) {
+                            driftedMaintBids.push({ user, bid, reason: 'dates_changed', configured });
+                        }
+                    });
+                });
+                if (driftedMaintBids.length > 0) {
+                    const removed = driftedMaintBids.filter(d => d.reason === 'removed');
+                    const datesChanged = driftedMaintBids.filter(d => d.reason === 'dates_changed');
+                    if (removed.length > 0) {
+                        console.log(`ℹ️ [Maintenance] ${removed.length} bid(s) reference a slot that's since been removed/disabled — will fall through to next preference / auto-assign:`,
+                            removed.map(d => ({
+                                employee: d.user.name, id: d.user.id,
+                                bidSlot: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`
+                            }))
+                        );
+                    }
+                    if (datesChanged.length > 0) {
+                        console.warn(`ℹ️ [Maintenance] ${datesChanged.length} bid(s) will be honored using the employee's original bid dates, which no longer match the slot's current "Configure Maint Slots" dates — schedule may need reconciling:`,
+                            datesChanged.map(d => ({
+                                employee: d.user.name, id: d.user.id,
+                                honoredAs: `${d.bid.slotType} ${d.bid.month || ''} ${d.bid.startDate}→${d.bid.endDate}`,
+                                currentlyConfiguredAs: `${d.configured.start}→${d.configured.end}`
+                            }))
+                        );
+                    }
+                }
+
                 // ── PREFERENCE ALLOCATION (strict seniority order) ────────────────────────
                 // Same fix as the Ops engine: process one maintenance staff member at a time,
                 // most senior first (posRankMap, already position-grouped and sorted by
