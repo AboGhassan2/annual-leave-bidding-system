@@ -668,7 +668,7 @@
                                 <input
                                     type="datetime-local"
                                     id="biddingDeadline"
-                                    value="${this.state.biddingDeadline}"
+                                    value="${this._toDatetimeLocal(this.state.biddingDeadline)}"
                                     class="w-full px-4 py-2 border-2 rounded-lg"
                                     style="border-color:var(--metro-green-light);"
                                     onchange="app.setBiddingDeadline(this.value)"
@@ -683,7 +683,7 @@
                                         <input
                                             type="datetime-local"
                                             id="biddingDeadlineCorp"
-                                            value="${this.state.biddingDeadlineCorp}"
+                                            value="${this._toDatetimeLocal(this.state.biddingDeadlineCorp)}"
                                             class="w-full px-4 py-2 border-2 rounded-lg"
                                             style="border-color:#e0c069;"
                                             onchange="app.setBiddingDeadlineCorp(this.value)"
