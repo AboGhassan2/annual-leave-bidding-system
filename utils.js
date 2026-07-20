@@ -95,7 +95,26 @@ app.weekNumberToDateRange = function(weekNum, year) {
     return { from: fmt(weekSun), to: fmt(weekSat) };
 };
 
-// Parses free-text week-number input like "1-4, 10, 22-26" into a sorted
+// Converts a stored deadline value — which may come back from Supabase as a
+// full ISO timestamp with seconds and a timezone offset (e.g.
+// "2026-07-19T17:00:00+00:00") — into the exact "yyyy-MM-ddThh:mm" format
+// <input type="datetime-local"> requires. Without this, the browser silently
+// rejects the value (logs a console warning, leaves the field blank) instead
+// of showing the deadline that's actually saved. Values already in the plain
+// local-datetime format used by App aren't stored with timezone offsets, but
+// this handles the Supabase round-trip that produces them.
+app._toDatetimeLocal = function(val) {
+    if (!val) return '';
+    // Already in the exact required format
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(val)) return val;
+    // Strip seconds and any trailing timezone offset/Z, keep local date+time as-is
+    // (deadlines are treated as local wall-clock time throughout this app, so this
+    // is a format strip, not a timezone conversion).
+    const m = val.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+    return m ? m[1] : '';
+};
+
+
 // array of individual week numbers (1-53). Used by the On-Call Manager's
 // multi-week entry fields.
 app._parseMultiWeekInput = function(raw, year) {
