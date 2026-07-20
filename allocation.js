@@ -596,19 +596,17 @@
                 this.renderAdminView();
             };
 
-            app.processMaintBids = async function() {
+            // computeMaintBidAllocation() — the SINGLE source of truth for Maintenance
+            // seniority-based slot allocation, mirroring computeBidAllocation()'s role for
+            // Ops. Both processMaintBids() (writes results) and previewMaintAllocation()
+            // (read-only preview) call this exact function, so the preview can never drift
+            // out of sync with what actually runs for real. Pure calculation — no state
+            // writes, no Supabase, no alerts.
+            app.computeMaintBidAllocation = function(opts = {}) {
                 const maintUsers = this.state.maintenanceStaffUsers || [];
-                if (maintUsers.length === 0) {
-                    alert('No maintenance staff found.');
-                    return;
-                }
-                if (Object.keys(this.state.maintSlotCapacities || {}).length === 0) {
-                    alert('Please configure maintenance slot capacities first.');
-                    return;
-                }
                 const calculateYearsOfService = (d) => (new Date() - new Date(d)) / (1000 * 60 * 60 * 24 * 365.25);
                 const months = this.state.months;
-                const maintCaps = this.state.maintSlotCapacities;
+                const maintCaps = this.state.maintSlotCapacities || {};
 
                 // Parse cal-maint-{position}-{month}-{SA|SB|SC}-{field} keys
                 const rawSlotData = {};
@@ -777,13 +775,42 @@
                     });
                 });
 
+                // unconfiguredPositions mirrors Ops's unconfiguredDepts — positions with
+                // maintenance staff assigned but zero configured slot capacity anywhere.
+                const unconfiguredPositions = Object.keys(positionGroups).filter(pos => !configuredPositions.has(pos));
+
+                return {
+                    positionGroups,
+                    sortedGroupKeys: Object.keys(positionGroups).sort(),
+                    maintResults,
+                    unconfiguredPositions,
+                    totalEmployees: sortedMaintUsers.length,
+                    bidAwarded: maintResults.filter(r => r.type === 'Bid Awarded').length,
+                    autoAssigned: maintResults.filter(r => r.type === 'Auto-Assigned').length,
+                };
+            };
+
+            app.processMaintBids = async function() {
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                if (maintUsers.length === 0) {
+                    alert('No maintenance staff found.');
+                    return;
+                }
+                if (Object.keys(this.state.maintSlotCapacities || {}).length === 0) {
+                    alert('Please configure maintenance slot capacities first.');
+                    return;
+                }
+
+                const result = this.computeMaintBidAllocation();
+                const maintResults = result.maintResults;
+
                 this.state.maintResults = maintResults;
                 this.state.isMaintProcessed = true;
                 await this.saveConfigToSupabase();
 
-                const bidAwarded = maintResults.filter(r => r.type === 'Bid Awarded').length;
-                const autoAssigned = maintResults.filter(r => r.type === 'Auto-Assigned').length;
-                alert('Successfully processed ' + sortedMaintUsers.length + ' maintenance staff!\n\n'
+                const bidAwarded = result.bidAwarded;
+                const autoAssigned = result.autoAssigned;
+                alert('Successfully processed ' + result.totalEmployees + ' maintenance staff!\n\n'
                     + 'Total slots assigned: ' + maintResults.length + '\n'
                     + 'Bid Awards: ' + bidAwarded + '\n'
                     + 'Auto-Assigned: ' + autoAssigned + '\n'
