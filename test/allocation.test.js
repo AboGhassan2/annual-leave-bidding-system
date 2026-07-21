@@ -370,3 +370,39 @@ test('Maintenance: when 1st choice pair is blocked, the engine skips to the 2nd 
     assert.equal(m2.length, 2, 'should get a full pair, not a lone leftover half');
     assert.ok(m2.every(r => r.month === 'February'), 'award should come entirely from the 2nd choice (February) pair');
 });
+
+test('Maintenance: a bid whose real dates drift into an earlier calendar month than its stored label still matches its own configured capacity correctly (regression for a real production bug)', () => {
+    // Reproduces a real case: an employee's "Block 2" bid has startDate
+    // 2027-01-31 (JS reads this as January), but the capacity for "Block 2"
+    // is genuinely configured under 'February' (matching the stored bid.month
+    // label the employee actually selected). Before the fix, the engine
+    // derived the lookup month purely from the raw date (January) instead of
+    // trusting bid.month, so it could never find the real February capacity —
+    // the bid fell through to auto-assign instead of matching as a real
+    // "Bid Awarded", even though the exact slot the employee wanted was
+    // genuinely available.
+    const app = buildApp(baseState({
+        maintenanceStaffUsers: [
+            { id: 'M1', name: 'Solo', position: 'Fitter', seniorityDate: '2015-01-01' },
+        ],
+        bids: [
+            {
+                employeeId: 'M1', slotType: 'slotA',
+                startDate: '2027-01-31', endDate: '2027-02-14', // real dates read as January by Date.getMonth()
+                month: 'February', // but this is the label the employee actually selected and saw
+                timestamp: '2027-01-01T09:00:00Z',
+            },
+        ],
+        maintSlotCapacities: {
+            // Capacity is genuinely configured under 'February', matching bid.month.
+            ...maintSlotKeys('Fitter', 'February', 'SA', { capacity: 1, start: '2027-01-31', end: '2027-02-14' }),
+        },
+    }));
+
+    const result = app.computeMaintBidAllocation();
+    const mine = result.maintResults.find(r => r.employeeId === 'M1');
+
+    assert.ok(mine, 'should receive an assignment at all');
+    assert.equal(mine.type, 'Bid Awarded', 'should be honored as a real bid award — the employee did bid on this exact, available slot — not fall through to Auto-Assigned');
+    assert.equal(mine.month, 'February', 'the displayed month/block label should match what the employee actually selected, not a raw date-derived value');
+});
