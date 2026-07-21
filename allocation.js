@@ -38,6 +38,51 @@
             // otherwise { cancelled: false, sortedEmployees, positionGroups,
             // sortedGroupKeys, deptRankMap, slotAssignments, unconfiguredDepts, stats }
             // ────────────────────────────────────────────────────────────────────────
+            // ── SHARED: groups an employee/staff member's bids into "choice units" ────
+            // for the consecutive-leave-period enhancement. There is no explicit field
+            // in the bid data marking two bids as "one linked choice" — a pair is
+            // inferred PURELY from the dates being exactly back-to-back (one bid's end
+            // date is the calendar day immediately before the other's start date).
+            // Bids that don't pair with anything remain standalone "single" units.
+            // Original preference order (by submission timestamp) is preserved: a
+            // pair unit takes the position of its earlier-submitted half.
+            //
+            // This only affects Phase 1 (see below, in both engines) — Phase 2 (the
+            // pre-existing single-slot matching loop) still considers every individual
+            // bid regardless of pairing, unchanged from before this feature existed.
+            // An employee whose bids never pair with anything produces zero pair
+            // units here, so Phase 1 becomes a complete no-op for them and behavior
+            // is identical to before this feature was added.
+            app._groupBidsIntoChoiceUnits = function(bids) {
+                const isNextDay = (endDate, startDate) => {
+                    const diffDays = Math.round((new Date(startDate) - new Date(endDate)) / 86400000);
+                    return diffDays === 1;
+                };
+                const used = new Set();
+                const units = [];
+                for (let i = 0; i < bids.length; i++) {
+                    if (used.has(i)) continue;
+                    let pairedWith = -1;
+                    for (let j = i + 1; j < bids.length; j++) {
+                        if (used.has(j)) continue;
+                        if (isNextDay(bids[i].endDate, bids[j].startDate) || isNextDay(bids[j].endDate, bids[i].startDate)) {
+                            pairedWith = j;
+                            break;
+                        }
+                    }
+                    if (pairedWith >= 0) {
+                        used.add(i); used.add(pairedWith);
+                        const pairBids = [bids[i], bids[pairedWith]].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+                        units.push({ type: 'pair', bids: pairBids });
+                    } else {
+                        used.add(i);
+                        units.push({ type: 'single', bids: [bids[i]] });
+                    }
+                }
+                return units;
+            };
+
+
             app.computeBidAllocation = function(opts = {}) {
                 const { skipUnconfiguredConfirm = false } = opts;
 
@@ -435,6 +480,50 @@
                     const bids        = sortedBidsById[employee.id];
                     const entitlement = getEmployeeEntitlement(employee);
 
+                    // ── PHASE 1: consecutive leave period preference ────────────────────
+                    // Tries each of the employee's consecutive-pair choices (inferred by
+                    // date adjacency — see _groupBidsIntoChoiceUnits above), in the order
+                    // they were submitted, as an ATOMIC all-or-nothing unit: both slots
+                    // must have capacity or neither is awarded. If a pair choice is
+                    // blocked, we move to the employee's NEXT pair choice rather than
+                    // settling for half of this one — an award is never partially
+                    // committed here. An employee with no pair choices at all produces
+                    // zero pair units, so this phase is a complete no-op for them and
+                    // behavior is unchanged from before this feature existed.
+                    const choiceUnits = this._groupBidsIntoChoiceUnits(bids);
+                    for (const unit of choiceUnits) {
+                        if (unit.type !== 'pair') continue;
+                        if (awarded[employee.id].length > 0) break; // already fully handled by an earlier pair choice
+
+                        const checks = unit.bids.map(bid => {
+                            const slotType = bid.slotType.charAt(bid.slotType.length - 1);
+                            const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
+                            const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                            const cap      = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
+                            return { bid, slotType, bidDept, month, cap };
+                        });
+
+                        if (!checks.every(c => c.cap > 0)) continue; // this pair isn't fully available — try the next pair choice
+
+                        const provisional = checks.map(c => makeBidAssignment(employee, c.bid, 1));
+                        const pairDays = provisional.reduce((s, a) => s + a.days, 0);
+                        if (pairDays > entitlement) continue; // together they'd exceed entitlement — try the next pair choice
+
+                        // Both available and within entitlement — award atomically.
+                        checks.forEach((c, idx) => {
+                            const a = makeBidAssignment(employee, c.bid, idx + 1);
+                            slotAvailability[c.month][c.bidDept][c.slotType]--;
+                            awarded[employee.id].push(a);
+                        });
+                        break; // fully handled by this pair — done with Phase 1 for this employee
+                    }
+
+                    // ── PHASE 2: existing single-slot sequential preference matching ───
+                    // Unchanged from before this feature existed. Runs for any employee
+                    // Phase 1 didn't fully award (no pair choices at all, or every pair
+                    // choice was blocked) — every individual bid, including a surviving
+                    // half of a blocked pair, is eligible here on its own merits, exactly
+                    // as it always was.
                     for (const bid of bids) {
                         if (awarded[employee.id].length >= 2) break; // fully allocated
 
@@ -770,6 +859,38 @@
                     const bids = sortedBidsById[user.id];
                     const pos  = resolvePos(user.position || 'Unassigned');
 
+                    // ── PHASE 1: consecutive leave period preference ────────────────────
+                    // Mirrors the Ops engine's Phase 1 exactly — see the detailed comment
+                    // there. Tries each consecutive-pair choice as an atomic unit before
+                    // falling through to Phase 2's existing single-slot matching.
+                    const choiceUnits = this._groupBidsIntoChoiceUnits(bids);
+                    for (const unit of choiceUnits) {
+                        if (unit.type !== 'pair') continue;
+                        if (awarded[user.id].length > 0) break;
+
+                        const checks = unit.bids.map(bid => {
+                            const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
+                            const month      = months[new Date(bid.startDate).getMonth()];
+                            const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
+                            return { bid, slotLetter, month, cap };
+                        });
+
+                        if (!checks.every(c => c.cap > 0)) continue;
+
+                        const provisional = checks.map(c => makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, 1, 'Bid Awarded'));
+                        const pairDays = provisional.reduce((s, a) => s + a.days, 0);
+                        if (pairDays > 30) continue;
+
+                        checks.forEach((c, idx) => {
+                            const a = makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, idx + 1, 'Bid Awarded');
+                            slotAvailability[c.month][pos][c.slotLetter]--;
+                            awarded[user.id].push(a);
+                        });
+                        break;
+                    }
+
+                    // ── PHASE 2: existing single-slot sequential preference matching ───
+                    // Unchanged from before this feature existed.
                     for (const bid of bids) {
                         if (awarded[user.id].length >= 2) break; // fully allocated
 
