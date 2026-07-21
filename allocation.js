@@ -193,6 +193,30 @@
                     return empDept;
                 };
 
+                // Finds which configured month a bid's slot actually belongs to, by
+                // matching its real start/end dates against every configured month's
+                // dates for that dept+slotType — NOT by trusting bid.month (missing
+                // entirely on some real bids, confirmed by inspecting production data —
+                // not a hypothetical) and NOT by deriving month from raw date math
+                // (breaks whenever a slot's real dates drift into the next calendar
+                // month while still being configured under the earlier block — a
+                // documented, known behavior of this app's slot scheduling). This is
+                // the authoritative signal: if a bid's exact dates match a configured
+                // slot under some month, that IS the right capacity bucket, full stop.
+                // Falls back to bid.month, then date-derived, only if no exact
+                // configured match exists at all (e.g. a slot that's since been removed
+                // — see the drift-detection diagnostic below, which handles that case
+                // separately). Mirrors findConfiguredMonthForBid in
+                // computeMaintBidAllocation exactly, adapted for dept instead of position.
+                const findConfiguredMonthForBid = (dept, slotType, bid) => {
+                    const monthsForDept = slotDates[dept] || {};
+                    for (const m of Object.keys(monthsForDept)) {
+                        const d = monthsForDept[m][slotType];
+                        if (d && d.start === bid.startDate && d.end === bid.endDate) return m;
+                    }
+                    return bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                };
+
                 // Helper function to assign slot to employee using real configured dates.
                 // Requires resolveEmployeeDept (defined above).
                 const assignSlotToEmployee = (employee, month, slotType, slotNumber) => {
@@ -338,11 +362,12 @@
                 const makeBidAssignment = (employee, bid, slotNumber) => {
                     const slotType = bid.slotType.charAt(bid.slotType.length - 1);
                     const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                    // Prefer the month captured at bid-submission time (tied directly to the
-                    // configured slot the employee actually selected). Only fall back to
-                    // deriving it from startDate for legacy bids that never stored .month
-                    // (e.g. Golden Command / Corporate Staff free-date bids).
-                    const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                    // Matches this bid's real dates against the dept's actual configured
+                    // slot dates to find its true month bucket — see
+                    // findConfiguredMonthForBid above for why this is the reliable
+                    // signal, not bid.month (missing on many real bids) or raw date math
+                    // (breaks on drift).
+                    const month    = findConfiguredMonthForBid(bidDept, slotType, bid);
                     const slotObj  = this.state.slotTypes.find(s => s.id === `slot${slotType}`);
                     const configuredDates = slotDates[bidDept]?.[month]?.[slotType];
 
@@ -498,7 +523,7 @@
                         const checks = unit.bids.map(bid => {
                             const slotType = bid.slotType.charAt(bid.slotType.length - 1);
                             const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                            const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                            const month    = findConfiguredMonthForBid(bidDept, slotType, bid);
                             const cap      = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
                             return { bid, slotType, bidDept, month, cap };
                         });
@@ -538,7 +563,7 @@
 
                         const slotType = bid.slotType.charAt(bid.slotType.length - 1);
                         const bidDept  = resolveEmployeeDept(bid.department || resolveEmployeeDept(employee.department || 'Unassigned'));
-                        const month    = bid.month || this.state.months[new Date(bid.startDate).getMonth()];
+                        const month    = findConfiguredMonthForBid(bidDept, slotType, bid);
                         const cap      = slotAvailability[month]?.[bidDept]?.[slotType] ?? 0;
 
                         if (cap <= 0) continue; // no capacity left for this choice — try next preference
