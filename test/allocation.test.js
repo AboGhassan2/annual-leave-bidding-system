@@ -406,3 +406,47 @@ test('Maintenance: a bid whose real dates drift into an earlier calendar month t
     assert.equal(mine.type, 'Bid Awarded', 'should be honored as a real bid award — the employee did bid on this exact, available slot — not fall through to Auto-Assigned');
     assert.equal(mine.month, 'February', 'the displayed month/block label should match what the employee actually selected, not a raw date-derived value');
 });
+
+test('Maintenance: a bid with NO month field at all (real-world legacy/imported data) still matches its own configured capacity correctly', () => {
+    // This is the actual scenario found in production: bids on real staff had
+    // no "month" property whatsoever (not null, not empty — entirely absent
+    // as a key), confirmed by inspecting app.state.bids directly. A fix that
+    // only prefers bid.month over date-math is a no-op for data like this —
+    // it still falls through to the same broken date derivation every time.
+    // The real fix has to work without relying on bid.month being present at
+    // all: match the bid's actual dates against every configured month's
+    // dates for that position+letter, and use whichever month's config
+    // exactly matches — the authoritative signal, regardless of any label.
+    const app = buildApp(baseState({
+        maintenanceStaffUsers: [
+            { id: 'M1', name: 'Senior', position: 'MEP-OCC', seniorityDate: '2015-01-01' },
+            { id: 'M2', name: 'Third Senior', position: 'MEP-OCC', seniorityDate: '2023-06-18' },
+        ],
+        bids: [
+            // Senior takes the January pair entirely, so M2's January pair is blocked
+            // and Phase 1 must fall through to trying the February pair choice.
+            { employeeId: 'M1', slotType: 'SA', startDate: '2027-01-01', endDate: '2027-01-15', timestamp: '2027-01-01T08:00:00Z' },
+            { employeeId: 'M1', slotType: 'SB', startDate: '2027-01-16', endDate: '2027-01-30', timestamp: '2027-01-01T08:01:00Z' },
+            // M2's bids — note: no `month` field at all, exactly like the real data found.
+            { employeeId: 'M2', slotType: 'SA', startDate: '2027-01-01', endDate: '2027-01-15', timestamp: '2027-01-01T09:00:00Z' },
+            { employeeId: 'M2', slotType: 'SB', startDate: '2027-01-16', endDate: '2027-01-30', timestamp: '2027-01-01T09:01:00Z' },
+            { employeeId: 'M2', slotType: 'SA', startDate: '2027-01-31', endDate: '2027-02-14', timestamp: '2027-01-01T09:02:00Z' },
+            { employeeId: 'M2', slotType: 'SB', startDate: '2027-02-15', endDate: '2027-03-01', timestamp: '2027-01-01T09:03:00Z' },
+        ],
+        maintSlotCapacities: {
+            ...maintSlotKeys('MEP-OCC', 'January',  'SA', { capacity: 1, start: '2027-01-01', end: '2027-01-15' }),
+            ...maintSlotKeys('MEP-OCC', 'January',  'SB', { capacity: 1, start: '2027-01-16', end: '2027-01-30' }),
+            // "Block 2" capacity is configured under 'February', even though the
+            // Slot A half of it (2027-01-31) reads as January by raw date math.
+            ...maintSlotKeys('MEP-OCC', 'February', 'SA', { capacity: 2, start: '2027-01-31', end: '2027-02-14' }),
+            ...maintSlotKeys('MEP-OCC', 'February', 'SB', { capacity: 2, start: '2027-02-15', end: '2027-03-01' }),
+        },
+    }));
+
+    const result = app.computeMaintBidAllocation();
+    const m2 = result.maintResults.filter(r => r.employeeId === 'M2');
+
+    assert.equal(m2.length, 2, 'M2 should get a full pair from their 2nd choice');
+    assert.ok(m2.every(r => r.type === 'Bid Awarded'), 'both halves should be real bid awards, not one Bid Awarded + one Auto-Assigned');
+    assert.ok(m2.every(r => r.month === 'February'), 'both should be correctly attributed to February, matching the real configured capacity bucket, not January from raw date math');
+});
