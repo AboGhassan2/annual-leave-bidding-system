@@ -770,9 +770,18 @@
                 const awarded = {};
                 sortedMaintUsers.forEach(u => { awarded[u.id] = []; });
 
-                const makeAssignment = (user, startDate, endDate, slotLetter, slotNumber, type) => {
+                const makeAssignment = (user, startDate, endDate, slotLetter, slotNumber, type, preferredMonth = null) => {
                     const days = Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1;
-                    const month = months[new Date(startDate).getMonth()];
+                    // Prefer the month captured at bid-submission time (the month label the
+                    // employee actually saw and selected) over deriving it from the raw
+                    // date — a slot's real dates can drift into the next calendar month
+                    // while still being configured/labeled under the earlier block, so
+                    // date-derivation alone can silently look up the wrong month's
+                    // capacity. Mirrors the same safeguard Ops's engine already has.
+                    // Auto-assign calls (no originating bid) omit this and keep the
+                    // date-derived month, which is correct there since it's picking from
+                    // whatever real slot config it found, not matching against a bid.
+                    const month = preferredMonth || months[new Date(startDate).getMonth()];
                     return {
                         employeeId: user.id, employeeName: user.name,
                         position: user.position || '', department: user.department || '',
@@ -870,19 +879,19 @@
 
                         const checks = unit.bids.map(bid => {
                             const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
-                            const month      = months[new Date(bid.startDate).getMonth()];
+                            const month      = bid.month || months[new Date(bid.startDate).getMonth()];
                             const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
                             return { bid, slotLetter, month, cap };
                         });
 
                         if (!checks.every(c => c.cap > 0)) continue;
 
-                        const provisional = checks.map(c => makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, 1, 'Bid Awarded'));
+                        const provisional = checks.map(c => makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, 1, 'Bid Awarded', c.month));
                         const pairDays = provisional.reduce((s, a) => s + a.days, 0);
                         if (pairDays > 30) continue;
 
                         checks.forEach((c, idx) => {
-                            const a = makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, idx + 1, 'Bid Awarded');
+                            const a = makeAssignment(user, c.bid.startDate, c.bid.endDate, c.slotLetter, idx + 1, 'Bid Awarded', c.month);
                             slotAvailability[c.month][pos][c.slotLetter]--;
                             awarded[user.id].push(a);
                         });
@@ -900,12 +909,12 @@
                         if (alreadyHas) continue;
 
                         const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
-                        const month      = months[new Date(bid.startDate).getMonth()];
+                        const month      = bid.month || months[new Date(bid.startDate).getMonth()];
                         const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
 
                         if (cap <= 0) continue; // no capacity left for this choice — try next preference
 
-                        const a = makeAssignment(user, bid.startDate, bid.endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded');
+                        const a = makeAssignment(user, bid.startDate, bid.endDate, slotLetter, awarded[user.id].length + 1, 'Bid Awarded', month);
                         const usedDays = awarded[user.id].reduce((s, x) => s + x.days, 0);
                         if (usedDays + a.days > 30) continue; // would exceed entitlement — try next preference
 
