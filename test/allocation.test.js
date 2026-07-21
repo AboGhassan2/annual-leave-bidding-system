@@ -450,3 +450,39 @@ test('Maintenance: a bid with NO month field at all (real-world legacy/imported 
     assert.ok(m2.every(r => r.type === 'Bid Awarded'), 'both halves should be real bid awards, not one Bid Awarded + one Auto-Assigned');
     assert.ok(m2.every(r => r.month === 'February'), 'both should be correctly attributed to February, matching the real configured capacity bucket, not January from raw date math');
 });
+
+test('Ops: a bid with NO month field at all (confirmed present in real production data) still matches its own configured capacity correctly', () => {
+    // Same class of real bug as the Maintenance case above, confirmed present
+    // in Ops's own real bid data too (checked via the browser console —
+    // app.state.bids.filter(b => !b.month) returned real results). A slot
+    // whose real dates start in one calendar month but is genuinely
+    // configured under the next month must still be found correctly.
+    const app = buildApp(baseState({
+        employees: [
+            { id: 'E1', name: 'Senior', department: 'DEPT-X', position: 'Controller', seniorityDate: '2015-01-01' },
+            { id: 'E2', name: 'Junior', department: 'DEPT-X', position: 'Controller', seniorityDate: '2023-06-18' },
+        ],
+        bids: [
+            { employeeId: 'E1', slotType: 'SA', startDate: '2027-01-01', endDate: '2027-01-15', timestamp: '2027-01-01T08:00:00Z' },
+            { employeeId: 'E1', slotType: 'SB', startDate: '2027-01-16', endDate: '2027-01-30', timestamp: '2027-01-01T08:01:00Z' },
+            // No `month` field on any of these — matches real production data exactly.
+            { employeeId: 'E2', slotType: 'SA', startDate: '2027-01-01', endDate: '2027-01-15', timestamp: '2027-01-01T09:00:00Z' },
+            { employeeId: 'E2', slotType: 'SB', startDate: '2027-01-16', endDate: '2027-01-30', timestamp: '2027-01-01T09:01:00Z' },
+            { employeeId: 'E2', slotType: 'SA', startDate: '2027-01-31', endDate: '2027-02-14', timestamp: '2027-01-01T09:02:00Z' },
+            { employeeId: 'E2', slotType: 'SB', startDate: '2027-02-15', endDate: '2027-03-01', timestamp: '2027-01-01T09:03:00Z' },
+        ],
+        slotCapacities: {
+            ...opsSlotKeys('DEPT-X', 'January',  'SA', { capacity: 1, start: '2027-01-01', end: '2027-01-15' }),
+            ...opsSlotKeys('DEPT-X', 'January',  'SB', { capacity: 1, start: '2027-01-16', end: '2027-01-30' }),
+            ...opsSlotKeys('DEPT-X', 'February', 'SA', { capacity: 2, start: '2027-01-31', end: '2027-02-14' }),
+            ...opsSlotKeys('DEPT-X', 'February', 'SB', { capacity: 2, start: '2027-02-15', end: '2027-03-01' }),
+        },
+    }));
+
+    const result = app.computeBidAllocation({ skipUnconfiguredConfirm: true });
+    const e2 = result.slotAssignments.filter(r => r.employeeId === 'E2');
+
+    assert.equal(e2.length, 2, 'should get a full pair from their 2nd choice');
+    assert.ok(e2.every(r => r.type === 'Bid Awarded'), 'both halves should be real bid awards, not one Bid Awarded + one Auto-Assigned');
+    assert.ok(e2.every(r => r.month === 'February'), 'both should be correctly attributed to February, matching the real configured capacity bucket, not January from raw date math');
+});
