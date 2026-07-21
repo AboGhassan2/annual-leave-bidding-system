@@ -738,6 +738,30 @@
                 });
 
                 const configuredPositions = new Set(Object.values(slotAvailability).flatMap(m => Object.keys(m)));
+
+                // Finds which configured month a bid's slot actually belongs to, by
+                // matching its real start/end dates against every configured month's
+                // dates for that position+letter — NOT by trusting bid.month (which may
+                // be missing entirely on bids that predate that field, or were inserted
+                // outside the normal bidding UI) and NOT by deriving month from raw date
+                // math (which breaks whenever a slot's real dates drift into the next
+                // calendar month while still being configured under the earlier block —
+                // a documented, known behavior of this app's slot scheduling). This is
+                // the authoritative signal: if a bid's exact dates match a configured
+                // slot under some month, that IS the right capacity bucket, full stop.
+                // Falls back to bid.month, then date-derived, only if no exact
+                // configured match exists at all (e.g. a slot that's since been removed
+                // — see the drift-detection diagnostic above, which already handles
+                // that case separately).
+                const findConfiguredMonthForBid = (pos, slotLetter, bid) => {
+                    const monthsForPos = slotDates[pos] || {};
+                    for (const m of Object.keys(monthsForPos)) {
+                        const d = monthsForPos[m][slotLetter];
+                        if (d && d.start === bid.startDate && d.end === bid.endDate) return m;
+                    }
+                    return bid.month || months[new Date(bid.startDate).getMonth()];
+                };
+
                 const posCache = {};
                 const resolvePos = (pos) => {
                     if (posCache[pos] !== undefined) return posCache[pos];
@@ -879,7 +903,7 @@
 
                         const checks = unit.bids.map(bid => {
                             const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
-                            const month      = bid.month || months[new Date(bid.startDate).getMonth()];
+                            const month      = findConfiguredMonthForBid(pos, slotLetter, bid);
                             const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
                             return { bid, slotLetter, month, cap };
                         });
@@ -909,7 +933,7 @@
                         if (alreadyHas) continue;
 
                         const slotLetter = bid.slotType ? bid.slotType.charAt(bid.slotType.length - 1) : 'A';
-                        const month      = bid.month || months[new Date(bid.startDate).getMonth()];
+                        const month      = findConfiguredMonthForBid(pos, slotLetter, bid);
                         const cap        = slotAvailability[month]?.[pos]?.[slotLetter] ?? 0;
 
                         if (cap <= 0) continue; // no capacity left for this choice — try next preference
