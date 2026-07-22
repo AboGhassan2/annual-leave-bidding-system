@@ -678,6 +678,13 @@
                     return;
                 }
 
+                // Block leave continuity across the Dec→Jan year-end transition: staff
+                // with already-approved December leave cannot bid on a January slot.
+                if (this._blocksJanuaryBid(gcUser.id, startDate, endDate, this.state.biddingYearCorp)) {
+                    alert('⛔ You already have approved leave in December. To avoid continuous leave across the year-end, you cannot bid on a January slot. Please contact the planner if you believe this is incorrect.');
+                    return;
+                }
+
                 // For fixed slot types, validate exact day count
                 if (window.gcSelectedSlot !== 'gcCustom') {
                     const slot = this.state.slotTypes.find(s => s.id === window.gcSelectedSlot);
@@ -1132,6 +1139,13 @@
                     }
                 }
 
+                // Block leave continuity across the Dec→Jan year-end transition: staff
+                // with already-approved December leave cannot bid on a January slot.
+                if (this._blocksJanuaryBid(csUser.id, startDate, endDate, this.state.biddingYearCorp)) {
+                    alert('⛔ You already have approved leave in December. To avoid continuous leave across the year-end, you cannot bid on a January slot. Please contact the planner if you believe this is incorrect.');
+                    return;
+                }
+
                 // Check overlap with existing CS bids
                 const csBids = this.state.bids.filter(bid => bid.employeeId === csUser.id);
                 for (const bid of csBids) {
@@ -1510,6 +1524,13 @@
 
                 if (!startDate || !endDate) {
                     alert('Slot has no configured dates. Please contact the planner.');
+                    return;
+                }
+
+                // Block leave continuity across the Dec→Jan year-end transition: staff
+                // with already-approved December leave cannot bid on a January slot.
+                if (this._blocksJanuaryBid(this.state.verifiedEmployee.id, startDate, endDate, this.state.biddingYear)) {
+                    alert('⛔ You already have approved leave in December. To avoid continuous leave across the year-end, you cannot bid on a January slot. Please contact the planner if you believe this is incorrect.');
                     return;
                 }
 
