@@ -348,38 +348,32 @@
                         console.log('ℹ️ No Corporate Staff records found in corporate_staff_employees table');
                     }
 
-                    // ── Load CS sub-group users (L456 INM, L3 INM, L3 TSM) from Supabase ──
+                    // ── Load CS sub-group users (L456 INM, L3 INM, L3 TSM, HSEQ) from Supabase ──
                     const subGroups = [
                         { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
                         { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
                         { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
                         { table: 'hseq_users',     stateKey: 'hseqUsers'     },
                     ];
-                    const _dbg = (msg) => { const el = document.getElementById('_dbgLog'); if(el) el.innerHTML += msg + '<br>'; };
                     for (const sg of subGroups) {
                         try {
-                            _dbg(`⏳ Loading ${sg.table}...`);
                             const { data: sgRows, error: sgErr } = await this.supabase
                                 .from(sg.table)
                                 .select('id, name, password, email')
                                 .eq('tenant_id', this._tid());
                             if (sgErr) {
-                                _dbg(`❌ ${sg.table} ERROR: ${sgErr.message}`);
+                                console.error(`❌ ${sg.table} load failed:`, sgErr.message);
                             } else if (sgRows && sgRows.length > 0) {
-                                _dbg(`✅ ${sg.table}: ${sgRows.length} rows — assigning to state...`);
                                 this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
-                                _dbg(`✅ ${sg.table}: state updated OK`);
+                                console.log(`✅ ${sg.table}: ${sgRows.length} rows loaded`);
                             } else {
-                                _dbg(`⚠️ ${sg.table}: 0 rows for tenant ${this._tid()}`);
+                                console.log(`ℹ️ ${sg.table}: 0 rows for this tenant`);
                             }
                         } catch (sgEx) {
-                            _dbg(`❌ ${sg.table} EXCEPTION: ${sgEx.message}`);
+                            console.error(`❌ ${sg.table} load exception:`, sgEx.message);
                         }
                     }
-                    _dbg(`✅ Sub-group loop done. Calling saveState...`);
-                    // ────────────────────────────────────────────────────────────────────────
                     this.saveState();
-                    _dbg(`✅ saveState done. l456: state=${(this.state.l456InmUsers||[]).length} localStorage=${JSON.parse(localStorage.getItem('l456InmUsers')||'[]').length}`);
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
                     // ===== MAINTENANCE STAFF DATA (loaded from Supabase) =====
                     let allMaintStaff = [];
