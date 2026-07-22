@@ -359,7 +359,7 @@
                         try {
                             const { data: sgRows, error: sgErr } = await this.supabase
                                 .from(sg.table)
-                                .select('id, name, password, email')
+                                .select('id, name, password')
                                 .eq('tenant_id', this._tid());
                             if (sgErr) {
                                 console.error(`❌ ${sg.table} load failed:`, sgErr.message);
