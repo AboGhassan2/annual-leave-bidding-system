@@ -263,6 +263,28 @@
                         console.log('ℹ️ No on-call dates in oncall_dates table yet');
                     }
 
+                    // Load the December-leave-holders list — staff with already-approved
+                    // leave in the prior December, blocked from bidding January slots in
+                    // the current cycle to avoid leave continuity across two calendar
+                    // years. Stored as a plain array of employee IDs on state for a fast
+                    // lookup at bid-submission time (see isDecemberLeaveHolder()).
+                    try {
+                        const { data: decRows, error: decError } = await this.supabase
+                            .from('december_leave_holders')
+                            .select('employee_id')
+                            .eq('tenant_id', this._tid());
+                        if (decError) {
+                            console.warn('⚠️ Could not load december_leave_holders:', decError.message);
+                            this.state.decemberLeaveHolders = this.state.decemberLeaveHolders || [];
+                        } else {
+                            this.state.decemberLeaveHolders = (decRows || []).map(r => r.employee_id);
+                            console.log(`✅ Loaded December leave holders: ${this.state.decemberLeaveHolders.length} staff`);
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Could not load december_leave_holders:', e.message);
+                        this.state.decemberLeaveHolders = this.state.decemberLeaveHolders || [];
+                    }
+
                     // Load Golden Command users from dedicated table
                     const { data: gcUsers, error: gcError } = await this.supabase
                         .from('golden_command_users')
@@ -828,6 +850,7 @@
                         is_processed: this.state.isProcessed,
                         planner_password: this.state.plannerPassword,
                         slot_capacities: this.state.slotCapacities,
+                        maint_slot_capacities: this.state.maintSlotCapacities || {},
                         maint_results: this.state.maintResults || [],
                         is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
