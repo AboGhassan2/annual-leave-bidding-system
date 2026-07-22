@@ -127,3 +127,27 @@ app._parseMultiWeekInput = function(raw, year) {
     }
     return [...weeks].sort((a, b) => a - b);
 };
+
+// Blocks leave continuity across the December→January year-end transition:
+// staff who already have approved leave in the prior December (tracked in the
+// december_leave_holders table, loaded into this.state.decemberLeaveHolders)
+// cannot submit a bid for any slot whose dates overlap January of the given
+// bidding year. Checked against the bid's REAL dates, not any stored month
+// label — the same lesson learned the hard way with the allocation engine's
+// date-drift bug: labels can be missing or wrong, real dates are authoritative.
+// `year` is passed explicitly by the caller rather than assumed, since Ops/
+// Maintenance use this.state.biddingYear while GC/CS use
+// this.state.biddingYearCorp — a different field that can hold a different year.
+app._blocksJanuaryBid = function(employeeId, startDate, endDate, year) {
+    const holders = this.state.decemberLeaveHolders || [];
+    if (!holders.includes(employeeId)) return false;
+    if (!startDate || !endDate || !year) return false;
+
+    const janStart = new Date(year, 0, 1);   // Jan 1
+    const janEnd   = new Date(year, 0, 31);  // Jan 31
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+
+    return s <= janEnd && e >= janStart; // any overlap with January counts
+};
+
