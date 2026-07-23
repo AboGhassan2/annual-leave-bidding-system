@@ -58,85 +58,110 @@
 
                 try {
                     this.updateSystemStatus('Loading from Supabase...');
-                    
-                    // FIX FOR 1000 STAFF LIMIT: Use range queries with pagination
-                    console.log('Loading employees with pagination to avoid 1000 limit...');
-                    let allEmployees = [];
-                    let from = 0;
                     const batchSize = 1000;
-                    let hasMore = true;
+                    const tid = this._tid();
 
-                    // Load employees with pagination
-                    while (hasMore) {
-                        const { data: employeesBatch, error: empError } = await this.supabase
-                            .from('employees')
-                            .select('*')
-                            .eq('tenant_id', this._tid())
-                            .range(from, from + batchSize - 1);
-                        
-                        if (empError) throw empError;
-                        
-                        if (employeesBatch && employeesBatch.length > 0) {
-                            allEmployees = [...allEmployees, ...employeesBatch];
-                            hasMore = employeesBatch.length === batchSize;
-                            from += batchSize;
-                        } else {
-                            hasMore = false;
-                        }
-                    }
-                    
-                    // Load bids from leave_requests (Ops), maint_leave_requests (Maintenance),
-                    // and corporate_leave_request (GC & Corporate Staff)
-                    const _fetchBidTable = async (tableName) => {
-                        let rows = [], pg = 0, more = true;
-                        while (more) {
-                            const { data: batch, error: err } = await this.supabase
-                                .from(tableName).select('*')
-                                .eq('tenant_id', this._tid())
-                                .range(pg, pg + batchSize - 1);
-                            if (err) {
-                                if (err.code !== 'PGRST116') console.warn(`No bids / error [${tableName}]:`, err);
-                                more = false;
-                            } else if (batch && batch.length > 0) {
+                    // ── Reusable paginated fetch — bypasses Supabase's 1000-row cap by
+                    // paging with .range() until a short page confirms there's no more.
+                    // Kept generic so every paginated table below can share one
+                    // implementation instead of five near-identical while-loops.
+                    const fetchPaginated = async (table, select = '*') => {
+                        let rows = [], from = 0, hasMore = true;
+                        while (hasMore) {
+                            const { data: batch, error } = await this.supabase
+                                .from(table).select(select)
+                                .eq('tenant_id', tid)
+                                .range(from, from + batchSize - 1);
+                            if (error) throw error;
+                            if (batch && batch.length > 0) {
                                 rows = [...rows, ...batch];
-                                more = batch.length === batchSize;
-                                pg += batchSize;
-                            } else { more = false; }
+                                hasMore = batch.length === batchSize;
+                                from += batchSize;
+                            } else {
+                                hasMore = false;
+                            }
                         }
                         return rows;
                     };
-                    const [regularBids, maintBids, corporateBids] = await Promise.all([
-                        _fetchBidTable('leave_requests'),
-                        _fetchBidTable('maint_leave_requests'),
-                        _fetchBidTable('corporate_leave_request')
+
+                    // Same pagination shape as fetchPaginated, but non-fatal on error —
+                    // matches every non-employees table's original warn-and-continue
+                    // behavior instead of aborting the whole load.
+                    const fetchPaginatedSoft = async (table, select, warnLabel) => {
+                        try {
+                            return await fetchPaginated(table, select);
+                        } catch (err) {
+                            if (err.code !== 'PGRST116') console.warn(`⚠️ Could not load ${warnLabel || table}:`, err.message);
+                            return [];
+                        }
+                    };
+
+                    // ── Fire every independent query at once. None of these raw fetches
+                    // depend on each other's results — only fetching employees.length===0
+                    // throwing (below) is fatal, matching the original behavior where an
+                    // employees-load failure aborted the whole function via the outer
+                    // try/catch. Everything else here previously ran one-after-another;
+                    // running them concurrently cuts total load time roughly to the
+                    // slowest single query instead of the sum of all of them — the fix
+                    // for the login/page-load delay flagged earlier.
+                    console.log('Loading employees with pagination to avoid 1000 limit...');
+                    const [
+                        allEmployees,
+                        regularBids, maintBids, corporateBids,
+                        configResult, configCorpResult,
+                        ocRows,
+                        decRows,
+                        gcResult,
+                        allCsStaff,
+                        subGroupResults,
+                        allMaintStaff,
+                    ] = await Promise.all([
+                        fetchPaginated('employees'),
+                        fetchPaginatedSoft('leave_requests', '*', 'leave_requests'),
+                        fetchPaginatedSoft('maint_leave_requests', '*', 'maint_leave_requests'),
+                        fetchPaginatedSoft('corporate_leave_request', '*', 'corporate_leave_request'),
+                        this.supabase.from('system_config_82').select('*').eq('tenant_id', tid).single(),
+                        this.supabase.from('system_config').select('*').eq('tenant_id', tid).single(),
+                        fetchPaginatedSoft('oncall_dates', 'employee_id, date', 'oncall_dates'),
+                        this.supabase.from('december_leave_holders').select('employee_id').eq('tenant_id', tid)
+                            .then(r => r, e => ({ error: e })),
+                        this.supabase.from('golden_command_users').select('*').eq('tenant_id', tid).order('created_at', { ascending: true }),
+                        fetchPaginatedSoft('corporate_staff_employees', '*', 'corporate_staff_employees'),
+                        Promise.all([
+                            { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
+                            { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
+                            { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
+                            { table: 'hseq_users',     stateKey: 'hseqUsers'     },
+                        ].map(async sg => {
+                            try {
+                                const { data, error } = await this.supabase
+                                    .from(sg.table).select('id, name, password').eq('tenant_id', tid);
+                                if (error) return { ...sg, error };
+                                return { ...sg, rows: data || [] };
+                            } catch (e) {
+                                return { ...sg, error: e };
+                            }
+                        })),
+                        fetchPaginatedSoft('maintenance_employees', '*', 'maintenance_employees'),
                     ]);
-                    let allBids = [...regularBids, ...maintBids, ...corporateBids];
+
+                    const allBids = [...regularBids, ...maintBids, ...corporateBids];
                     console.log(`✅ Initial load: ${regularBids.length} regular + ${maintBids.length} maintenance + ${corporateBids.length} corporate bids`);
-                    
-                    // Load system config
-                    const { data: config, error: configError } = await this.supabase
-                        .from('system_config_82')
-                        .select('*')
-                        .eq('tenant_id', this._tid())
-                        .single();
 
-                    // Load Corporate/GC config from its own dedicated table (isolated
-                    // from Ops/Maintenance settings, which live in system_config_82)
-                    const { data: configCorp, error: configCorpError } = await this.supabase
-                        .from('system_config')
-                        .select('*')
-                        .eq('tenant_id', this._tid())
-                        .single();
+                    const config     = configResult?.data;
+                    const configCorpError = configCorpResult?.error;
+                    const configCorp = configCorpResult?.data;
+                    const configError = configResult?.error;
+                    if (configCorpError && configCorpError.code !== 'PGRST116') console.warn('Corp config error:', configCorpError);
+                    if (configError && configError.code !== 'PGRST116') console.warn('Config error:', configError);
 
-                    if (configCorpError && configCorpError.code !== 'PGRST116') {
-                        console.warn('Corp config error:', configCorpError);
-                    }
-                    
-                    if (configError && configError.code !== 'PGRST116') {
-                        console.warn('Config error:', configError);
-                    }
-                    
-                    // Update state
+                    // ── Assign employees + maintenance staff FIRST — bid-mapping just
+                    // below reads both, so they must already be in state by then. (In
+                    // the previous sequential version, maintenance staff loaded dead
+                    // last, after bid-mapping had already run — meaning the mEmp lookup
+                    // for maintenance bids never actually found a match. Assigning both
+                    // rosters before mapping fixes that as a natural side effect of this
+                    // restructuring, not as a separate change.)
                     if (allEmployees && allEmployees.length > 0) {
                         this.state.employees = allEmployees.map(emp => ({
                             id: emp.id,
@@ -149,18 +174,30 @@
                             email: emp.email || '',
                             password: emp.password || ''
                         }));
-                        
-                        // Load passwords from Supabase (source of truth for cross-device sync).
-                        // Falls back to any existing local cache, then to employee ID as the default.
                         this.state.employees.forEach(emp => {
                             this.state.employeePasswords[emp.id] = emp.password || this.state.employeePasswords[emp.id] || emp.id;
                         });
-                        
                         console.log(`✅ Loaded ${this.state.employees.length} employees from Supabase (with pagination)`);
                     }
-                    
+
+                    app.state.maintenanceStaffUsers = (allMaintStaff || []).map(u => ({
+                        id:           String(u.id),
+                        name:         u.name         || '',
+                        department:   u.department   || '',
+                        position:     u.position     || '',
+                        role:         u.role         || '',
+                        nationality:  u.nationality  || '',
+                        gender:       u.gender       || '',
+                        seniorityDate: u.seniority_date || '',
+                        totalLeaveDays: u.total_leave_days ?? 25,
+                        usedLeaveDays:  u.used_leave_days  ?? 0,
+                    }));
+                    const maintPwds = {};
+                    app.state.maintenanceStaffUsers.forEach(u => { maintPwds[u.id] = u.id; });
+                    app.state.maintenanceStaffPasswords = maintPwds;
+                    console.log(`✅ Maintenance staff loaded from Supabase: ${app.state.maintenanceStaffUsers.length} records`);
+
                     // Load bids — Supabase is source of truth
-                    // Map Supabase rows to app bid format (look up name/dept from both employee and maintenance lists)
                     const supabaseBids = (allBids || []).map(bid => {
                         const emp  = this.state.employees.find(e => e.id === bid.employee_id);
                         const mEmp = (this.state.maintenanceStaffUsers || []).find(e => e.id === bid.employee_id);
@@ -183,24 +220,17 @@
                     const localBids = JSON.parse(localStorage.getItem('bids') || '[]');
                     const supabaseKeys = new Set(supabaseBids.map(b => `${b.employeeId}|${b.slotType}|${b.startDate}`));
                     const localOnly = localBids.filter(b => !supabaseKeys.has(`${b.employeeId}|${b.slotType}|${b.startDate}`));
-
-                    // Only re-push bids created within the last 60 seconds — older
-                    // entries in localStorage are either already synced or were
-                    // intentionally deleted, so we must NOT resurrect them.
                     const freshLocalOnly = localOnly.filter(b => {
                         const ts = new Date(b.timestamp || 0).getTime();
                         return Date.now() - ts < 60_000;
                     });
-
                     if (freshLocalOnly.length > 0) {
                         console.log(`ℹ️ Found ${freshLocalOnly.length} recent local bid(s) not yet in Supabase — pushing now...`);
                         freshLocalOnly.forEach(bid => this.saveBidToSupabase(bid));
                     }
-
                     this.state.bids = [...supabaseBids, ...freshLocalOnly];
                     console.log(`✅ Loaded ${supabaseBids.length} bids from Supabase + ${freshLocalOnly.length} recent local-only bid(s)`);
-                    this.saveState();
-                    
+
                     if (config) {
                         this.state.biddingDeadline = config.bidding_deadline || '';
                         this.state.biddingYear = config.bidding_year || 2026;
@@ -212,7 +242,6 @@
                         this.state.maintResults     = config.maint_results || [];
                         this.state.isMaintProcessed = config.is_maint_processed || false;
                         this.state.results = config.results || [];
-                        // Load EmailJS keys from Supabase into localStorage so OTP works on any device
                         if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
                         if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
                         if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
@@ -222,31 +251,11 @@
                         console.log('✅ Loaded system config from Supabase — ejs_service:', config.ejs_service || '(empty)', '| ejs_template:', config.ejs_template || '(empty)', '| ejs_pubkey:', config.ejs_pubkey ? config.ejs_pubkey.substring(0,6)+'…' : '(empty)');
                     }
 
-                    // Corporate/GC settings live in their own table (system_config),
-                    // completely separate from Ops/Maintenance (system_config_82)
                     if (configCorp) {
                         this.state.biddingDeadlineCorp = configCorp.bidding_deadline || '';
                         this.state.biddingYearCorp = configCorp.bidding_year || 2026;
                         this.state.isProcessedCorp = configCorp.is_processed || false;
                         console.log('✅ Loaded Corporate/GC config from system_config table');
-                    }
-
-                    // Load on-call dates from dedicated oncall_dates table
-                    // Load on-call dates with pagination (bypass 1000-row Supabase limit)
-                    let ocRows = [];
-                    let ocFrom = 0;
-                    const ocBatch = 1000;
-                    while (true) {
-                        const { data: batch, error: ocError } = await this.supabase
-                            .from('oncall_dates')
-                            .select('employee_id, date')
-                            .eq('tenant_id', this._tid())
-                            .range(ocFrom, ocFrom + ocBatch - 1);
-                        if (ocError) { console.warn('⚠️ Could not load oncall_dates:', ocError.message); break; }
-                        if (!batch || batch.length === 0) break;
-                        ocRows = [...ocRows, ...batch];
-                        if (batch.length < ocBatch) break;
-                        ocFrom += ocBatch;
                     }
 
                     if (ocRows.length > 0) {
@@ -263,71 +272,26 @@
                         console.log('ℹ️ No on-call dates in oncall_dates table yet');
                     }
 
-                    // Load the December-leave-holders list — staff with already-approved
-                    // leave in the prior December, blocked from bidding January slots in
-                    // the current cycle to avoid leave continuity across two calendar
-                    // years. Stored as a plain array of employee IDs on state for a fast
-                    // lookup at bid-submission time (see isDecemberLeaveHolder()).
-                    try {
-                        const { data: decRows, error: decError } = await this.supabase
-                            .from('december_leave_holders')
-                            .select('employee_id')
-                            .eq('tenant_id', this._tid());
-                        if (decError) {
-                            console.warn('⚠️ Could not load december_leave_holders:', decError.message);
-                            this.state.decemberLeaveHolders = this.state.decemberLeaveHolders || [];
-                        } else {
-                            this.state.decemberLeaveHolders = (decRows || []).map(r => r.employee_id);
-                            console.log(`✅ Loaded December leave holders: ${this.state.decemberLeaveHolders.length} staff`);
-                        }
-                    } catch (e) {
-                        console.warn('⚠️ Could not load december_leave_holders:', e.message);
+                    // December-leave-holders list — see _blocksJanuaryBid() for how this is used.
+                    if (decRows && decRows.error) {
+                        console.warn('⚠️ Could not load december_leave_holders:', decRows.error.message);
                         this.state.decemberLeaveHolders = this.state.decemberLeaveHolders || [];
+                    } else {
+                        this.state.decemberLeaveHolders = (decRows?.data || []).map(r => r.employee_id);
+                        console.log(`✅ Loaded December leave holders: ${this.state.decemberLeaveHolders.length} staff`);
                     }
 
-                    // Load Golden Command users from dedicated table
-                    const { data: gcUsers, error: gcError } = await this.supabase
-                        .from('golden_command_users')
-                        .select('*')
-                        .eq('tenant_id', this._tid())
-                        .order('created_at', { ascending: true });
-
-                    if (gcError) {
-                        console.warn('⚠️ Could not load GC users:', gcError.message);
-                    } else if (gcUsers && gcUsers.length > 0) {
-                        this.state.goldenCommandUsers = gcUsers.map(u => ({
-                            id: u.id,
-                            name: u.name,
-                            password: u.password,
-                            email: u.email || ''
+                    if (gcResult?.error) {
+                        console.warn('⚠️ Could not load GC users:', gcResult.error.message);
+                    } else if (gcResult?.data && gcResult.data.length > 0) {
+                        this.state.goldenCommandUsers = gcResult.data.map(u => ({
+                            id: u.id, name: u.name, password: u.password, email: u.email || ''
                         }));
-                        console.log(`✅ Loaded ${gcUsers.length} Golden Command users from dedicated table`);
+                        console.log(`✅ Loaded ${gcResult.data.length} Golden Command users from dedicated table`);
                     } else {
-                        // Table exists but is empty — keep whatever is in localStorage
                         console.log('ℹ️ No GC users found in dedicated table');
                     }
 
-                    // Load Corporate Staff roster from dedicated table (paginated, like Maintenance staff)
-                    let allCsStaff = [];
-                    let csFrom = 0;
-                    let csHasMore = true;
-                    while (csHasMore) {
-                        const { data: csBatch, error: csError } = await this.supabase
-                            .from('corporate_staff_employees')
-                            .select('*')
-                            .eq('tenant_id', this._tid())
-                            .range(csFrom, csFrom + batchSize - 1);
-                        if (csError) {
-                            console.warn('⚠️ Could not load corporate_staff_employees:', csError.message);
-                            csHasMore = false;
-                        } else if (csBatch && csBatch.length > 0) {
-                            allCsStaff = [...allCsStaff, ...csBatch];
-                            csHasMore = csBatch.length === batchSize;
-                            csFrom += batchSize;
-                        } else {
-                            csHasMore = false;
-                        }
-                    }
                     if (allCsStaff.length > 0) {
                         this.state.corporateStaffUsers = allCsStaff.map(u => ({
                             id:            String(u.id),
@@ -348,78 +312,23 @@
                         console.log('ℹ️ No Corporate Staff records found in corporate_staff_employees table');
                     }
 
-                    // ── Load CS sub-group users (L456 INM, L3 INM, L3 TSM, HSEQ) from Supabase ──
-                    const subGroups = [
-                        { table: 'l456inm_users',  stateKey: 'l456InmUsers'  },
-                        { table: 'l3inm_users',    stateKey: 'l3InmUsers'    },
-                        { table: 'l3tsm_users',    stateKey: 'l3TsmUsers'    },
-                        { table: 'hseq_users',     stateKey: 'hseqUsers'     },
-                    ];
-                    for (const sg of subGroups) {
-                        try {
-                            const { data: sgRows, error: sgErr } = await this.supabase
-                                .from(sg.table)
-                                .select('id, name, password')
-                                .eq('tenant_id', this._tid());
-                            if (sgErr) {
-                                console.error(`❌ ${sg.table} load failed:`, sgErr.message);
-                            } else if (sgRows && sgRows.length > 0) {
-                                this.state[sg.stateKey] = sgRows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
-                                console.log(`✅ ${sg.table}: ${sgRows.length} rows loaded`);
-                            } else {
-                                console.log(`ℹ️ ${sg.table}: 0 rows for this tenant`);
-                            }
-                        } catch (sgEx) {
-                            console.error(`❌ ${sg.table} load exception:`, sgEx.message);
+                    for (const sg of subGroupResults) {
+                        if (sg.error) {
+                            console.error(`❌ ${sg.table} load failed:`, sg.error.message);
+                        } else if (sg.rows && sg.rows.length > 0) {
+                            this.state[sg.stateKey] = sg.rows.map(u => ({ id: u.id, name: u.name, password: u.password || u.id, email: u.email || '' }));
+                            console.log(`✅ ${sg.table}: ${sg.rows.length} rows loaded`);
+                        } else {
+                            console.log(`ℹ️ ${sg.table}: 0 rows for this tenant`);
                         }
                     }
+
                     this.saveState();
                     this.updateSystemStatus(`✅ ${this.state.employees.length} employees loaded`);
-                    // ===== MAINTENANCE STAFF DATA (loaded from Supabase) =====
-                    let allMaintStaff = [];
-                    let maintFrom = 0;
-                    let maintHasMore = true;
-                    while (maintHasMore) {
-                        const { data: maintBatch, error: maintError } = await this.supabase
-                            .from('maintenance_employees')
-                            .select('*')
-                            .eq('tenant_id', this._tid())
-                            .range(maintFrom, maintFrom + batchSize - 1);
-                        if (maintError) {
-                            console.warn('⚠️ Could not load maintenance_employees:', maintError.message);
-                            maintHasMore = false;
-                        } else if (maintBatch && maintBatch.length > 0) {
-                            allMaintStaff = [...allMaintStaff, ...maintBatch];
-                            maintHasMore = maintBatch.length === batchSize;
-                            maintFrom += batchSize;
-                        } else {
-                            maintHasMore = false;
-                        }
-                    }
-                    // Map Supabase columns → internal shape used throughout the app
-                    app.state.maintenanceStaffUsers = allMaintStaff.map(u => ({
-                        id:           String(u.id),
-                        name:         u.name         || '',
-                        department:   u.department   || '',
-                        position:     u.position     || '',
-                        role:         u.role         || '',
-                        nationality:  u.nationality  || '',
-                        gender:       u.gender       || '',
-                        seniorityDate: u.seniority_date || '',
-                        totalLeaveDays: u.total_leave_days ?? 25,
-                        usedLeaveDays:  u.used_leave_days  ?? 0,
-                    }));
-                    // Default password = employee ID (same as before)
-                    const maintPwds = {};
-                    app.state.maintenanceStaffUsers.forEach(u => { maintPwds[u.id] = u.id; });
-                    app.state.maintenanceStaffPasswords = maintPwds;
-                    console.log(`✅ Maintenance staff loaded from Supabase: ${app.state.maintenanceStaffUsers.length} records`);
-                    this.saveState();
-
-                this.renderLoginForm();
+                    this.renderLoginForm();
                     this._updateLandingStats();
                     return true;
-                    
+
                 } catch (error) {
                     console.error('❌ Error loading from Supabase:', error);
                     this.updateSystemStatus('⚠️ Could not load from database');
