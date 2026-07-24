@@ -1396,6 +1396,15 @@
                 this.saveConfigToSupabase();
             };
 
+            app.setTradingDeadline = function(val) {
+                if (val && /T00:00(:00)?$/.test(val)) {
+                    val = val.slice(0, 10) + 'T23:59';
+                }
+                this.state.tradingDeadline = val;
+                this.saveConfigToSupabase();
+                this.renderLeaveTradesView();
+            };
+
             app.setBiddingDeadlineCorp = function(val) {
                 if (val && /T00:00(:00)?$/.test(val)) {
                     val = val.slice(0, 10) + 'T23:59';
@@ -1718,6 +1727,25 @@
                         <div class="mb-6">
                             <h2 class="text-2xl font-bold text-gray-800">🔄 Leave Trades</h2>
                             <p class="text-gray-500 text-sm mt-1">Review employee-initiated leave trades. Only trades that both parties agreed to AND passed automatic validation reach this list.</p>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+                            <h3 class="text-base font-bold text-gray-800 mb-1">Trading Window</h3>
+                            <p class="text-xs text-gray-500 mb-3">
+                                Controls whether staff can create or accept new trade offers — separate from the bidding deadline. Leave blank for no deadline (trading stays open indefinitely). Already-accepted trades can still be reviewed and approved after this passes.
+                            </p>
+                            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                                <input type="datetime-local" id="tradingDeadlineInput"
+                                    value="${this._toDatetimeLocal(this.state.tradingDeadline)}"
+                                    onchange="app.setTradingDeadline(this.value)"
+                                    style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;" />
+                                ${this.isTradingClosed()
+                                    ? '<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:700;">🔒 Trading Closed</span>'
+                                    : this.state.tradingDeadline
+                                        ? '<span style="background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:700;">🟢 Trading Open</span>'
+                                        : '<span style="background:#f3f4f6;color:#6b7280;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:700;">🟢 Trading Open (no deadline set)</span>'
+                                }
+                            </div>
                         </div>
 
                         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
