@@ -54,11 +54,15 @@ app.loadSwapRequests = async function() {
 // Creates a new swap offer. `mySlot` is the requester's own awarded slot
 // being offered — { slotType, startDate, endDate, department }, taken
 // directly from their entry in this.state.results / this.state.maintResults.
-// `targetId` is optional — omit for an open offer anyone eligible can accept,
-// or provide a specific employee ID for a direct request.
-app.createSwapOffer = async function(mySlot, targetId, targetName) {
+// `desiredSlotType` (e.g. 'slotB') is REQUIRED — the specific slot type the
+// requester wants to receive in return; enforced exactly (not just
+// group-compatibility) during Stage 2 validation. `targetId` is optional —
+// omit for an open offer anyone eligible can accept, or provide a specific
+// employee ID for a direct request.
+app.createSwapOffer = async function(mySlot, desiredSlotType, targetId, targetName) {
     const user = this.state.verifiedEmployee;
     if (!user) { this.showToast('You must be logged in to offer a trade.', 'error'); return null; }
+    if (!desiredSlotType) { this.showToast('Please select which slot type you want in return.', 'error'); return null; }
 
     const isMaint = this.state.userType === 'maintenancestaff';
     const staffCategory = isMaint ? 'maintenance' : 'ops';
@@ -72,6 +76,7 @@ app.createSwapOffer = async function(mySlot, targetId, targetName) {
         requester_start_date: mySlot.startDate,
         requester_end_date: mySlot.endDate,
         requester_department: mySlot.department || '',
+        desired_slot_type: desiredSlotType,
         target_id: targetId || null,
         target_name: targetId ? (targetName || '') : null,
         status: targetId ? 'pending' : 'open',
@@ -187,14 +192,17 @@ app.withdrawSwapOffer = async function(requestId) {
 // the first one — a planner reviewing an exception benefits from seeing
 // the whole picture at once, not one failure at a time.
 //
-// The three agreed rules, in order:
+// The agreed rules, in order:
 //   1. Department/position must match exactly (case-insensitive; both
 //      sides' department field already comes from their own resolved
 //      result, so this is a straightforward comparison, not a fresh
 //      department resolution).
 //   2. Slot-day compatibility — Slot A/B/C (15 days each) are mutually
 //      interchangeable; Slot D (20 days) can only trade with Slot D.
-//   3. December→January rule applies to the SWAPPED dates, not the
+//   3. The responder's slot must match the requester's specifically
+//      requested type exactly — every offer now records what the
+//      requester wants back, not just "anything compatible."
+//   4. December→January rule applies to the SWAPPED dates, not the
 //      original ones — after a trade, each person ends up holding the
 //      OTHER person's original dates, so each side must be checked
 //      against what they're about to receive, not what they're giving up.
@@ -204,7 +212,11 @@ app.withdrawSwapOffer = async function(requestId) {
 // trade.
 // ════════════════════════════════════════════════════════════════════
 
-const SWAP_COMPATIBLE_GROUPS = [['A', 'B', 'C'], ['D']];
+// Attached to `app` (not a module-local const) so views-bidding.js's
+// create-offer modal can build its "desired slot type" options from the
+// exact same source of truth the validation engine checks against —
+// avoids a second, potentially-diverging copy of this rule.
+app.SWAP_COMPATIBLE_GROUPS = [['A', 'B', 'C'], ['D']];
 
 app._checkSwapCompliance = function(request) {
     const reasons = [];
@@ -216,9 +228,9 @@ app._checkSwapCompliance = function(request) {
         reasons.push(`Department/position mismatch: requester is "${request.requester_department || '(unknown)'}", responder is "${request.responder_department || '(unknown)'}". Trades are only allowed within the same department/position.`);
     }
 
-    // ── Rule 2: slot-day compatibility ──────────────────────────────────
+    // ── Rule 2: slot-day compatibility (general group match) ────────────
     const letterOf = (slotType) => String(slotType || '').charAt(String(slotType || '').length - 1).toUpperCase();
-    const groupOf = (letter) => SWAP_COMPATIBLE_GROUPS.findIndex(g => g.includes(letter));
+    const groupOf = (letter) => this.SWAP_COMPATIBLE_GROUPS.findIndex(g => g.includes(letter));
     const reqLetter = letterOf(request.requester_slot_type);
     const resLetter = letterOf(request.responder_slot_type);
     const reqGroup = groupOf(reqLetter);
@@ -227,7 +239,22 @@ app._checkSwapCompliance = function(request) {
         reasons.push(`Slot type incompatible: Slot ${reqLetter} cannot trade with Slot ${resLetter}. Slot A/B/C may trade with each other; Slot D may only trade with Slot D.`);
     }
 
-    // ── Rule 3: December→January rule, checked against the SWAPPED dates ──
+    // ── Rule 3: the responder's slot must match what the requester
+    // specifically asked to receive — not just "any compatible" slot. The
+    // create-offer form only lets a requester pick a desired type within
+    // their own compatible group in the first place, so this rule mostly
+    // guards against a malformed/tampered request reaching this point; the
+    // real-world effect is that an offer for "my Slot A, want a Slot C back"
+    // cannot be fulfilled by someone offering a Slot B, even though B and C
+    // are both otherwise compatible with A under Rule 2.
+    const desiredLetter = letterOf(request.desired_slot_type);
+    if (!request.desired_slot_type) {
+        reasons.push('This offer has no desired slot type on record — it cannot be validated.');
+    } else if (resLetter !== desiredLetter) {
+        reasons.push(`Requested slot type not matched: ${request.requester_name || request.requester_id} asked to receive Slot ${desiredLetter} in return, but was offered Slot ${resLetter}.`);
+    }
+
+    // ── Rule 4: December→January rule, checked against the SWAPPED dates ──
     const year = this.state.biddingYear;
     if (this._blocksJanuaryBid(request.requester_id, request.responder_start_date, request.responder_end_date, year)) {
         reasons.push(`${request.requester_name || request.requester_id} has approved December leave and cannot take on a slot that overlaps January.`);
