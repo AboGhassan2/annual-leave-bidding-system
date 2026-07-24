@@ -145,7 +145,11 @@ app.acceptSwapOffer = async function(requestId, theirSlot) {
             return false;
         }
         this.state.swapRequests = (this.state.swapRequests || []).map(r => r.id === requestId ? data[0] : r);
-        this.showToast('Trade accepted — pending automatic review and planner approval.', 'success');
+        this.showToast('Trade accepted — running automatic review...', 'success');
+        // Both sides have now agreed — run the compliance check immediately,
+        // per the agreed flow (validate right after mutual acceptance, before
+        // the planner ever sees it).
+        await this.validateSwapRequest(requestId);
         return true;
     } catch (e) {
         console.error('❌ Failed to accept swap offer:', e.message);
@@ -169,6 +173,109 @@ app.withdrawSwapOffer = async function(requestId) {
         return false;
     }
     return await this._updateSwapStatus(requestId, 'withdrawn');
+};
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 2 — automatic validation.
+//
+// _checkSwapCompliance() is a PURE function — no state writes, no
+// network calls — same design principle as computeBidAllocation():
+// isolate the actual rule logic so it can be tested directly, and so
+// the same rules are guaranteed to apply consistently everywhere they're
+// checked. Given an already-accepted request (both sides' slots filled
+// in), it returns every reason the trade should be blocked, not just
+// the first one — a planner reviewing an exception benefits from seeing
+// the whole picture at once, not one failure at a time.
+//
+// The three agreed rules, in order:
+//   1. Department/position must match exactly (case-insensitive; both
+//      sides' department field already comes from their own resolved
+//      result, so this is a straightforward comparison, not a fresh
+//      department resolution).
+//   2. Slot-day compatibility — Slot A/B/C (15 days each) are mutually
+//      interchangeable; Slot D (20 days) can only trade with Slot D.
+//   3. December→January rule applies to the SWAPPED dates, not the
+//      original ones — after a trade, each person ends up holding the
+//      OTHER person's original dates, so each side must be checked
+//      against what they're about to receive, not what they're giving up.
+//
+// Seniority and on-call conflicts are deliberately NOT checked here —
+// both were explicitly agreed as non-blockers for a mutually-consented
+// trade.
+// ════════════════════════════════════════════════════════════════════
+
+const SWAP_COMPATIBLE_GROUPS = [['A', 'B', 'C'], ['D']];
+
+app._checkSwapCompliance = function(request) {
+    const reasons = [];
+
+    // ── Rule 1: department/position match ──────────────────────────────
+    const reqDept = String(request.requester_department || '').trim().toLowerCase();
+    const resDept = String(request.responder_department || '').trim().toLowerCase();
+    if (!reqDept || !resDept || reqDept !== resDept) {
+        reasons.push(`Department/position mismatch: requester is "${request.requester_department || '(unknown)'}", responder is "${request.responder_department || '(unknown)'}". Trades are only allowed within the same department/position.`);
+    }
+
+    // ── Rule 2: slot-day compatibility ──────────────────────────────────
+    const letterOf = (slotType) => String(slotType || '').charAt(String(slotType || '').length - 1).toUpperCase();
+    const groupOf = (letter) => SWAP_COMPATIBLE_GROUPS.findIndex(g => g.includes(letter));
+    const reqLetter = letterOf(request.requester_slot_type);
+    const resLetter = letterOf(request.responder_slot_type);
+    const reqGroup = groupOf(reqLetter);
+    const resGroup = groupOf(resLetter);
+    if (reqGroup === -1 || resGroup === -1 || reqGroup !== resGroup) {
+        reasons.push(`Slot type incompatible: Slot ${reqLetter} cannot trade with Slot ${resLetter}. Slot A/B/C may trade with each other; Slot D may only trade with Slot D.`);
+    }
+
+    // ── Rule 3: December→January rule, checked against the SWAPPED dates ──
+    const year = this.state.biddingYear;
+    if (this._blocksJanuaryBid(request.requester_id, request.responder_start_date, request.responder_end_date, year)) {
+        reasons.push(`${request.requester_name || request.requester_id} has approved December leave and cannot take on a slot that overlaps January.`);
+    }
+    if (this._blocksJanuaryBid(request.responder_id, request.requester_start_date, request.requester_end_date, year)) {
+        reasons.push(`${request.responder_name || request.responder_id} has approved December leave and cannot take on a slot that overlaps January.`);
+    }
+
+    return { passed: reasons.length === 0, reasons };
+};
+
+// Orchestrator: runs the pure check above against an already-'accepted'
+// request, then writes the outcome to Supabase. Called automatically by
+// acceptSwapOffer() right after both sides' slots are locked in — nobody
+// needs to trigger this manually.
+app.validateSwapRequest = async function(requestId) {
+    const req = (this.state.swapRequests || []).find(r => r.id === requestId);
+    if (!req) { console.warn('validateSwapRequest: request not found', requestId); return null; }
+    if (req.status !== 'accepted') { console.warn('validateSwapRequest: request is not in accepted status', req.status); return null; }
+
+    const result = this._checkSwapCompliance(req);
+    const newStatus = result.passed ? 'validated' : 'rejected_validation';
+    const notes = result.passed
+        ? 'Passed automatic validation — awaiting planner approval.'
+        : result.reasons.join(' ');
+
+    try {
+        const { data, error } = await this.supabase
+            .from('leave_swap_requests')
+            .update({ status: newStatus, validation_notes: notes, validated_at: new Date().toISOString() })
+            .eq('id', requestId)
+            .eq('tenant_id', this._tid())
+            .select();
+        if (error) {
+            console.error('❌ Failed to write validation result:', error.message);
+            return null;
+        }
+        this.state.swapRequests = (this.state.swapRequests || []).map(r => r.id === requestId ? data[0] : r);
+        if (result.passed) {
+            this.showToast('Trade passed automatic validation — awaiting planner approval.', 'success');
+        } else {
+            this.showToast('Trade did not pass automatic validation: ' + result.reasons[0], 'warn');
+        }
+        return data[0];
+    } catch (e) {
+        console.error('❌ Failed to write validation result:', e.message);
+        return null;
+    }
 };
 
 // Shared helper for simple status-only transitions (reject, withdraw).
