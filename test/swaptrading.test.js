@@ -340,4 +340,40 @@ test('the pure swap computation never mutates the original award objects it was 
     assert.equal(JSON.stringify(responderAward), responderSnapshot, 'original responder award object must be untouched');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// isTradingClosed — the trading window control, separate from the
+// bidding deadline. Lives in views-bidding.js, so this file's harness
+// call loads that too, alongside utils.js and api-swaptrading.js.
+// ════════════════════════════════════════════════════════════════════
+
+function buildFullSwapApp(stateOverrides = {}) {
+    return buildApp(baseState(stateOverrides), ['utils.js', 'views-bidding.js', 'api-swaptrading.js']);
+}
+
+test('isTradingClosed returns false when no deadline is set', () => {
+    const app = buildFullSwapApp({ tradingDeadline: '' });
+    assert.equal(app.isTradingClosed(), false);
+});
+
+test('isTradingClosed returns true once the deadline has passed', () => {
+    const app = buildFullSwapApp({ tradingDeadline: '2020-01-01T00:00' });
+    assert.equal(app.isTradingClosed(), true);
+});
+
+test('isTradingClosed returns false while the deadline is still in the future', () => {
+    const app = buildFullSwapApp({ tradingDeadline: '2099-01-01T00:00' });
+    assert.equal(app.isTradingClosed(), false);
+});
+
+test('createSwapOffer is blocked once trading is closed', async () => {
+    const app = buildFullSwapApp({ tradingDeadline: '2020-01-01T00:00' });
+    app.state.verifiedEmployee = { id: 'E1', name: 'Alice' };
+    app.state.userType = 'employee';
+    let toastLevel = null;
+    app.showToast = (msg, level) => { toastLevel = level; };
+    const result = await app.createSwapOffer({ slotType: 'slotA', startDate: '2027-01-01', endDate: '2027-01-15', department: 'DEPT-X', month: 'January' }, 'slotB', 'February', null, null);
+    assert.equal(result, null, 'should refuse to create an offer once trading is closed');
+    assert.equal(toastLevel, 'error');
+});
+
 
