@@ -272,7 +272,16 @@
                     empResults.forEach(r => {
                         let awardStatus, justification;
 
-                        if (r.type === 'Bid Awarded') {
+                        if (r.tradeInfo) {
+                            // This slot's origin has nothing to do with the original
+                            // seniority bidding process for this person — it arrived
+                            // via a mutually-agreed, validated, planner-approved trade.
+                            // Explaining it through the normal choice-matching logic
+                            // below would be actively misleading, so it's handled
+                            // entirely separately, first.
+                            awardStatus = 'Traded';
+                            justification = `Employee acquired this slot through an approved trade with ${r.tradeInfo.tradedWithName || r.tradeInfo.tradedWith} on ${r.tradeInfo.approvedAt ? new Date(r.tradeInfo.approvedAt).toLocaleDateString() : '(date unavailable)'}. Their original slot (${r.tradeInfo.previousSlotName || ''} ${r.tradeInfo.previousStartDate || ''} → ${r.tradeInfo.previousEndDate || ''}) was exchanged for this one.`;
+                        } else if (r.type === 'Bid Awarded') {
                             // Which of the employee's own submitted bids does this match?
                             let matchIdx = myBids.findIndex(b => b.startDate === r.startDate && b.endDate === r.endDate);
                             if (matchIdx === -1) {
