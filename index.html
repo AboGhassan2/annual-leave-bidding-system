@@ -551,6 +551,47 @@
         </div>
     </div>
 
+    <!-- Bid Trading Platform: create/offer a trade -->
+    <div id="tradeOfferModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:16px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);padding:28px;">
+            <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:6px;">🔄 Offer This Slot for Trade</h3>
+            <p id="tradeOfferSummary" style="font-size:0.85rem;color:#6b7280;margin-bottom:18px;"></p>
+            <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
+                Request a specific staff member (optional)
+            </label>
+            <input type="text" id="tradeOfferTargetId" placeholder="Enter their Staff ID, or leave blank for an open offer"
+                style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;" />
+            <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:18px;">
+                Leave this blank to post an open offer that anyone eligible in your department can accept.
+            </p>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="app.closeTradeOfferModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;">Cancel</button>
+                <button onclick="app.submitTradeOffer()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#4338ca;color:#fff;cursor:pointer;">Post Offer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bid Trading Platform: accept an offer / respond to a direct request -->
+    <div id="acceptTradeModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#fff;border-radius:16px;max-width:440px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);padding:28px;">
+            <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:6px;">🔄 Accept This Trade</h3>
+            <p id="acceptTradeSummary" style="font-size:0.85rem;color:#6b7280;margin-bottom:18px;"></p>
+            <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
+                Which of your own slots are you offering in return?
+            </label>
+            <select id="acceptTradeMySlot"
+                style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;">
+            </select>
+            <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:18px;">
+                Once accepted, the system automatically checks eligibility, then the planner gives final approval before anything is final.
+            </p>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button onclick="app.closeAcceptTradeModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;">Cancel</button>
+                <button onclick="app.confirmAcceptTrade()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#166534;color:#fff;cursor:pointer;">Confirm Trade</button>
+            </div>
+        </div>
+    </div>
+
 
 </body>
 </html>
