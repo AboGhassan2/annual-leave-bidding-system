@@ -1488,6 +1488,15 @@
                 return (new Date(this.state.biddingDeadline) - new Date()) <= 0;
             };
 
+            // Controls the Bid Trading Platform's open/closed window, independent
+            // of the bidding deadline above — trading happens AFTER results are
+            // published, so it's naturally a separate window with its own
+            // deadline, not tied to when bidding itself closed.
+            app.isTradingClosed = function() {
+                if (!this.state.tradingDeadline) return false;
+                return (new Date(this.state.tradingDeadline) - new Date()) <= 0;
+            };
+
             app.isBiddingClosedCorp = function() {
                 if (!this.state.biddingDeadlineCorp) return false;
                 return (new Date(this.state.biddingDeadlineCorp) - new Date()) <= 0;
@@ -1827,11 +1836,15 @@
 
                                         <!-- Bid Trading Platform: offer this slot for trade -->
                                         <div class="bg-white border-t px-5 py-3">
-                                            <button onclick="app.openTradeOfferModal(${i})"
-                                                class="w-full px-4 py-2 rounded-lg font-semibold text-sm"
-                                                style="background:#eef2ff; color:#4338ca; border:1.5px solid #c7d2fe;">
-                                                🔄 Offer for Trade
-                                            </button>
+                                            ${this.isTradingClosed() ? `
+                                                <p style="text-align:center;font-size:0.78rem;color:#9ca3af;padding:6px;">🔒 Trading is currently closed</p>
+                                            ` : `
+                                                <button onclick="app.openTradeOfferModal(${i})"
+                                                    class="w-full px-4 py-2 rounded-lg font-semibold text-sm"
+                                                    style="background:#eef2ff; color:#4338ca; border:1.5px solid #c7d2fe;">
+                                                    🔄 Offer for Trade
+                                                </button>
+                                            `}
                                         </div>
                                     </div>
                                     `;
@@ -1920,7 +1933,7 @@
                             <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
                             <p style="font-size:0.78rem;margin-top:2px;">${wants(r)}</p>
                             <div style="display:flex;gap:8px;margin-top:8px;">
-                                <button onclick="app.openAcceptTradeModal(${r.id})" style="flex:1;padding:7px 12px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept</button>
+                                ${this.isTradingClosed() ? '' : `<button onclick="app.openAcceptTradeModal(${r.id})" style="flex:1;padding:7px 12px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept</button>`}
                                 <button onclick="app.doRejectTrade(${r.id})" style="flex:1;padding:7px 12px;background:#fff;color:#991b1b;border:1.5px solid #fecaca;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Reject</button>
                             </div>
                         </div>
@@ -1933,7 +1946,7 @@
                         <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
                             <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
                             <p style="font-size:0.78rem;margin-top:2px;">${wants(r)}</p>
-                            <button onclick="app.openAcceptTradeModal(${r.id})" style="margin-top:8px;width:100%;padding:7px 12px;background:#4338ca;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept This Offer</button>
+                            ${this.isTradingClosed() ? '' : `<button onclick="app.openAcceptTradeModal(${r.id})" style="margin-top:8px;width:100%;padding:7px 12px;background:#4338ca;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept This Offer</button>`}
                         </div>
                     `).join('')}
                 `;
@@ -1942,6 +1955,11 @@
                     <div class="bg-white rounded-xl shadow-md p-5 mb-6">
                         <h3 class="text-lg font-bold text-gray-800 mb-1">🔄 Leave Trading</h3>
                         <p class="text-xs text-gray-500 mb-4">Trade a leave slot with a colleague in your department. Both sides must agree, then the system checks eligibility before the planner gives final approval.</p>
+                        ${this.isTradingClosed() ? `
+                            <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:0.8rem;color:#991b1b;">
+                                🔒 The trading window is currently closed. New offers cannot be created or accepted — you can still reject or withdraw existing ones.
+                            </div>
+                        ` : ''}
                         <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Your Offers</h4>
                         ${myOffersHtml}
                         ${sentToMeHtml}
