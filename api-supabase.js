@@ -115,6 +115,7 @@
                         allCsStaff,
                         subGroupResults,
                         allMaintStaff,
+                        swapRows,
                     ] = await Promise.all([
                         fetchPaginated('employees'),
                         fetchPaginatedSoft('leave_requests', '*', 'leave_requests'),
@@ -143,6 +144,9 @@
                             }
                         })),
                         fetchPaginatedSoft('maintenance_employees', '*', 'maintenance_employees'),
+                        this.supabase.from('leave_swap_requests').select('*').eq('tenant_id', tid)
+                            .order('created_at', { ascending: false })
+                            .then(r => r, e => ({ error: e })),
                     ]);
 
                     const allBids = [...regularBids, ...maintBids, ...corporateBids];
@@ -279,6 +283,16 @@
                     } else {
                         this.state.decemberLeaveHolders = (decRows?.data || []).map(r => r.employee_id);
                         console.log(`✅ Loaded December leave holders: ${this.state.decemberLeaveHolders.length} staff`);
+                    }
+
+                    // Bid Trading Platform — see api-swaptrading.js for the create/accept/
+                    // reject/withdraw functions that operate on this list.
+                    if (swapRows && swapRows.error) {
+                        console.warn('⚠️ Could not load leave_swap_requests:', swapRows.error.message);
+                        this.state.swapRequests = this.state.swapRequests || [];
+                    } else {
+                        this.state.swapRequests = swapRows?.data || [];
+                        console.log(`✅ Loaded ${this.state.swapRequests.length} swap request(s)`);
                     }
 
                     if (gcResult?.error) {
