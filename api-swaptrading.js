@@ -365,3 +365,187 @@ app._updateSwapStatus = async function(requestId, newStatus) {
         return false;
     }
 };
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 4 — planner approval and the actual results swap.
+//
+// This is the highest-stakes part of the whole trading platform: once
+// approved, it mutates state.results / state.maintResults — the same
+// authoritative award records the allocation engine produces, that
+// dashboards, exports, and the Justification Report all read from.
+//
+// _computeSwapResultUpdate() is a PURE function — no state writes — same
+// design principle as computeBidAllocation() and _checkSwapCompliance():
+// isolate the actual mutation logic so it can be tested directly against
+// fake data before it's trusted against a live app. Given the two current
+// result records (requester's and responder's) and the approved request,
+// it returns the two NEW record objects, or a specific failure reason if
+// either original record can no longer be found (e.g. results were
+// reprocessed, or another trade already touched one of these slots, since
+// the request was validated).
+//
+// What moves with a trade vs what doesn't:
+//   - Slot-identifying fields (slotType, slotName, startDate, endDate,
+//     days, month) are SWAPPED between the two people.
+//   - Identity/seniority fields (employeeId, employeeName, seniorityDate,
+//     department, position, seniorityRank, entitlement, etc.) STAY with
+//     the person — a trade changes which dates someone holds, not who
+//     they are or how senior they are.
+//   - `type` (Bid Awarded / Auto-Assigned) is deliberately left UNCHANGED
+//     on each record — rewriting it would mean updating every place in
+//     the app that branches on it (results badges, summary banners,
+//     several files), each a real regression risk, for a value that's
+//     mostly cosmetic. The Justification Report is the authoritative
+//     "why" explanation and DOES account for trades correctly (see
+//     tradeInfo below, and the trade-aware branch in
+//     _buildJustificationRowsForResults) — the badge color is a
+//     secondary, approximate indicator, not the source of truth.
+//   - A `tradeInfo` object is added to each swapped record, giving the
+//     Justification Report what it needs to explain the trade honestly
+//     instead of running it through the normal seniority-choice logic.
+// ════════════════════════════════════════════════════════════════════
+
+app._computeSwapResultUpdate = function(request, resultsPool) {
+    const findAward = (employeeId, slotType, startDate, endDate) =>
+        resultsPool.find(r => r.employeeId === employeeId && r.slotType === slotType && r.startDate === startDate && r.endDate === endDate);
+
+    const requesterAward = findAward(request.requester_id, request.requester_slot_type, request.requester_start_date, request.requester_end_date);
+    const responderAward = findAward(request.responder_id, request.responder_slot_type, request.responder_start_date, request.responder_end_date);
+
+    if (!requesterAward || !responderAward) {
+        return {
+            ok: false,
+            reason: !requesterAward
+                ? `${request.requester_name || request.requester_id}'s original slot could no longer be found in the current results — it may have changed since this trade was validated.`
+                : `${request.responder_name || request.responder_id}'s original slot could no longer be found in the current results — it may have changed since this trade was validated.`,
+        };
+    }
+
+    const approvedAt = new Date().toISOString();
+    const slotFields = (r) => ({ slotType: r.slotType, slotName: r.slotName, startDate: r.startDate, endDate: r.endDate, days: r.days, month: r.month });
+
+    const newRequesterAward = {
+        ...requesterAward,
+        ...slotFields(responderAward),
+        tradeInfo: {
+            tradedWith: request.responder_id, tradedWithName: request.responder_name,
+            previousSlotName: requesterAward.slotName, previousSlotType: requesterAward.slotType,
+            previousStartDate: requesterAward.startDate, previousEndDate: requesterAward.endDate,
+            approvedAt,
+        },
+    };
+    const newResponderAward = {
+        ...responderAward,
+        ...slotFields(requesterAward),
+        tradeInfo: {
+            tradedWith: request.requester_id, tradedWithName: request.requester_name,
+            previousSlotName: responderAward.slotName, previousSlotType: responderAward.slotType,
+            previousStartDate: responderAward.startDate, previousEndDate: responderAward.endDate,
+            approvedAt,
+        },
+    };
+
+    return { ok: true, requesterAward, responderAward, newRequesterAward, newResponderAward };
+};
+
+// Orchestrator: applies an already-'validated' request. Fetches the right
+// results pool (Ops vs Maintenance), runs the pure swap computation above,
+// and — only if BOTH original records were found — replaces them in state,
+// saves, and persists to Supabase via the same saveConfigToSupabase() path
+// every other results change in this app already goes through (which is
+// also what the Excel export and every dashboard read from — nothing
+// export-specific needs to change for the new data to show up there).
+app.approveSwapRequest = async function(requestId, plannerNotes) {
+    const req = (this.state.swapRequests || []).find(r => r.id === requestId);
+    if (!req) { this.showToast('Trade request not found.', 'error'); return false; }
+    if (req.status !== 'validated') {
+        this.showToast('Only trades that have passed automatic validation can be approved.', 'error');
+        return false;
+    }
+
+    const isMaint = req.staff_category === 'maintenance';
+    const resultsPool = isMaint ? (this.state.maintResults || []) : (this.state.results || []);
+    const update = this._computeSwapResultUpdate(req, resultsPool);
+
+    if (!update.ok) {
+        this.showToast('Could not approve trade: ' + update.reason, 'error');
+        return false;
+    }
+
+    // Replace the two records in place, in the correct pool.
+    const newPool = resultsPool.map(r => {
+        if (r === update.requesterAward) return update.newRequesterAward;
+        if (r === update.responderAward) return update.newResponderAward;
+        return r;
+    });
+    if (isMaint) this.state.maintResults = newPool; else this.state.results = newPool;
+
+    try {
+        const { data, error } = await this.supabase
+            .from('leave_swap_requests')
+            .update({ status: 'approved', planner_notes: plannerNotes || '', resolved_at: new Date().toISOString() })
+            .eq('id', requestId)
+            .eq('tenant_id', this._tid())
+            .select();
+        if (error) {
+            console.error('❌ Failed to mark trade approved:', error.message);
+            this.showToast('Results were updated locally, but saving the approval status failed: ' + error.message, 'error');
+            return false;
+        }
+        this.state.swapRequests = (this.state.swapRequests || []).map(r => r.id === requestId ? data[0] : r);
+    } catch (e) {
+        console.error('❌ Failed to mark trade approved:', e.message);
+        this.showToast('Results were updated locally, but saving the approval status failed: ' + e.message, 'error');
+        return false;
+    }
+
+    this.saveState();
+    await this.saveConfigToSupabase();
+    if (this.writeAuditLog) {
+        this.writeAuditLog('TRADE_APPROVED', {
+            requestId, staffCategory: req.staff_category,
+            requesterId: req.requester_id, responderId: req.responder_id,
+            requesterSlot: `${req.requester_slot_type} ${req.requester_start_date}→${req.requester_end_date}`,
+            responderSlot: `${req.responder_slot_type} ${req.responder_start_date}→${req.responder_end_date}`,
+        });
+    }
+    this.showToast('Trade approved — results updated.', 'success');
+    return true;
+};
+
+// Denies an already-'validated' request. No results mutation — this is a
+// simple status transition, but kept separate from _updateSwapStatus since
+// it also records planner notes and writes an audit entry.
+app.denySwapRequest = async function(requestId, plannerNotes) {
+    const req = (this.state.swapRequests || []).find(r => r.id === requestId);
+    if (!req) { this.showToast('Trade request not found.', 'error'); return false; }
+    if (req.status !== 'validated') {
+        this.showToast('Only trades that have passed automatic validation can be denied at this stage.', 'error');
+        return false;
+    }
+
+    try {
+        const { data, error } = await this.supabase
+            .from('leave_swap_requests')
+            .update({ status: 'denied_by_planner', planner_notes: plannerNotes || '', resolved_at: new Date().toISOString() })
+            .eq('id', requestId)
+            .eq('tenant_id', this._tid())
+            .select();
+        if (error) {
+            console.error('❌ Failed to deny trade:', error.message);
+            this.showToast('Could not deny trade: ' + error.message, 'error');
+            return false;
+        }
+        this.state.swapRequests = (this.state.swapRequests || []).map(r => r.id === requestId ? data[0] : r);
+    } catch (e) {
+        console.error('❌ Failed to deny trade:', e.message);
+        this.showToast('Could not deny trade: ' + e.message, 'error');
+        return false;
+    }
+
+    if (this.writeAuditLog) {
+        this.writeAuditLog('TRADE_DENIED', { requestId, staffCategory: req.staff_category, plannerNotes: plannerNotes || '' });
+    }
+    this.showToast('Trade denied.', 'success');
+    return true;
+};
