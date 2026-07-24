@@ -1656,3 +1656,100 @@
                 }
             };
 
+            // ════════════════════════════════════════════════════════════════════
+            // Bid Trading Platform — Stage 4: planner review/approval screen.
+            //
+            // Shows three lists: the main approval queue (validated, awaiting a
+            // decision), a read-only "recently rejected" list for oversight (trades
+            // that failed automatic validation never reach a decision point, but
+            // the planner can still see them happened and why), and a read-only
+            // recent approval history. Approve/Deny call straight into
+            // approveSwapRequest()/denySwapRequest() in api-swaptrading.js, which
+            // do the actual work (including, for approval, rewriting the real
+            // award records) — this file is purely the view layer on top of that.
+            // ════════════════════════════════════════════════════════════════════
+
+            app.renderLeaveTradesView = function() {
+                const content = document.getElementById('contentArea');
+                const all = this.state.swapRequests || [];
+                const pending = all.filter(r => r.status === 'validated');
+                const rejected = all.filter(r => r.status === 'rejected_validation').slice(0, 20);
+                const approved = all.filter(r => r.status === 'approved').slice(0, 20);
+                const esc = this._escHtml.bind(this);
+
+                const slotLine = (letter, month, start, end) => `Slot ${esc(letter)} · ${esc(month || '')} · ${esc(start)} → ${esc(end)}`;
+
+                const pendingHtml = pending.length === 0
+                    ? `<p class="text-sm text-gray-500">No trades are currently awaiting your approval.</p>`
+                    : pending.map(r => `
+                        <div style="border:1.5px solid #93c5fd;background:#eff6ff;border-radius:12px;padding:16px;margin-bottom:12px;">
+                            <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                                <div style="flex:1;min-width:240px;">
+                                    <p style="font-weight:700;font-size:0.9rem;">${esc(r.requester_name)} (${esc(r.requester_id)}) ⇄ ${esc(r.responder_name)} (${esc(r.responder_id)})</p>
+                                    <p style="font-size:0.8rem;color:#374151;margin-top:4px;">${esc(r.requester_name)} gives: ${slotLine(r.requester_slot_type.slice(-1), r.requester_month, r.requester_start_date, r.requester_end_date)}</p>
+                                    <p style="font-size:0.8rem;color:#374151;">${esc(r.responder_name)} gives: ${slotLine(r.responder_slot_type.slice(-1), r.responder_month, r.responder_start_date, r.responder_end_date)}</p>
+                                    <p style="font-size:0.75rem;color:#166534;margin-top:6px;">✅ ${esc(r.validation_notes || 'Passed automatic validation.')}</p>
+                                    <p style="font-size:0.72rem;color:#9ca3af;margin-top:2px;">Department: ${esc(r.requester_department)} · Category: ${esc(r.staff_category)}</p>
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:6px;min-width:120px;">
+                                    <button onclick="app.doApproveTrade(${r.id})" style="padding:8px 14px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer;">Approve</button>
+                                    <button onclick="app.doDenyTrade(${r.id})" style="padding:8px 14px;background:#fff;color:#991b1b;border:1.5px solid #fecaca;border-radius:8px;font-size:0.8rem;font-weight:700;cursor:pointer;">Deny</button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+
+                const rejectedHtml = rejected.length === 0 ? '<p class="text-sm text-gray-500">None.</p>' : rejected.map(r => `
+                    <div style="border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin-bottom:6px;font-size:0.78rem;">
+                        <p style="font-weight:600;">${esc(r.requester_name)} ⇄ ${esc(r.responder_name || '(no responder)')}</p>
+                        <p style="color:#991b1b;margin-top:2px;">${esc(r.validation_notes || '')}</p>
+                    </div>
+                `).join('');
+
+                const approvedHtml = approved.length === 0 ? '<p class="text-sm text-gray-500">None yet.</p>' : approved.map(r => `
+                    <div style="border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin-bottom:6px;font-size:0.78rem;">
+                        <p style="font-weight:600;">${esc(r.requester_name)} ⇄ ${esc(r.responder_name)}</p>
+                        <p style="color:#6b7280;margin-top:2px;">Approved ${r.resolved_at ? new Date(r.resolved_at).toLocaleString() : ''}${r.planner_notes ? ' — ' + esc(r.planner_notes) : ''}</p>
+                    </div>
+                `).join('');
+
+                content.innerHTML = `
+                    <div class="max-w-4xl mx-auto">
+                        <div class="mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">🔄 Leave Trades</h2>
+                            <p class="text-gray-500 text-sm mt-1">Review employee-initiated leave trades. Only trades that both parties agreed to AND passed automatic validation reach this list.</p>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+                            <h3 class="text-lg font-bold text-gray-800 mb-3">Awaiting Your Approval (${pending.length})</h3>
+                            ${pendingHtml}
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+                            <h3 class="text-base font-bold text-gray-800 mb-3">Recently Rejected by Automatic Validation</h3>
+                            <p class="text-xs text-gray-500 mb-3">For your awareness only — these never require a decision, since they were already correctly blocked.</p>
+                            ${rejectedHtml}
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-5">
+                            <h3 class="text-base font-bold text-gray-800 mb-3">Recently Approved</h3>
+                            ${approvedHtml}
+                        </div>
+                    </div>
+                `;
+            };
+
+            app.doApproveTrade = async function(requestId) {
+                if (!confirm('Approve this trade? This will immediately update both employees\' leave results.')) return;
+                const notes = prompt('Optional notes for this approval (leave blank to skip):') || '';
+                const ok = await this.approveSwapRequest(requestId, notes);
+                if (ok) this.renderLeaveTradesView();
+            };
+
+            app.doDenyTrade = async function(requestId) {
+                const notes = prompt('Reason for denying this trade (optional):') || '';
+                if (!confirm('Deny this trade?')) return;
+                const ok = await this.denySwapRequest(requestId, notes);
+                if (ok) this.renderLeaveTradesView();
+            };
+
