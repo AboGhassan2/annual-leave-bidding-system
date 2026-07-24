@@ -246,6 +246,7 @@
                         this.state.maintResults     = config.maint_results || [];
                         this.state.isMaintProcessed = config.is_maint_processed || false;
                         this.state.results = config.results || [];
+                        this.state.tradingDeadline = config.trading_deadline || '';
                         if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
                         if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
                         if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
@@ -771,6 +772,7 @@
                         maint_results: this.state.maintResults || [],
                         is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
+                        trading_deadline: this.state.tradingDeadline || '',
                         last_updated: new Date().toISOString()
                     };
                     // Try UPDATE first (row already exists for this tenant)
