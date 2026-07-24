@@ -52,17 +52,23 @@ app.loadSwapRequests = async function() {
 };
 
 // Creates a new swap offer. `mySlot` is the requester's own awarded slot
-// being offered — { slotType, startDate, endDate, department }, taken
+// being offered — { slotType, startDate, endDate, department, month }, taken
 // directly from their entry in this.state.results / this.state.maintResults.
-// `desiredSlotType` (e.g. 'slotB') is REQUIRED — the specific slot type the
-// requester wants to receive in return; enforced exactly (not just
-// group-compatibility) during Stage 2 validation. `targetId` is optional —
-// omit for an open offer anyone eligible can accept, or provide a specific
-// employee ID for a direct request.
-app.createSwapOffer = async function(mySlot, desiredSlotType, targetId, targetName) {
+// `mySlot.month` is the ALREADY-RESOLVED block label the allocation engine
+// computed for this exact slot (see makeBidAssignment/makeAssignment in
+// allocation.js) — reused as-is rather than re-derived from raw dates, to
+// avoid resurrecting the exact date-drift bug fixed earlier tonight.
+//
+// `desiredSlotType` (e.g. 'slotB') and `desiredMonth` (e.g. 'September') are
+// BOTH REQUIRED — together they specify the EXACT block+letter the requester
+// wants back, enforced as an exact match (not just group-compatibility)
+// during Stage 2 validation. `targetId` is optional — omit for an open
+// offer anyone eligible can accept, or provide a specific employee ID for
+// a direct request.
+app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targetId, targetName) {
     const user = this.state.verifiedEmployee;
     if (!user) { this.showToast('You must be logged in to offer a trade.', 'error'); return null; }
-    if (!desiredSlotType) { this.showToast('Please select which slot type you want in return.', 'error'); return null; }
+    if (!desiredSlotType || !desiredMonth) { this.showToast('Please select which slot you want in return.', 'error'); return null; }
 
     const isMaint = this.state.userType === 'maintenancestaff';
     const staffCategory = isMaint ? 'maintenance' : 'ops';
@@ -76,7 +82,9 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, targetId, targetNa
         requester_start_date: mySlot.startDate,
         requester_end_date: mySlot.endDate,
         requester_department: mySlot.department || '',
+        requester_month: mySlot.month || '',
         desired_slot_type: desiredSlotType,
+        desired_month: desiredMonth,
         target_id: targetId || null,
         target_name: targetId ? (targetName || '') : null,
         status: targetId ? 'pending' : 'open',
@@ -133,6 +141,7 @@ app.acceptSwapOffer = async function(requestId, theirSlot) {
         responder_start_date: theirSlot.startDate,
         responder_end_date: theirSlot.endDate,
         responder_department: theirSlot.department || '',
+        responder_month: theirSlot.month || '',
         status: 'accepted',
         responded_at: new Date().toISOString(),
     };
@@ -199,9 +208,10 @@ app.withdrawSwapOffer = async function(requestId) {
 //      department resolution).
 //   2. Slot-day compatibility — Slot A/B/C (15 days each) are mutually
 //      interchangeable; Slot D (20 days) can only trade with Slot D.
-//   3. The responder's slot must match the requester's specifically
-//      requested type exactly — every offer now records what the
-//      requester wants back, not just "anything compatible."
+//   3. The responder's slot must EXACTLY match the specific block+letter
+//      the requester asked to receive — not just any compatible letter
+//      in any month. Every offer records a real, currently-configured
+//      slot the requester picked from Configure Slots.
 //   4. December→January rule applies to the SWAPPED dates, not the
 //      original ones — after a trade, each person ends up holding the
 //      OTHER person's original dates, so each side must be checked
@@ -217,6 +227,32 @@ app.withdrawSwapOffer = async function(requestId) {
 // exact same source of truth the validation engine checks against —
 // avoids a second, potentially-diverging copy of this rule.
 app.SWAP_COMPATIBLE_GROUPS = [['A', 'B', 'C'], ['D']];
+
+// Scans the REAL configured slots (from Configure OPS/Maint Slots —
+// this.state.slotCapacities / maintSlotCapacities) across all 12 blocks for
+// a given department/position, returning every enabled slot whose letter
+// is in the same compatible group as `offeredLetter`. Used to populate the
+// "what do you want in return" picker with actual, currently-configured
+// options — not just an abstract A/B/C/D choice — since the requester now
+// has to name an exact block+letter, per the agreed spec.
+app._getConfiguredSwapSlotOptions = function(dept, isMaint, offeredLetter) {
+    const group = this.SWAP_COMPATIBLE_GROUPS.find(g => g.includes(offeredLetter)) || ['A', 'B', 'C'];
+    const caps = isMaint ? (this.state.maintSlotCapacities || {}) : (this.state.slotCapacities || {});
+    const prefix = isMaint ? `cal-maint-${dept}` : `cal-${dept}`;
+    const options = [];
+    for (const month of this.state.months) {
+        for (const letter of group) {
+            const base = `${prefix}-${month}-S${letter}`;
+            const enabled = caps[`${base}-enabled`];
+            const start = caps[`${base}-start`];
+            const end = caps[`${base}-end`];
+            if ((enabled === true || enabled === 'true') && start && end) {
+                options.push({ letter, month, start, end, blockLabel: this.blockLabel(month) });
+            }
+        }
+    }
+    return options;
+};
 
 app._checkSwapCompliance = function(request) {
     const reasons = [];
@@ -239,19 +275,21 @@ app._checkSwapCompliance = function(request) {
         reasons.push(`Slot type incompatible: Slot ${reqLetter} cannot trade with Slot ${resLetter}. Slot A/B/C may trade with each other; Slot D may only trade with Slot D.`);
     }
 
-    // ── Rule 3: the responder's slot must match what the requester
-    // specifically asked to receive — not just "any compatible" slot. The
-    // create-offer form only lets a requester pick a desired type within
-    // their own compatible group in the first place, so this rule mostly
-    // guards against a malformed/tampered request reaching this point; the
-    // real-world effect is that an offer for "my Slot A, want a Slot C back"
-    // cannot be fulfilled by someone offering a Slot B, even though B and C
-    // are both otherwise compatible with A under Rule 2.
+    // ── Rule 3: the responder's slot must EXACTLY match the specific
+    // block+letter the requester asked to receive — not just "any
+    // compatible letter, any month". The requester picks a real, currently-
+    // configured slot from Configure Slots when creating the offer, and the
+    // accept-offer picker (Stage 3) only shows the responder their own
+    // slots that already match — so this rule mostly guards against a
+    // malformed/tampered request reaching this point, and confirms the
+    // match precisely rather than assuming the UI enforced it correctly.
     const desiredLetter = letterOf(request.desired_slot_type);
-    if (!request.desired_slot_type) {
-        reasons.push('This offer has no desired slot type on record — it cannot be validated.');
+    if (!request.desired_slot_type || !request.desired_month) {
+        reasons.push('This offer has no desired slot on record — it cannot be validated.');
     } else if (resLetter !== desiredLetter) {
         reasons.push(`Requested slot type not matched: ${request.requester_name || request.requester_id} asked to receive Slot ${desiredLetter} in return, but was offered Slot ${resLetter}.`);
+    } else if (String(request.responder_month || '') !== String(request.desired_month || '')) {
+        reasons.push(`Requested block not matched: ${request.requester_name || request.requester_id} asked for Slot ${desiredLetter} specifically in ${request.desired_month}, but was offered Slot ${resLetter} in ${request.responder_month || '(unknown block)'}.`);
     }
 
     // ── Rule 4: December→January rule, checked against the SWAPPED dates ──
