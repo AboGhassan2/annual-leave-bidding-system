@@ -1709,6 +1709,9 @@
                 const yos = myResults[0]?.yearsOfService || '—';
                 const allAwarded = myResults.length > 0 && myResults.every(r => r.type === 'Bid Awarded');
                 const anyAwarded = myResults.some(r => r.type === 'Bid Awarded');
+                // Stashed so openTradeOfferModal(i) / the accept-trade slot picker can
+                // reference "my own slots" by index without re-deriving them.
+                this._myResultsForTrade = myResults;
 
                 // Format date nicely
                 const fmtDate = (d) => {
@@ -1821,10 +1824,21 @@
                                             <span>${fmtDate(result.startDate)} → ${fmtDate(result.endDate)}</span>
                                             <span class="ml-auto font-semibold text-gray-700">${result.days} calendar days</span>
                                         </div>
+
+                                        <!-- Bid Trading Platform: offer this slot for trade -->
+                                        <div class="bg-white border-t px-5 py-3">
+                                            <button onclick="app.openTradeOfferModal(${i})"
+                                                class="w-full px-4 py-2 rounded-lg font-semibold text-sm"
+                                                style="background:#eef2ff; color:#4338ca; border:1.5px solid #c7d2fe;">
+                                                🔄 Offer for Trade
+                                            </button>
+                                        </div>
                                     </div>
                                     `;
                                 }).join('')}
                             </div>
+
+                            ${this.renderMyTradesSection(user, isMaint)}
 
                             <!-- Note -->
                             <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
@@ -1838,6 +1852,186 @@
                         `}
                     </div>
                 `;
+            };
+
+            // ════════════════════════════════════════════════════════════════════
+            // Bid Trading Platform — Stage 3: employee-facing UI.
+            //
+            // Renders three lists within My Results: offers I've made, requests
+            // sent directly to me, and open offers from others in my department
+            // that I could accept. All actual create/accept/reject/withdraw logic
+            // lives in api-swaptrading.js (Stage 1) and runs through
+            // _checkSwapCompliance() (Stage 2) automatically the moment both
+            // sides accept — this file is purely the view layer on top of that.
+            // ════════════════════════════════════════════════════════════════════
+
+            app.renderMyTradesSection = function(user, isMaint) {
+                const category = isMaint ? 'maintenance' : 'ops';
+                const all = (this.state.swapRequests || []).filter(r => r.staff_category === category);
+                const myDept = (this._myResultsForTrade && this._myResultsForTrade[0]?.department) || '';
+
+                const mine = all.filter(r => r.requester_id === user.id);
+                const sentToMe = all.filter(r => r.target_id === user.id && r.status === 'pending');
+                const openOffers = all.filter(r =>
+                    r.status === 'open' &&
+                    r.requester_id !== user.id &&
+                    String(r.requester_department || '').toLowerCase() === String(myDept).toLowerCase()
+                );
+
+                const esc = this._escHtml.bind(this);
+                const statusBadge = (status) => {
+                    const map = {
+                        open: ['Open', '#eef2ff', '#4338ca'],
+                        pending: ['Awaiting Response', '#fef3c7', '#92400e'],
+                        accepted: ['Under Review', '#e0e7ff', '#3730a3'],
+                        validated: ['Awaiting Planner', '#dbeafe', '#1e40af'],
+                        rejected_validation: ['Failed Validation', '#fee2e2', '#991b1b'],
+                        rejected_by_recipient: ['Declined', '#f3f4f6', '#6b7280'],
+                        withdrawn: ['Withdrawn', '#f3f4f6', '#6b7280'],
+                        approved: ['Approved ✓', '#d1fae5', '#065f46'],
+                        denied_by_planner: ['Denied by Planner', '#fee2e2', '#991b1b'],
+                    };
+                    const [label, bg, color] = map[status] || [status, '#f3f4f6', '#374151'];
+                    return `<span style="background:${bg};color:${color};padding:3px 10px;border-radius:999px;font-size:0.7rem;font-weight:700;">${label}</span>`;
+                };
+                const slotLine = (letter, start, end) => `Slot ${esc(letter)} · ${esc(start)} → ${esc(end)}`;
+
+                const myOffersHtml = mine.length === 0 ? '<p class="text-sm text-gray-500">You have not made any trade offers.</p>' : mine.map(r => `
+                    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                            <div>
+                                <p style="font-weight:600;font-size:0.85rem;">${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                                <p style="font-size:0.75rem;color:#6b7280;">${r.target_id ? `Requested to ${esc(r.target_name || r.target_id)}` : 'Open offer'}${r.responder_name ? ` · Matched with ${esc(r.responder_name)}` : ''}</p>
+                                ${r.validation_notes ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">${esc(r.validation_notes)}</p>` : ''}
+                            </div>
+                            ${statusBadge(r.status)}
+                        </div>
+                        ${(r.status === 'open' || r.status === 'pending') ? `
+                            <button onclick="app.doWithdrawTrade(${r.id})" style="margin-top:8px;font-size:0.72rem;color:#991b1b;background:none;border:none;cursor:pointer;text-decoration:underline;">Withdraw offer</button>
+                        ` : ''}
+                    </div>
+                `).join('');
+
+                const sentToMeHtml = sentToMe.length === 0 ? '' : `
+                    <h4 style="font-size:0.85rem;font-weight:700;margin:16px 0 8px;">Requests Sent To You</h4>
+                    ${sentToMe.map(r => `
+                        <div style="border:1.5px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
+                            <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                            <div style="display:flex;gap:8px;margin-top:8px;">
+                                <button onclick="app.openAcceptTradeModal(${r.id})" style="flex:1;padding:7px 12px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept</button>
+                                <button onclick="app.doRejectTrade(${r.id})" style="flex:1;padding:7px 12px;background:#fff;color:#991b1b;border:1.5px solid #fecaca;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Reject</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+
+                const openOffersHtml = openOffers.length === 0 ? '' : `
+                    <h4 style="font-size:0.85rem;font-weight:700;margin:16px 0 8px;">Open Offers in Your Department</h4>
+                    ${openOffers.map(r => `
+                        <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
+                            <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                            <button onclick="app.openAcceptTradeModal(${r.id})" style="margin-top:8px;width:100%;padding:7px 12px;background:#4338ca;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept This Offer</button>
+                        </div>
+                    `).join('')}
+                `;
+
+                return `
+                    <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-1">🔄 Leave Trading</h3>
+                        <p class="text-xs text-gray-500 mb-4">Trade a leave slot with a colleague in your department. Both sides must agree, then the system checks eligibility before the planner gives final approval.</p>
+                        <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Your Offers</h4>
+                        ${myOffersHtml}
+                        ${sentToMeHtml}
+                        ${openOffersHtml}
+                    </div>
+                `;
+            };
+
+            // ── Create-offer modal ──────────────────────────────────────────────
+            app.openTradeOfferModal = function(slotIndex) {
+                const slot = (this._myResultsForTrade || [])[slotIndex];
+                if (!slot) return;
+                this._tradeOfferSlot = slot;
+                document.getElementById('tradeOfferSummary').textContent =
+                    `${slot.slotName || slot.slotType} · ${slot.startDate} → ${slot.endDate} (${slot.days} days)`;
+                document.getElementById('tradeOfferTargetId').value = '';
+                document.getElementById('tradeOfferModal').style.display = 'flex';
+            };
+
+            app.closeTradeOfferModal = function() {
+                document.getElementById('tradeOfferModal').style.display = 'none';
+                this._tradeOfferSlot = null;
+            };
+
+            app.submitTradeOffer = async function() {
+                const slot = this._tradeOfferSlot;
+                if (!slot) return;
+                const targetId = (document.getElementById('tradeOfferTargetId').value || '').trim();
+                let targetName = '';
+                if (targetId) {
+                    const isMaint = this.state.userType === 'maintenancestaff';
+                    const pool = isMaint ? (this.state.maintenanceStaffUsers || []) : (this.state.employees || []);
+                    const targetUser = pool.find(e => e.id === targetId);
+                    if (!targetUser) {
+                        this.showToast('No staff member found with that ID.', 'error');
+                        return;
+                    }
+                    targetName = targetUser.name;
+                }
+                const result = await this.createSwapOffer({
+                    slotType: slot.slotType, startDate: slot.startDate, endDate: slot.endDate, department: slot.department,
+                }, targetId || null, targetName);
+                if (result) {
+                    this.closeTradeOfferModal();
+                    this.renderMyResultsView();
+                }
+            };
+
+            // ── Accept-offer modal (choose which of MY slots to give in return) ──
+            app.openAcceptTradeModal = function(requestId) {
+                const req = (this.state.swapRequests || []).find(r => r.id === requestId);
+                if (!req) return;
+                this._acceptTradeRequestId = requestId;
+                const mySlots = this._myResultsForTrade || [];
+                const optionsHtml = mySlots.map((s, i) =>
+                    `<option value="${i}">${this._escHtml(s.slotName || s.slotType)} · ${this._escHtml(s.startDate)} → ${this._escHtml(s.endDate)} (${s.days} days)</option>`
+                ).join('');
+                document.getElementById('acceptTradeSummary').textContent =
+                    `${req.requester_name} is offering: Slot ${req.requester_slot_type.slice(-1)} · ${req.requester_start_date} → ${req.requester_end_date}`;
+                document.getElementById('acceptTradeMySlot').innerHTML = optionsHtml;
+                document.getElementById('acceptTradeModal').style.display = 'flex';
+            };
+
+            app.closeAcceptTradeModal = function() {
+                document.getElementById('acceptTradeModal').style.display = 'none';
+                this._acceptTradeRequestId = null;
+            };
+
+            app.confirmAcceptTrade = async function() {
+                const requestId = this._acceptTradeRequestId;
+                if (!requestId) return;
+                const idx = parseInt(document.getElementById('acceptTradeMySlot').value, 10);
+                const mySlot = (this._myResultsForTrade || [])[idx];
+                if (!mySlot) { this.showToast('Please select which of your slots to offer.', 'error'); return; }
+                const ok = await this.acceptSwapOffer(requestId, {
+                    slotType: mySlot.slotType, startDate: mySlot.startDate, endDate: mySlot.endDate, department: mySlot.department,
+                });
+                if (ok) {
+                    this.closeAcceptTradeModal();
+                    this.renderMyResultsView();
+                }
+            };
+
+            app.doRejectTrade = async function(requestId) {
+                if (!confirm('Decline this trade request?')) return;
+                const ok = await this.rejectSwapOffer(requestId);
+                if (ok) this.renderMyResultsView();
+            };
+
+            app.doWithdrawTrade = async function(requestId) {
+                if (!confirm('Withdraw this trade offer?')) return;
+                const ok = await this.withdrawSwapOffer(requestId);
+                if (ok) this.renderMyResultsView();
             };
 
             app.renderResultsView = function() {
