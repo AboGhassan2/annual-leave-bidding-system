@@ -68,6 +68,7 @@ app.loadSwapRequests = async function() {
 app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targetId, targetName) {
     const user = this.state.verifiedEmployee;
     if (!user) { this.showToast('You must be logged in to offer a trade.', 'error'); return null; }
+    if (this.isTradingClosed()) { this.showToast('The trading window is closed. New trade offers can no longer be created.', 'error'); return null; }
     if (!desiredSlotType || !desiredMonth) { this.showToast('Please select which slot you want in return.', 'error'); return null; }
 
     const isMaint = this.state.userType === 'maintenancestaff';
@@ -118,6 +119,7 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targ
 app.acceptSwapOffer = async function(requestId, theirSlot) {
     const user = this.state.verifiedEmployee;
     if (!user) { this.showToast('You must be logged in to respond to a trade.', 'error'); return false; }
+    if (this.isTradingClosed()) { this.showToast('The trading window is closed. Offers can no longer be accepted.', 'error'); return false; }
 
     const req = (this.state.swapRequests || []).find(r => r.id === requestId);
     if (!req) { this.showToast('Trade request not found.', 'error'); return false; }
