@@ -361,6 +361,9 @@
                     case 'manageOnCall':
                         this.renderManageOnCallView();
                         break;
+                    case 'leaveTrades':
+                        this.renderLeaveTradesView();
+                        break;
                     case 'manageUsers':
                         this.renderManageUsersView();
                         break;
