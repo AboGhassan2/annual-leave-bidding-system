@@ -231,3 +231,113 @@ test('_getConfiguredSwapSlotOptions reads from maintSlotCapacities and the cal-m
     assert.equal(options[0].month, 'January');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _computeSwapResultUpdate — Stage 4's core mutation logic.
+// This is the highest-stakes function in the whole feature: it rewrites
+// the authoritative award records everything else in the app reads from.
+// ════════════════════════════════════════════════════════════════════
+
+function makeAward(overrides = {}) {
+    return {
+        employeeId: 'E1', employeeName: 'Alice', seniorityRank: 3, department: 'DEPT-X', position: 'Controller',
+        slotType: 'slotA', slotName: 'Slot A', startDate: '2027-01-01', endDate: '2027-01-15', days: 15, month: 'January',
+        type: 'Bid Awarded', slotOrder: 1, entitlement: 30, yearsOfService: '5.0',
+        ...overrides,
+    };
+}
+
+test('a successful swap exchanges only the slot-identifying fields, leaving identity/seniority fields untouched', () => {
+    const app = buildSwapApp();
+    const requesterAward = makeAward({ employeeId: 'E1', employeeName: 'Alice', seniorityRank: 3 });
+    const responderAward = makeAward({
+        employeeId: 'E2', employeeName: 'Bob', seniorityRank: 7,
+        slotType: 'slotB', slotName: 'Slot B', startDate: '2027-02-01', endDate: '2027-02-15', month: 'February',
+    });
+    const request = baseRequest({
+        requester_id: 'E1', requester_slot_type: 'slotA', requester_start_date: '2027-01-01', requester_end_date: '2027-01-15',
+        responder_id: 'E2', responder_slot_type: 'slotB', responder_start_date: '2027-02-01', responder_end_date: '2027-02-15',
+        requester_name: 'Alice', responder_name: 'Bob',
+    });
+
+    const result = app._computeSwapResultUpdate(request, [requesterAward, responderAward]);
+    assert.equal(result.ok, true);
+
+    // Alice now holds what was Bob's slot; identity stays hers.
+    assert.equal(result.newRequesterAward.employeeId, 'E1');
+    assert.equal(result.newRequesterAward.employeeName, 'Alice');
+    assert.equal(result.newRequesterAward.seniorityRank, 3, 'seniority must stay with the person, not move with the slot');
+    assert.equal(result.newRequesterAward.slotType, 'slotB');
+    assert.equal(result.newRequesterAward.startDate, '2027-02-01');
+    assert.equal(result.newRequesterAward.month, 'February');
+
+    // Bob now holds what was Alice's slot; identity stays his.
+    assert.equal(result.newResponderAward.employeeId, 'E2');
+    assert.equal(result.newResponderAward.employeeName, 'Bob');
+    assert.equal(result.newResponderAward.seniorityRank, 7);
+    assert.equal(result.newResponderAward.slotType, 'slotA');
+    assert.equal(result.newResponderAward.startDate, '2027-01-01');
+});
+
+test('a successful swap attaches tradeInfo to both records for the Justification Report to use', () => {
+    const app = buildSwapApp();
+    const requesterAward = makeAward({ employeeId: 'E1' });
+    const responderAward = makeAward({ employeeId: 'E2', slotType: 'slotB', startDate: '2027-02-01', endDate: '2027-02-15' });
+    const request = baseRequest({
+        requester_id: 'E1', requester_start_date: '2027-01-01', requester_end_date: '2027-01-15',
+        responder_id: 'E2', responder_slot_type: 'slotB', responder_start_date: '2027-02-01', responder_end_date: '2027-02-15',
+        requester_name: 'Alice', responder_name: 'Bob',
+    });
+
+    const result = app._computeSwapResultUpdate(request, [requesterAward, responderAward]);
+    assert.equal(result.newRequesterAward.tradeInfo.tradedWith, 'E2');
+    assert.equal(result.newRequesterAward.tradeInfo.tradedWithName, 'Bob');
+    assert.equal(result.newRequesterAward.tradeInfo.previousStartDate, '2027-01-01', "should record the requester's OWN previous slot, not the new one");
+    assert.equal(result.newResponderAward.tradeInfo.tradedWith, 'E1');
+    assert.equal(result.newResponderAward.tradeInfo.tradedWithName, 'Alice');
+});
+
+test('fails safely, mutating nothing, if the requester\'s original award can no longer be found', () => {
+    const app = buildSwapApp();
+    const responderAward = makeAward({ employeeId: 'E2', slotType: 'slotB', startDate: '2027-02-01', endDate: '2027-02-15' });
+    // No matching requester award in the pool at all — e.g. results were
+    // reprocessed since this trade was validated.
+    const request = baseRequest({ requester_id: 'E1', responder_id: 'E2', responder_slot_type: 'slotB', responder_start_date: '2027-02-01', responder_end_date: '2027-02-15' });
+
+    const result = app._computeSwapResultUpdate(request, [responderAward]);
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes('could no longer be found'));
+});
+
+test('fails safely, mutating nothing, if the responder\'s original award can no longer be found', () => {
+    const app = buildSwapApp();
+    const requesterAward = makeAward({ employeeId: 'E1' });
+    const request = baseRequest({ requester_id: 'E1', responder_id: 'E2' });
+
+    const result = app._computeSwapResultUpdate(request, [requesterAward]);
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes('could no longer be found'));
+});
+
+test('the pure swap computation never mutates the original award objects it was given', () => {
+    // Defense in depth: even though the orchestrator (approveSwapRequest)
+    // is responsible for actually replacing records in state, the pure
+    // function itself must never mutate its inputs — callers should be
+    // able to trust the originals are untouched until they choose to
+    // apply the returned new objects.
+    const app = buildSwapApp();
+    const requesterAward = makeAward({ employeeId: 'E1' });
+    const responderAward = makeAward({ employeeId: 'E2', slotType: 'slotB', startDate: '2027-02-01', endDate: '2027-02-15' });
+    const requesterSnapshot = JSON.stringify(requesterAward);
+    const responderSnapshot = JSON.stringify(responderAward);
+
+    const request = baseRequest({
+        requester_id: 'E1', responder_id: 'E2', responder_slot_type: 'slotB',
+        responder_start_date: '2027-02-01', responder_end_date: '2027-02-15',
+    });
+    app._computeSwapResultUpdate(request, [requesterAward, responderAward]);
+
+    assert.equal(JSON.stringify(requesterAward), requesterSnapshot, 'original requester award object must be untouched');
+    assert.equal(JSON.stringify(responderAward), responderSnapshot, 'original responder award object must be untouched');
+});
+
+
