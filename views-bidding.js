@@ -1895,7 +1895,7 @@
                     return `<span style="background:${bg};color:${color};padding:3px 10px;border-radius:999px;font-size:0.7rem;font-weight:700;">${label}</span>`;
                 };
                 const slotLine = (letter, start, end) => `Slot ${esc(letter)} · ${esc(start)} → ${esc(end)}`;
-                const wants = (r) => `<span style="color:#4338ca;">wants Slot ${esc(String(r.desired_slot_type || '').slice(-1))} in return</span>`;
+                const wants = (r) => `<span style="color:#4338ca;">wants Slot ${esc(String(r.desired_slot_type || '').slice(-1))} in ${esc(r.desired_month || '(unspecified block)')}</span>`;
 
                 const myOffersHtml = mine.length === 0 ? '<p class="text-sm text-gray-500">You have not made any trade offers.</p>' : mine.map(r => `
                     <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
@@ -1959,17 +1959,23 @@
                     `${slot.slotName || slot.slotType} · ${slot.startDate} → ${slot.endDate} (${slot.days} days)`;
                 document.getElementById('tradeOfferTargetId').value = '';
 
-                // Constrain the "what I want in return" options to the same
-                // compatible group as the offered slot — no point letting someone
-                // request a type that could never pass validation (see
-                // app.SWAP_COMPATIBLE_GROUPS, the same source of truth Stage 2
-                // checks against).
+                // Populate "what I want in return" from the REAL configured slots
+                // across all 12 blocks (Configure Slots), constrained to the
+                // compatible group of the slot being offered — no point showing
+                // an option that could never pass validation. See
+                // _getConfiguredSwapSlotOptions in api-swaptrading.js, the same
+                // source of truth Stage 2 checks the responder's slot against.
+                const isMaint = this.state.userType === 'maintenancestaff';
                 const myLetter = String(slot.slotType || '').charAt(String(slot.slotType || '').length - 1).toUpperCase();
-                const group = (this.SWAP_COMPATIBLE_GROUPS || [['A','B','C'],['D']]).find(g => g.includes(myLetter)) || ['A','B','C'];
+                const options = this._getConfiguredSwapSlotOptions(slot.department, isMaint, myLetter);
                 const select = document.getElementById('tradeOfferDesiredSlot');
-                select.innerHTML = group.map(letter =>
-                    `<option value="slot${letter}" ${letter === myLetter ? 'selected' : ''}>Slot ${letter}</option>`
-                ).join('');
+                if (options.length === 0) {
+                    select.innerHTML = '<option value="">No matching slots are currently configured</option>';
+                } else {
+                    select.innerHTML = options.map(o =>
+                        `<option value="${o.letter}|${this._escHtml(o.month)}">${this._escHtml(o.blockLabel)} — Slot ${o.letter} (${this._escHtml(o.start)} → ${this._escHtml(o.end)})</option>`
+                    ).join('');
+                }
 
                 document.getElementById('tradeOfferModal').style.display = 'flex';
             };
@@ -1982,11 +1988,13 @@
             app.submitTradeOffer = async function() {
                 const slot = this._tradeOfferSlot;
                 if (!slot) return;
-                const desiredSlotType = document.getElementById('tradeOfferDesiredSlot').value;
-                if (!desiredSlotType) {
-                    this.showToast('Please select which slot type you want in return.', 'error');
+                const rawValue = document.getElementById('tradeOfferDesiredSlot').value;
+                if (!rawValue) {
+                    this.showToast('Please select which slot you want in return.', 'error');
                     return;
                 }
+                const [desiredLetter, desiredMonth] = rawValue.split('|');
+                const desiredSlotType = 'slot' + desiredLetter;
                 const targetId = (document.getElementById('tradeOfferTargetId').value || '').trim();
                 let targetName = '';
                 if (targetId) {
@@ -2000,8 +2008,9 @@
                     targetName = targetUser.name;
                 }
                 const result = await this.createSwapOffer({
-                    slotType: slot.slotType, startDate: slot.startDate, endDate: slot.endDate, department: slot.department,
-                }, desiredSlotType, targetId || null, targetName);
+                    slotType: slot.slotType, startDate: slot.startDate, endDate: slot.endDate,
+                    department: slot.department, month: slot.month,
+                }, desiredSlotType, desiredMonth, targetId || null, targetName);
                 if (result) {
                     this.closeTradeOfferModal();
                     this.renderMyResultsView();
@@ -2013,13 +2022,29 @@
                 const req = (this.state.swapRequests || []).find(r => r.id === requestId);
                 if (!req) return;
                 this._acceptTradeRequestId = requestId;
-                const mySlots = this._myResultsForTrade || [];
-                const optionsHtml = mySlots.map((s, i) =>
-                    `<option value="${i}">${this._escHtml(s.slotName || s.slotType)} · ${this._escHtml(s.startDate)} → ${this._escHtml(s.endDate)} (${s.days} days)</option>`
-                ).join('');
+
+                // Only offer the responder their own slots that ACTUALLY match
+                // what was requested — the exact block+letter, per Rule 3 in
+                // _checkSwapCompliance. No point letting them pick something
+                // that would just fail validation a moment later.
+                const mySlots = (this._myResultsForTrade || []).filter((s, i) => {
+                    const myLetter = String(s.slotType || '').charAt(String(s.slotType || '').length - 1).toUpperCase();
+                    const desiredLetter = String(req.desired_slot_type || '').charAt(String(req.desired_slot_type || '').length - 1).toUpperCase();
+                    return myLetter === desiredLetter && s.month === req.desired_month;
+                }).map(s => ({ ...s, _origIndex: (this._myResultsForTrade || []).indexOf(s) }));
+
                 document.getElementById('acceptTradeSummary').textContent =
-                    `${req.requester_name} is offering: Slot ${req.requester_slot_type.slice(-1)} · ${req.requester_start_date} → ${req.requester_end_date}`;
-                document.getElementById('acceptTradeMySlot').innerHTML = optionsHtml;
+                    `${req.requester_name} is offering: Slot ${req.requester_slot_type.slice(-1)} · ${req.requester_start_date} → ${req.requester_end_date}. ` +
+                    `They want: Slot ${String(req.desired_slot_type || '').slice(-1)} in ${req.desired_month || '(unspecified block)'}.`;
+
+                const select = document.getElementById('acceptTradeMySlot');
+                if (mySlots.length === 0) {
+                    select.innerHTML = '<option value="">You have no slot matching what they asked for</option>';
+                } else {
+                    select.innerHTML = mySlots.map(s =>
+                        `<option value="${s._origIndex}">${this._escHtml(s.slotName || s.slotType)} · ${this._escHtml(s.startDate)} → ${this._escHtml(s.endDate)} (${s.days} days)</option>`
+                    ).join('');
+                }
                 document.getElementById('acceptTradeModal').style.display = 'flex';
             };
 
@@ -2035,7 +2060,8 @@
                 const mySlot = (this._myResultsForTrade || [])[idx];
                 if (!mySlot) { this.showToast('Please select which of your slots to offer.', 'error'); return; }
                 const ok = await this.acceptSwapOffer(requestId, {
-                    slotType: mySlot.slotType, startDate: mySlot.startDate, endDate: mySlot.endDate, department: mySlot.department,
+                    slotType: mySlot.slotType, startDate: mySlot.startDate, endDate: mySlot.endDate,
+                    department: mySlot.department, month: mySlot.month,
                 });
                 if (ok) {
                     this.closeAcceptTradeModal();
