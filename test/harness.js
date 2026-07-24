@@ -24,7 +24,7 @@ const ROOT = path.join(__dirname, '..');
  * utils.js + allocation.js source into it, and returns the app object ready
  * to call app.computeBidAllocation(...) / app.computeMaintBidAllocation(...) on.
  */
-function buildApp(initialState) {
+function buildApp(initialState, files = ['utils.js', 'allocation.js']) {
     const app = { state: initialState };
 
     const sandbox = {
@@ -48,7 +48,7 @@ function buildApp(initialState) {
     };
     vm.createContext(sandbox);
 
-    for (const file of ['utils.js', 'allocation.js']) {
+    for (const file of files) {
         const code = fs.readFileSync(path.join(ROOT, file), 'utf8');
         vm.runInContext(code, sandbox, { filename: file });
     }
