@@ -1895,12 +1895,13 @@
                     return `<span style="background:${bg};color:${color};padding:3px 10px;border-radius:999px;font-size:0.7rem;font-weight:700;">${label}</span>`;
                 };
                 const slotLine = (letter, start, end) => `Slot ${esc(letter)} · ${esc(start)} → ${esc(end)}`;
+                const wants = (r) => `<span style="color:#4338ca;">wants Slot ${esc(String(r.desired_slot_type || '').slice(-1))} in return</span>`;
 
                 const myOffersHtml = mine.length === 0 ? '<p class="text-sm text-gray-500">You have not made any trade offers.</p>' : mine.map(r => `
                     <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                             <div>
-                                <p style="font-weight:600;font-size:0.85rem;">${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                                <p style="font-weight:600;font-size:0.85rem;">${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)} — ${wants(r)}</p>
                                 <p style="font-size:0.75rem;color:#6b7280;">${r.target_id ? `Requested to ${esc(r.target_name || r.target_id)}` : 'Open offer'}${r.responder_name ? ` · Matched with ${esc(r.responder_name)}` : ''}</p>
                                 ${r.validation_notes ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">${esc(r.validation_notes)}</p>` : ''}
                             </div>
@@ -1917,6 +1918,7 @@
                     ${sentToMe.map(r => `
                         <div style="border:1.5px solid #fcd34d;background:#fffbeb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
                             <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                            <p style="font-size:0.78rem;margin-top:2px;">${wants(r)}</p>
                             <div style="display:flex;gap:8px;margin-top:8px;">
                                 <button onclick="app.openAcceptTradeModal(${r.id})" style="flex:1;padding:7px 12px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept</button>
                                 <button onclick="app.doRejectTrade(${r.id})" style="flex:1;padding:7px 12px;background:#fff;color:#991b1b;border:1.5px solid #fecaca;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Reject</button>
@@ -1930,6 +1932,7 @@
                     ${openOffers.map(r => `
                         <div style="border:1px solid #c7d2fe;background:#eef2ff;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
                             <p style="font-weight:600;font-size:0.85rem;">${esc(r.requester_name)} offers ${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)}</p>
+                            <p style="font-size:0.78rem;margin-top:2px;">${wants(r)}</p>
                             <button onclick="app.openAcceptTradeModal(${r.id})" style="margin-top:8px;width:100%;padding:7px 12px;background:#4338ca;color:#fff;border:none;border-radius:8px;font-size:0.78rem;font-weight:700;cursor:pointer;">Accept This Offer</button>
                         </div>
                     `).join('')}
@@ -1955,6 +1958,19 @@
                 document.getElementById('tradeOfferSummary').textContent =
                     `${slot.slotName || slot.slotType} · ${slot.startDate} → ${slot.endDate} (${slot.days} days)`;
                 document.getElementById('tradeOfferTargetId').value = '';
+
+                // Constrain the "what I want in return" options to the same
+                // compatible group as the offered slot — no point letting someone
+                // request a type that could never pass validation (see
+                // app.SWAP_COMPATIBLE_GROUPS, the same source of truth Stage 2
+                // checks against).
+                const myLetter = String(slot.slotType || '').charAt(String(slot.slotType || '').length - 1).toUpperCase();
+                const group = (this.SWAP_COMPATIBLE_GROUPS || [['A','B','C'],['D']]).find(g => g.includes(myLetter)) || ['A','B','C'];
+                const select = document.getElementById('tradeOfferDesiredSlot');
+                select.innerHTML = group.map(letter =>
+                    `<option value="slot${letter}" ${letter === myLetter ? 'selected' : ''}>Slot ${letter}</option>`
+                ).join('');
+
                 document.getElementById('tradeOfferModal').style.display = 'flex';
             };
 
@@ -1966,6 +1982,11 @@
             app.submitTradeOffer = async function() {
                 const slot = this._tradeOfferSlot;
                 if (!slot) return;
+                const desiredSlotType = document.getElementById('tradeOfferDesiredSlot').value;
+                if (!desiredSlotType) {
+                    this.showToast('Please select which slot type you want in return.', 'error');
+                    return;
+                }
                 const targetId = (document.getElementById('tradeOfferTargetId').value || '').trim();
                 let targetName = '';
                 if (targetId) {
@@ -1980,7 +2001,7 @@
                 }
                 const result = await this.createSwapOffer({
                     slotType: slot.slotType, startDate: slot.startDate, endDate: slot.endDate, department: slot.department,
-                }, targetId || null, targetName);
+                }, desiredSlotType, targetId || null, targetName);
                 if (result) {
                     this.closeTradeOfferModal();
                     this.renderMyResultsView();
