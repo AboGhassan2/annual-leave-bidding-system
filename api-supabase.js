@@ -701,6 +701,44 @@
                 }
             };
 
+            // Safety net for a real, unresolved anomaly: found twice tonight, two
+            // maintenance-only staff whose bids landed in leave_requests despite
+            // being correctly logged in as maintenancestaff moments earlier in the
+            // same session (their prior bids saved correctly). Every place userType
+            // can be set, read, or persisted was traced and ruled out as the cause —
+            // this doesn't fix the root cause, it catches the symptom.
+            //
+            // Only auto-corrects when there's NO ambiguity: the person is
+            // registered on exactly one of {employees, maintenanceStaffUsers,
+            // goldenCommandUsers/corporateStaffUsers}. Someone genuinely
+            // registered on more than one roster (e.g. also holding a Corporate
+            // Staff role) is left exactly as userType says — that's the intended,
+            // legitimate way one person acts in more than one capacity, and this
+            // must not interfere with it.
+            app._resolveBidTable = function(employeeId, userType) {
+                const requestedTable = this._bidTableForUserType(userType);
+
+                const onEmployees = (this.state.employees || []).some(e => e.id === employeeId);
+                const onMaint     = (this.state.maintenanceStaffUsers || []).some(e => e.id === employeeId);
+                const onCorp      = (this.state.goldenCommandUsers || []).some(e => e.id === employeeId) ||
+                                     (this.state.corporateStaffUsers || []).some(e => e.id === employeeId);
+
+                const rosterFlags = [onEmployees, onMaint, onCorp];
+                const rosterCount = rosterFlags.filter(Boolean).length;
+
+                if (rosterCount !== 1) {
+                    // Zero rosters (shouldn't normally happen post-login) or more than
+                    // one (legitimate dual-registration) — trust userType as-is.
+                    return { table: requestedTable, corrected: false };
+                }
+
+                const onlyPossibleTable = onMaint ? 'maint_leave_requests' : onCorp ? 'corporate_leave_request' : 'leave_requests';
+                if (onlyPossibleTable === requestedTable) {
+                    return { table: requestedTable, corrected: false };
+                }
+                return { table: onlyPossibleTable, corrected: true, requestedTable, correctedTable: onlyPossibleTable };
+            };
+
             app.saveBidToSupabase = async function(bid) {
                 if (!this.supabase) {
                     console.warn('⚠️ Supabase not initialised — bid saved locally only');
@@ -709,8 +747,22 @@
                 try {
                     // Route to the correct table based on the acting user's type:
                     // employee/planner -> leave_requests, maintenancestaff -> maint_leave_requests,
-                    // goldencommand/corporatestaff -> corporate_leave_request
-                    const table = this._bidTableForUserType(this.state.userType);
+                    // goldencommand/corporatestaff -> corporate_leave_request.
+                    // _resolveBidTable() adds a safety-net correction on top of this —
+                    // see the comment above it.
+                    const resolution = this._resolveBidTable(bid.employeeId, this.state.userType);
+                    const table = resolution.table;
+                    if (resolution.corrected) {
+                        console.warn(`⚠️ Bid table auto-corrected for ${bid.employeeId}: session userType "${this.state.userType}" would have saved to ${resolution.requestedTable}, but this person is only registered on the roster matching ${resolution.correctedTable}. Saved there instead.`);
+                        if (this.writeAuditLog) {
+                            this.writeAuditLog('BID_TABLE_AUTOCORRECTED', {
+                                employeeId: bid.employeeId,
+                                sessionUserType: this.state.userType,
+                                requestedTable: resolution.requestedTable,
+                                correctedTable: resolution.correctedTable,
+                            });
+                        }
+                    }
 
                     const row = {
                         tenant_id: this._tid(),
