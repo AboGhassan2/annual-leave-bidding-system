@@ -56,23 +56,6 @@
                 if (typeof window.lcRender === 'function') window.lcRender();
             };
 
-            // Identifies every OTHER roster (besides Ops) this employeeId also
-            // appears on, for the "also registered as..." badge on the Bid
-            // Details Employees tab — surfaces a dual-registered person's other
-            // role instead of silently hiding their Ops bid, which is what
-            // happened before this was added (see the tab filter above).
-            app._otherRosterLabels = function(employeeId) {
-                const labels = [];
-                if ((this.state.goldenCommandUsers  || []).some(u => u.id === employeeId)) labels.push('Golden Command');
-                if ((this.state.corporateStaffUsers || []).some(u => u.id === employeeId)) labels.push('Corporate Staff');
-                if ((this.state.l456InmUsers        || []).some(u => u.id === employeeId)) labels.push('L456 INM');
-                if ((this.state.l3InmUsers          || []).some(u => u.id === employeeId)) labels.push('L3 INM');
-                if ((this.state.l3TsmUsers          || []).some(u => u.id === employeeId)) labels.push('L3 TSM');
-                if ((this.state.hseqUsers           || []).some(u => u.id === employeeId)) labels.push('HSEQ');
-                if ((this.state.maintenanceStaffUsers || []).some(u => u.id === employeeId)) labels.push('Maintenance');
-                return labels;
-            };
-
             app._isGcOrCs = function(employeeId) {
                 // Returns true if the employeeId belongs to GC, CS, or any sub-group (not a regular employee)
                 const gcIds  = (this.state.goldenCommandUsers  || []).map(u => u.id);
@@ -180,30 +163,14 @@
                         return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
                     })
                     .filter(bid => {
-                        // Tab filter — determined by which table THIS BID actually came
-                        // from (bid._sourceTable), not by which rosters the person
-                        // happens to appear on. A bid can only ever have come from one
-                        // table, so this guarantees each bid shows on exactly one tab,
-                        // even for staff registered on more than one roster (e.g. an
-                        // Ops employee who's also on the Corporate Staff roster under
-                        // a second role — their real Ops bid stays on the Employees
-                        // tab, not silently hidden or duplicated onto GC/CS). Falls
-                        // back to the old identity-based checks only if _sourceTable
-                        // isn't available for some reason.
+                        // Tab filter
                         const isSpecial = this._isGcOrCs(bid.employeeId);
                         const isHr      = this._isHrCorporate(bid.employeeId);
                         const isMaint   = this._isMaintStaff(bid.employeeId, bid);
-                        if (bid._sourceTable) {
-                            if (tabFilter === 'employees' && bid._sourceTable !== 'leave_requests') return false;
-                            if (tabFilter === 'maint'      && bid._sourceTable !== 'maint_leave_requests') return false;
-                            if (tabFilter === 'gccs'       && (bid._sourceTable !== 'corporate_leave_request' || isHr)) return false;
-                            if (tabFilter === 'hrcorp'     && (bid._sourceTable !== 'corporate_leave_request' || !isHr)) return false;
-                        } else {
-                            if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
-                            if (tabFilter === 'gccs'      && (!isSpecial || isHr || isMaint)) return false;
-                            if (tabFilter === 'hrcorp'    && (!isHr || isMaint)) return false;
-                            if (tabFilter === 'maint'     && !isMaint) return false;
-                        }
+                        if (tabFilter === 'employees' && (isSpecial || isMaint)) return false;
+                        if (tabFilter === 'gccs'      && (!isSpecial || isHr || isMaint)) return false;
+                        if (tabFilter === 'hrcorp'    && (!isHr || isMaint)) return false;
+                        if (tabFilter === 'maint'     && !isMaint) return false;
                         // Search filter
                         if (!q) return true;
                         const empRec = this.state.employees.find(e => e.id === bid.employeeId);
@@ -283,15 +250,7 @@
                                         <tr>
                                             <td style="text-align:center;color:var(--app-text-muted);" title="Preference #${prefRank} — order this bid was actually submitted in for this employee">${prefRank}</td>
                                             <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(bid.employeeId)}</td>
-                                            <td style="font-weight:600;">
-                                                ${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}
-                                                ${tabFilter === 'employees' ? (() => {
-                                                    const other = this._otherRosterLabels(bid.employeeId);
-                                                    return other.length > 0
-                                                        ? `<span title="Also registered as: ${this._escHtml(other.join(', '))}" style="display:inline-block;margin-left:6px;background:#f3e8ff;color:#6b21a8;padding:1px 8px;border-radius:999px;font-size:0.68rem;font-weight:700;vertical-align:middle;">also: ${this._escHtml(other[0])}</span>`
-                                                        : '';
-                                                })() : ''}
-                                            </td>
+                                            <td style="font-weight:600;">${this._escHtml(bid.employeeName || emp?.name || 'Unknown')}</td>
                                             <td>${this._escHtml(bid.position || emp?.position || bid.department || emp?.department || 'Unassigned')}</td>
                                             <td><span class="px-2 py-1 rounded text-xs font-semibold ${slotColor}">${this._escHtml(slotDisplay)}</span></td>
                                             <td>${this._escHtml(bid.startDate || '—')}</td>
