@@ -469,6 +469,8 @@
                 } else if (userType === 'corporatestaff') {
                     const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
                     storedPass = csUser ? (csUser.password || csUser.id) : userId;
+                } else if (userType === 'maintenancestaff') {
+                    storedPass = (this.state.maintenanceStaffPasswords || {})[userId] || userId;
                 } else {
                     storedPass = this.state.employeePasswords[userId] || userId;
                 }
@@ -511,6 +513,18 @@
                         // Update local state
                         const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
                         if (csUser) csUser.password = newPass;
+                    } else if (userType === 'maintenancestaff') {
+                        // Maintenance staff: update local state + maintenanceStaffPasswords
+                        this.state.maintenanceStaffPasswords = this.state.maintenanceStaffPasswords || {};
+                        this.state.maintenanceStaffPasswords[userId] = newPass;
+                        // Also update the maintenance_employees table password column if it exists
+                        if (this.supabase) {
+                            const { error } = await this.supabase
+                                .from('maintenance_employees')
+                                .update({ password: newPass })
+                                .eq('id', userId);
+                            // ignore error if column doesn't exist
+                        }
                     } else {
                         // Employee: update local state + employeePasswords
                         this.state.employeePasswords[userId] = newPass;
@@ -541,6 +555,9 @@
                     } else if (userType === 'corporatestaff') {
                         const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === userId);
                         if (csUser) csUser.password = newPass;
+                    } else if (userType === 'maintenancestaff') {
+                        this.state.maintenanceStaffPasswords = this.state.maintenanceStaffPasswords || {};
+                        this.state.maintenanceStaffPasswords[userId] = newPass;
                     } else {
                         this.state.employeePasswords[userId] = newPass;
                     }
