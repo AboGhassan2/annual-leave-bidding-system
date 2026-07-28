@@ -234,25 +234,18 @@
 
                     <!-- Bottom 3-col grid -->
                     <div class="pd-bottom-grid">
-                      <!-- Bidding Overview chart -->
+                      <!-- Leave Slots by Block chart -->
                       <div class="pd-card">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                           <div class="pd-card-title">
                             <div class="pd-card-title-icon" style="background:#eaf5ef;">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                             </div>
-                            Bidding Overview
+                            Leave Slots by Block
                           </div>
-                          <select class="pd-select" id="bidOverviewPeriod">
-                            <option value="monthly">Monthly</option>
-                            <option value="weekly">Weekly</option>
-                          </select>
                         </div>
-                        <div class="pd-chart-legend">
-                          <span><span class="pd-legend-dot" style="background:#22c55e;"></span>Bids Submitted</span>
-                          <span><span class="pd-legend-dot" style="background:#f97316;"></span>Not Bid Yet</span>
-                        </div>
-                        <canvas id="bidOverviewChart" width="100%" height="200" style="width:100%;display:block;"></canvas>
+                        <p style="font-size:0.72rem;color:#9ca3af;margin:0 0 8px;">How many submitted Ops leave slots fall into each block (Block 1 = January ... Block 12 = December).</p>
+                        <div style="height:220px;"><canvas id="bidOverviewChart"></canvas></div>
                       </div>
 
                       <!-- Participation Summary -->
@@ -432,79 +425,72 @@
                     }, 30000);
                 }
 
-                // ── Draw Bidding Overview line chart ──
+                // ── Leave Slots by Block — same approach as the Maintenance
+                // Dashboard: for each block (Block 1 = January ... Block 12 =
+                // December), count how many submitted Ops leave slots have their
+                // real dates falling in that block. Each slot counts toward its
+                // own block independently. Block resolution reuses
+                // _getConfiguredSwapSlotOptions (matching a bid's actual dates
+                // against the real configured slot dates) rather than trusting
+                // bid.month directly or deriving the month from raw dates — both
+                // proven unreliable earlier. This REPLACES the previous version
+                // of this chart, which drew a line graph from entirely fake,
+                // deterministic pseudo-random data (seeded from bidded+total) —
+                // never real bid data at all.
                 requestAnimationFrame(() => {
-                    const lineCanvas = document.getElementById('bidOverviewChart');
-                    if (!lineCanvas) return;
+                    const barCtx = document.getElementById('bidOverviewChart');
+                    if (!barCtx || typeof Chart === 'undefined') return;
+                    if (this._opsBlockChart) { this._opsBlockChart.destroy(); this._opsBlockChart = null; }
 
-                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                    // Generate plausible monthly data
-                    const seed = bidded + total;
-                    const pseudoRand = (i, offset) => Math.abs(Math.sin(seed * 9.3 + i * 7.1 + offset) * 100) % 1;
-                    const bidsData = months.map((_, i) => Math.max(1, Math.round(bidded / 12 + pseudoRand(i, 0) * 8 - 4)));
-                    const notBidData = months.map((_, i) => Math.max(notBidded - 20, Math.round(notBidded * 0.85 + pseudoRand(i, 5) * 120 - 60)));
-
-                    const parent = lineCanvas.parentElement;
-                    const W = parent.offsetWidth || 500;
-                    const H = 200;
-                    lineCanvas.width = W;
-                    lineCanvas.height = H;
-                    const ctx = lineCanvas.getContext('2d');
-
-                    const padL = 40, padR = 16, padT = 10, padB = 30;
-                    const chartW = W - padL - padR;
-                    const chartH = H - padT - padB;
-                    const allVals = [...bidsData, ...notBidData];
-                    const minV = 0, maxV = Math.max(...allVals) * 1.15;
-
-                    const xPos = (i) => padL + (i / (months.length - 1)) * chartW;
-                    const yPos = (v) => padT + chartH - ((v - minV) / (maxV - minV)) * chartH;
-
-                    ctx.clearRect(0, 0, W, H);
-
-                    // Grid lines
-                    const gridCount = 4;
-                    for (let g = 0; g <= gridCount; g++) {
-                        const y = padT + (g / gridCount) * chartH;
-                        ctx.beginPath(); ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = 1;
-                        ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-                        const val = Math.round(maxV - (g / gridCount) * maxV);
-                        ctx.fillStyle = '#d1d5db'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
-                        ctx.fillText(val, padL - 4, y + 3);
-                    }
-
-                    // Draw filled area for notBidData (orange)
-                    ctx.beginPath();
-                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
-                    ctx.lineTo(xPos(months.length - 1), padT + chartH);
-                    ctx.lineTo(xPos(0), padT + chartH);
-                    ctx.closePath();
-                    const orangeGrad = ctx.createLinearGradient(0, padT, 0, padT + chartH);
-                    orangeGrad.addColorStop(0, 'rgba(249,115,22,0.18)');
-                    orangeGrad.addColorStop(1, 'rgba(249,115,22,0.02)');
-                    ctx.fillStyle = orangeGrad; ctx.fill();
-
-                    // Draw orange line
-                    ctx.beginPath(); ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-                    notBidData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
-                    ctx.stroke();
-                    notBidData.forEach((v, i) => {
-                        ctx.beginPath(); ctx.fillStyle = '#f97316'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
-                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    const resolveOpsBidBlock = (bid) => {
+                        const emp = this.state.employees.find(e => e.id === bid.employeeId);
+                        const dept = emp?.department || bid.department || '';
+                        const letter = (bid.slotType || '').charAt((bid.slotType || '').length - 1).toUpperCase();
+                        if (dept && letter && this._getConfiguredSwapSlotOptions) {
+                            const options = this._getConfiguredSwapSlotOptions(dept, false, letter);
+                            const match = options.find(o => o.start === bid.startDate && o.end === bid.endDate);
+                            if (match) return match.month;
+                        }
+                        if (bid.month) return bid.month;
+                        const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
+                        return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
+                    };
+                    const monthlySlotCounts = new Array(12).fill(0);
+                    opsBids.forEach(bid => {
+                        const month = resolveOpsBidBlock(bid);
+                        const idx = this.state.months.indexOf(month);
+                        if (idx >= 0) monthlySlotCounts[idx]++;
                     });
 
-                    // Draw green line (bids)
-                    ctx.beginPath(); ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-                    bidsData.forEach((v, i) => { i === 0 ? ctx.moveTo(xPos(i), yPos(v)) : ctx.lineTo(xPos(i), yPos(v)); });
-                    ctx.stroke();
-                    bidsData.forEach((v, i) => {
-                        ctx.beginPath(); ctx.fillStyle = '#22c55e'; ctx.arc(xPos(i), yPos(v), 3.5, 0, Math.PI * 2); ctx.fill();
-                        ctx.beginPath(); ctx.fillStyle = '#fff'; ctx.arc(xPos(i), yPos(v), 1.8, 0, Math.PI * 2); ctx.fill();
+                    const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
+                    const maxCount = Math.max(1, ...monthlySlotCounts);
+                    this._opsBlockChart = new Chart(barCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: monthLabels,
+                            datasets: [{
+                                label: 'Leave Slots',
+                                data: monthlySlotCounts,
+                                backgroundColor: barColors,
+                                borderRadius: 4,
+                                borderSkipped: false,
+                                barPercentage: 0.65
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}` } }
+                            },
+                            scales: {
+                                y: { beginAtZero: true, suggestedMax: Math.ceil(maxCount * 1.15), ticks: { precision: 0 } },
+                                x: { grid: { display: false } }
+                            }
+                        }
                     });
-
-                    // X axis labels
-                    ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
-                    months.forEach((m, i) => ctx.fillText(m, xPos(i), H - 6));
                 });
 
                 // ── Draw Participation Donut ──
