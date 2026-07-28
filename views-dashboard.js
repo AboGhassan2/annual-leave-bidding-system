@@ -456,13 +456,23 @@
                         const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
                         return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
                     };
-                    // Count unique BIDDERS per block, not raw slot count — someone
-                    // with two slots landing in the same block must only count
-                    // once for that block (a person with slots in two DIFFERENT
-                    // blocks still correctly counts once in each, since a fresh
-                    // Set is used per block index).
-                    const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
+                    // Only each bidder's #1 (top) preference choice counts toward a
+                    // block — the same definition Bid Details already uses: the
+                    // earliest-submitted bid per employee, by timestamp, matching
+                    // the order the allocation engine's own preference cascade
+                    // consumes them in. This guarantees every bidder is attributed
+                    // to exactly one block, so the bars sum to exactly the Staff
+                    // Bid total — not every preference choice they submitted,
+                    // which could otherwise count one person toward several blocks.
+                    const topChoiceByEmployee = {};
                     opsBids.forEach(bid => {
+                        const existing = topChoiceByEmployee[bid.employeeId];
+                        if (!existing || new Date(bid.timestamp || 0) < new Date(existing.timestamp || 0)) {
+                            topChoiceByEmployee[bid.employeeId] = bid;
+                        }
+                    });
+                    const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
+                    Object.values(topChoiceByEmployee).forEach(bid => {
                         const month = resolveOpsBidBlock(bid);
                         const idx = this.state.months.indexOf(month);
                         if (idx >= 0) monthlyBidderSets[idx].add(bid.employeeId);
@@ -2247,13 +2257,23 @@
                     const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
                     return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
                 };
-                // Count unique BIDDERS per block, not raw slot count — someone
-                // with two slots landing in the same block must only count once
-                // for that block (a person with slots in two DIFFERENT blocks
-                // still correctly counts once in each, since a fresh Set is used
-                // per block index).
-                const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
+                // Only each bidder's #1 (top) preference choice counts toward a
+                // block — the same definition Bid Details already uses: the
+                // earliest-submitted bid per employee, by timestamp, matching the
+                // order the allocation engine's own preference cascade consumes
+                // them in. This guarantees every bidder is attributed to exactly
+                // one block, so the bars sum to exactly the Bids Submitted total —
+                // not every preference choice they submitted, which could
+                // otherwise count one person toward several blocks.
+                const topChoiceByEmployee = {};
                 maintBids.forEach(bid => {
+                    const existing = topChoiceByEmployee[bid.employeeId];
+                    if (!existing || new Date(bid.timestamp || 0) < new Date(existing.timestamp || 0)) {
+                        topChoiceByEmployee[bid.employeeId] = bid;
+                    }
+                });
+                const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
+                Object.values(topChoiceByEmployee).forEach(bid => {
                     const month = resolveBidBlock(bid);
                     const idx = this.state.months.indexOf(month);
                     if (idx >= 0) monthlyBidderSets[idx].add(bid.employeeId);
