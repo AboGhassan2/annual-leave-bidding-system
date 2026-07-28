@@ -26,17 +26,21 @@
                 const csStaffCount = (this.state.corporateStaffUsers || []).length;
                 const gcStaffCount = (this.state.goldenCommandUsers || []).length;
                 const allActiveStaffTotal = total + maintStaffCount + csStaffCount + gcStaffCount;
-                const biddedIds = new Set(this.state.bids.map(b => b.employeeId));
+                // Scoped to Ops only, now that dedicated Maintenance and HR Corporate
+                // dashboards exist to show those categories separately — this KPI
+                // section previously mixed all categories' bidders into one number,
+                // which was fixed to be internally consistent, then explicitly
+                // reverted to Ops-only per request, since a combined number is no
+                // longer needed here with category-specific dashboards available.
+                // _isMaintStaff/_isGcOrCs each already fall back safely to roster
+                // membership if a bid's _sourceTable tag isn't set yet (e.g. if the
+                // Admin Panel — which is what populates it — hasn't been visited
+                // yet this session).
+                const opsBids = this.state.bids.filter(b => !this._isMaintStaff(b.employeeId, b) && !this._isGcOrCs(b.employeeId));
+                const biddedIds = new Set(opsBids.map(b => b.employeeId));
                 const bidded = biddedIds.size;
-                // bidded counts unique bidders across ALL bid tables combined (Ops +
-                // Maintenance + GC/CS, since this.state.bids already merges all three
-                // — see loadFromSupabase()). The denominator here must match that same
-                // scope — using Ops-only `total` would silently mix an all-categories
-                // numerator with an Ops-only denominator, understating "not bid yet"
-                // and producing a meaningless participation percentage that reflects
-                // neither Ops alone nor all staff correctly.
-                const notBidded = allActiveStaffTotal - bidded;
-                const pct = allActiveStaffTotal > 0 ? Math.round((bidded / allActiveStaffTotal) * 100) : 0;
+                const notBidded = total - bidded;
+                const pct = total > 0 ? Math.round((bidded / total) * 100) : 0;
                 const processed = this.state.isProcessed;
                 const year = this.state.biddingYear || new Date().getFullYear();
                 const now = new Date();
@@ -345,7 +349,7 @@
                           <span><span style="width:10px;height:10px;border-radius:2px;background:#f97316;display:inline-block;margin-right:4px;"></span>&lt;50%</span>
                         </div>
                       </div>
-                      <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">${bidded} of ${allActiveStaffTotal} staff have submitted bids (${pct}% overall)</p>
+                      <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">${bidded} of ${total} staff have submitted bids (${pct}% overall)</p>
                       <div style="overflow-y:auto;max-height:380px;padding-right:4px;">
                         <canvas id="deptBarChart" width="700" height="${Math.max(depts.length * 34, 60)}"></canvas>
                       </div>
@@ -2203,8 +2207,13 @@
                     .sort((a, b) => a.name.localeCompare(b.name));
 
                 // Chart data: monthly bidding overview (% submitted, cumulative by
-                // submission date) — same approach as the HR Corp dashboard.
-                const chartYear = this.state.biddingYear || new Date().getFullYear();
+                // submission date) — same approach as the HR Corp dashboard. Uses
+                // the REAL current calendar year, not this.state.biddingYear (the
+                // future leave year being bid FOR) — bids are submitted well before
+                // the leave year itself, so using biddingYear here would make every
+                // month's "<= monthEnd" comparison trivially true for all of them,
+                // producing the same flat cumulative % for every month.
+                const chartYear = new Date().getFullYear();
                 const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const monthlySubmittedPct = [];
                 monthLabels.forEach((label, idx) => {
