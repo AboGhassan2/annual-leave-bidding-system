@@ -2206,37 +2206,44 @@
                     .map(id => { const info = rosterLookup(id); return { id, name: info.name || 'Unknown', position: info.position || '—' }; })
                     .sort((a, b) => a.name.localeCompare(b.name));
 
-                // Chart data: monthly bidding overview (% submitted, cumulative by
-                // submission date). Two DELIBERATELY SEPARATE year concepts here,
-                // never to be merged again:
-                //   - submissionCalcYear: the year ACTUALLY used to compute each
-                //     month's cumulative %, derived from real bid submission
-                //     timestamps (not "today's date" or biddingYear). This MUST
-                //     stay tied to when bids were really submitted, or every
-                //     month's "<= monthEnd" check becomes trivially true (if using
-                //     the future leave year) or trivially false (if the leave year
-                //     hasn't started yet) — both produce a meaningless flat chart.
-                //   - displayYear: this.state.biddingYear (e.g. 2027) — the leave
-                //     year this whole bidding cycle is FOR, shown only in the
-                //     chart's title text. Staff submit in one calendar year for
-                //     leave dates in the next, so the title should reflect what
-                //     the bidding is ABOUT, not when it happened to be submitted.
-                const submissionCalcYear = maintBids.length > 0
-                    ? new Date(maintBids.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0].timestamp).getFullYear()
-                    : new Date().getFullYear();
-                const displayYear = this.state.biddingYear || submissionCalcYear;
+                // Chart data: how many submitted leave SLOTS fall into each Block
+                // (Block 1 = January ... Block 12 = December), matching the same
+                // "Block N" system used throughout Configure Maint Slots. Each slot
+                // counts toward its own block independently — a staff member with
+                // two slots in two different blocks contributes to both.
+                //
+                // Resolving which block a bid belongs to reuses
+                // _getConfiguredSwapSlotOptions (the same real-configured-slot
+                // matching built for the Trading Platform) rather than trusting
+                // bid.month directly or deriving the month from raw dates — both of
+                // those were proven unreliable earlier tonight (bid.month is
+                // sometimes entirely absent on real bids, and raw date-derivation
+                // breaks whenever a block's real dates drift into the next
+                // calendar month while still being configured under the earlier
+                // block). Matching against the actual configured slot dates is the
+                // one signal that's always authoritative.
+                const displayYear = this.state.biddingYear || new Date().getFullYear();
                 const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                const monthlySubmittedPct = [];
-                monthLabels.forEach((label, idx) => {
-                    const monthEnd = new Date(submissionCalcYear, idx + 1, 0, 23, 59, 59);
-                    const bidderIdsByMonth = new Set(
-                        maintBids
-                            .filter(b => b.timestamp && new Date(b.timestamp) <= monthEnd)
-                            .map(b => b.employeeId)
-                            .filter(id => maintIds.includes(id))
-                    );
-                    const monthPct = totalStaff > 0 ? Math.round((bidderIdsByMonth.size / totalStaff) * 100) : 0;
-                    monthlySubmittedPct.push(monthPct);
+                const resolveBidBlock = (bid) => {
+                    const info = rosterLookup(bid.employeeId);
+                    const position = info.position || bid.position || bid.department || '';
+                    const letter = (bid.slotType || '').charAt((bid.slotType || '').length - 1).toUpperCase();
+                    if (position && letter && this._getConfiguredSwapSlotOptions) {
+                        const options = this._getConfiguredSwapSlotOptions(position, true, letter);
+                        const match = options.find(o => o.start === bid.startDate && o.end === bid.endDate);
+                        if (match) return match.month;
+                    }
+                    // Fall back to the label stored at submission time, then finally
+                    // to raw date derivation only as a last resort.
+                    if (bid.month) return bid.month;
+                    const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
+                    return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
+                };
+                const monthlySlotCounts = new Array(12).fill(0);
+                maintBids.forEach(bid => {
+                    const month = resolveBidBlock(bid);
+                    const idx = this.state.months.indexOf(month);
+                    if (idx >= 0) monthlySlotCounts[idx]++;
                 });
 
                 const slotLabelMap = { slotA: 'Slot A', slotB: 'Slot B', slotC: 'Slot C', slotD: 'Slot D', SA: 'Slot A', SB: 'Slot B', SC: 'Slot C', SD: 'Slot D' };
@@ -2318,7 +2325,7 @@
                                 <div style="height:260px;"><canvas id="maintPieChart"></canvas></div>
                             </div>
                             <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
-                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${displayYear} (% Submitted by Month)</h3>
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Leave Slots by Block — ${displayYear}</h3>
                                 <div style="height:280px;"><canvas id="maintMonthlyChart"></canvas></div>
                             </div>
                         </div>
@@ -2465,14 +2472,15 @@
                     const monthlyCtx = document.getElementById('maintMonthlyChart');
                     if (monthlyCtx) {
                         const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
+                        const maxCount = Math.max(1, ...monthlySlotCounts);
                         this._maintMonthlyChart = new Chart(monthlyCtx, {
                             type: 'bar',
                             data: {
                                 labels: monthLabels,
                                 datasets: [
                                     {
-                                        label: 'Bids Submitted %',
-                                        data: monthlySubmittedPct,
+                                        label: 'Leave Slots',
+                                        data: monthlySlotCounts,
                                         backgroundColor: barColors,
                                         borderRadius: 4,
                                         borderSkipped: false,
@@ -2485,20 +2493,20 @@
                                 maintainAspectRatio: false,
                                 plugins: {
                                     legend: { display: false },
-                                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}` } },
                                     datalabels: {
                                         anchor: 'end',
                                         align: 'top',
                                         color: '#ffffff',
                                         font: { weight: 'bold', size: 12 },
-                                        formatter: v => v + '%'
+                                        formatter: v => v
                                     }
                                 },
                                 scales: {
                                     y: {
                                         beginAtZero: true,
-                                        max: 100,
-                                        ticks: { color: '#e5e7eb', callback: v => v + '%' },
+                                        suggestedMax: Math.ceil(maxCount * 1.15),
+                                        ticks: { color: '#e5e7eb', precision: 0 },
                                         grid: { color: 'rgba(255,255,255,0.08)' }
                                     },
                                     x: {
