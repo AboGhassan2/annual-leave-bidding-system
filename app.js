@@ -379,6 +379,9 @@
                     case 'hrCorpDashboard':
                         this.renderHrCorpDashboardView();
                         break;
+                    case 'maintenanceDashboard':
+                        this.renderMaintenanceDashboardView();
+                        break;
                 }
                 
                 this.saveState();
