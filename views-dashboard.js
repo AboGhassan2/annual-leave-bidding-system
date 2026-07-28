@@ -2207,23 +2207,28 @@
                     .sort((a, b) => a.name.localeCompare(b.name));
 
                 // Chart data: monthly bidding overview (% submitted, cumulative by
-                // submission date) — same approach as the HR Corp dashboard.
-                // chartYear is derived from the actual bid submission timestamps,
-                // not "today's date" or this.state.biddingYear (the future leave
-                // year being bid FOR). Deriving it from real data — rather than
-                // assuming "today" always matches when the bids were submitted —
-                // keeps this correct even if the dashboard is viewed well after
-                // the submission period (e.g. checking 2026's bidding history
-                // from 2028 would otherwise wrongly show "2028" in the title).
-                // Falls back to the current year only when there's no bid data
-                // yet at all (a harmless default for an empty-state dashboard).
-                const chartYear = maintBids.length > 0
+                // submission date). Two DELIBERATELY SEPARATE year concepts here,
+                // never to be merged again:
+                //   - submissionCalcYear: the year ACTUALLY used to compute each
+                //     month's cumulative %, derived from real bid submission
+                //     timestamps (not "today's date" or biddingYear). This MUST
+                //     stay tied to when bids were really submitted, or every
+                //     month's "<= monthEnd" check becomes trivially true (if using
+                //     the future leave year) or trivially false (if the leave year
+                //     hasn't started yet) — both produce a meaningless flat chart.
+                //   - displayYear: this.state.biddingYear (e.g. 2027) — the leave
+                //     year this whole bidding cycle is FOR, shown only in the
+                //     chart's title text. Staff submit in one calendar year for
+                //     leave dates in the next, so the title should reflect what
+                //     the bidding is ABOUT, not when it happened to be submitted.
+                const submissionCalcYear = maintBids.length > 0
                     ? new Date(maintBids.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0].timestamp).getFullYear()
                     : new Date().getFullYear();
+                const displayYear = this.state.biddingYear || submissionCalcYear;
                 const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const monthlySubmittedPct = [];
                 monthLabels.forEach((label, idx) => {
-                    const monthEnd = new Date(chartYear, idx + 1, 0, 23, 59, 59);
+                    const monthEnd = new Date(submissionCalcYear, idx + 1, 0, 23, 59, 59);
                     const bidderIdsByMonth = new Set(
                         maintBids
                             .filter(b => b.timestamp && new Date(b.timestamp) <= monthEnd)
@@ -2313,7 +2318,7 @@
                                 <div style="height:260px;"><canvas id="maintPieChart"></canvas></div>
                             </div>
                             <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
-                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${chartYear} (% Submitted by Month)</h3>
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${displayYear} (% Submitted by Month)</h3>
                                 <div style="height:280px;"><canvas id="maintMonthlyChart"></canvas></div>
                             </div>
                         </div>
