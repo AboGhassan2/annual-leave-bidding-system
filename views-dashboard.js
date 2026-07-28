@@ -234,17 +234,17 @@
 
                     <!-- Bottom 3-col grid -->
                     <div class="pd-bottom-grid">
-                      <!-- Leave Slots by Block chart -->
+                      <!-- Bidders by Block chart -->
                       <div class="pd-card" style="display:flex;flex-direction:column;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                           <div class="pd-card-title">
                             <div class="pd-card-title-icon" style="background:#eaf5ef;">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d6a4f" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                             </div>
-                            Leave Slots by Block
+                            Bidders by Block
                           </div>
                         </div>
-                        <p style="font-size:0.72rem;color:#9ca3af;margin:0 0 8px;">How many submitted Ops leave slots fall into each block (Block 1 = January ... Block 12 = December).</p>
+                        <p style="font-size:0.72rem;color:#9ca3af;margin:0 0 8px;">How many unique Ops bidders have a leave slot falling into each block (Block 1 = January ... Block 12 = December).</p>
                         <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;flex:1;min-height:220px;"><canvas id="bidOverviewChart"></canvas></div>
                       </div>
 
@@ -425,7 +425,7 @@
                     }, 30000);
                 }
 
-                // ── Leave Slots by Block — same approach as the Maintenance
+                // ── Bidders by Block — same approach as the Maintenance
                 // Dashboard: for each block (Block 1 = January ... Block 12 =
                 // December), count how many submitted Ops leave slots have their
                 // real dates falling in that block. Each slot counts toward its
@@ -456,12 +456,18 @@
                         const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
                         return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
                     };
-                    const monthlySlotCounts = new Array(12).fill(0);
+                    // Count unique BIDDERS per block, not raw slot count — someone
+                    // with two slots landing in the same block must only count
+                    // once for that block (a person with slots in two DIFFERENT
+                    // blocks still correctly counts once in each, since a fresh
+                    // Set is used per block index).
+                    const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
                     opsBids.forEach(bid => {
                         const month = resolveOpsBidBlock(bid);
                         const idx = this.state.months.indexOf(month);
-                        if (idx >= 0) monthlySlotCounts[idx]++;
+                        if (idx >= 0) monthlyBidderSets[idx].add(bid.employeeId);
                     });
+                    const monthlySlotCounts = monthlyBidderSets.map(s => s.size);
 
                     const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
                     const maxCount = Math.max(1, ...monthlySlotCounts);
@@ -470,7 +476,7 @@
                         data: {
                             labels: monthLabels,
                             datasets: [{
-                                label: 'Leave Slots',
+                                label: 'Bidders',
                                 data: monthlySlotCounts,
                                 backgroundColor: barColors,
                                 borderRadius: 4,
@@ -2241,12 +2247,18 @@
                     const derivedIdx = bid.startDate ? new Date(bid.startDate).getMonth() : -1;
                     return derivedIdx >= 0 ? this.state.months[derivedIdx] : null;
                 };
-                const monthlySlotCounts = new Array(12).fill(0);
+                // Count unique BIDDERS per block, not raw slot count — someone
+                // with two slots landing in the same block must only count once
+                // for that block (a person with slots in two DIFFERENT blocks
+                // still correctly counts once in each, since a fresh Set is used
+                // per block index).
+                const monthlyBidderSets = Array.from({ length: 12 }, () => new Set());
                 maintBids.forEach(bid => {
                     const month = resolveBidBlock(bid);
                     const idx = this.state.months.indexOf(month);
-                    if (idx >= 0) monthlySlotCounts[idx]++;
+                    if (idx >= 0) monthlyBidderSets[idx].add(bid.employeeId);
                 });
+                const monthlySlotCounts = monthlyBidderSets.map(s => s.size);
 
                 const slotLabelMap = { slotA: 'Slot A', slotB: 'Slot B', slotC: 'Slot C', slotD: 'Slot D', SA: 'Slot A', SB: 'Slot B', SC: 'Slot C', SD: 'Slot D' };
                 const submittedList = maintBids
@@ -2327,7 +2339,7 @@
                                 <div style="height:260px;"><canvas id="maintPieChart"></canvas></div>
                             </div>
                             <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
-                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Leave Slots by Block — ${displayYear}</h3>
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidders by Block — ${displayYear}</h3>
                                 <div style="height:280px;"><canvas id="maintMonthlyChart"></canvas></div>
                             </div>
                         </div>
@@ -2481,7 +2493,7 @@
                                 labels: monthLabels,
                                 datasets: [
                                     {
-                                        label: 'Leave Slots',
+                                        label: 'Bidders',
                                         data: monthlySlotCounts,
                                         backgroundColor: barColors,
                                         borderRadius: 4,
