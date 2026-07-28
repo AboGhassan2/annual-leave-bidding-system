@@ -235,7 +235,7 @@
                     <!-- Bottom 3-col grid -->
                     <div class="pd-bottom-grid">
                       <!-- Leave Slots by Block chart -->
-                      <div class="pd-card">
+                      <div class="pd-card" style="display:flex;flex-direction:column;">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                           <div class="pd-card-title">
                             <div class="pd-card-title-icon" style="background:#eaf5ef;">
@@ -245,7 +245,7 @@
                           </div>
                         </div>
                         <p style="font-size:0.72rem;color:#9ca3af;margin:0 0 8px;">How many submitted Ops leave slots fall into each block (Block 1 = January ... Block 12 = December).</p>
-                        <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;height:248px;box-sizing:border-box;"><canvas id="bidOverviewChart"></canvas></div>
+                        <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;flex:1;min-height:220px;"><canvas id="bidOverviewChart"></canvas></div>
                       </div>
 
                       <!-- Participation Summary -->
