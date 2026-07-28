@@ -2173,3 +2173,324 @@
                 }
             };
 
+            // ════════════════════════════════════════════════════════════════════
+            // Maintenance Dashboard — same structural pattern as the HR Corporate
+            // Dashboard above (KPI cards, doughnut + monthly bar chart, submitted /
+            // not-yet-bid tables), scoped entirely to Maintenance staff/bids/results.
+            // One deliberate difference: HR Corp's "Overlap Warnings" card doesn't
+            // translate to Maintenance's discrete-slot model — slots don't overlap
+            // by design the way GC/CS's flexible dates can — so it's replaced with
+            // a "Processing Status" card instead, matching what the main Planner
+            // Dashboard already shows for Ops (isProcessed / isMaintProcessed).
+            // ════════════════════════════════════════════════════════════════════
+            app.renderMaintenanceDashboardView = function() {
+                const content = document.getElementById('contentArea');
+                const maintUsers = this.state.maintenanceStaffUsers || [];
+                const maintIds = maintUsers.map(u => u.id);
+                const maintBids = this.state.bids.filter(b => this._isMaintStaff(b.employeeId, b));
+                const bidderIds = new Set(maintBids.map(b => b.employeeId));
+                const totalStaff = maintIds.length;
+                const participated = [...bidderIds].filter(id => maintIds.includes(id)).length;
+                const pct = totalStaff > 0 ? Math.round((participated / totalStaff) * 100) : 0;
+                const totalDays = maintBids.reduce((sum, b) => sum + (Number(b.days) || 0), 0);
+                const notYetBidCount = totalStaff - participated;
+                const processed = this.state.isMaintProcessed;
+
+                const rosterLookup = (id) => maintUsers.find(u => u.id === id) || {};
+                const notYetBid = maintIds
+                    .filter(id => !bidderIds.has(id))
+                    .map(id => { const info = rosterLookup(id); return { id, name: info.name || 'Unknown', position: info.position || '—' }; })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                // Chart data: monthly bidding overview (% submitted, cumulative by
+                // submission date) — same approach as the HR Corp dashboard.
+                const chartYear = this.state.biddingYear || new Date().getFullYear();
+                const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const monthlySubmittedPct = [];
+                monthLabels.forEach((label, idx) => {
+                    const monthEnd = new Date(chartYear, idx + 1, 0, 23, 59, 59);
+                    const bidderIdsByMonth = new Set(
+                        maintBids
+                            .filter(b => b.timestamp && new Date(b.timestamp) <= monthEnd)
+                            .map(b => b.employeeId)
+                            .filter(id => maintIds.includes(id))
+                    );
+                    const monthPct = totalStaff > 0 ? Math.round((bidderIdsByMonth.size / totalStaff) * 100) : 0;
+                    monthlySubmittedPct.push(monthPct);
+                });
+
+                const slotLabelMap = { slotA: 'Slot A', slotB: 'Slot B', slotC: 'Slot C', slotD: 'Slot D', SA: 'Slot A', SB: 'Slot B', SC: 'Slot C', SD: 'Slot D' };
+                const submittedList = maintBids
+                    .map(b => {
+                        const info = rosterLookup(b.employeeId);
+                        return {
+                            id: b.employeeId,
+                            name: b.employeeName || info.name || 'Unknown',
+                            position: info.position || b.position || '—',
+                            slot: slotLabelMap[b.slotType] || b.slotType || '—',
+                            startDate: b.startDate || '—',
+                            endDate: b.endDate || '—',
+                            days: b.days || '—'
+                        };
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                // Position Participation — the Maintenance equivalent of the main
+                // Planner Dashboard's "Department Participation" widget, grouped by
+                // position (how Maintenance's own allocation engine groups staff)
+                // rather than department.
+                const posTotals = {}, posBidded = {};
+                maintUsers.forEach(u => {
+                    const pos = u.position || 'Unassigned';
+                    posTotals[pos] = (posTotals[pos] || 0) + 1;
+                });
+                bidderIds.forEach(id => {
+                    const u = rosterLookup(id);
+                    const pos = u.position || 'Unassigned';
+                    if (posTotals[pos] !== undefined) posBidded[pos] = (posBidded[pos] || 0) + 1;
+                });
+                const positions = Object.keys(posTotals).sort((a, b) => {
+                    const pctA = posTotals[a] > 0 ? (posBidded[a] || 0) / posTotals[a] : 0;
+                    const pctB = posTotals[b] > 0 ? (posBidded[b] || 0) / posTotals[b] : 0;
+                    return pctB - pctA;
+                }).slice(0, 12);
+
+                content.innerHTML = `
+                    <div class="max-w-6xl mx-auto">
+                        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+                            <div class="flex justify-between items-center flex-wrap gap-3 mb-2">
+                                <h2 class="text-2xl font-bold" style="color:#c2410c;">🔧 Maintenance Dashboard</h2>
+                                <button onclick="app.renderMaintenanceDashboardView()" class="px-4 py-2 rounded-lg font-semibold text-sm" style="background:#ffedd5; color:#c2410c;">
+                                    🔄 Refresh
+                                </button>
+                            </div>
+                            <p class="text-sm text-gray-500">Live snapshot of the Maintenance staff list (${totalStaff} staff). Connected to Admin &rsaquo; Bid Details &rsaquo; Maintenance Staff.</p>
+                        </div>
+
+                        <!-- KPI cards -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5" style="border-left:4px solid #ea580c;">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Participation</p>
+                                <p class="text-3xl font-bold mt-1" style="color:#c2410c;">${pct}%</p>
+                                <p class="text-xs text-gray-500 mt-1">${participated} of ${totalStaff} staff have bid</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Bids Submitted</p>
+                                <p class="text-3xl font-bold text-emerald-700 mt-1">${maintBids.length}</p>
+                                <p class="text-xs text-gray-500 mt-1">${bidderIds.size} unique bidder${bidderIds.size !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-blue-500">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Days Requested</p>
+                                <p class="text-3xl font-bold text-blue-700 mt-1">${totalDays}</p>
+                                <p class="text-xs text-gray-500 mt-1">Across all Maintenance bids</p>
+                            </div>
+                            <div class="bg-white rounded-xl shadow p-5 border-l-4 ${processed ? 'border-emerald-500' : 'border-gray-300'}">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Processing Status</p>
+                                <p class="text-lg font-bold mt-1 ${processed ? 'text-emerald-700' : 'text-gray-500'}">${processed ? '✅ Processed' : '⏳ Not Yet Processed'}</p>
+                                <p class="text-xs text-gray-500 mt-1">${processed ? 'Results are published' : 'Awaiting Process Maintenance Bids'}</p>
+                            </div>
+                        </div>
+
+                        <!-- Charts -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                            <div class="bg-white rounded-xl shadow p-5 lg:col-span-1">
+                                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Participation Split</h3>
+                                <div style="height:260px;"><canvas id="maintPieChart"></canvas></div>
+                            </div>
+                            <div class="rounded-xl shadow p-5 lg:col-span-2" style="background:linear-gradient(180deg,#2b3543,#1f2733);">
+                                <h3 class="text-sm font-bold text-gray-200 uppercase tracking-wide mb-3">Bidding Overview — ${chartYear} (% Submitted by Month)</h3>
+                                <div style="height:280px;"><canvas id="maintMonthlyChart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <!-- Position Participation -->
+                        <div class="bg-white rounded-xl shadow p-5 mb-6">
+                            <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Position Participation</h3>
+                            <p class="text-xs text-gray-400 mb-4">${participated} of ${totalStaff} staff have submitted bids (${pct}% overall)</p>
+                            ${positions.length === 0 ? `<p class="text-sm text-gray-400 text-center py-6">No Maintenance staff loaded yet.</p>` : positions.map(pos => {
+                                const t = posTotals[pos] || 0;
+                                const b = posBidded[pos] || 0;
+                                const p = t > 0 ? Math.round((b / t) * 100) : 0;
+                                return `
+                                    <div class="flex items-center gap-3 mb-2 text-sm">
+                                        <div class="w-40 truncate text-gray-600" title="${this._escHtml(pos)}">${this._escHtml(pos)}</div>
+                                        <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                                            <div class="h-5 rounded-full flex items-center justify-end pr-2 text-white text-xs font-bold" style="width:${Math.max(p, 8)}%;background:#ea580c;">${p}%</div>
+                                        </div>
+                                        <div class="w-16 text-right text-gray-400 text-xs">${b}/${t}</div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+
+                        <!-- Submitted list -->
+                        <div class="bg-white border-2 border-emerald-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-emerald-50 border-b border-emerald-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-emerald-800">✅ Bids Submitted</h3>
+                                    <p class="text-sm text-emerald-600 mt-1">Maintenance staff who have submitted their leave bid.</p>
+                                </div>
+                                <span class="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm font-semibold">${submittedList.length} bid${submittedList.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="p-4">
+                                ${submittedList.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">📭</p>
+                                        <p class="font-semibold">No Maintenance bids submitted yet.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-emerald-50 text-left">
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">#</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Staff ID</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Name</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Position</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Slot</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Start Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">End Date</th>
+                                                    <th class="border border-emerald-100 px-3 py-2 font-semibold text-emerald-800">Days</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${submittedList.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-emerald-50/40'}">
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-600">${this._escHtml(s.position)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.slot)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.startDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-gray-700">${this._escHtml(s.endDate)}</td>
+                                                        <td class="border border-emerald-100 px-3 py-2 text-center font-semibold text-gray-800">${this._escHtml(String(s.days))}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Not-yet-bid list -->
+                        <div class="bg-white border-2 border-amber-200 rounded-xl overflow-hidden mb-6">
+                            <div class="bg-amber-50 border-b border-amber-200 px-6 py-4 flex justify-between items-center flex-wrap gap-2">
+                                <div>
+                                    <h3 class="text-lg font-bold text-amber-800">⏳ Not Yet Bid</h3>
+                                    <p class="text-sm text-amber-600 mt-1">Maintenance staff who haven't submitted a bid yet.</p>
+                                </div>
+                                <span class="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">${notYetBid.length} staff</span>
+                            </div>
+                            <div class="p-4">
+                                ${notYetBid.length === 0 ? `
+                                    <div class="text-center py-8 text-gray-400">
+                                        <p class="text-3xl mb-2">🎉</p>
+                                        <p class="font-semibold">Everyone on the Maintenance list has submitted a bid.</p>
+                                    </div>
+                                ` : `
+                                    <div class="overflow-x-auto">
+                                        <table class="w-full text-sm border-collapse">
+                                            <thead>
+                                                <tr class="bg-amber-50 text-left">
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">#</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Staff ID</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Name</th>
+                                                    <th class="border border-amber-100 px-3 py-2 font-semibold text-amber-800">Position</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${notYetBid.map((s, idx) => `
+                                                    <tr class="${idx % 2 === 0 ? '' : 'bg-amber-50/40'}">
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-500 text-center">${idx + 1}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-mono text-xs text-gray-700">${this._escHtml(s.id)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 font-semibold text-gray-800">${this._escHtml(s.name)}</td>
+                                                        <td class="border border-amber-100 px-3 py-2 text-gray-600">${this._escHtml(s.position)}</td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Render charts (destroy previous instances to avoid canvas reuse errors)
+                if (typeof Chart !== 'undefined') {
+                    if (this._maintPieChart) { this._maintPieChart.destroy(); this._maintPieChart = null; }
+                    if (this._maintMonthlyChart) { this._maintMonthlyChart.destroy(); this._maintMonthlyChart = null; }
+
+                    const pieCtx = document.getElementById('maintPieChart');
+                    if (pieCtx) {
+                        this._maintPieChart = new Chart(pieCtx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['Bid Submitted', 'Not Yet Bid'],
+                                datasets: [{
+                                    data: [participated, notYetBidCount],
+                                    backgroundColor: ['#ea580c', '#fbbf24'],
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                            }
+                        });
+                    }
+
+                    const monthlyCtx = document.getElementById('maintMonthlyChart');
+                    if (monthlyCtx) {
+                        const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
+                        this._maintMonthlyChart = new Chart(monthlyCtx, {
+                            type: 'bar',
+                            data: {
+                                labels: monthLabels,
+                                datasets: [
+                                    {
+                                        label: 'Bids Submitted %',
+                                        data: monthlySubmittedPct,
+                                        backgroundColor: barColors,
+                                        borderRadius: 4,
+                                        borderSkipped: false,
+                                        barPercentage: 0.65
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                                    datalabels: {
+                                        anchor: 'end',
+                                        align: 'top',
+                                        color: '#ffffff',
+                                        font: { weight: 'bold', size: 12 },
+                                        formatter: v => v + '%'
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: true,
+                                        max: 100,
+                                        ticks: { color: '#e5e7eb', callback: v => v + '%' },
+                                        grid: { color: 'rgba(255,255,255,0.08)' }
+                                    },
+                                    x: {
+                                        ticks: { color: '#e5e7eb' },
+                                        grid: { display: false }
+                                    }
+                                }
+                            },
+                            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []
+                        });
+                    }
+                }
+            };
+
+
