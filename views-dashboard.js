@@ -2207,13 +2207,19 @@
                     .sort((a, b) => a.name.localeCompare(b.name));
 
                 // Chart data: monthly bidding overview (% submitted, cumulative by
-                // submission date) — same approach as the HR Corp dashboard. Uses
-                // the REAL current calendar year, not this.state.biddingYear (the
-                // future leave year being bid FOR) — bids are submitted well before
-                // the leave year itself, so using biddingYear here would make every
-                // month's "<= monthEnd" comparison trivially true for all of them,
-                // producing the same flat cumulative % for every month.
-                const chartYear = new Date().getFullYear();
+                // submission date) — same approach as the HR Corp dashboard.
+                // chartYear is derived from the actual bid submission timestamps,
+                // not "today's date" or this.state.biddingYear (the future leave
+                // year being bid FOR). Deriving it from real data — rather than
+                // assuming "today" always matches when the bids were submitted —
+                // keeps this correct even if the dashboard is viewed well after
+                // the submission period (e.g. checking 2026's bidding history
+                // from 2028 would otherwise wrongly show "2028" in the title).
+                // Falls back to the current year only when there's no bid data
+                // yet at all (a harmless default for an empty-state dashboard).
+                const chartYear = maintBids.length > 0
+                    ? new Date(maintBids.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0].timestamp).getFullYear()
+                    : new Date().getFullYear();
                 const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const monthlySubmittedPct = [];
                 monthLabels.forEach((label, idx) => {
