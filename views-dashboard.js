@@ -245,7 +245,7 @@
                           </div>
                         </div>
                         <p style="font-size:0.72rem;color:#9ca3af;margin:0 0 8px;">How many submitted Ops leave slots fall into each block (Block 1 = January ... Block 12 = December).</p>
-                        <div style="height:220px;"><canvas id="bidOverviewChart"></canvas></div>
+                        <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;height:248px;box-sizing:border-box;"><canvas id="bidOverviewChart"></canvas></div>
                       </div>
 
                       <!-- Participation Summary -->
@@ -483,13 +483,29 @@
                             maintainAspectRatio: false,
                             plugins: {
                                 legend: { display: false },
-                                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}` } }
+                                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}` } },
+                                datalabels: {
+                                    anchor: 'end',
+                                    align: 'top',
+                                    color: '#ffffff',
+                                    font: { weight: 'bold', size: 12 },
+                                    formatter: v => v
+                                }
                             },
                             scales: {
-                                y: { beginAtZero: true, suggestedMax: Math.ceil(maxCount * 1.15), ticks: { precision: 0 } },
-                                x: { grid: { display: false } }
+                                y: {
+                                    beginAtZero: true,
+                                    suggestedMax: Math.ceil(maxCount * 1.15),
+                                    ticks: { color: '#e5e7eb', precision: 0 },
+                                    grid: { color: 'rgba(255,255,255,0.08)' }
+                                },
+                                x: {
+                                    ticks: { color: '#e5e7eb' },
+                                    grid: { display: false }
+                                }
                             }
-                        }
+                        },
+                        plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : []
                     });
                 });
 
