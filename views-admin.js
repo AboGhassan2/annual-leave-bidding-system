@@ -248,7 +248,7 @@
                         <div class="flex items-center gap-3">
                             <span class="text-sm text-gray-500">${sortedBids.length} of ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''}</span>
                             <button onclick="app.deleteAllBidsByTab('${tabFilter}')" class="px-4 py-2 rounded-lg text-sm font-semibold" style="background:#ef4444; color:#ffffff;">
-                                🗑️ Delete All ${tabFilter === 'employees' ? '👤 Employee' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : tabFilter === 'hrcorp' ? '🏢 HR Corporate' : '🔧 Maintenance'} Bids
+                                🗑️ Delete All ${tabFilter === 'employees' ? '👤 Operation Staff' : tabFilter === 'gccs' ? '⭐ GC & Corporate' : tabFilter === 'hrcorp' ? '🏢 HR Corporate' : '🔧 Maintenance'} Bids
                             </button>
                         </div>
                     </div>
@@ -387,7 +387,7 @@
                     return;
                 }
 
-                const sectionName = tabFilter === 'employees' ? '👤 Employee'
+                const sectionName = tabFilter === 'employees' ? '👤 Operation Staff'
                                   : tabFilter === 'gccs'      ? '⭐ GC & Corporate Staff'
                                   : tabFilter === 'hrcorp'    ? '🏢 HR Corporate'
                                   :                             '🔧 Maintenance Staff';
@@ -924,7 +924,7 @@
                                 <div class="flex gap-2 flex-wrap">
                                     <button id="bidTabEmp" onclick="app._switchBidTab('employees')"
                                         style="padding:7px 18px;border-radius:8px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer;background:var(--metro-green);color:#fff;">
-                                        👤 Employees
+                                        👤 Operation Staff
                                         <span style="margin-left:6px;background:rgba(255,255,255,0.25);border-radius:12px;padding:1px 7px;font-size:0.78rem;">
                                             ${this.state.bids.filter(b => !this._isGcOrCs(b.employeeId) && !this._isMaintStaff(b.employeeId, b)).length}
                                         </span>
