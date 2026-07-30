@@ -400,6 +400,8 @@
                 document.getElementById('employeeNav').classList.add('hidden');
                 document.getElementById('goldenCommandNav').classList.add('hidden');
                 document.getElementById('corporateStaffNav').classList.add('hidden');
+                document.getElementById('kpiPlannerNav').classList.add('hidden');
+                document.getElementById('kpiDirectorNav').classList.add('hidden');
                 document.getElementById('loginView').style.display = 'flex';
                 document.getElementById('contentArea').innerHTML = '';
 
@@ -414,6 +416,7 @@
                 ['empLoginId','empLoginPwd','csLoginId','csLoginPwd',
                  'plannerLoginPwd','plannerModalPwd','gcLoginId','gcLoginPwd',
                  'maintLoginId','maintLoginPwd',
+                 'kpiPlannerModalId','kpiPlannerModalPwd','kpiDirectorLoginId','kpiDirectorLoginPwd',
                  'loginId','loginPassword'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
