@@ -373,6 +373,12 @@
                     case 'leaveTrades':
                         this.renderLeaveTradesView();
                         break;
+                    case 'kpiPlannerAdmin':
+                        this.renderKpiPlannerView();
+                        break;
+                    case 'kpiDirectorDashboard':
+                        this.renderKpiDirectorView();
+                        break;
                     case 'manageUsers':
                         this.renderManageUsersView();
                         break;
