@@ -455,8 +455,12 @@
         body.light-theme .lp-btn-secondary { background: rgba(20,37,28,0.05); color: rgba(20,37,28,0.75); border-color: rgba(20,37,28,0.15); }
         body.light-theme .lp-btn-secondary:hover { background: rgba(20,37,28,0.09); border-color: rgba(20,37,28,0.25); }
 
-        /* Planner sign-in modal */
-        #plannerSignInModal {
+        /* Planner sign-in modal — shared with the KPI Planner modal, which
+           needs the exact same centered-overlay positioning (fixed, dark
+           backdrop, centered). Kept as one shared rule rather than
+           duplicating it, so any future change to this positioning only
+           needs to happen in one place. */
+        #plannerSignInModal, #kpiPlannerSignInModal {
             display: none; position: fixed; inset: 0; z-index: 200;
             align-items: center; justify-content: center;
             background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
