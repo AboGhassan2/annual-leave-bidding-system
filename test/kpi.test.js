@@ -274,3 +274,149 @@ test('handles a zero actual value for lower_is_better without throwing (division
     assert.equal(result.achievement, null, 'achievement is undefined when actual is zero for lower_is_better, not Infinity');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// Stage 4 — Director dashboard pure helpers
+// ════════════════════════════════════════════════════════════════════
+
+function buildKpiDashboardApp(stateOverrides = {}) {
+    return buildApp(baseState(stateOverrides), ['utils.js', 'api-kpi.js']);
+}
+
+test('_kpiEffectiveDirectorateId prefers the department link over the KPI\'s own directorate_id', () => {
+    const app = buildKpiDashboardApp({
+        kpiDirectorateDepartments: [{ id: 10, directorate_id: 2, department_name: 'HR' }],
+    });
+    const kpi = { department_id: 10, directorate_id: 1 }; // deliberately mismatched, department_id should win
+    assert.equal(app._kpiEffectiveDirectorateId(kpi), 2);
+});
+
+test('_kpiEffectiveDirectorateId falls back to the KPI\'s own directorate_id when no department is linked', () => {
+    const app = buildKpiDashboardApp({ kpiDirectorateDepartments: [] });
+    const kpi = { department_id: null, directorate_id: 5 };
+    assert.equal(app._kpiEffectiveDirectorateId(kpi), 5);
+});
+
+test('_kpisForDirectorate excludes inactive KPIs', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true },
+            { id: 2, directorate_id: 1, is_active: false },
+            { id: 3, directorate_id: 2, is_active: true },
+        ],
+    });
+    const kpis = app._kpisForDirectorate(1);
+    assert.equal(kpis.length, 1);
+    assert.equal(kpis[0].id, 1);
+});
+
+test('_kpiDashboardCards counts achieved, below target, and pending correctly', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, direction: 'higher_is_better' },
+            { id: 2, directorate_id: 1, is_active: true, direction: 'higher_is_better' },
+            { id: 3, directorate_id: 1, is_active: true, direction: 'higher_is_better' }, // no result -> pending
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, status: 'on_target', entered_at: '2027-01-01' },
+            { kpi_definition_id: 2, year: 2027, status: 'below_target', entered_at: '2027-01-01' },
+        ],
+    });
+    const cards = app._kpiDashboardCards(1, 2027);
+    assert.equal(cards.total, 3);
+    assert.equal(cards.achieved, 1);
+    assert.equal(cards.belowTarget, 1);
+    assert.equal(cards.pending, 1);
+});
+
+test('_kpiDashboardCards uses only the MOST RECENT result per KPI, not an average or the first one', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, direction: 'higher_is_better' }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, status: 'below_target', entered_at: '2027-01-01' },
+            { kpi_definition_id: 1, year: 2027, status: 'on_target', entered_at: '2027-06-01' }, // most recent - should win
+        ],
+    });
+    const cards = app._kpiDashboardCards(1, 2027);
+    assert.equal(cards.achieved, 1);
+    assert.equal(cards.belowTarget, 0);
+});
+
+test('_kpiDepartmentRanking sorts departments by average achievement, descending', () => {
+    const app = buildKpiDashboardApp({
+        kpiDirectorateDepartments: [
+            { id: 10, directorate_id: 1, department_name: 'HR' },
+            { id: 11, directorate_id: 1, department_name: 'Finance' },
+        ],
+        kpiDefinitions: [
+            { id: 1, department_id: 10, is_active: true },
+            { id: 2, department_id: 11, is_active: true },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, achievement: 70, entered_at: '2027-01-01' },
+            { kpi_definition_id: 2, year: 2027, achievement: 95, entered_at: '2027-01-01' },
+        ],
+    });
+    const ranking = app._kpiDepartmentRanking(1, 2027);
+    assert.equal(ranking.length, 2);
+    assert.equal(ranking[0].departmentName, 'Finance', 'Finance (95%) should rank above HR (70%)');
+    assert.equal(ranking[1].departmentName, 'HR');
+});
+
+test('_kpiDepartmentRanking excludes departments with no results yet, rather than showing a misleading 0%', () => {
+    const app = buildKpiDashboardApp({
+        kpiDirectorateDepartments: [{ id: 10, directorate_id: 1, department_name: 'HR' }],
+        kpiDefinitions: [{ id: 1, department_id: 10, is_active: true }],
+        kpiResults: [],
+    });
+    const ranking = app._kpiDepartmentRanking(1, 2027);
+    assert.equal(ranking.length, 0);
+});
+
+test('_kpiRankedList sorts KPIs by achievement descending, for top/bottom-N slicing', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, name: 'Low KPI' },
+            { id: 2, directorate_id: 1, is_active: true, name: 'High KPI' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, achievement: 40, entered_at: '2027-01-01' },
+            { kpi_definition_id: 2, year: 2027, achievement: 130, entered_at: '2027-01-01' },
+        ],
+    });
+    const ranked = app._kpiRankedList(1, 2027);
+    assert.equal(ranked[0].name, 'High KPI');
+    assert.equal(ranked[1].name, 'Low KPI');
+});
+
+test('_kpiPerformanceByPeriod averages achievement across KPIs sharing the same period, only for the matching cadence', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly' },
+            { id: 3, directorate_id: 1, is_active: true, period_type: 'quarterly' }, // different cadence, must be excluded
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '01', achievement: 80 },
+            { kpi_definition_id: 2, year: 2027, period_value: '01', achievement: 100 },
+            { kpi_definition_id: 3, year: 2027, period_value: 'Q1', achievement: 200 },
+        ],
+    });
+    const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    assert.equal(monthly.length, 1);
+    assert.equal(monthly[0].period, '01');
+    assert.equal(monthly[0].avgAchievement, 90, 'average of 80 and 100, excluding the quarterly KPI entirely');
+});
+
+test('_kpiPerformanceByPeriod sorts periods chronologically', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '03', achievement: 50 },
+            { kpi_definition_id: 1, year: 2027, period_value: '01', achievement: 60 },
+        ],
+    });
+    const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    assert.equal(monthly[0].period, '01');
+    assert.equal(monthly[1].period, '03');
+});
+
