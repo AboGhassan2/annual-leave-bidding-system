@@ -468,3 +468,113 @@ app.kpiStatus = function(actualValue, targetValue, direction) {
     const meetsOrBeats = direction === 'lower_is_better' ? a <= t : a >= t;
     return meetsOrBeats ? 'on_target' : 'below_target';
 };
+
+// ════════════════════════════════════════════════════════════════════
+// Stage 4 — Director dashboard pure helpers. All take state as an
+// explicit dataset via `this`, no DOM/Supabase access, safe to unit test.
+// ════════════════════════════════════════════════════════════════════
+
+// A KPI's effective directorate: prefers the department it's owned by
+// (department_id -> that department's own directorate_id), falling back
+// to the KPI's own directorate_id directly for older KPIs saved before
+// department_id existed.
+app._kpiEffectiveDirectorateId = function(kpiDef) {
+    if (kpiDef.department_id) {
+        const dept = (this.state.kpiDirectorateDepartments || []).find(d => d.id === kpiDef.department_id);
+        if (dept) return dept.directorate_id;
+    }
+    return kpiDef.directorate_id ?? null;
+};
+
+// Every active KPI belonging to a directorate, via the resolver above.
+app._kpisForDirectorate = function(directorateId) {
+    return (this.state.kpiDefinitions || []).filter(k =>
+        k.is_active !== false && this._kpiEffectiveDirectorateId(k) === directorateId
+    );
+};
+
+// Dashboard summary cards: total KPIs, how many have their most recent
+// result on_target vs below_target for the given year, and how many have
+// no result recorded at all yet for that year ("pending").
+app._kpiDashboardCards = function(directorateId, year) {
+    const kpis = this._kpisForDirectorate(directorateId);
+    let achieved = 0, belowTarget = 0, pending = 0;
+    kpis.forEach(k => {
+        const results = (this.state.kpiResults || [])
+            .filter(r => r.kpi_definition_id === k.id && r.year === year)
+            .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
+        if (results.length === 0) { pending++; return; }
+        const latestStatus = results[0].status || this.kpiStatus(results[0].actual_value, results[0].target_value, k.direction);
+        if (latestStatus === 'on_target') achieved++;
+        else if (latestStatus === 'below_target') belowTarget++;
+        else pending++;
+    });
+    return { total: kpis.length, achieved, belowTarget, pending };
+};
+
+// Ranks the departments mapped to this directorate by their average
+// achievement % across their KPIs' most recent result for the given year.
+// Departments with no results yet are excluded from the ranking (nothing
+// to rank), not shown with a misleading 0%.
+app._kpiDepartmentRanking = function(directorateId, year) {
+    const departments = (this.state.kpiDirectorateDepartments || []).filter(d => d.directorate_id === directorateId);
+    const ranking = departments.map(dept => {
+        const kpis = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && k.department_id === dept.id);
+        const achievements = [];
+        kpis.forEach(k => {
+            const results = (this.state.kpiResults || [])
+                .filter(r => r.kpi_definition_id === k.id && r.year === year && r.achievement != null)
+                .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
+            if (results.length > 0) achievements.push(results[0].achievement);
+        });
+        const avgAchievement = achievements.length > 0
+            ? Math.round((achievements.reduce((s, v) => s + v, 0) / achievements.length) * 100) / 100
+            : null;
+        return { departmentId: dept.id, departmentName: dept.department_name, avgAchievement, kpiCount: kpis.length };
+    }).filter(d => d.avgAchievement !== null);
+    ranking.sort((a, b) => b.avgAchievement - a.avgAchievement);
+    return ranking;
+};
+
+// Average achievement % per period value, across all of a directorate's
+// KPIs matching the given cadence (monthly/quarterly/yearly) — the data
+// source for each of the 3 separate performance charts. Periods with no
+// results from any KPI are omitted rather than shown as a misleading 0%.
+// Returns every KPI in this directorate with its most recent achievement %
+// for the given year, sorted descending (call .slice/.reverse for
+// top-N/bottom-N — kept as one list so both views stay consistent with
+// each other rather than computed by two separate, potentially-diverging
+// queries).
+app._kpiRankedList = function(directorateId, year) {
+    const kpis = this._kpisForDirectorate(directorateId);
+    const withAchievement = kpis.map(k => {
+        const results = (this.state.kpiResults || [])
+            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.achievement != null)
+            .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
+        return { kpiId: k.id, name: k.name, achievement: results.length > 0 ? results[0].achievement : null };
+    }).filter(k => k.achievement !== null);
+    withAchievement.sort((a, b) => b.achievement - a.achievement);
+    return withAchievement;
+};
+
+app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
+    const kpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === periodType);
+    const byPeriod = {};
+    kpis.forEach(k => {
+        (this.state.kpiResults || [])
+            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.achievement != null)
+            .forEach(r => {
+                const key = r.period_value || String(year);
+                if (!byPeriod[key]) byPeriod[key] = [];
+                byPeriod[key].push(r.achievement);
+            });
+    });
+    return Object.entries(byPeriod)
+        .map(([period, values]) => ({
+            period,
+            avgAchievement: Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 100) / 100,
+        }))
+        .sort((a, b) => a.period.localeCompare(b.period));
+};
+
+
