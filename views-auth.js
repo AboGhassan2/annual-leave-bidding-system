@@ -199,6 +199,14 @@
                         document.getElementById('currentUserName').textContent = user.name;
                         document.getElementById('userTypeBadge').textContent = isDirector ? '📈 KPI Director' : '📊 KPI Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded ' + (isDirector ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800');
+                        // Close the header modal (KPI Planner logs in via
+                        // kpiPlannerSignInModal, not a grid card) — done here,
+                        // inside the async callback, since kpiLogin resolves
+                        // after this function returns; the modal's own onclick
+                        // can't check success synchronously the way the
+                        // password-only Planner modal does.
+                        const kpiModal = document.getElementById('kpiPlannerSignInModal');
+                        if (kpiModal) kpiModal.style.display = 'none';
 
                         this.renderView();
                         this.showToast(`Welcome, ${user.name}!`, 'success');
