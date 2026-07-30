@@ -108,3 +108,65 @@ test('kpiPeriodOptions returns an empty list for an unrecognized period type', (
     assert.equal(options.length, 0);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _csDirectors — identifies Corporate Staff records whose role contains
+// "director", case-insensitive.
+// ════════════════════════════════════════════════════════════════════
+
+test('_csDirectors matches roles containing "director", case-insensitive', () => {
+    const app = buildKpiApp({
+        corporateStaffUsers: [
+            { id: 'C1', name: 'Alice', role: 'Operations Director' },
+            { id: 'C2', name: 'Bob', role: 'OCC Duty Manager' },
+            { id: 'C3', name: 'Cara', role: 'safety director' },
+            { id: 'C4', name: 'Dan', role: 'Director of Engineering' },
+        ],
+    });
+    const directors = app._csDirectors();
+    const ids = directors.map(d => d.id);
+    assert.equal(directors.length, 3);
+    assert.ok(ids.includes('C1'));
+    assert.ok(ids.includes('C3'));
+    assert.ok(ids.includes('C4'));
+    assert.ok(!ids.includes('C2'), 'a non-director role must not match');
+});
+
+test('_csDirectors returns an empty list when nobody has a matching role', () => {
+    const app = buildKpiApp({ corporateStaffUsers: [{ id: 'C1', name: 'Alice', role: 'OCC Duty Manager' }] });
+    assert.equal(app._csDirectors().length, 0);
+});
+
+// ════════════════════════════════════════════════════════════════════
+// _kpiValidPassword — validates a login attempt, handling the
+// linked_login case (check against the live Corporate Staff password,
+// not a separately-stored one).
+// ════════════════════════════════════════════════════════════════════
+
+test('a normal (non-linked) KPI user is validated against their own stored password', () => {
+    const app = buildKpiApp();
+    const user = { id: 'K1', password: 'secret123', linked_login: false };
+    assert.equal(app._kpiValidPassword(user, 'secret123'), true);
+    assert.equal(app._kpiValidPassword(user, 'wrong'), false);
+});
+
+test('a linked KPI user is validated against their CURRENT Corporate Staff password, not their own', () => {
+    const app = buildKpiApp({
+        corporateStaffUsers: [{ id: 'C1', name: 'Alice', role: 'Operations Director', password: 'currentCsPassword' }],
+    });
+    const user = { id: 'C1', password: '(linked to Corporate Staff)', linked_login: true };
+    assert.equal(app._kpiValidPassword(user, 'currentCsPassword'), true, 'must accept the live Corporate Staff password');
+    assert.equal(app._kpiValidPassword(user, '(linked to Corporate Staff)'), false, 'must NOT accept the stored placeholder as if it were a real password');
+});
+
+test('a linked KPI user whose Corporate Staff record has since been removed cannot log in', () => {
+    const app = buildKpiApp({ corporateStaffUsers: [] });
+    const user = { id: 'C1', password: '(linked to Corporate Staff)', linked_login: true };
+    assert.equal(app._kpiValidPassword(user, 'anything'), false);
+});
+
+test('_kpiValidPassword returns false for a missing user rather than throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiValidPassword(null, 'anything'), false);
+    assert.equal(app._kpiValidPassword(undefined, 'anything'), false);
+});
+
