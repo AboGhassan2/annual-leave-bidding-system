@@ -338,24 +338,29 @@ app._renderKpiResultsSection = function() {
 
     const selectedId = this.state._kpiResultsSelectedId || definitions[0].id;
     const selected = definitions.find(k => k.id === selectedId) || definitions[0];
-    const year = this.state.biddingYear || new Date().getFullYear();
-    const periodOptions = this.kpiPeriodOptions(selected.period_type, year);
+    const selectedYear = this.state._kpiResultsSelectedYear || this.state.biddingYear || new Date().getFullYear();
+    const periodOptions = this.kpiPeriodOptions(selected.period_type, selectedYear);
     const existingResults = (this.state.kpiResults || [])
         .filter(r => r.kpi_definition_id === selected.id)
         .sort((a, b) => a.period_label.localeCompare(b.period_label));
 
     const kpiOptions = definitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
     const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
+    const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
     const resultsRows = existingResults.map(r => {
-        const status = this.kpiStatus(r.actual_value, selected.target_value, selected.direction);
+        // Prefer the stored status/achievement (computed and snapshotted at
+        // entry time) — falls back to a live computation only for older
+        // rows saved before this snapshotting existed.
+        const status = r.status || this.kpiStatus(r.actual_value, r.target_value ?? selected.target_value, selected.direction);
         const statusBadge = { on_target: ['On Target', '#d1fae5', '#065f46'], below_target: ['Below Target', '#fee2e2', '#991b1b'], no_data: ['—', '#f3f4f6', '#6b7280'] }[status];
         return `
             <tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${statusBadge[1]};color:${statusBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${statusBadge[0]}</span></td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.72rem;color:#9ca3af;">${esc(r.source || 'manual')}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">
                     <button onclick="app.confirmDeleteKpiResultEntry(${r.id})" style="color:#991b1b;background:none;border:none;font-size:0.75rem;cursor:pointer;text-decoration:underline;">Delete</button>
                 </td>
@@ -369,11 +374,19 @@ app._renderKpiResultsSection = function() {
 
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI</label>
             <select id="kpiResultsKpiSelect" onchange="app.state._kpiResultsSelectedId = parseInt(this.value, 10); app.renderKpiPlannerView();"
-                style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:16px;">
+                style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
                 ${kpiOptions}
             </select>
+            <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">Target: <strong>${esc(String(selected.target_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</strong> · ${esc(selected.period_type)} · ${selected.direction === 'lower_is_better' ? 'Lower is better' : 'Higher is better'}</p>
 
-            <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap;">
+            <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
+                <div style="min-width:100px;">
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Year</label>
+                    <select id="kpiResultYear" onchange="app.state._kpiResultsSelectedYear = parseInt(this.value, 10); app.renderKpiPlannerView();"
+                        style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
+                        ${yearOptions}
+                    </select>
+                </div>
                 <div style="flex:1;min-width:160px;">
                     <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Period</label>
                     <select id="kpiResultPeriod" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
@@ -385,8 +398,10 @@ app._renderKpiResultsSection = function() {
                     <input type="number" step="any" id="kpiResultValue"
                         style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
                 </div>
-                <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Save Result</button>
             </div>
+            <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Remarks (optional)</label>
+            <textarea id="kpiResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
+            <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
 
             <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(selected.name)}</h4>
             ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
@@ -395,8 +410,9 @@ app._renderKpiResultsSection = function() {
                         <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
                             <th style="padding:8px 12px;">Period</th>
                             <th style="padding:8px 12px;">Actual</th>
+                            <th style="padding:8px 12px;">Achievement</th>
                             <th style="padding:8px 12px;">Status</th>
-                            <th style="padding:8px 12px;">Source</th>
+                            <th style="padding:8px 12px;">Remarks</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -408,15 +424,27 @@ app._renderKpiResultsSection = function() {
 };
 
 app.saveKpiResultEntry = async function(kpiDefinitionId) {
-    const periodLabel = document.getElementById('kpiResultPeriod').value;
+    const periodRaw = document.getElementById('kpiResultPeriod').value; // e.g. "2027-01", "2027-Q1", or "2027"
     const value = document.getElementById('kpiResultValue').value;
+    const remarks = document.getElementById('kpiResultRemarks').value;
     if (value === '') { this.showToast('Please enter a value.', 'error'); return; }
-    const saved = await this.saveKpiResult(kpiDefinitionId, periodLabel, Number(value), 'manual');
+
+    const def = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
+    const periodType = def ? def.period_type : 'monthly';
+    // Parse the combined "year-value" string back into its parts — the
+    // dropdown's own value already encodes exactly what kpiPeriodOptions
+    // generated, so this just reverses that same format.
+    const hyphenIdx = periodRaw.indexOf('-');
+    const year = hyphenIdx >= 0 ? parseInt(periodRaw.slice(0, hyphenIdx), 10) : parseInt(periodRaw, 10);
+    const periodValue = hyphenIdx >= 0 ? periodRaw.slice(hyphenIdx + 1) : null;
+
+    const saved = await this.saveKpiResult(kpiDefinitionId, { year, periodType, periodValue, actualValue: Number(value), remarks, source: 'manual' });
     if (saved) {
         this.showToast('Result saved.', 'success');
         this.renderKpiPlannerView();
     }
 };
+
 
 app.confirmDeleteKpiResultEntry = async function(id) {
     if (!confirm('Delete this result?')) return;
