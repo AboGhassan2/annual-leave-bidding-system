@@ -80,7 +80,16 @@
                 loginType: 'employee',
 
                 // Security: auto-logout after this many minutes of user inactivity
-                sessionTimeoutMinutes: 15
+                sessionTimeoutMinutes: 15,
+
+                // ── KPI subsystem — fully separate from leave/bidding data.
+                // See api-kpi.js for the data layer and views-kpi.js for the UI.
+                kpiDirectorates: [],           // [{id, name}]
+                kpiDirectorateDepartments: [],  // [{id, directorate_id, department_name}]
+                kpiDefinitions: [],             // [{id, directorate_id, name, category, unit, target_value, period_type, direction}]
+                kpiResults: [],                 // [{id, kpi_definition_id, period_label, actual_value, source, entered_by, entered_at}]
+                kpiUsers: [],                   // [{id, name, password, role, directorate_id}] — never persisted to localStorage
+                verifiedKpiUser: null           // the logged-in kpi_planner or kpi_director record
             },
 
             // Idle/session-timeout tracking (not part of reactive state; internal bookkeeping only)
