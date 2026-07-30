@@ -195,14 +195,63 @@ app.deleteKpiDefinition = async function(id) {
 // ════════════════════════════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════════════════════════════
-app.saveKpiResult = async function(kpiDefinitionId, periodLabel, actualValue, source) {
+// ════════════════════════════════════════════════════════════════════
+// Pure helper: computes a result's achievement % and status from a KPI
+// definition and an actual value. Split out from saveKpiResult so this
+// can be tested directly without Supabase.
+//
+// Achievement direction matters: for higher_is_better, beating the target
+// means actual > target, so achievement = actual/target*100 (can exceed
+// 100% when over-performing). For lower_is_better (e.g. incident counts),
+// beating the target means actual < target, so achievement is INVERTED —
+// target/actual*100 — so that under-shooting a lower-is-better target
+// still reads as an achievement above 100%, matching the intuition that
+// "beat the target" should always read as a good, >100% number regardless
+// of which direction "good" means for this particular KPI.
+// ════════════════════════════════════════════════════════════════════
+app._computeKpiResultFields = function(kpiDef, actualValue) {
+    const status = this.kpiStatus(actualValue, kpiDef?.target_value, kpiDef?.direction);
+    if (status === 'no_data') return { achievement: null, status };
+
+    const a = Number(actualValue), t = Number(kpiDef.target_value);
+    let achievement = null;
+    if (t !== 0) {
+        achievement = kpiDef.direction === 'lower_is_better'
+            ? (a !== 0 ? Math.round((t / a) * 10000) / 100 : null)
+            : Math.round((a / t) * 10000) / 100;
+    }
+    return { achievement, status };
+};
+
+app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source }) {
     if (!this.supabase) return null;
     try {
+        const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
+        if (!kpiDef) { this.showToast('Could not find that KPI definition.', 'error'); return null; }
+
+        const { achievement, status } = this._computeKpiResultFields(kpiDef, actualValue);
+        // period_label kept for backward compatibility with anything still
+        // reading the old combined-string format (e.g. "2027-01", "2027-Q1").
+        const periodLabel = periodType === 'yearly' ? `${year}` : `${year}-${periodValue}`;
+
         const row = {
             tenant_id: this._tid(),
             kpi_definition_id: kpiDefinitionId,
+            directorate_id: kpiDef.directorate_id || null,
+            department_id: kpiDef.department_id || null,
+            year,
+            period_type: periodType,
+            period_value: periodType === 'yearly' ? null : String(periodValue),
             period_label: periodLabel,
             actual_value: actualValue,
+            // Snapshotted at entry time — this result's status/achievement
+            // must stay historically accurate even if the KPI's own target
+            // is edited later, so the target is copied here rather than
+            // always re-read live from kpi_definitions.
+            target_value: kpiDef.target_value,
+            achievement,
+            status,
+            remarks: remarks || '',
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
             entered_at: new Date().toISOString(),
@@ -293,13 +342,31 @@ app._csDirectors = function() {
     return (this.state.corporateStaffUsers || []).filter(u => (u.role || '').toLowerCase().includes('director'));
 };
 
+// Pure helper: derives a directorate name from a role title by stripping
+// "director"/"director of" — e.g. "HR Director" -> "HR", "Director of
+// Engineering" -> "Engineering", "safety director" -> "safety". This is
+// what makes a director's directorate match the department they're
+// actually appointed over, rather than being left generically unassigned.
+// No state reads/writes, safe to test directly.
+app._deriveDirectorateNameFromRole = function(role) {
+    if (!role) return '';
+    const cleaned = role
+        .replace(/^director\s+of\s+/i, '')
+        .replace(/\s*director\s*$/i, '')
+        .trim();
+    return cleaned || role.trim();
+};
+
 // Bulk-grants KPI Executive Director access to every Corporate Staff
 // member whose role contains "director" and doesn't already have a
 // kpi_users record. Created with linked_login=true (their password always
-// checks their current Corporate Staff password — see _kpiValidPassword)
-// and directorate_id left unassigned, since which directorate each person
-// actually oversees can't be determined from their Corporate Staff record
-// alone — the planner assigns that afterward via Manage KPI Users.
+// checks their current Corporate Staff password — see _kpiValidPassword).
+// Each director's directorate is auto-derived from their role title (e.g.
+// "HR Director" -> a directorate named "HR") — reusing a matching
+// existing directorate by name if one already exists (case-insensitive),
+// or creating a new one if not. The planner can still rename or reassign
+// it afterward in Manage KPI Users if the auto-derived name isn't quite
+// right.
 app.grantKpiDirectorAccessToCsDirectors = async function() {
     const directors = this._csDirectors();
     const existingIds = new Set((this.state.kpiUsers || []).map(u => u.id));
@@ -312,13 +379,18 @@ app.grantKpiDirectorAccessToCsDirectors = async function() {
 
     let created = 0;
     for (const d of toCreate) {
+        const derivedName = this._deriveDirectorateNameFromRole(d.role);
+        let directorate = (this.state.kpiDirectorates || []).find(dir => dir.name.toLowerCase() === derivedName.toLowerCase());
+        if (!directorate && derivedName) {
+            directorate = await this.saveKpiDirectorate(derivedName, null);
+        }
         const saved = await this.saveKpiUser({
             id: d.id, name: d.name, role: 'kpi_director',
-            directorateId: null, linkedLogin: true,
+            directorateId: directorate ? directorate.id : null, linkedLogin: true,
         }, null);
         if (saved) created++;
     }
-    this.showToast(`Granted KPI Director access to ${created} director${created !== 1 ? 's' : ''}. Assign each to a directorate in Manage KPI Users.`, 'success');
+    this.showToast(`Granted KPI Director access to ${created} director${created !== 1 ? 's' : ''}, matched to their departments by role title.`, 'success');
     return { created, skipped: directors.length - created };
 };
 
