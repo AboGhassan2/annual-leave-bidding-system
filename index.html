@@ -262,6 +262,64 @@
                         ">Sign In</button>
                     </div>
 
+                    <!-- 5. KPI Planner Card -->
+                    <div class="lp-login-card" style="animation-delay:0.5s; border-top: 3px solid #1d4ed8;">
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <span class="lp-card-icon">📊</span>
+                                <div>
+                                    <div class="lp-card-title">KPI Planner</div>
+                                    <div class="lp-card-subtitle">Manage directorates &amp; KPIs</div>
+                                </div>
+                                <span class="lp-card-check">✔</span>
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="KPI Planner ID" id="kpiPlannerLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="kpiPlannerLoginPwd" autocomplete="current-password" />
+                            </div>
+                        </div>
+                        <button class="lp-sign-btn" style="background:linear-gradient(135deg,#1e40af,#1d4ed8);box-shadow:0 4px 16px rgba(29,78,216,0.35);" onclick="
+                            const _kpId = document.getElementById('kpiPlannerLoginId').value;
+                            const _kpPw = document.getElementById('kpiPlannerLoginPwd').value;
+                            app.state.loginType = 'kpi_planner';
+                            app._pendingLogin = { kpiId: _kpId, kpiPw: _kpPw };
+                            app.handleLogin();
+                        ">Sign In</button>
+                    </div>
+
+                    <!-- 6. KPI Executive Director Card -->
+                    <div class="lp-login-card" style="animation-delay:0.6s; border-top: 3px solid #6d28d9;">
+                        <div class="lp-card-body">
+                            <div class="lp-card-header">
+                                <span class="lp-card-icon">📈</span>
+                                <div>
+                                    <div class="lp-card-title">KPI Executive Director</div>
+                                    <div class="lp-card-subtitle">View your department's KPIs</div>
+                                </div>
+                                <span class="lp-card-check">✔</span>
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">👤</span>
+                                <input class="lp-input" type="text" placeholder="Director ID" id="kpiDirectorLoginId" autocomplete="username" />
+                            </div>
+                            <div class="lp-input-wrap">
+                                <span class="lp-input-icon">🔒</span>
+                                <input class="lp-input" type="password" placeholder="Password" id="kpiDirectorLoginPwd" autocomplete="current-password" />
+                            </div>
+                        </div>
+                        <button class="lp-sign-btn" style="background:linear-gradient(135deg,#5b21b6,#6d28d9);box-shadow:0 4px 16px rgba(109,40,217,0.35);" onclick="
+                            const _kdId = document.getElementById('kpiDirectorLoginId').value;
+                            const _kdPw = document.getElementById('kpiDirectorLoginPwd').value;
+                            app.state.loginType = 'kpi_director';
+                            app._pendingLogin = { kpiId: _kdId, kpiPw: _kdPw };
+                            app.handleLogin();
+                        ">Sign In</button>
+                    </div>
+
                 </div>
             </div>
 
@@ -397,6 +455,20 @@
             </div>
         </div>
 
+        <!-- KPI Planner Navigation -->
+        <div id="kpiPlannerNav" class="hidden flex justify-center mb-6">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('kpiPlannerAdmin')" class="metro-tab metro-tab-primary">📊 KPI Admin</button>
+            </div>
+        </div>
+
+        <!-- KPI Executive Director Navigation -->
+        <div id="kpiDirectorNav" class="hidden flex justify-center mb-6">
+            <div class="metro-tab-bar" style="margin-bottom:0;">
+                <button onclick="app.setActiveView('kpiDirectorDashboard')" class="metro-tab metro-tab-primary">📈 My KPIs</button>
+            </div>
+        </div>
+
         <!-- Corporate Staff Navigation -->
         <div id="corporateStaffNav" class="hidden flex justify-center mb-6">
             <div class="metro-tab-bar" style="margin-bottom:0;">
@@ -434,6 +506,7 @@
     <script src="api-email.js"></script>
     <script src="api-swaptrading.js"></script>
     <script src="api-kpi.js"></script>
+    <script src="views-kpi.js"></script>
     <script src="views-auth.js"></script>
     <script src="views-configure.js"></script>
     <script src="views-oncall.js"></script>
