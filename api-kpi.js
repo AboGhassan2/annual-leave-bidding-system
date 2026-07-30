@@ -250,9 +250,15 @@ app.saveKpiUser = async function(user, existingId) {
         const row = {
             tenant_id: this._tid(),
             name: user.name,
-            password: user.password,
+            // Linked accounts (see grantKpiDirectorAccessToCsDirectors) never
+            // store a real password — their login always checks the Corporate
+            // Staff record's current password instead (_kpiValidPassword
+            // handles this). A placeholder is stored here only because the
+            // column is NOT NULL; it's never actually compared against.
+            password: user.linkedLogin ? '(linked to Corporate Staff)' : user.password,
             role: user.role,
             directorate_id: user.role === 'kpi_director' ? user.directorateId : null,
+            linked_login: !!user.linkedLogin,
         };
         let query;
         if (existingId) {
@@ -277,6 +283,45 @@ app.saveKpiUser = async function(user, existingId) {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Pure helper: which Corporate Staff records count as "directors" — role
+// field contains the word "director", case-insensitive (e.g. "Operations
+// Director", "OCC Duty Manager" does NOT match). No state writes, safe to
+// test directly.
+// ════════════════════════════════════════════════════════════════════
+app._csDirectors = function() {
+    return (this.state.corporateStaffUsers || []).filter(u => (u.role || '').toLowerCase().includes('director'));
+};
+
+// Bulk-grants KPI Executive Director access to every Corporate Staff
+// member whose role contains "director" and doesn't already have a
+// kpi_users record. Created with linked_login=true (their password always
+// checks their current Corporate Staff password — see _kpiValidPassword)
+// and directorate_id left unassigned, since which directorate each person
+// actually oversees can't be determined from their Corporate Staff record
+// alone — the planner assigns that afterward via Manage KPI Users.
+app.grantKpiDirectorAccessToCsDirectors = async function() {
+    const directors = this._csDirectors();
+    const existingIds = new Set((this.state.kpiUsers || []).map(u => u.id));
+    const toCreate = directors.filter(d => !existingIds.has(d.id));
+
+    if (toCreate.length === 0) {
+        this.showToast('No new directors to grant access to — everyone matching is already set up.', 'success');
+        return { created: 0, skipped: directors.length };
+    }
+
+    let created = 0;
+    for (const d of toCreate) {
+        const saved = await this.saveKpiUser({
+            id: d.id, name: d.name, role: 'kpi_director',
+            directorateId: null, linkedLogin: true,
+        }, null);
+        if (saved) created++;
+    }
+    this.showToast(`Granted KPI Director access to ${created} director${created !== 1 ? 's' : ''}. Assign each to a directorate in Manage KPI Users.`, 'success');
+    return { created, skipped: directors.length - created };
+};
+
 app.deleteKpiUser = async function(id) {
     if (!this.supabase) return false;
     try {
@@ -293,6 +338,27 @@ app.deleteKpiUser = async function(id) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+// Pure helper: decides whether an entered password is correct for a given
+// kpi_users record. Split out from kpiLogin specifically so the
+// linked_login behavior (validate against the person's CURRENT Corporate
+// Staff password instead of a separately-stored one) can be tested
+// directly, without mocking Supabase. No state writes.
+// ════════════════════════════════════════════════════════════════════
+app._kpiValidPassword = function(user, enteredPassword) {
+    if (!user) return false;
+    if (user.linked_login) {
+        // Directors granted access via Corporate Staff role never get a
+        // separately-stored KPI password — their login always checks
+        // whatever their Corporate Staff password currently is, so a
+        // password change there is reflected here automatically with no
+        // separate update needed.
+        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === user.id);
+        return !!csUser && csUser.password === enteredPassword;
+    }
+    return user.password === enteredPassword;
+};
+
+// ════════════════════════════════════════════════════════════════════
 // Login — checked against state.kpiUsers, the same client-side
 // credential-check pattern every other role in this app already uses
 // (employeePasswords, maintenanceStaffPasswords, etc.) — consistent
@@ -303,7 +369,7 @@ app.kpiLogin = async function(id, password) {
         await this.loadKpiData();
     }
     const user = (this.state.kpiUsers || []).find(u => u.id === id);
-    if (!user || user.password !== password) {
+    if (!this._kpiValidPassword(user, password)) {
         this.showToast('Invalid KPI login ID or password.', 'error');
         return false;
     }
