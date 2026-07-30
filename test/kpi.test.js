@@ -171,6 +171,67 @@ test('_kpiValidPassword returns false for a missing user rather than throwing', 
 });
 
 // ════════════════════════════════════════════════════════════════════
+// _kpiLoginAllowed — enforces that each login entry point (Planner
+// modal vs Director card) only accepts its own role, even for a real
+// account with the correct password.
+// ════════════════════════════════════════════════════════════════════
+
+test('allows login when password is correct AND role matches the entry point used', () => {
+    const app = buildKpiApp();
+    const user = { id: 'K1', password: 'secret', role: 'kpi_planner', linked_login: false };
+    const result = app._kpiLoginAllowed(user, 'secret', 'kpi_planner');
+    assert.equal(result.ok, true);
+});
+
+test('rejects a real Planner account logging in through the Director entry point, even with the correct password', () => {
+    // This is the exact scenario the user found: kpiplanner1's real
+    // credentials, entered into the Director card, must be rejected
+    // outright — not silently logged in and routed to the Planner screen
+    // anyway.
+    const app = buildKpiApp();
+    const user = { id: 'kpiplanner1', password: 'changeme123', role: 'kpi_planner', linked_login: false };
+    const result = app._kpiLoginAllowed(user, 'changeme123', 'kpi_director');
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes('KPI Planner'), 'should clearly say what this account actually is');
+});
+
+test('rejects a real Director account logging in through the Planner entry point', () => {
+    const app = buildKpiApp();
+    const user = { id: 'K2', password: 'secret', role: 'kpi_director', linked_login: false };
+    const result = app._kpiLoginAllowed(user, 'secret', 'kpi_planner');
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes('KPI Executive Director'));
+});
+
+test('rejects an incorrect password before even checking role', () => {
+    const app = buildKpiApp();
+    const user = { id: 'K1', password: 'secret', role: 'kpi_planner', linked_login: false };
+    const result = app._kpiLoginAllowed(user, 'wrongpassword', 'kpi_planner');
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'Incorrect password.');
+});
+
+test('rejects a missing user with a clear reason rather than throwing', () => {
+    const app = buildKpiApp();
+    const result = app._kpiLoginAllowed(null, 'anything', 'kpi_planner');
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.length > 0);
+});
+
+test('role enforcement also applies correctly to linked (Corporate Staff) Director accounts', () => {
+    const app = buildKpiApp({
+        corporateStaffUsers: [{ id: 'C1', name: 'Alice', role: 'Operations Director', password: 'csPassword' }],
+    });
+    const user = { id: 'C1', password: '(linked to Corporate Staff)', role: 'kpi_director', linked_login: true };
+    // Correct password, wrong entry point -> still rejected
+    const wrongEntry = app._kpiLoginAllowed(user, 'csPassword', 'kpi_planner');
+    assert.equal(wrongEntry.ok, false);
+    // Correct password, correct entry point -> allowed
+    const rightEntry = app._kpiLoginAllowed(user, 'csPassword', 'kpi_director');
+    assert.equal(rightEntry.ok, true);
+});
+
+// ════════════════════════════════════════════════════════════════════
 // _deriveDirectorateNameFromRole — used so a director's directorate
 // automatically matches the department they're actually appointed over.
 // ════════════════════════════════════════════════════════════════════
