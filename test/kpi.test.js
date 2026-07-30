@@ -63,3 +63,48 @@ test('defaults to higher_is_better behavior when direction is missing/unrecogniz
     assert.equal(app.kpiStatus(95, 90, undefined), 'on_target');
     assert.equal(app.kpiStatus(85, 90, 'some_typo'), 'below_target');
 });
+
+// ════════════════════════════════════════════════════════════════════
+// kpiPeriodOptions — generates valid period labels for a given cadence.
+// Requires views-kpi.js loaded alongside api-kpi.js.
+// ════════════════════════════════════════════════════════════════════
+
+function buildKpiViewsApp(stateOverrides = {}) {
+    return buildApp(baseState(stateOverrides), ['utils.js', 'api-kpi.js', 'views-kpi.js']);
+}
+
+test('kpiPeriodOptions generates 12 monthly labels for a year', () => {
+    const app = buildKpiViewsApp();
+    const options = app.kpiPeriodOptions('monthly', 2027);
+    assert.equal(options.length, 12);
+    assert.equal(options[0].value, '2027-01');
+    assert.equal(options[0].label, 'January 2027');
+    assert.equal(options[11].value, '2027-12');
+    assert.equal(options[11].label, 'December 2027');
+});
+
+test('kpiPeriodOptions generates 4 quarterly labels for a year', () => {
+    const app = buildKpiViewsApp();
+    const options = app.kpiPeriodOptions('quarterly', 2027);
+    assert.equal(options.length, 4);
+    const values = options.map(o => o.value);
+    assert.equal(values[0], '2027-Q1');
+    assert.equal(values[1], '2027-Q2');
+    assert.equal(values[2], '2027-Q3');
+    assert.equal(values[3], '2027-Q4');
+});
+
+test('kpiPeriodOptions generates a single yearly label', () => {
+    const app = buildKpiViewsApp();
+    const options = app.kpiPeriodOptions('yearly', 2027);
+    assert.equal(options.length, 1);
+    assert.equal(options[0].value, '2027');
+    assert.equal(options[0].label, '2027');
+});
+
+test('kpiPeriodOptions returns an empty list for an unrecognized period type', () => {
+    const app = buildKpiViewsApp();
+    const options = app.kpiPeriodOptions('fortnightly', 2027);
+    assert.equal(options.length, 0);
+});
+
