@@ -431,18 +431,45 @@ app._kpiValidPassword = function(user, enteredPassword) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+// Pure helper: decides whether a login attempt is allowed through a
+// SPECIFIC entry point — the Planner header modal or the Director card.
+// Both password AND role must match: entering valid Director credentials
+// into the Planner modal (or vice versa) is rejected outright, even
+// though the account itself is real and the password is correct. This is
+// deliberately stricter than "log in, then route by whatever role is
+// stored" — each entry point is dedicated to exactly one role, not a
+// shared gateway that happens to redirect differently afterward.
+// No state writes, safe to test directly.
+// ════════════════════════════════════════════════════════════════════
+app._kpiLoginAllowed = function(user, enteredPassword, expectedRole) {
+    if (!user) return { ok: false, reason: 'No account found with that ID.' };
+    if (!this._kpiValidPassword(user, enteredPassword)) {
+        return { ok: false, reason: 'Incorrect password.' };
+    }
+    if (user.role !== expectedRole) {
+        const roleLabel = { kpi_planner: 'KPI Planner', kpi_director: 'KPI Executive Director' };
+        return { ok: false, reason: `This ID is registered as ${roleLabel[user.role] || user.role}, not ${roleLabel[expectedRole] || expectedRole}. Please use the correct login.` };
+    }
+    return { ok: true };
+};
+
+// ════════════════════════════════════════════════════════════════════
 // Login — checked against state.kpiUsers, the same client-side
 // credential-check pattern every other role in this app already uses
 // (employeePasswords, maintenanceStaffPasswords, etc.) — consistent
 // with the existing architecture, not a new pattern introduced here.
+// expectedRole is REQUIRED — the Planner modal always passes
+// 'kpi_planner', the Director card always passes 'kpi_director', so each
+// entry point only ever admits its own role (see _kpiLoginAllowed above).
 // ════════════════════════════════════════════════════════════════════
-app.kpiLogin = async function(id, password) {
+app.kpiLogin = async function(id, password, expectedRole) {
     if (!this.state.kpiUsers || this.state.kpiUsers.length === 0) {
         await this.loadKpiData();
     }
     const user = (this.state.kpiUsers || []).find(u => u.id === id);
-    if (!this._kpiValidPassword(user, password)) {
-        this.showToast('Invalid KPI login ID or password.', 'error');
+    const check = this._kpiLoginAllowed(user, password, expectedRole);
+    if (!check.ok) {
+        this.showToast(check.reason, 'error');
         return false;
     }
     this.state.verifiedKpiUser = user;
