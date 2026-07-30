@@ -164,6 +164,45 @@
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
                     this.showToast(`Welcome, ${gcUser.name}!`, 'success');
+                } else if (this.state.loginType === 'kpi_planner' || this.state.loginType === 'kpi_director') {
+                    // Both KPI roles share one login check (kpiLogin, built in
+                    // api-kpi.js) — it validates against state.kpiUsers and sets
+                    // userType to whichever role that user actually has. Async,
+                    // since kpiUsers may need to be lazily loaded on first use —
+                    // the rest of the app's logins are all sync because their
+                    // roster data is already loaded well before login is
+                    // attempted; KPI data deliberately isn't, since most sessions
+                    // never touch it.
+                    const kpiId = (this._pendingLogin?.kpiId) ?? '';
+                    const kpiPw = (this._pendingLogin?.kpiPw) ?? '';
+                    this._pendingLogin = null;
+
+                    if (!kpiId || !kpiPw) {
+                        this.showToast('Please enter both ID and password.', 'warn');
+                        return;
+                    }
+
+                    this.kpiLogin(kpiId, kpiPw).then(success => {
+                        if (!success) return; // kpiLogin already showed the error toast
+
+                        const user = this.state.verifiedKpiUser;
+                        const isDirector = user.role === 'kpi_director';
+                        this.state.currentUser = user;
+                        this.state.activeView = isDirector ? 'kpiDirectorDashboard' : 'kpiPlannerAdmin';
+
+                        document.body.classList.add('logged-in');
+                        ['loginBg','loginOrb1','loginOrb2','loginOrb3'].forEach(id => { const el=document.getElementById(id); if(el) el.style.display='none'; });
+                        document.getElementById('loginView').style.display = 'none';
+                        const uiEl = document.getElementById('userInfo');
+                        uiEl.style.display = 'flex'; uiEl.classList.remove('hidden');
+                        document.getElementById(isDirector ? 'kpiDirectorNav' : 'kpiPlannerNav').classList.remove('hidden');
+                        document.getElementById('currentUserName').textContent = user.name;
+                        document.getElementById('userTypeBadge').textContent = isDirector ? '📈 KPI Director' : '📊 KPI Planner';
+                        document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded ' + (isDirector ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800');
+
+                        this.renderView();
+                        this.showToast(`Welcome, ${user.name}!`, 'success');
+                    });
                 } else if (this.state.loginType === 'corporatestaff') {
                     const csIdInput = document.getElementById('csLoginId');
                     const passInput = document.getElementById('csLoginPwd') || document.getElementById('loginPassword');
