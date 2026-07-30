@@ -60,6 +60,10 @@
                         document.getElementById('plannerSignInModal').style.display='flex';
                         setTimeout(()=>document.getElementById('plannerModalPwd')?.focus(),50);
                     ">🛠️ Planner</button>
+                    <button class="lp-nav-tab planner-tab" data-role="kpi_planner" onclick="
+                        document.getElementById('kpiPlannerSignInModal').style.display='flex';
+                        setTimeout(()=>document.getElementById('kpiPlannerModalId')?.focus(),50);
+                    ">📊 KPI Planner</button>
                     <button class="lp-nav-tab" data-role="corporatestaff" onclick="app._highlightNavTab(this,'corporatestaff')">Corp Staff</button>
                     <button class="lp-nav-tab" data-role="goldencommand" onclick="app._highlightNavTab(this,'goldencommand')">⭐ GC</button>
                     <button class="lp-nav-tab" data-role="maintenancestaff" onclick="app._highlightNavTab(this,'maintenancestaff')">🔧 Maintenance Staff</button>
@@ -262,36 +266,7 @@
                         ">Sign In</button>
                     </div>
 
-                    <!-- 5. KPI Planner Card -->
-                    <div class="lp-login-card" style="animation-delay:0.5s; border-top: 3px solid #1d4ed8;">
-                        <div class="lp-card-body">
-                            <div class="lp-card-header" style="min-height:64px;">
-                                <span class="lp-card-icon">📊</span>
-                                <div>
-                                    <div class="lp-card-title">KPI Planner</div>
-                                    <div class="lp-card-subtitle">Manage directorates &amp; KPIs</div>
-                                </div>
-                                <span class="lp-card-check">✔</span>
-                            </div>
-                            <div class="lp-input-wrap">
-                                <span class="lp-input-icon">👤</span>
-                                <input class="lp-input" type="text" placeholder="KPI Planner ID" id="kpiPlannerLoginId" autocomplete="username" />
-                            </div>
-                            <div class="lp-input-wrap">
-                                <span class="lp-input-icon">🔒</span>
-                                <input class="lp-input" type="password" placeholder="Password" id="kpiPlannerLoginPwd" autocomplete="current-password" />
-                            </div>
-                        </div>
-                        <button class="lp-sign-btn" style="background:linear-gradient(135deg,#1e40af,#1d4ed8);box-shadow:0 4px 16px rgba(29,78,216,0.35);" onclick="
-                            const _kpId = document.getElementById('kpiPlannerLoginId').value;
-                            const _kpPw = document.getElementById('kpiPlannerLoginPwd').value;
-                            app.state.loginType = 'kpi_planner';
-                            app._pendingLogin = { kpiId: _kpId, kpiPw: _kpPw };
-                            app.handleLogin();
-                        ">Sign In</button>
-                    </div>
-
-                    <!-- 6. KPI Executive Director Card -->
+                    <!-- 5. KPI Executive Director Card -->
                     <div class="lp-login-card" style="animation-delay:0.6s; border-top: 3px solid #6d28d9;">
                         <div class="lp-card-body">
                             <div class="lp-card-header" style="min-height:64px;">
@@ -341,6 +316,32 @@
                             document.getElementById('plannerSignInModal').style.display = 'none';
                         }
                     ">Sign In as Planner</button>
+                </div>
+            </div>
+
+            <!-- KPI Planner Sign-In Modal — needs both ID and password, unlike the
+                 regular Planner modal above (which uses one shared password).
+                 Closing on success is handled inside handleLogin's async
+                 kpi_planner branch itself (see views-auth.js), NOT here via an
+                 immediate userType check like the Planner modal does — kpiLogin
+                 is async, so userType isn't set yet by the time this onclick
+                 handler would return. -->
+            <div id="kpiPlannerSignInModal">
+                <div class="planner-modal-box">
+                    <button class="planner-modal-close" onclick="document.getElementById('kpiPlannerSignInModal').style.display='none'">✕</button>
+                    <h3>📊 KPI Planner Sign In</h3>
+                    <p>Manage directorates &amp; KPIs</p>
+                    <input class="planner-modal-input" type="text" id="kpiPlannerModalId" placeholder="KPI Planner ID" autocomplete="username" style="margin-bottom:10px;" />
+                    <input class="planner-modal-input" type="password" id="kpiPlannerModalPwd" placeholder="Password" autocomplete="current-password"
+                        onkeydown="if(event.key==='Enter'){document.getElementById('kpiPlannerModalSignInBtn').click();}" />
+                    <button class="planner-modal-btn" id="kpiPlannerModalSignInBtn" onclick="
+                        const _kpId = document.getElementById('kpiPlannerModalId').value;
+                        const _kpPw = document.getElementById('kpiPlannerModalPwd').value;
+                        if (!_kpId || !_kpPw) { app.showToast('Please enter both ID and password.','warn'); return; }
+                        app.state.loginType = 'kpi_planner';
+                        app._pendingLogin = { kpiId: _kpId, kpiPw: _kpPw };
+                        app.handleLogin();
+                    ">Sign In as KPI Planner</button>
                 </div>
             </div>
 
