@@ -54,7 +54,8 @@ app.renderKpiPlannerView = function() {
     let sectionHtml = '';
     if (tab === 'directorates') sectionHtml = this._renderKpiDirectoratesSection();
     else if (tab === 'kpis') sectionHtml = this._renderKpiDefinitionsSection();
-    else sectionHtml = this._renderKpiResultsSection();
+    else if (tab === 'results') sectionHtml = this._renderKpiResultsSection();
+    else sectionHtml = this._renderKpiUsersSection();
 
     content.innerHTML = `
         <div class="max-w-5xl mx-auto">
@@ -66,6 +67,7 @@ app.renderKpiPlannerView = function() {
                 ${tabBtn('directorates', '🏛️', 'Directorates')}
                 ${tabBtn('kpis', '📈', 'KPIs')}
                 ${tabBtn('results', '✏️', 'Enter Results')}
+                ${tabBtn('users', '👥', 'Manage Users')}
             </div>
             ${sectionHtml}
         </div>
@@ -428,9 +430,82 @@ app.confirmDeleteKpiResultEntry = async function(id) {
 // built. This exists purely so the new Director login has somewhere real
 // to land rather than a dead link.
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// Section 4: Manage Users
+// ════════════════════════════════════════════════════════════════════
+app._renderKpiUsersSection = function() {
+    const esc = this._escHtml.bind(this);
+    const users = this.state.kpiUsers || [];
+    const directorates = this.state.kpiDirectorates || [];
+    const csDirectorCount = this._csDirectors().length;
+    const alreadyGranted = users.filter(u => u.linked_login).length;
+
+    const dirName = (id) => directorates.find(d => d.id === id)?.name || '';
+
+    const rows = users.map(u => `
+        <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:180px;">
+                <p style="font-weight:700;">${esc(u.name)} <span style="font-size:0.7rem;font-weight:400;color:#6b7280;">(${esc(u.id)})</span></p>
+                <p style="font-size:0.75rem;color:#6b7280;">
+                    ${u.role === 'kpi_planner' ? '📊 KPI Planner' : '📈 KPI Director'}
+                    ${u.linked_login ? ' · <span style="color:#1d4ed8;">🔗 Linked to Corporate Staff login</span>' : ''}
+                </p>
+            </div>
+            ${u.role === 'kpi_director' ? `
+                <select onchange="app.reassignKpiUserDirectorate('${u.id}', this.value)"
+                    style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.78rem;">
+                    <option value="">— Unassigned —</option>
+                    ${directorates.map(d => `<option value="${d.id}" ${u.directorate_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                </select>
+            ` : ''}
+            <button onclick="app.confirmDeleteKpiUser('${u.id}')" style="padding:6px 12px;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:0.78rem;font-weight:700;">Delete</button>
+        </div>
+    `).join('');
+
+    return `
+        <div class="bg-white rounded-xl shadow-md p-5 mb-5">
+            <h3 class="text-lg font-bold text-gray-800 mb-1">Grant Access to Corporate Staff Directors</h3>
+            <p class="text-sm text-gray-500 mb-3">
+                Found ${csDirectorCount} Corporate Staff member${csDirectorCount !== 1 ? 's' : ''} whose role contains "Director"${alreadyGranted > 0 ? ` (${alreadyGranted} already granted)` : ''}.
+                Granting access lets them log in with their existing Corporate Staff ID and password — no separate password to manage, it always checks their current Corporate Staff login.
+            </p>
+            <button onclick="app.doGrantKpiDirectorAccess()" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">
+                🔗 Grant Access to All Matching Directors
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">All KPI Users (${users.length})</h3>
+            ${users.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPI users yet.</p>' : rows}
+        </div>
+    `;
+};
+
+app.doGrantKpiDirectorAccess = async function() {
+    await this.grantKpiDirectorAccessToCsDirectors();
+    this.renderKpiPlannerView();
+};
+
+app.reassignKpiUserDirectorate = async function(userId, directorateIdRaw) {
+    const user = (this.state.kpiUsers || []).find(u => u.id === userId);
+    if (!user) return;
+    const directorateId = directorateIdRaw ? parseInt(directorateIdRaw, 10) : null;
+    await this.saveKpiUser({
+        name: user.name, role: user.role, directorateId,
+        linkedLogin: !!user.linked_login, password: user.password,
+    }, userId);
+    this.renderKpiPlannerView();
+};
+
+app.confirmDeleteKpiUser = async function(id) {
+    if (!confirm('Remove this KPI user\'s access? This cannot be undone.')) return;
+    const ok = await this.deleteKpiUser(id);
+    if (ok) this.renderKpiPlannerView();
+};
+
+
 app.renderKpiDirectorView = function() {
     const content = document.getElementById('contentArea');
-    const user = this.state.verifiedKpiUser;
     const esc = this._escHtml.bind(this);
     content.innerHTML = `
         <div class="max-w-3xl mx-auto">
