@@ -170,3 +170,107 @@ test('_kpiValidPassword returns false for a missing user rather than throwing', 
     assert.equal(app._kpiValidPassword(undefined, 'anything'), false);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _deriveDirectorateNameFromRole — used so a director's directorate
+// automatically matches the department they're actually appointed over.
+// ════════════════════════════════════════════════════════════════════
+
+test('_deriveDirectorateNameFromRole strips a trailing "Director"', () => {
+    const app = buildKpiApp();
+    assert.equal(app._deriveDirectorateNameFromRole('HR Director'), 'HR');
+    assert.equal(app._deriveDirectorateNameFromRole('Operations Director'), 'Operations');
+});
+
+test('_deriveDirectorateNameFromRole strips a leading "Director of"', () => {
+    const app = buildKpiApp();
+    assert.equal(app._deriveDirectorateNameFromRole('Director of Engineering'), 'Engineering');
+});
+
+test('_deriveDirectorateNameFromRole is case-insensitive and preserves the remaining text\'s own casing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._deriveDirectorateNameFromRole('safety director'), 'safety');
+});
+
+test('_deriveDirectorateNameFromRole falls back to the original role text if stripping leaves nothing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._deriveDirectorateNameFromRole('Director'), 'Director');
+});
+
+test('_deriveDirectorateNameFromRole returns empty string for empty/missing input', () => {
+    const app = buildKpiApp();
+    assert.equal(app._deriveDirectorateNameFromRole(''), '');
+    assert.equal(app._deriveDirectorateNameFromRole(null), '');
+    assert.equal(app._deriveDirectorateNameFromRole(undefined), '');
+});
+
+// ════════════════════════════════════════════════════════════════════
+// _computeKpiResultFields — achievement % and status, snapshotted at
+// entry time. Achievement direction is the nuanced part: beating a
+// lower_is_better target should still read as an achievement ABOVE 100%,
+// not below it, which requires inverting the ratio for that direction.
+// ════════════════════════════════════════════════════════════════════
+
+test('higher_is_better: achievement is actual/target*100, can exceed 100% when over-performing', () => {
+    const app = buildKpiApp();
+    const kpiDef = { target_value: 90, direction: 'higher_is_better' };
+    const result = app._computeKpiResultFields(kpiDef, 99);
+    assert.equal(result.status, 'on_target');
+    assert.equal(result.achievement, 110); // 99/90*100
+});
+
+test('higher_is_better: falling short of target gives achievement below 100%', () => {
+    const app = buildKpiApp();
+    const kpiDef = { target_value: 90, direction: 'higher_is_better' };
+    const result = app._computeKpiResultFields(kpiDef, 72);
+    assert.equal(result.status, 'below_target');
+    assert.equal(result.achievement, 80); // 72/90*100
+});
+
+test('lower_is_better: beating the target (actual below target) gives achievement ABOVE 100%, not below', () => {
+    // This is the whole reason the ratio must be inverted for this
+    // direction — e.g. 2 incidents against a target of 5 is clearly a
+    // GOOD result and must read as an achievement over 100%, not 40%.
+    const app = buildKpiApp();
+    const kpiDef = { target_value: 5, direction: 'lower_is_better' };
+    const result = app._computeKpiResultFields(kpiDef, 2);
+    assert.equal(result.status, 'on_target');
+    assert.equal(result.achievement, 250); // 5/2*100, inverted
+});
+
+test('lower_is_better: missing the target (actual above target) gives achievement below 100%', () => {
+    const app = buildKpiApp();
+    const kpiDef = { target_value: 5, direction: 'lower_is_better' };
+    const result = app._computeKpiResultFields(kpiDef, 10);
+    assert.equal(result.status, 'below_target');
+    assert.equal(result.achievement, 50); // 5/10*100, inverted
+});
+
+test('the SAME actual/target pair gives opposite status AND inverted achievement depending on direction', () => {
+    const app = buildKpiApp();
+    const higher = app._computeKpiResultFields({ target_value: 8, direction: 'higher_is_better' }, 10);
+    const lower = app._computeKpiResultFields({ target_value: 8, direction: 'lower_is_better' }, 10);
+    assert.equal(higher.status, 'on_target');
+    assert.equal(lower.status, 'below_target');
+    assert.ok(higher.achievement > 100);
+    assert.ok(lower.achievement < 100);
+});
+
+test('returns no_data with null achievement when actual or target is missing', () => {
+    const app = buildKpiApp();
+    const result = app._computeKpiResultFields({ target_value: null, direction: 'higher_is_better' }, 50);
+    assert.equal(result.status, 'no_data');
+    assert.equal(result.achievement, null);
+});
+
+test('handles a zero target without throwing (division by zero)', () => {
+    const app = buildKpiApp();
+    const result = app._computeKpiResultFields({ target_value: 0, direction: 'higher_is_better' }, 5);
+    assert.equal(result.achievement, null, 'achievement is undefined for a zero target, not Infinity or NaN');
+});
+
+test('handles a zero actual value for lower_is_better without throwing (division by zero)', () => {
+    const app = buildKpiApp();
+    const result = app._computeKpiResultFields({ target_value: 5, direction: 'lower_is_better' }, 0);
+    assert.equal(result.achievement, null, 'achievement is undefined when actual is zero for lower_is_better, not Infinity');
+});
+
