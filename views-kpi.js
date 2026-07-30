@@ -532,16 +532,157 @@ app.confirmDeleteKpiUser = async function(id) {
 };
 
 
+// ════════════════════════════════════════════════════════════════════
+// Stage 4: KPI Executive Director dashboard — view-only, scoped to
+// exactly the director's own directorate. Every number here is built
+// from the pure helpers in api-kpi.js, already tested directly.
+// ════════════════════════════════════════════════════════════════════
 app.renderKpiDirectorView = function() {
     const content = document.getElementById('contentArea');
     const esc = this._escHtml.bind(this);
+    const user = this.state.verifiedKpiUser;
+    const directorateId = user ? user.directorate_id : null;
+
+    if (!directorateId) {
+        content.innerHTML = `
+            <div class="max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-md p-8 text-center">
+                    <p style="font-size:2.5rem;">⏳</p>
+                    <h2 class="text-xl font-bold text-gray-800 mt-2">Not Yet Assigned to a Directorate</h2>
+                    <p class="text-sm text-gray-500 mt-2">Welcome, ${esc(user ? user.name : '')}. Your account hasn't been assigned to a directorate yet — once the KPI Planner assigns you one, your KPI dashboard will appear here.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const directorate = (this.state.kpiDirectorates || []).find(d => d.id === directorateId);
+    const year = this.state._kpiDashboardYear || new Date().getFullYear();
+    const cards = this._kpiDashboardCards(directorateId, year);
+    const ranking = this._kpiDepartmentRanking(directorateId, year);
+    const rankedKpis = this._kpiRankedList(directorateId, year);
+    const top10 = rankedKpis.slice(0, 10);
+    const bottom10 = rankedKpis.slice(-10).reverse();
+    const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
+    const quarterly = this._kpiPerformanceByPeriod(directorateId, year, 'quarterly');
+    const yearOptions = [year - 1, year, year + 1].map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
+
+    const kpiListRow = (item, color) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
+            <span>${esc(item.name)}</span>
+            <span style="font-weight:700;color:${color};">${item.achievement}%</span>
+        </div>
+    `;
+
     content.innerHTML = `
-        <div class="max-w-3xl mx-auto">
-            <div class="bg-white rounded-xl shadow-md p-8 text-center">
-                <p style="font-size:2.5rem;">🚧</p>
-                <h2 class="text-xl font-bold text-gray-800 mt-2">KPI Dashboard — Coming Soon</h2>
-                <p class="text-sm text-gray-500 mt-2">Welcome, ${esc(user ? user.name : '')}. Your KPI card dashboard is being built next — it will show your directorate's KPIs here.</p>
+        <div class="max-w-6xl mx-auto">
+            <div class="flex justify-between items-center flex-wrap gap-3 mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">📈 ${esc(directorate ? directorate.name : 'KPI')} Dashboard</h2>
+                    <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)}.</p>
+                </div>
+                <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
+                    style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
+                    ${yearOptions}
+                </select>
+            </div>
+
+            <!-- Cards -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow p-5">
+                    <p class="text-xs font-semibold text-gray-500 uppercase">Total KPIs</p>
+                    <p class="text-3xl font-bold text-gray-800 mt-1">${cards.total}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
+                    <p class="text-xs font-semibold text-gray-500 uppercase">Achieved</p>
+                    <p class="text-3xl font-bold text-emerald-700 mt-1">${cards.achieved}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow p-5 border-l-4 border-red-500">
+                    <p class="text-xs font-semibold text-gray-500 uppercase">Below Target</p>
+                    <p class="text-3xl font-bold text-red-700 mt-1">${cards.belowTarget}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow p-5 border-l-4 border-gray-300">
+                    <p class="text-xs font-semibold text-gray-500 uppercase">Pending</p>
+                    <p class="text-3xl font-bold text-gray-500 mt-1">${cards.pending}</p>
+                </div>
+            </div>
+
+            <!-- Performance charts -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                ${monthly.length > 0 ? `
+                    <div class="bg-white rounded-xl shadow p-5">
+                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance</h3>
+                        <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
+                    </div>
+                ` : ''}
+                ${quarterly.length > 0 ? `
+                    <div class="bg-white rounded-xl shadow p-5">
+                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Quarterly Performance</h3>
+                        <div style="height:220px;"><canvas id="kpiQuarterlyChart"></canvas></div>
+                    </div>
+                ` : ''}
+                ${monthly.length === 0 && quarterly.length === 0 ? `
+                    <div class="bg-white rounded-xl shadow p-5 lg:col-span-2 text-center py-8">
+                        <p class="text-sm text-gray-400">No results recorded yet for ${year} — charts will appear once results are entered.</p>
+                    </div>
+                ` : ''}
+            </div>
+
+            <!-- Department ranking -->
+            <div class="bg-white rounded-xl shadow p-5 mb-6">
+                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">Department Ranking</h3>
+                ${ranking.length === 0 ? '<p class="text-sm text-gray-400 text-center py-4">No department results yet.</p>' : ranking.map((r, i) => `
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+                        <span style="width:20px;color:#9ca3af;font-size:0.8rem;">#${i + 1}</span>
+                        <span style="width:140px;font-size:0.85rem;font-weight:600;">${esc(r.departmentName)}</span>
+                        <div style="flex:1;background:#f3f4f6;border-radius:999px;height:18px;overflow:hidden;">
+                            <div style="height:100%;width:${Math.min(100, Math.max(4, r.avgAchievement))}%;background:${r.avgAchievement >= 100 ? '#10b981' : '#f59e0b'};border-radius:999px;"></div>
+                        </div>
+                        <span style="width:60px;text-align:right;font-size:0.8rem;font-weight:700;">${r.avgAchievement}%</span>
+                    </div>
+                `).join('')}
+            </div>
+
+            <!-- Top / Lowest KPIs -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="bg-white rounded-xl shadow p-5">
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Top KPIs</h3>
+                    ${top10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : top10.map(k => kpiListRow(k, '#065f46')).join('')}
+                </div>
+                <div class="bg-white rounded-xl shadow p-5">
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Lowest KPIs</h3>
+                    ${bottom10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : bottom10.map(k => kpiListRow(k, '#991b1b')).join('')}
+                </div>
             </div>
         </div>
     `;
+
+    // Render performance charts
+    if (typeof Chart !== 'undefined') {
+        if (this._kpiMonthlyChart) { this._kpiMonthlyChart.destroy(); this._kpiMonthlyChart = null; }
+        if (this._kpiQuarterlyChart) { this._kpiQuarterlyChart.destroy(); this._kpiQuarterlyChart = null; }
+
+        const monthlyCtx = document.getElementById('kpiMonthlyChart');
+        if (monthlyCtx && monthly.length > 0) {
+            this._kpiMonthlyChart = new Chart(monthlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: monthly.map(m => this.state.months[parseInt(m.period, 10) - 1]?.slice(0, 3) || m.period),
+                    datasets: [{ label: 'Avg Achievement %', data: monthly.map(m => m.avgAchievement), backgroundColor: '#1d4ed8', borderRadius: 4 }],
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+            });
+        }
+        const quarterlyCtx = document.getElementById('kpiQuarterlyChart');
+        if (quarterlyCtx && quarterly.length > 0) {
+            this._kpiQuarterlyChart = new Chart(quarterlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: quarterly.map(q => q.period),
+                    datasets: [{ label: 'Avg Achievement %', data: quarterly.map(q => q.avgAchievement), backgroundColor: '#7c3aed', borderRadius: 4 }],
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+            });
+        }
+    }
 };
