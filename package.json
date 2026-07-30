@@ -1,8 +1,8 @@
 {
   "name": "annual-leave-bidding-system-tests",
   "private": true,
-  "description": "Regression tests for the seniority-based leave allocation engine (allocation.js), the Bid Trading Platform's validation rules (api-swaptrading.js), and the bid-table safety net (api-supabase.js). No dependencies — uses Node's built-in test runner.",
+  "description": "Regression tests for the seniority-based leave allocation engine (allocation.js), the Bid Trading Platform's validation rules (api-swaptrading.js), the bid-table safety net (api-supabase.js), and the KPI subsystem (api-kpi.js). No dependencies — uses Node's built-in test runner.",
   "scripts": {
-    "test": "node --test test/allocation.test.js test/swaptrading.test.js test/bidTableSafety.test.js"
+    "test": "node --test test/allocation.test.js test/swaptrading.test.js test/bidTableSafety.test.js test/kpi.test.js"
   }
 }
