@@ -165,16 +165,20 @@
                     this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
                     this.showToast(`Welcome, ${gcUser.name}!`, 'success');
                 } else if (this.state.loginType === 'kpi_planner' || this.state.loginType === 'kpi_director') {
-                    // Both KPI roles share one login check (kpiLogin, built in
-                    // api-kpi.js) — it validates against state.kpiUsers and sets
-                    // userType to whichever role that user actually has. Async,
-                    // since kpiUsers may need to be lazily loaded on first use —
-                    // the rest of the app's logins are all sync because their
-                    // roster data is already loaded well before login is
-                    // attempted; KPI data deliberately isn't, since most sessions
-                    // never touch it.
+                    // Both KPI roles share one login function (kpiLogin, built in
+                    // api-kpi.js), but each entry point is dedicated to exactly
+                    // one role — this.state.loginType (set by whichever card/modal
+                    // was actually used) is passed through as the REQUIRED role,
+                    // so entering valid Director credentials into the Planner
+                    // modal (or vice versa) is rejected outright, not silently
+                    // routed to the "correct" screen anyway. Async, since kpiUsers
+                    // may need to be lazily loaded on first use — the rest of the
+                    // app's logins are all sync because their roster data is
+                    // already loaded well before login is attempted; KPI data
+                    // deliberately isn't, since most sessions never touch it.
                     const kpiId = (this._pendingLogin?.kpiId) ?? '';
                     const kpiPw = (this._pendingLogin?.kpiPw) ?? '';
+                    const expectedKpiRole = this.state.loginType;
                     this._pendingLogin = null;
 
                     if (!kpiId || !kpiPw) {
@@ -182,7 +186,7 @@
                         return;
                     }
 
-                    this.kpiLogin(kpiId, kpiPw).then(success => {
+                    this.kpiLogin(kpiId, kpiPw, expectedKpiRole).then(success => {
                         if (!success) return; // kpiLogin already showed the error toast
 
                         const user = this.state.verifiedKpiUser;
