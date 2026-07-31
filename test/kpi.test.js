@@ -742,3 +742,123 @@ test('_kpiMultiYearTrend returns empty labels/series when no KPIs match the cade
     assert.equal(trend.series.length, 0);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiAutoAggregateFromMonthly — automatically computes quarterly/yearly
+// achievement from a monthly KPI's own results, without any manual entry.
+// ════════════════════════════════════════════════════════════════════
+
+test('computes a quarterly figure by SUMMING the 3 months\' actuals against a 3x-scaled target', () => {
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const app = buildKpiDashboardApp({
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 90 },
+            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 110 },
+        ],
+    });
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.quarterly.length, 1);
+    assert.equal(result.quarterly[0].period, '2027-Q1');
+    // sum = 90+100+110 = 300, scaled target = 100*3 = 300 -> 100%
+    assert.equal(result.quarterly[0].achievement, 100);
+});
+
+test('does NOT produce a quarterly figure when only 2 of 3 months are present', () => {
+    const app = buildKpiDashboardApp({
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 90 },
+            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
+            // March missing
+        ],
+    });
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.quarterly.length, 0, 'an incomplete quarter must produce no figure at all, not a partial one');
+});
+
+test('computes a yearly figure only once all 12 months are present', () => {
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const results = [];
+    for (let m = 1; m <= 12; m++) {
+        results.push({ kpi_definition_id: 1, year: 2027, period_value: String(m).padStart(2, '0'), actual_value: 100 });
+    }
+    const app = buildKpiDashboardApp({ kpiResults: results });
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.yearly.length, 1);
+    assert.equal(result.yearly[0].period, '2027');
+    // sum = 1200, scaled target = 100*12 = 1200 -> 100%
+    assert.equal(result.yearly[0].achievement, 100);
+});
+
+test('does NOT produce a yearly figure when only 11 of 12 months are present', () => {
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const results = [];
+    for (let m = 1; m <= 11; m++) {
+        results.push({ kpi_definition_id: 1, year: 2027, period_value: String(m).padStart(2, '0'), actual_value: 100 });
+    }
+    const app = buildKpiDashboardApp({ kpiResults: results });
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.yearly.length, 0);
+});
+
+test('a non-monthly KPI produces no auto-aggregated figures at all', () => {
+    const app = buildKpiDashboardApp();
+    const kpiDef = { id: 1, period_type: 'quarterly', direction: 'higher_is_better', target_value: 100 };
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.quarterly.length, 0);
+    assert.equal(result.yearly.length, 0);
+});
+
+test('quarters/years across multiple different years are each computed independently', () => {
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const app = buildKpiDashboardApp({
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 50 },
+            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 50 },
+            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 50 },
+        ],
+    });
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.quarterly.length, 2);
+    const q2026 = result.quarterly.find(q => q.period === '2026-Q1');
+    const q2027 = result.quarterly.find(q => q.period === '2027-Q1');
+    assert.equal(q2026.achievement, 100);
+    assert.equal(q2027.achievement, 50);
+});
+
+test('_kpiMultiYearTrendWithAutoAggregation merges a monthly KPI\'s completed quarter alongside a genuinely quarterly KPI', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', direction: 'higher_is_better', target_value: 100, name: 'Monthly KPI' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', direction: 'higher_is_better', target_value: 90, name: 'Real Quarterly KPI' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 2, period_label: '2027-Q1', achievement: 95 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
+    assert.equal(trend.series.length, 2);
+    const names = trend.series.map(s => s.name);
+    assert.ok(names.includes('Monthly KPI'));
+    assert.ok(names.includes('Real Quarterly KPI'));
+});
+
+test('_kpiMultiYearTrendWithAutoAggregation excludes a monthly KPI with no completed quarters', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', direction: 'higher_is_better', target_value: 100, name: 'Monthly KPI' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 100 }, // only 1 of 3 months
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
+    assert.equal(trend.series.length, 0);
+});
+
