@@ -618,9 +618,9 @@ test('_kpiPerformanceByPeriod averages achievement across KPIs sharing the same 
             { id: 3, directorate_id: 1, is_active: true, period_type: 'quarterly' }, // different cadence, must be excluded
         ],
         kpiResults: [
-            { kpi_definition_id: 1, year: 2027, period_value: '01', achievement: 80 },
-            { kpi_definition_id: 2, year: 2027, period_value: '01', achievement: 100 },
-            { kpi_definition_id: 3, year: 2027, period_value: 'Q1', achievement: 200 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 80 },
+            { kpi_definition_id: 2, year: 2027, period_type: 'monthly', period_value: '01', achievement: 100 },
+            { kpi_definition_id: 3, year: 2027, period_type: 'quarterly', period_value: 'Q1', achievement: 200 },
         ],
     });
     const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
@@ -629,12 +629,30 @@ test('_kpiPerformanceByPeriod averages achievement across KPIs sharing the same 
     assert.equal(monthly[0].avgAchievement, 90, 'average of 80 and 100, excluding the quarterly KPI entirely');
 });
 
+test('_kpiPerformanceByPeriod excludes a result whose OWN period_type no longer matches its KPI\'s current cadence', () => {
+    // Reproduces the real bug found: a KPI's cadence gets edited by the
+    // planner after some results already exist under the OLD cadence.
+    // Those old rows keep the same kpi_definition_id but a stale
+    // period_type — they must never bleed into the new cadence's chart.
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' }], // now monthly...
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'quarterly', period_value: 'Q1', achievement: 999 }, // ...but this is a leftover from when it was quarterly
+        ],
+    });
+    const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    assert.equal(monthly.length, 1, 'only the genuinely monthly result must appear');
+    assert.equal(monthly[0].period, '01');
+    assert.equal(monthly[0].avgAchievement, 90, 'the leftover quarterly-tagged result must not be averaged in');
+});
+
 test('_kpiPerformanceByPeriod sorts periods chronologically', () => {
     const app = buildKpiDashboardApp({
         kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' }],
         kpiResults: [
-            { kpi_definition_id: 1, year: 2027, period_value: '03', achievement: 50 },
-            { kpi_definition_id: 1, year: 2027, period_value: '01', achievement: 60 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', achievement: 50 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 60 },
         ],
     });
     const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
@@ -651,9 +669,9 @@ test('_kpiMultiYearTrend spans multiple years for a yearly KPI, not just one', (
     const app = buildKpiDashboardApp({
         kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'Employee Satisfaction' }],
         kpiResults: [
-            { kpi_definition_id: 1, period_label: '2024', achievement: 70 },
-            { kpi_definition_id: 1, period_label: '2025', achievement: 85 },
-            { kpi_definition_id: 1, period_label: '2026', achievement: 92 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2024', achievement: 70 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2025', achievement: 85 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2026', achievement: 92 },
         ],
     });
     const trend = app._kpiMultiYearTrend(1, 'yearly');
@@ -670,9 +688,9 @@ test('_kpiMultiYearTrend labels are sorted chronologically regardless of inserti
     const app = buildKpiDashboardApp({
         kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'K1' }],
         kpiResults: [
-            { kpi_definition_id: 1, period_label: '2026', achievement: 90 },
-            { kpi_definition_id: 1, period_label: '2024', achievement: 70 },
-            { kpi_definition_id: 1, period_label: '2025', achievement: 80 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2026', achievement: 90 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2024', achievement: 70 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2025', achievement: 80 },
         ],
     });
     const trend = app._kpiMultiYearTrend(1, 'yearly');
@@ -688,9 +706,9 @@ test('_kpiMultiYearTrend gives multiple KPIs each their own series, aligned to a
             { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Turnover' },
         ],
         kpiResults: [
-            { kpi_definition_id: 1, period_label: '2026-Q1', achievement: 60 },
-            { kpi_definition_id: 1, period_label: '2026-Q2', achievement: 75 },
-            { kpi_definition_id: 2, period_label: '2026-Q2', achievement: 95 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2026-Q1', achievement: 60 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2026-Q2', achievement: 75 },
+            { kpi_definition_id: 2, period_type: 'quarterly', period_label: '2026-Q2', achievement: 95 },
         ],
     });
     const trend = app._kpiMultiYearTrend(1, 'quarterly');
@@ -711,7 +729,7 @@ test('_kpiMultiYearTrend excludes a KPI with zero recorded results anywhere', ()
             { id: 2, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'No Data Yet' },
         ],
         kpiResults: [
-            { kpi_definition_id: 1, period_label: '2026', achievement: 88 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2026', achievement: 88 },
         ],
     });
     const trend = app._kpiMultiYearTrend(1, 'yearly');
@@ -726,13 +744,26 @@ test('_kpiMultiYearTrend only includes KPIs matching the requested cadence', () 
             { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'Monthly KPI' },
         ],
         kpiResults: [
-            { kpi_definition_id: 1, period_label: '2026', achievement: 80 },
-            { kpi_definition_id: 2, period_label: '2026-01', achievement: 80 },
+            { kpi_definition_id: 1, period_type: 'yearly', period_label: '2026', achievement: 80 },
+            { kpi_definition_id: 2, period_type: 'monthly', period_label: '2026-01', achievement: 80 },
         ],
     });
     const trend = app._kpiMultiYearTrend(1, 'yearly');
     assert.equal(trend.series.length, 1);
     assert.equal(trend.series[0].name, 'Yearly KPI');
+});
+
+test('_kpiMultiYearTrend excludes a result whose OWN period_type no longer matches its KPI\'s current cadence', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'K' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 95 },
+            { kpi_definition_id: 1, period_type: 'monthly', period_label: '2027-01', achievement: 999 }, // leftover from before it was edited to quarterly
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'quarterly');
+    assert.equal(trend.labels.length, 1);
+    assert.equal(trend.series[0].data[0], 95, 'the leftover monthly-tagged result must not appear on the quarterly trend');
 });
 
 test('_kpiMultiYearTrend returns empty labels/series when no KPIs match the cadence', () => {
@@ -751,9 +782,9 @@ test('computes a quarterly figure by SUMMING the 3 months\' actuals against a 3x
     const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
     const app = buildKpiDashboardApp({
         kpiResults: [
-            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 90 },
-            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 110 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 90 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 110 },
         ],
     });
     const result = app._kpiAutoAggregateFromMonthly(kpiDef);
@@ -766,8 +797,8 @@ test('computes a quarterly figure by SUMMING the 3 months\' actuals against a 3x
 test('does NOT produce a quarterly figure when only 2 of 3 months are present', () => {
     const app = buildKpiDashboardApp({
         kpiResults: [
-            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 90 },
-            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 90 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
             // March missing
         ],
     });
@@ -780,7 +811,7 @@ test('computes a yearly figure only once all 12 months are present', () => {
     const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
     const results = [];
     for (let m = 1; m <= 12; m++) {
-        results.push({ kpi_definition_id: 1, year: 2027, period_value: String(m).padStart(2, '0'), actual_value: 100 });
+        results.push({ kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: String(m).padStart(2, '0'), actual_value: 100 });
     }
     const app = buildKpiDashboardApp({ kpiResults: results });
     const result = app._kpiAutoAggregateFromMonthly(kpiDef);
@@ -794,7 +825,7 @@ test('does NOT produce a yearly figure when only 11 of 12 months are present', (
     const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
     const results = [];
     for (let m = 1; m <= 11; m++) {
-        results.push({ kpi_definition_id: 1, year: 2027, period_value: String(m).padStart(2, '0'), actual_value: 100 });
+        results.push({ kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: String(m).padStart(2, '0'), actual_value: 100 });
     }
     const app = buildKpiDashboardApp({ kpiResults: results });
     const result = app._kpiAutoAggregateFromMonthly(kpiDef);
@@ -813,12 +844,12 @@ test('quarters/years across multiple different years are each computed independe
     const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
     const app = buildKpiDashboardApp({
         kpiResults: [
-            { kpi_definition_id: 1, year: 2026, period_value: '01', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2026, period_value: '02', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2026, period_value: '03', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 50 },
-            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 50 },
-            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 50 },
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 50 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 50 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 50 },
         ],
     });
     const result = app._kpiAutoAggregateFromMonthly(kpiDef);
@@ -836,10 +867,10 @@ test('_kpiMultiYearTrendWithAutoAggregation merges a monthly KPI\'s completed qu
             { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', direction: 'higher_is_better', target_value: 90, name: 'Real Quarterly KPI' },
         ],
         kpiResults: [
-            { kpi_definition_id: 1, year: 2027, period_value: '01', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2027, period_value: '02', actual_value: 100 },
-            { kpi_definition_id: 1, year: 2027, period_value: '03', actual_value: 100 },
-            { kpi_definition_id: 2, period_label: '2027-Q1', achievement: 95 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 2, period_type: 'quarterly', period_label: '2027-Q1', achievement: 95 },
         ],
     });
     const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
