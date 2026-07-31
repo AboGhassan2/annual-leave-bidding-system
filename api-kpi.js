@@ -290,6 +290,33 @@ app.deleteKpiResult = async function(id) {
     }
 };
 
+// Approves an already-entered result — only Administrator (kpi_planner)
+// and Department Manager may do this (see _kpiCanApproveResults). Checked
+// here too, not just hidden in the UI, so this can't be called successfully
+// by a role that shouldn't have access even if someone finds another way
+// to trigger it.
+app.approveKpiResult = async function(id) {
+    const actingUser = this.state.verifiedKpiUser;
+    if (!actingUser || !this._kpiCanApproveResults(actingUser.role)) {
+        this.showToast('You do not have permission to approve results.', 'error');
+        return false;
+    }
+    if (!this.supabase) return false;
+    try {
+        const row = { approved_by: actingUser.name, approved_at: new Date().toISOString() };
+        const { data, error } = await this.supabase.from('kpi_results').update(row).eq('id', id).select();
+        if (error) throw error;
+        const saved = data[0];
+        this.state.kpiResults = this.state.kpiResults.map(r => r.id === id ? saved : r);
+        this.showToast('Result approved.', 'success');
+        return true;
+    } catch (e) {
+        console.error('❌ Failed to approve KPI result:', e.message);
+        this.showToast('Could not approve result: ' + e.message, 'error');
+        return false;
+    }
+};
+
 // ════════════════════════════════════════════════════════════════════
 // KPI Users (login credentials for both roles)
 // ════════════════════════════════════════════════════════════════════
@@ -604,4 +631,56 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
         .sort((a, b) => a.period.localeCompare(b.period));
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Stage 5 — the 3 new fine-grained roles: Department Manager and Data
+// Entry (both scoped to ONE department within a directorate — narrower
+// than Directorate Manager's whole-directorate scope), and Viewer (same
+// whole-directorate scope as Directorate Manager, read-only). All pure,
+// no state writes, safe to test directly.
+// ════════════════════════════════════════════════════════════════════
+
+// Whether this role can enter/edit KPI results at all.
+app._kpiCanEnterResults = function(role) {
+    return role === 'kpi_planner' || role === 'department_manager' || role === 'data_entry';
+};
+
+// Whether this role can approve an already-entered result. Only
+// Administrator (kpi_planner) and Department Manager can — Data Entry can
+// enter results but never approve them, and Directorate Manager/Viewer
+// are read-only entirely.
+app._kpiCanApproveResults = function(role) {
+    return role === 'kpi_planner' || role === 'department_manager';
+};
+
+// Resolves what a user is allowed to see: which directorate, and — for
+// the two department-scoped roles — which single department within it.
+// department_manager/data_entry -> exactly one department (their own).
+// kpi_director/viewer -> the whole directorate (department: null means
+// "no department-level restriction", not "no access").
+// kpi_planner -> unrestricted (directorate: null means "sees everything").
+app._kpiUserScope = function(user) {
+    if (!user) return { directorateId: null, departmentId: null, unrestricted: false };
+    if (user.role === 'kpi_planner') {
+        return { directorateId: null, departmentId: null, unrestricted: true };
+    }
+    if (user.role === 'department_manager' || user.role === 'data_entry') {
+        const dept = (this.state.kpiDirectorateDepartments || []).find(d => d.id === user.department_id);
+        return { directorateId: dept ? dept.directorate_id : null, departmentId: user.department_id ?? null, unrestricted: false };
+    }
+    // kpi_director / viewer: whole directorate, no department restriction
+    return { directorateId: user.directorate_id ?? null, departmentId: null, unrestricted: false };
+};
+
+// KPIs visible to a user given their resolved scope — department-scoped
+// roles see only their own department's KPIs; directorate-scoped roles
+// see everything under the directorate (reuses _kpisForDirectorate).
+app._kpisForUserScope = function(user) {
+    const scope = this._kpiUserScope(user);
+    if (scope.unrestricted) return (this.state.kpiDefinitions || []).filter(k => k.is_active !== false);
+    if (scope.departmentId) {
+        return (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && k.department_id === scope.departmentId);
+    }
+    if (scope.directorateId) return this._kpisForDirectorate(scope.directorateId);
+    return [];
+};
 
