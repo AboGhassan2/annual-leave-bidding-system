@@ -894,6 +894,70 @@ test('_kpiMultiYearTrendWithAutoAggregation excludes a monthly KPI with no compl
 });
 
 // ════════════════════════════════════════════════════════════════════
+// _kpiMultiYearTrendWithAutoAggregation's optional filterYear param —
+// used to scope Quarterly Trend to just the selected year, per explicit
+// request, while Year-over-Year Trend stays unscoped (multi-year is the
+// entire point of that chart, so it's simply never passed a filterYear).
+// ════════════════════════════════════════════════════════════════════
+
+test('filterYear restricts a genuinely quarterly KPI\'s trend to only that year\'s quarters', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'K' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2026-Q4', achievement: 50 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 90 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q2', achievement: 95 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly', 2027);
+    assert.equal(trend.labels.length, 2, '2026-Q4 must be excluded, only the two 2027 quarters remain');
+    assert.ok(trend.labels.every(l => l.startsWith('2027')));
+    assert.equal(trend.series[0].data[0], 90);
+    assert.equal(trend.series[0].data[1], 95);
+});
+
+test('filterYear also restricts a monthly KPI\'s auto-aggregated quarters to only that year', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', direction: 'higher_is_better', target_value: 100, name: 'Monthly KPI' }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2026, period_type: 'monthly', period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 100 },
+        ],
+    });
+    const trend2027 = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly', 2027);
+    assert.equal(trend2027.labels.length, 1);
+    assert.equal(trend2027.labels[0], '2027-Q1');
+});
+
+test('without filterYear, the trend stays unscoped across every year with data (unchanged default behavior)', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'K' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2026-Q4', achievement: 50 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 90 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
+    assert.equal(trend.labels.length, 2, 'both years must still appear when filterYear is not passed at all');
+});
+
+test('filterYear on a year with no matching data returns an empty trend, not an error', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'K' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 90 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly', 2030);
+    assert.equal(trend.labels.length, 0);
+    assert.equal(trend.series.length, 0);
+});
+
+// ════════════════════════════════════════════════════════════════════
 // _kpiSingleYearStats / _kpiMonthsRanked / _kpiRuleBasedSummary — the
 // new Executive Director per-KPI detail view's data layer.
 // ════════════════════════════════════════════════════════════════════
