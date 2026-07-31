@@ -64,18 +64,6 @@
                         document.getElementById('kpiPlannerSignInModal').style.display='flex';
                         setTimeout(()=>document.getElementById('kpiPlannerModalId')?.focus(),50);
                     ">📊 KPI Planner</button>
-                    <button class="lp-nav-tab planner-tab" data-role="department_manager" onclick="
-                        document.getElementById('kpiDeptManagerSignInModal').style.display='flex';
-                        setTimeout(()=>document.getElementById('kpiDeptManagerModalId')?.focus(),50);
-                    ">🗂️ Dept Manager</button>
-                    <button class="lp-nav-tab planner-tab" data-role="data_entry" onclick="
-                        document.getElementById('kpiDataEntrySignInModal').style.display='flex';
-                        setTimeout(()=>document.getElementById('kpiDataEntryModalId')?.focus(),50);
-                    ">✏️ KPI Data Entry</button>
-                    <button class="lp-nav-tab planner-tab" data-role="viewer" onclick="
-                        document.getElementById('kpiViewerSignInModal').style.display='flex';
-                        setTimeout(()=>document.getElementById('kpiViewerModalId')?.focus(),50);
-                    ">👁️ KPI Viewer</button>
                     <button class="lp-nav-tab" data-role="corporatestaff" onclick="app._highlightNavTab(this,'corporatestaff')">Corp Staff</button>
                     <button class="lp-nav-tab" data-role="goldencommand" onclick="app._highlightNavTab(this,'goldencommand')">⭐ GC</button>
                     <button class="lp-nav-tab" data-role="maintenancestaff" onclick="app._highlightNavTab(this,'maintenancestaff')">🔧 Maintenance Staff</button>
@@ -357,69 +345,6 @@
                 </div>
             </div>
 
-            <!-- Department Manager Sign-In Modal — scoped to one department,
-                 can enter results AND approve them (see _kpiCanApproveResults) -->
-            <div id="kpiDeptManagerSignInModal">
-                <div class="planner-modal-box">
-                    <button class="planner-modal-close" onclick="document.getElementById('kpiDeptManagerSignInModal').style.display='none'">✕</button>
-                    <h3>🗂️ Department Manager Sign In</h3>
-                    <p>Enter &amp; approve KPI results for your department</p>
-                    <input class="planner-modal-input" type="text" id="kpiDeptManagerModalId" placeholder="Department Manager ID" autocomplete="username" style="margin-bottom:10px;" />
-                    <input class="planner-modal-input" type="password" id="kpiDeptManagerModalPwd" placeholder="Password" autocomplete="current-password"
-                        onkeydown="if(event.key==='Enter'){document.getElementById('kpiDeptManagerModalSignInBtn').click();}" />
-                    <button class="planner-modal-btn" id="kpiDeptManagerModalSignInBtn" onclick="
-                        const _id = document.getElementById('kpiDeptManagerModalId').value;
-                        const _pw = document.getElementById('kpiDeptManagerModalPwd').value;
-                        if (!_id || !_pw) { app.showToast('Please enter both ID and password.','warn'); return; }
-                        app.state.loginType = 'department_manager';
-                        app._pendingLogin = { kpiId: _id, kpiPw: _pw };
-                        app.handleLogin();
-                    ">Sign In as Department Manager</button>
-                </div>
-            </div>
-
-            <!-- KPI Data Entry Sign-In Modal — scoped to one department,
-                 can enter results but never approve them -->
-            <div id="kpiDataEntrySignInModal">
-                <div class="planner-modal-box">
-                    <button class="planner-modal-close" onclick="document.getElementById('kpiDataEntrySignInModal').style.display='none'">✕</button>
-                    <h3>✏️ KPI Data Entry Sign In</h3>
-                    <p>Enter KPI results for your department</p>
-                    <input class="planner-modal-input" type="text" id="kpiDataEntryModalId" placeholder="Data Entry ID" autocomplete="username" style="margin-bottom:10px;" />
-                    <input class="planner-modal-input" type="password" id="kpiDataEntryModalPwd" placeholder="Password" autocomplete="current-password"
-                        onkeydown="if(event.key==='Enter'){document.getElementById('kpiDataEntryModalSignInBtn').click();}" />
-                    <button class="planner-modal-btn" id="kpiDataEntryModalSignInBtn" onclick="
-                        const _id = document.getElementById('kpiDataEntryModalId').value;
-                        const _pw = document.getElementById('kpiDataEntryModalPwd').value;
-                        if (!_id || !_pw) { app.showToast('Please enter both ID and password.','warn'); return; }
-                        app.state.loginType = 'data_entry';
-                        app._pendingLogin = { kpiId: _id, kpiPw: _pw };
-                        app.handleLogin();
-                    ">Sign In as Data Entry</button>
-                </div>
-            </div>
-
-            <!-- KPI Viewer Sign-In Modal — same whole-directorate scope as
-                 Directorate Manager, read-only, reuses the same dashboard -->
-            <div id="kpiViewerSignInModal">
-                <div class="planner-modal-box">
-                    <button class="planner-modal-close" onclick="document.getElementById('kpiViewerSignInModal').style.display='none'">✕</button>
-                    <h3>👁️ KPI Viewer Sign In</h3>
-                    <p>View KPI results for your directorate</p>
-                    <input class="planner-modal-input" type="text" id="kpiViewerModalId" placeholder="Viewer ID" autocomplete="username" style="margin-bottom:10px;" />
-                    <input class="planner-modal-input" type="password" id="kpiViewerModalPwd" placeholder="Password" autocomplete="current-password"
-                        onkeydown="if(event.key==='Enter'){document.getElementById('kpiViewerModalSignInBtn').click();}" />
-                    <button class="planner-modal-btn" id="kpiViewerModalSignInBtn" onclick="
-                        const _id = document.getElementById('kpiViewerModalId').value;
-                        const _pw = document.getElementById('kpiViewerModalPwd').value;
-                        if (!_id || !_pw) { app.showToast('Please enter both ID and password.','warn'); return; }
-                        app.state.loginType = 'viewer';
-                        app._pendingLogin = { kpiId: _id, kpiPw: _pw };
-                        app.handleLogin();
-                    ">Sign In as Viewer</button>
-                </div>
-            </div>
-
             <!-- Bottom Status Bar -->
             <div class="lp-status-bar">
                 <div class="lp-status-item">
@@ -542,20 +467,6 @@
         <div id="kpiDirectorNav" class="hidden flex justify-center mb-6">
             <div class="metro-tab-bar" style="margin-bottom:0;">
                 <button onclick="app.setActiveView('kpiDirectorDashboard')" class="metro-tab metro-tab-primary">📈 My KPIs</button>
-            </div>
-        </div>
-
-        <!-- KPI Department Manager / Data Entry Navigation (shared — same screen, different permissions within it) -->
-        <div id="kpiDeptManagerNav" class="hidden flex justify-center mb-6">
-            <div class="metro-tab-bar" style="margin-bottom:0;">
-                <button onclick="app.setActiveView('kpiDeptManagerAdmin')" class="metro-tab metro-tab-primary">🗂️ My Department KPIs</button>
-            </div>
-        </div>
-
-        <!-- KPI Viewer Navigation -->
-        <div id="kpiViewerNav" class="hidden flex justify-center mb-6">
-            <div class="metro-tab-bar" style="margin-bottom:0;">
-                <button onclick="app.setActiveView('kpiDirectorDashboard')" class="metro-tab metro-tab-primary">👁️ My KPIs</button>
             </div>
         </div>
 
