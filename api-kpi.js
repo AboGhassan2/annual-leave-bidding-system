@@ -106,6 +106,41 @@ app.deleteKpiDirectorate = async function(id) {
 // Replaces the FULL set of departments mapped to a directorate — the
 // simplest correct approach for a checkbox-style "which departments
 // belong here" picker UI: delete what's there, insert the new list.
+// Pure helper: the 4 fixed operational lines every directorate has. Not
+// planner-configurable per-directorate the way departments used to be —
+// this replaced the old free-text department-mapping concept entirely,
+// per explicit correction: KPI structure is Directorate -> Line, not
+// Directorate -> arbitrary department.
+app._kpiStandardLines = function() {
+    return ['L3', 'L4', 'L5', 'L6'];
+};
+
+// Idempotent: ensures a directorate has all 4 standard line rows,
+// inserting ONLY whichever are missing — deliberately never deletes or
+// replaces existing ones, since a line row's id is what KPIs actually
+// reference (kpi_definitions.department_id). A delete+recreate approach
+// (like saveKpiDirectorateDepartments uses) would generate fresh ids
+// every time and silently orphan any KPI already pointing at the old
+// ones. Safe to call repeatedly/on every directorate on load.
+app.ensureKpiLinesForDirectorate = async function(directorateId) {
+    if (!this.supabase) return false;
+    const existing = (this.state.kpiDirectorateDepartments || []).filter(d => d.directorate_id === directorateId);
+    const existingNames = new Set(existing.map(d => d.department_name));
+    const missing = this._kpiStandardLines().filter(line => !existingNames.has(line));
+    if (missing.length === 0) return true;
+
+    try {
+        const rows = missing.map(line => ({ tenant_id: this._tid(), directorate_id: directorateId, department_name: line }));
+        const { data, error } = await this.supabase.from('kpi_directorate_departments').insert(rows).select();
+        if (error) throw error;
+        this.state.kpiDirectorateDepartments = [...this.state.kpiDirectorateDepartments, ...(data || [])];
+        return true;
+    } catch (e) {
+        console.error('❌ Failed to ensure KPI lines for directorate:', e.message);
+        return false;
+    }
+};
+
 app.saveKpiDirectorateDepartments = async function(directorateId, departmentNames) {
     if (!this.supabase) return false;
     try {
@@ -144,6 +179,7 @@ app.saveKpiDefinition = async function(def, existingId) {
         const row = {
             tenant_id: this._tid(),
             directorate_id: def.directorateId,
+            department_id: def.departmentId,
             name: def.name,
             category: def.category || '',
             unit: def.unit || '',
@@ -649,6 +685,40 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
             avgAchievement: Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 100) / 100,
         }))
         .sort((a, b) => a.period.localeCompare(b.period));
+};
+
+// Multi-year/quarter trend: for every KPI of a given cadence (yearly or
+// quarterly), returns its full achievement history across EVERY year that
+// has results — not scoped to a single selected year, unlike
+// _kpiPerformanceByPeriod above. One series per KPI, aligned to a shared,
+// chronologically-sorted label axis so multiple KPIs' trends can be
+// plotted together; a KPI missing a given period gets null there rather
+// than 0, so a line chart correctly shows a gap instead of a false dip.
+// KPIs with zero recorded results anywhere are omitted entirely.
+app._kpiMultiYearTrend = function(directorateId, periodType) {
+    const kpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === periodType);
+    if (kpis.length === 0) return { labels: [], series: [] };
+
+    const allLabels = new Set();
+    const resultsByKpi = {};
+    kpis.forEach(k => {
+        const results = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id && r.achievement != null);
+        resultsByKpi[k.id] = {};
+        results.forEach(r => {
+            allLabels.add(r.period_label);
+            resultsByKpi[k.id][r.period_label] = r.achievement;
+        });
+    });
+    const labels = Array.from(allLabels).sort();
+
+    const series = kpis
+        .map(k => ({
+            name: k.name,
+            data: labels.map(label => (label in resultsByKpi[k.id]) ? resultsByKpi[k.id][label] : null),
+        }))
+        .filter(s => s.data.some(v => v !== null));
+
+    return { labels, series };
 };
 
 // ════════════════════════════════════════════════════════════════════
