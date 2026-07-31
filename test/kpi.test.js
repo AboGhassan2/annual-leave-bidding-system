@@ -862,3 +862,155 @@ test('_kpiMultiYearTrendWithAutoAggregation excludes a monthly KPI with no compl
     assert.equal(trend.series.length, 0);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiSingleYearStats / _kpiMonthsRanked / _kpiRuleBasedSummary — the
+// new Executive Director per-KPI detail view's data layer.
+// ════════════════════════════════════════════════════════════════════
+
+function buildKpiSingleApp(stateOverrides = {}) {
+    return buildApp(baseState(stateOverrides), ['utils.js', 'api-kpi.js']);
+}
+
+test('_kpiSingleYearStats computes overall achievement as the average of months WITH data, excluding months with none', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'Budget Reconciliation', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', achievement: 110, status: 'on_target' },
+            // only 2 months have data - March through December have none
+        ],
+    });
+    const stats = app._kpiSingleYearStats(1, 2027);
+    assert.equal(stats.totalMonthsWithData, 2, 'must count only months that actually have data, not all 12');
+    assert.equal(stats.overallAchievement, 100, 'average of 90 and 110, not divided by 12');
+});
+
+test('_kpiSingleYearStats correctly identifies best and lowest month', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '05', achievement: 141, status: 'on_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '11', achievement: 31, status: 'below_target' },
+        ],
+    });
+    const stats = app._kpiSingleYearStats(1, 2027);
+    assert.equal(stats.bestMonth.period, '05');
+    assert.equal(stats.bestMonth.achievement, 141);
+    assert.equal(stats.lowestMonth.period, '11');
+    assert.equal(stats.lowestMonth.achievement, 31);
+});
+
+test('_kpiSingleYearStats counts targets met correctly', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', achievement: 105, status: 'on_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', achievement: 120, status: 'on_target' },
+        ],
+    });
+    const stats = app._kpiSingleYearStats(1, 2027);
+    assert.equal(stats.targetsMetCount, 2);
+});
+
+test('_kpiSingleYearStats returns null when the KPI has zero monthly results for that year', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [],
+    });
+    assert.equal(app._kpiSingleYearStats(1, 2027), null);
+});
+
+test('_kpiSingleYearStats returns null for an unknown KPI id rather than throwing', () => {
+    const app = buildKpiSingleApp({ kpiDefinitions: [], kpiResults: [] });
+    assert.equal(app._kpiSingleYearStats(999, 2027), null);
+});
+
+test('_kpiSingleYearStats ignores non-monthly results for the same KPI', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'quarterly', period_value: 'Q1', achievement: 999, status: 'on_target' },
+        ],
+    });
+    const stats = app._kpiSingleYearStats(1, 2027);
+    assert.equal(stats.totalMonthsWithData, 1, 'the quarterly result must not be counted as a month');
+    assert.equal(stats.overallAchievement, 90);
+});
+
+test('_kpiMonthsRanked sorts months by achievement descending', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', achievement: 141, status: 'on_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', achievement: 31, status: 'below_target' },
+        ],
+    });
+    const ranked = app._kpiMonthsRanked(1, 2027);
+    assert.equal(ranked[0].achievement, 141);
+    assert.equal(ranked[1].achievement, 90);
+    assert.equal(ranked[2].achievement, 31);
+});
+
+test('_kpiMonthsRanked returns an empty list when there is no data', () => {
+    const app = buildKpiSingleApp({ kpiDefinitions: [{ id: 1, name: 'K' }], kpiResults: [] });
+    assert.equal(app._kpiMonthsRanked(1, 2027).length, 0);
+});
+
+test('_kpiRuleBasedSummary says "exceeding" when overall achievement is at or above 100%', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 110, status: 'on_target' },
+        ],
+    });
+    const summary = app._kpiRuleBasedSummary(1, 2027);
+    assert.ok(summary[0].includes('exceeding'));
+});
+
+test('_kpiRuleBasedSummary says "below" when overall achievement is under 100%', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 60, status: 'below_target' },
+        ],
+    });
+    const summary = app._kpiRuleBasedSummary(1, 2027);
+    assert.ok(summary[0].includes('below'));
+});
+
+test('_kpiRuleBasedSummary names the below-target months by their actual month name', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', achievement: 40, status: 'below_target' },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '06', achievement: 120, status: 'on_target' },
+        ],
+    });
+    const summary = app._kpiRuleBasedSummary(1, 2027);
+    const belowLine = summary.find(l => l.includes('management attention'));
+    assert.ok(belowLine, 'must include a line naming the below-target months');
+    assert.ok(belowLine.includes('March'));
+    assert.ok(!belowLine.includes('June'), 'June was on target and must not be listed as needing attention');
+});
+
+test('_kpiRuleBasedSummary omits the below-target line entirely when nothing is below target', () => {
+    const app = buildKpiSingleApp({
+        kpiDefinitions: [{ id: 1, name: 'K', direction: 'higher_is_better', target_value: 100 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 110, status: 'on_target' },
+        ],
+    });
+    const summary = app._kpiRuleBasedSummary(1, 2027);
+    assert.ok(!summary.some(l => l.includes('management attention')));
+});
+
+test('_kpiRuleBasedSummary returns an empty list when there is no data at all', () => {
+    const app = buildKpiSingleApp({ kpiDefinitions: [{ id: 1, name: 'K' }], kpiResults: [] });
+    assert.equal(app._kpiRuleBasedSummary(1, 2027).length, 0);
+});
+
+
