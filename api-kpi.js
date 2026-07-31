@@ -443,16 +443,36 @@ app.deleteKpiUser = async function(id) {
 // Staff password instead of a separately-stored one) can be tested
 // directly, without mocking Supabase. No state writes.
 // ════════════════════════════════════════════════════════════════════
+// Finds the source record for a linked KPI login, searching every roster
+// a person might actually belong to — not just Corporate Staff. Directors
+// are most commonly Corporate Staff, but the Planner can manually link
+// any account (e.g. someone who's actually on the Golden Command roster),
+// so this can't assume just one source. Returns the first match found, or
+// null.
+app._kpiFindLinkedSourceUser = function(id) {
+    const rosters = [
+        this.state.corporateStaffUsers,
+        this.state.goldenCommandUsers,
+        this.state.employees,
+        this.state.maintenanceStaffUsers,
+    ];
+    for (const roster of rosters) {
+        const match = (roster || []).find(u => u.id === id);
+        if (match) return match;
+    }
+    return null;
+};
+
 app._kpiValidPassword = function(user, enteredPassword) {
     if (!user) return false;
     if (user.linked_login) {
-        // Directors granted access via Corporate Staff role never get a
-        // separately-stored KPI password — their login always checks
-        // whatever their Corporate Staff password currently is, so a
+        // Directors/managers granted access via another roster's role never
+        // get a separately-stored KPI password — their login always checks
+        // whatever their password currently is on that source roster, so a
         // password change there is reflected here automatically with no
         // separate update needed.
-        const csUser = (this.state.corporateStaffUsers || []).find(u => u.id === user.id);
-        return !!csUser && csUser.password === enteredPassword;
+        const sourceUser = this._kpiFindLinkedSourceUser(user.id);
+        return !!sourceUser && sourceUser.password === enteredPassword;
     }
     return user.password === enteredPassword;
 };
