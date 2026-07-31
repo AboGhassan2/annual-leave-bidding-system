@@ -915,23 +915,210 @@ app.renderKpiDirectorView = function() {
     const directorate = (this.state.kpiDirectorates || []).find(d => d.id === directorateId);
     const year = this.state._kpiDashboardYear || new Date().getFullYear();
     const yearOptions = [year - 1, year, year + 1].map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
+    const tab = this.state._kpiDirectorTab || 'overview';
+    const kpisInScope = this._kpisForDirectorate(directorateId);
+
+    const tabBtn = (key, label) => `
+        <button onclick="app.state._kpiDirectorTab='${key}';app.renderKpiDirectorView();"
+            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}">
+            ${label}
+        </button>
+    `;
+
+    let bodyHtml, kpiPickerHtml = '';
+    if (tab === 'detail') {
+        if (kpisInScope.length === 0) {
+            bodyHtml = `<div class="bg-white rounded-xl shadow p-8 text-center"><p class="text-sm text-gray-400">No KPIs configured for this directorate yet.</p></div>`;
+        } else {
+            const selectedKpiId = this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id;
+            const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
+            kpiPickerHtml = `
+                <select onchange="app.state._kpiDirectorSelectedKpiId = parseInt(this.value, 10); app.renderKpiDirectorView();"
+                    style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
+                    ${kpiOptions}
+                </select>
+            `;
+            bodyHtml = this._buildKpiSingleDetailBody(selectedKpiId, year);
+        }
+    } else {
+        bodyHtml = this._buildKpiDashboardBody(directorateId, year);
+    }
 
     content.innerHTML = `
         <div class="max-w-6xl mx-auto">
-            <div class="flex justify-between items-center flex-wrap gap-3 mb-6">
+            <div class="flex justify-between items-center flex-wrap gap-3 mb-4">
                 <div>
                     <h2 class="text-2xl font-bold text-gray-800">📈 ${esc(directorate ? directorate.name : 'KPI')} Dashboard</h2>
                     <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)}.</p>
                 </div>
-                <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
-                    style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
-                    ${yearOptions}
-                </select>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    ${kpiPickerHtml}
+                    <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
+                        style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
+                        ${yearOptions}
+                    </select>
+                </div>
             </div>
-            ${this._buildKpiDashboardBody(directorateId, year)}
+            <div style="display:flex;gap:8px;margin-bottom:20px;">
+                ${tabBtn('overview', '🏛️ Overview')}
+                ${tabBtn('detail', '🔍 KPI Detail')}
+            </div>
+            ${bodyHtml}
         </div>
     `;
 
-    this._drawKpiDashboardCharts(directorateId, year);
+    if (tab === 'detail' && kpisInScope.length > 0) {
+        this._drawKpiSingleDetailChart(this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id, year);
+    } else {
+        this._drawKpiDashboardCharts(directorateId, year);
+    }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Per-KPI Detail view — the reference-image redesign. A director picks
+// one specific KPI and sees a full detail breakdown: 5 summary cards,
+// a color-coded monthly bar chart with a target line, top/lowest
+// performing months, and a rule-based narrative summary. Everything here
+// reads from _kpiSingleYearStats/_kpiMonthsRanked/_kpiRuleBasedSummary,
+// already tested independently in api-kpi.js.
+// ════════════════════════════════════════════════════════════════════
+app._buildKpiSingleDetailBody = function(kpiId, year) {
+    const esc = this._escHtml.bind(this);
+    const stats = this._kpiSingleYearStats(kpiId, year);
+
+    if (!stats) {
+        return `
+            <div class="bg-white rounded-xl shadow p-8 text-center">
+                <p class="text-sm text-gray-400">No results recorded yet for this KPI in ${year}.</p>
+            </div>
+        `;
+    }
+
+    const yearStatus = this._kpiYearStatusLabel(stats.overallAchievement);
+    const monthName = (p) => this.state.months[parseInt(p, 10) - 1]?.slice(0, 3) || p;
+    const ranked = this._kpiMonthsRanked(kpiId, year);
+    const top5 = ranked.slice(0, 5);
+    const bottom5 = ranked.slice(-5).reverse();
+    const summaryLines = this._kpiRuleBasedSummary(kpiId, year);
+
+    const tierColor = { above: '#059669', near: '#d97706', below: '#dc2626', none: '#9ca3af' };
+    const dots = stats.monthlyResults.map(m => `<span title="${esc(monthName(m.period))}: ${m.achievement}%" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${tierColor[this._kpiMonthColorTier(m.achievement)]};margin-right:3px;"></span>`).join('');
+
+    const monthRow = (item, color) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid #f3f4f6;font-size:0.82rem;">
+            <span>${esc(monthName(item.period))}</span>
+            <span style="font-weight:700;color:${color};">${item.achievement}%</span>
+        </div>
+    `;
+
+    return `
+        <!-- 5 summary cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow p-5">
+                <p class="text-xs font-semibold text-gray-500 uppercase">Overall Achievement</p>
+                <p class="text-2xl font-bold mt-1" style="color:${stats.overallAchievement >= 100 ? '#059669' : '#dc2626'};">${stats.overallAchievement}%</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-5">
+                <p class="text-xs font-semibold text-gray-500 uppercase">Target Achieved</p>
+                <p class="text-2xl font-bold text-gray-800 mt-1">${stats.targetsMetCount} / ${stats.totalMonthsWithData}</p>
+                <p style="margin-top:6px;">${dots}</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
+                <p class="text-xs font-semibold text-gray-500 uppercase">Best Month</p>
+                <p class="text-lg font-bold text-emerald-700 mt-1">${esc(monthName(stats.bestMonth.period))}</p>
+                <p class="text-xs text-gray-500">${stats.bestMonth.achievement}%</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-red-500">
+                <p class="text-xs font-semibold text-gray-500 uppercase">Lowest Month</p>
+                <p class="text-lg font-bold text-red-700 mt-1">${esc(monthName(stats.lowestMonth.period))}</p>
+                <p class="text-xs text-gray-500">${stats.lowestMonth.achievement}%</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-5" style="border-left:4px solid ${yearStatus.color};">
+                <p class="text-xs font-semibold text-gray-500 uppercase">Year Status</p>
+                <p class="text-lg font-bold mt-1" style="color:${yearStatus.color};">${esc(yearStatus.label)}</p>
+                <p class="text-xs text-gray-500">${esc(yearStatus.description)}</p>
+            </div>
+        </div>
+
+        <!-- Color-coded monthly chart -->
+        <div class="bg-white rounded-xl shadow p-5 mb-6">
+            <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance — ${year}</h3>
+            <div style="height:260px;"><canvas id="kpiSingleDetailChart"></canvas></div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:0.72rem;color:#6b7280;">
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#059669;margin-right:4px;"></span>Above Target (≥100%)</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#d97706;margin-right:4px;"></span>Near Target (80%-99%)</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#dc2626;margin-right:4px;"></span>Below Target (&lt;80%)</span>
+                <span><span style="display:inline-block;width:9px;height:9px;border-radius:999px;background:#9ca3af;margin-right:4px;"></span>No Data</span>
+            </div>
+        </div>
+
+        <!-- Top / Lowest performing months -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow p-5">
+                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Top Performing Months</h3>
+                ${top5.length === 0 ? '<p class="text-sm text-gray-400 py-4">No data yet.</p>' : top5.map(m => monthRow(m, '#065f46')).join('')}
+            </div>
+            <div class="bg-white rounded-xl shadow p-5">
+                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Lowest Performing Months</h3>
+                ${bottom5.length === 0 ? '<p class="text-sm text-gray-400 py-4">No data yet.</p>' : bottom5.map(m => monthRow(m, '#991b1b')).join('')}
+            </div>
+        </div>
+
+        <!-- Rule-based performance summary -->
+        <div class="bg-white rounded-xl shadow p-5">
+            <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Performance Summary</h3>
+            <ul style="margin:0;padding-left:18px;font-size:0.85rem;color:#374151;line-height:1.8;">
+                ${summaryLines.map(l => `<li>${esc(l)}</li>`).join('')}
+            </ul>
+        </div>
+    `;
+};
+
+// Draws the color-coded monthly bar chart (per-bar color by tier) with a
+// dashed target-line overlay — a Chart.js bar+line mixed chart.
+app._drawKpiSingleDetailChart = function(kpiId, year) {
+    if (typeof Chart === 'undefined') return;
+    const stats = this._kpiSingleYearStats(kpiId, year);
+    if (this._kpiSingleDetailChartInstance) { this._kpiSingleDetailChartInstance.destroy(); this._kpiSingleDetailChartInstance = null; }
+    if (!stats) return;
+
+    const ctx = document.getElementById('kpiSingleDetailChart');
+    if (!ctx) return;
+
+    const tierColor = { above: '#059669', near: '#d97706', below: '#dc2626', none: '#9ca3af' };
+    const monthName = (p) => this.state.months[parseInt(p, 10) - 1]?.slice(0, 3) || p;
+
+    this._kpiSingleDetailChartInstance = new Chart(ctx, {
+        data: {
+            labels: stats.monthlyResults.map(m => monthName(m.period)),
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Achievement (%)',
+                    data: stats.monthlyResults.map(m => m.achievement),
+                    backgroundColor: stats.monthlyResults.map(m => tierColor[this._kpiMonthColorTier(m.achievement)]),
+                    borderRadius: 4,
+                },
+                {
+                    type: 'line',
+                    label: 'Target (100%)',
+                    data: stats.monthlyResults.map(() => 100),
+                    borderColor: '#dc2626',
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    borderWidth: 2,
+                },
+            ],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => ctx.datasetIndex === 0 ? v + '%' : '' },
+            },
+            scales: { y: { beginAtZero: true } },
+        },
+        plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
+    });
 };
 
