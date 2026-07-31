@@ -415,6 +415,16 @@ test('_deriveDirectorateNameFromRole returns empty string for empty/missing inpu
     assert.equal(app._deriveDirectorateNameFromRole(undefined), '');
 });
 
+test('_kpiStandardLines returns exactly the 4 fixed operational lines', () => {
+    const app = buildKpiApp();
+    const lines = app._kpiStandardLines();
+    assert.equal(lines.length, 4);
+    assert.equal(lines[0], 'L3');
+    assert.equal(lines[1], 'L4');
+    assert.equal(lines[2], 'L5');
+    assert.equal(lines[3], 'L6');
+});
+
 // ════════════════════════════════════════════════════════════════════
 // _computeKpiResultFields — achievement % and status, snapshotted at
 // entry time. Achievement direction is the nuanced part: beating a
@@ -630,5 +640,105 @@ test('_kpiPerformanceByPeriod sorts periods chronologically', () => {
     const monthly = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
     assert.equal(monthly[0].period, '01');
     assert.equal(monthly[1].period, '03');
+});
+
+// ════════════════════════════════════════════════════════════════════
+// _kpiMultiYearTrend — full history across every year for yearly/
+// quarterly KPIs, not scoped to a single selected year.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiMultiYearTrend spans multiple years for a yearly KPI, not just one', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'Employee Satisfaction' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_label: '2024', achievement: 70 },
+            { kpi_definition_id: 1, period_label: '2025', achievement: 85 },
+            { kpi_definition_id: 1, period_label: '2026', achievement: 92 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.labels.length, 3);
+    assert.equal(trend.labels[0], '2024');
+    assert.equal(trend.labels[2], '2026');
+    assert.equal(trend.series.length, 1);
+    assert.equal(trend.series[0].name, 'Employee Satisfaction');
+    assert.equal(trend.series[0].data[0], 70);
+    assert.equal(trend.series[0].data[2], 92);
+});
+
+test('_kpiMultiYearTrend labels are sorted chronologically regardless of insertion order', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'K1' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_label: '2026', achievement: 90 },
+            { kpi_definition_id: 1, period_label: '2024', achievement: 70 },
+            { kpi_definition_id: 1, period_label: '2025', achievement: 80 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.labels[0], '2024');
+    assert.equal(trend.labels[1], '2025');
+    assert.equal(trend.labels[2], '2026');
+});
+
+test('_kpiMultiYearTrend gives multiple KPIs each their own series, aligned to a shared label axis', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'OT Cost' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Turnover' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, period_label: '2026-Q1', achievement: 60 },
+            { kpi_definition_id: 1, period_label: '2026-Q2', achievement: 75 },
+            { kpi_definition_id: 2, period_label: '2026-Q2', achievement: 95 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'quarterly');
+    assert.equal(trend.labels.length, 2);
+    assert.equal(trend.series.length, 2);
+    const otCost = trend.series.find(s => s.name === 'OT Cost');
+    const turnover = trend.series.find(s => s.name === 'Turnover');
+    assert.equal(otCost.data[0], 60);
+    assert.equal(otCost.data[1], 75);
+    assert.equal(turnover.data[0], null, 'Turnover has no Q1 result — must be null, not 0 or missing');
+    assert.equal(turnover.data[1], 95);
+});
+
+test('_kpiMultiYearTrend excludes a KPI with zero recorded results anywhere', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'Has Data' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'No Data Yet' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, period_label: '2026', achievement: 88 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.series.length, 1);
+    assert.equal(trend.series[0].name, 'Has Data');
+});
+
+test('_kpiMultiYearTrend only includes KPIs matching the requested cadence', () => {
+    const app = buildKpiDashboardApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'Yearly KPI' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'Monthly KPI' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, period_label: '2026', achievement: 80 },
+            { kpi_definition_id: 2, period_label: '2026-01', achievement: 80 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.series.length, 1);
+    assert.equal(trend.series[0].name, 'Yearly KPI');
+});
+
+test('_kpiMultiYearTrend returns empty labels/series when no KPIs match the cadence', () => {
+    const app = buildKpiDashboardApp({ kpiDefinitions: [], kpiResults: [] });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.labels.length, 0);
+    assert.equal(trend.series.length, 0);
 });
 
