@@ -388,7 +388,8 @@ app._renderKpiResultsSection = function() {
         return `
             <tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.target_value != null ? esc(String(r.target_value)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${statusBadge[1]};color:${statusBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${statusBadge[0]}</span></td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
@@ -444,6 +445,7 @@ app._renderKpiResultsSection = function() {
                         <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
                             <th style="padding:8px 12px;">Period</th>
                             <th style="padding:8px 12px;">Actual</th>
+                            <th style="padding:8px 12px;">Target</th>
                             <th style="padding:8px 12px;">Achievement</th>
                             <th style="padding:8px 12px;">Status</th>
                             <th style="padding:8px 12px;">Remarks</th>
@@ -728,8 +730,8 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     // Quarterly and Yearly are trend charts spanning every year that has
     // results — not scoped to the single selected year like Monthly is,
     // since the whole point is showing long-term performance over time.
-    const quarterlyTrend = this._kpiMultiYearTrend(directorateId, 'quarterly');
-    const yearlyTrend = this._kpiMultiYearTrend(directorateId, 'yearly');
+    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly');
+    const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
 
     const kpiListRow = (item, color) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
@@ -826,8 +828,8 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 app._drawKpiDashboardCharts = function(directorateId, year) {
     if (typeof Chart === 'undefined') return;
     const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
-    const quarterlyTrend = this._kpiMultiYearTrend(directorateId, 'quarterly');
-    const yearlyTrend = this._kpiMultiYearTrend(directorateId, 'yearly');
+    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly');
+    const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
     const trendColors = ['#1d4ed8', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2'];
 
     if (this._kpiMonthlyChart) { this._kpiMonthlyChart.destroy(); this._kpiMonthlyChart = null; }
@@ -842,7 +844,21 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 labels: monthly.map(m => this.state.months[parseInt(m.period, 10) - 1]?.slice(0, 3) || m.period),
                 datasets: [{ label: 'Avg Achievement %', data: monthly.map(m => m.avgAchievement), backgroundColor: '#1d4ed8', borderRadius: 4 }],
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                    datalabels: {
+                        anchor: 'end', align: 'top',
+                        color: '#1e3a8a', font: { weight: 'bold', size: 11 },
+                        formatter: v => v + '%',
+                    },
+                },
+                scales: { y: { beginAtZero: true } },
+                layout: { padding: { top: 16 } },
+            },
+            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
         });
     }
 
