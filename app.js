@@ -1391,6 +1391,18 @@
                                 maintId: document.getElementById('maintLoginId')?.value?.trim() || '',
                                 maintPw: document.getElementById('maintLoginPwd')?.value || ''
                             };
+                        } else if (id === 'kpiPlannerModalId' || id === 'kpiPlannerModalPwd') {
+                            this.state.loginType = 'kpi_planner';
+                            this._pendingLogin = {
+                                kpiId: document.getElementById('kpiPlannerModalId')?.value?.trim() || '',
+                                kpiPw: document.getElementById('kpiPlannerModalPwd')?.value || ''
+                            };
+                        } else if (id === 'kpiDirectorLoginId' || id === 'kpiDirectorLoginPwd') {
+                            this.state.loginType = 'kpi_director';
+                            this._pendingLogin = {
+                                kpiId: document.getElementById('kpiDirectorLoginId')?.value?.trim() || '',
+                                kpiPw: document.getElementById('kpiDirectorLoginPwd')?.value || ''
+                            };
                         }
                     }
                     this.handleLogin();
