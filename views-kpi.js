@@ -686,3 +686,159 @@ app.renderKpiDirectorView = function() {
         }
     }
 };
+
+// ════════════════════════════════════════════════════════════════════
+// Stage 5: Department Manager / Data Entry screen — shared by both roles
+// (same one-department scope), differing only in whether the Approve
+// action is available (department_manager only — see
+// _kpiCanApproveResults, also enforced server-side in approveKpiResult,
+// not just hidden here).
+// ════════════════════════════════════════════════════════════════════
+app.renderKpiDeptManagerView = function() {
+    const content = document.getElementById('contentArea');
+    const esc = this._escHtml.bind(this);
+    const user = this.state.verifiedKpiUser;
+    const canApprove = this._kpiCanApproveResults(user.role);
+    const scope = this._kpiUserScope(user);
+
+    if (!scope.departmentId) {
+        content.innerHTML = `
+            <div class="max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-md p-8 text-center">
+                    <p style="font-size:2.5rem;">⏳</p>
+                    <h2 class="text-xl font-bold text-gray-800 mt-2">Not Yet Assigned to a Department</h2>
+                    <p class="text-sm text-gray-500 mt-2">Welcome, ${esc(user.name)}. Your account hasn't been assigned to a department yet — once the KPI Planner assigns you one, your KPIs will appear here.</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const department = (this.state.kpiDirectorateDepartments || []).find(d => d.id === scope.departmentId);
+    const kpis = this._kpisForUserScope(user);
+    const selectedId = this.state._kpiDeptResultsSelectedId || (kpis[0] && kpis[0].id);
+    const selected = kpis.find(k => k.id === selectedId) || kpis[0];
+
+    content.innerHTML = `
+        <div class="max-w-5xl mx-auto">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">🗂️ ${esc(department ? department.department_name : 'Department')} KPIs</h2>
+                <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)} (${canApprove ? 'Department Manager — can enter and approve results' : 'Data Entry — can enter results'}).</p>
+            </div>
+
+            ${kpis.length === 0 ? `
+                <div class="bg-white rounded-xl shadow-md p-5">
+                    <p class="text-sm text-gray-400 text-center py-6">No KPIs assigned to your department yet — ask the KPI Planner to add some.</p>
+                </div>
+            ` : this._renderKpiDeptResultsForm(selected, kpis, canApprove)}
+        </div>
+    `;
+};
+
+app._renderKpiDeptResultsForm = function(selected, kpis, canApprove) {
+    const esc = this._escHtml.bind(this);
+    const selectedYear = this.state._kpiDeptResultsYear || this.state.biddingYear || new Date().getFullYear();
+    const periodOptions = this.kpiPeriodOptions(selected.period_type, selectedYear);
+    const existingResults = (this.state.kpiResults || [])
+        .filter(r => r.kpi_definition_id === selected.id)
+        .sort((a, b) => b.period_label.localeCompare(a.period_label));
+
+    const kpiOptions = kpis.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
+    const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
+    const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
+
+    const resultsRows = existingResults.map(r => {
+        const statusBadge = { on_target: ['On Target', '#d1fae5', '#065f46'], below_target: ['Below Target', '#fee2e2', '#991b1b'], no_data: ['—', '#f3f4f6', '#6b7280'] }[r.status] || ['—', '#f3f4f6', '#6b7280'];
+        return `
+            <tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${statusBadge[1]};color:${statusBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${statusBadge[0]}</span></td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.75rem;">
+                    ${r.approved_at ? `<span style="color:#065f46;">✓ Approved by ${esc(r.approved_by || '')}</span>` : (canApprove ? `<button onclick="app.doApproveKpiResult(${r.id})" style="padding:4px 10px;background:#166534;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Approve</button>` : '<span style="color:#9ca3af;">Pending approval</span>')}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI</label>
+            <select onchange="app.state._kpiDeptResultsSelectedId = parseInt(this.value, 10); app.renderKpiDeptManagerView();"
+                style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
+                ${kpiOptions}
+            </select>
+            <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">Target: <strong>${esc(String(selected.target_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</strong> · ${esc(selected.period_type)} · ${selected.direction === 'lower_is_better' ? 'Lower is better' : 'Higher is better'}</p>
+
+            <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
+                <div style="min-width:100px;">
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Year</label>
+                    <select onchange="app.state._kpiDeptResultsYear = parseInt(this.value, 10); app.renderKpiDeptManagerView();"
+                        style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
+                        ${yearOptions}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:160px;">
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Period</label>
+                    <select id="kpiDeptResultPeriod" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
+                        ${periodSelectOptions}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:120px;">
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Actual Value${selected.unit ? ' (' + esc(selected.unit) + ')' : ''}</label>
+                    <input type="number" step="any" id="kpiDeptResultValue"
+                        style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+            </div>
+            <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Remarks (optional)</label>
+            <textarea id="kpiDeptResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
+            <button onclick="app.saveKpiDeptResultEntry(${selected.id})" style="padding:9px 18px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
+
+            <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(selected.name)}</h4>
+            ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
+                <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                    <thead>
+                        <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
+                            <th style="padding:8px 12px;">Period</th>
+                            <th style="padding:8px 12px;">Actual</th>
+                            <th style="padding:8px 12px;">Achievement</th>
+                            <th style="padding:8px 12px;">Status</th>
+                            <th style="padding:8px 12px;">Approval</th>
+                        </tr>
+                    </thead>
+                    <tbody>${resultsRows}</tbody>
+                </table>
+            `}
+        </div>
+    `;
+};
+
+app.saveKpiDeptResultEntry = async function(kpiDefinitionId) {
+    const user = this.state.verifiedKpiUser;
+    if (!this._kpiCanEnterResults(user.role)) {
+        this.showToast('You do not have permission to enter results.', 'error');
+        return;
+    }
+    const periodRaw = document.getElementById('kpiDeptResultPeriod').value;
+    const value = document.getElementById('kpiDeptResultValue').value;
+    const remarks = document.getElementById('kpiDeptResultRemarks').value;
+    if (value === '') { this.showToast('Please enter a value.', 'error'); return; }
+
+    const def = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
+    const periodType = def ? def.period_type : 'monthly';
+    const hyphenIdx = periodRaw.indexOf('-');
+    const year = hyphenIdx >= 0 ? parseInt(periodRaw.slice(0, hyphenIdx), 10) : parseInt(periodRaw, 10);
+    const periodValue = hyphenIdx >= 0 ? periodRaw.slice(hyphenIdx + 1) : null;
+
+    const saved = await this.saveKpiResult(kpiDefinitionId, { year, periodType, periodValue, actualValue: Number(value), remarks, source: 'manual' });
+    if (saved) {
+        this.showToast('Result saved.', 'success');
+        this.renderKpiDeptManagerView();
+    }
+};
+
+app.doApproveKpiResult = async function(id) {
+    const ok = await this.approveKpiResult(id);
+    if (ok) this.renderKpiDeptManagerView();
+};
