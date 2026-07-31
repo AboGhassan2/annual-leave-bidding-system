@@ -869,23 +869,26 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
         const ctx = document.getElementById(canvasId);
         if (!ctx || trend.series.length === 0) return null;
         return new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: trend.labels,
                 datasets: trend.series.map((s, i) => ({
                     label: s.name,
                     data: s.data,
-                    borderColor: trendColors[i % trendColors.length],
                     backgroundColor: trendColors[i % trendColors.length],
-                    spanGaps: true,
-                    tension: 0.25,
+                    borderRadius: 4,
                 })),
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: trend.series.length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+                plugins: {
+                    legend: { display: trend.series.length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+                    datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: v => v != null ? v + '%' : '' },
+                },
                 scales: { y: { beginAtZero: true } },
+                layout: { padding: { top: 14 } },
             },
+            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
         });
     };
 
