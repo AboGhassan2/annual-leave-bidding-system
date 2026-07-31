@@ -863,3 +863,80 @@ app._kpisForUserScope = function(user) {
     return [];
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Per-KPI year detail — powers the new Executive Director KPI Detail
+// view. Unlike the directorate-wide dashboard helpers above, everything
+// here is scoped to exactly ONE kpi_definition_id, since "best month,"
+// "targets met," and a narrative summary are only meaningful for a
+// single, specific KPI — averaging them across KPIs with different
+// units and targets wouldn't mean anything.
+// ════════════════════════════════════════════════════════════════════
+
+// Core stats for one KPI in one year: overall achievement (average of
+// every month that HAS data — months with no result are simply excluded,
+// not treated as 0), how many months met target, and which month was
+// best/worst. Returns null if the KPI has zero monthly results for the
+// year at all.
+app._kpiSingleYearStats = function(kpiId, year) {
+    const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiId);
+    if (!kpiDef) return null;
+
+    const monthResults = (this.state.kpiResults || [])
+        .filter(r => r.kpi_definition_id === kpiId && r.year === year && r.period_type === 'monthly' && r.achievement != null)
+        .sort((a, b) => a.period_value.localeCompare(b.period_value));
+
+    if (monthResults.length === 0) return null;
+
+    const overallAchievement = Math.round((monthResults.reduce((s, r) => s + r.achievement, 0) / monthResults.length) * 100) / 100;
+    const targetsMetCount = monthResults.filter(r => r.status === 'on_target').length;
+
+    const sorted = [...monthResults].sort((a, b) => b.achievement - a.achievement);
+    const bestMonth = { period: sorted[0].period_value, achievement: sorted[0].achievement };
+    const lowestMonth = { period: sorted[sorted.length - 1].period_value, achievement: sorted[sorted.length - 1].achievement };
+
+    return {
+        kpiId, year, kpiName: kpiDef.name,
+        overallAchievement, targetsMetCount, totalMonthsWithData: monthResults.length,
+        bestMonth, lowestMonth,
+        monthlyResults: monthResults.map(r => ({ period: r.period_value, achievement: r.achievement, status: r.status, actualValue: r.actual_value })),
+    };
+};
+
+// Every month with data for a KPI/year, sorted by achievement descending
+// — slice(0, N) for top-N, slice(-N).reverse() for bottom-N, same
+// pattern as _kpiRankedList uses for the directorate-wide dashboard.
+app._kpiMonthsRanked = function(kpiId, year) {
+    const stats = this._kpiSingleYearStats(kpiId, year);
+    if (!stats) return [];
+    return [...stats.monthlyResults].sort((a, b) => b.achievement - a.achievement);
+};
+
+// Rule-based narrative summary — deliberately NOT an AI call, computed
+// directly from the same stats the cards/charts already show, so the
+// summary can never say something the numbers on screen don't support.
+app._kpiRuleBasedSummary = function(kpiId, year) {
+    const stats = this._kpiSingleYearStats(kpiId, year);
+    if (!stats) return [];
+    const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiId);
+    const monthName = (periodValue) => this.state.months[parseInt(periodValue, 10) - 1] || periodValue;
+    const lines = [];
+
+    lines.push(
+        stats.overallAchievement >= 100
+            ? `Overall achievement is ${stats.overallAchievement}%, exceeding the annual target.`
+            : `Overall achievement is ${stats.overallAchievement}%, below the annual target.`
+    );
+
+    lines.push(`${monthName(stats.bestMonth.period)} recorded the highest performance at ${stats.bestMonth.achievement}%.`);
+
+    const belowTargetMonths = stats.monthlyResults.filter(m => m.status === 'below_target');
+    if (belowTargetMonths.length > 0) {
+        const names = belowTargetMonths.map(m => `${monthName(m.period)} (${m.achievement}%)`).join(', ');
+        lines.push(`${names} ${belowTargetMonths.length === 1 ? 'requires' : 'require'} management attention.`);
+    }
+
+    lines.push(`${stats.targetsMetCount} of ${stats.totalMonthsWithData} months with recorded results met target so far.`);
+
+    return lines;
+};
+
