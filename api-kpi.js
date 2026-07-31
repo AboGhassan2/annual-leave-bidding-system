@@ -940,3 +940,26 @@ app._kpiRuleBasedSummary = function(kpiId, year) {
     return lines;
 };
 
+// Classifies overall year performance into a simple, plain-language
+// status — pure threshold logic, no AI call. >=100% is Excellent (the KPI
+// is meeting or beating target overall), >=80% is Good (close but under),
+// below that is Needs Attention.
+app._kpiYearStatusLabel = function(overallAchievement) {
+    if (overallAchievement == null) return { label: 'No Data', description: 'No results recorded yet.', color: '#9ca3af' };
+    if (overallAchievement >= 100) return { label: 'Excellent', description: 'Performance is above target and on track.', color: '#7c3aed' };
+    if (overallAchievement >= 80) return { label: 'Good', description: 'Performance is close to target.', color: '#0891b2' };
+    return { label: 'Needs Attention', description: 'Performance is below target.', color: '#dc2626' };
+};
+
+// 3-tier color classification for the monthly bar chart — different from
+// the 2-tier on_target/below_target status used elsewhere: >=100% is
+// "above" (green), 80-99.99% is "near" (orange), below 80% is "below"
+// (red). Purely a display classification, does not affect achievement
+// math or the on_target/below_target status stored on results.
+app._kpiMonthColorTier = function(achievement) {
+    if (achievement == null) return 'none';
+    if (achievement >= 100) return 'above';
+    if (achievement >= 80) return 'near';
+    return 'below';
+};
+
