@@ -672,7 +672,15 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
     const byPeriod = {};
     kpis.forEach(k => {
         (this.state.kpiResults || [])
-            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.achievement != null)
+            // A KPI's cadence can be edited by the planner after results
+            // already exist under the old one (e.g. quarterly -> monthly)
+            // — those old rows keep the SAME kpi_definition_id but their
+            // OWN, now-stale period_type. Filtering only on the KPI's
+            // current period_type (via the outer `kpis` filter above)
+            // isn't enough; each individual result must also match, or
+            // leftover results from a previous cadence bleed into this
+            // one's chart.
+            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.period_type === periodType && r.achievement != null)
             .forEach(r => {
                 const key = r.period_value || String(year);
                 if (!byPeriod[key]) byPeriod[key] = [];
@@ -702,7 +710,11 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
     const allLabels = new Set();
     const resultsByKpi = {};
     kpis.forEach(k => {
-        const results = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id && r.achievement != null);
+        // Same fix as _kpiPerformanceByPeriod: must also check each
+        // result's OWN period_type, not just the KPI's current cadence —
+        // a KPI edited from one cadence to another leaves old results
+        // behind under the same kpi_definition_id.
+        const results = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id && r.period_type === periodType && r.achievement != null);
         resultsByKpi[k.id] = {};
         results.forEach(r => {
             allLabels.add(r.period_label);
@@ -741,7 +753,11 @@ app._kpiAutoAggregateFromMonthly = function(kpiDef) {
 
     const byYearMonth = {};
     (this.state.kpiResults || [])
-        .filter(r => r.kpi_definition_id === kpiDef.id && r.actual_value != null)
+        // Same fix as _kpiPerformanceByPeriod/_kpiMultiYearTrend: must
+        // also check each result's OWN period_type, not just the KPI's
+        // current cadence, or a leftover result from before this KPI was
+        // edited to monthly could corrupt the month-by-month grouping.
+        .filter(r => r.kpi_definition_id === kpiDef.id && r.period_type === 'monthly' && r.actual_value != null)
         .forEach(r => {
             const y = String(r.year);
             if (!byYearMonth[y]) byYearMonth[y] = {};
