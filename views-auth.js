@@ -164,18 +164,24 @@
                     this.renderView();
                     this.writeAuditLog('LOGIN', { name: gcUser.name, id: gcUser.id, role: 'goldencommand' });
                     this.showToast(`Welcome, ${gcUser.name}!`, 'success');
-                } else if (['kpi_planner', 'kpi_director', 'department_manager', 'data_entry', 'viewer'].includes(this.state.loginType)) {
-                    // All 5 KPI roles share one login function (kpiLogin, built in
+                } else if (['kpi_planner', 'kpi_director'].includes(this.state.loginType)) {
+                    // Both KPI roles share one login function (kpiLogin, built in
                     // api-kpi.js), but each entry point is dedicated to exactly
                     // one role — this.state.loginType (set by whichever card/modal
                     // was actually used) is passed through as the REQUIRED role,
-                    // so entering valid credentials for one role into a different
-                    // role's entry point is rejected outright, not silently
-                    // routed to the "correct" screen anyway. Async, since kpiUsers
-                    // may need to be lazily loaded on first use — the rest of the
-                    // app's logins are all sync because their roster data is
-                    // already loaded well before login is attempted; KPI data
-                    // deliberately isn't, since most sessions never touch it.
+                    // so entering valid credentials for one role into the other's
+                    // entry point is rejected outright, not silently routed to the
+                    // "correct" screen anyway. Async, since kpiUsers may need to be
+                    // lazily loaded on first use — the rest of the app's logins are
+                    // all sync because their roster data is already loaded well
+                    // before login is attempted; KPI data deliberately isn't, since
+                    // most sessions never touch it.
+                    //
+                    // department_manager, data_entry, and viewer are NOT separate
+                    // login entry points — their functionality (scoped result
+                    // entry/approval, read-only directorate preview) lives inside
+                    // the Planner's own screen instead (see renderKpiPlannerView's
+                    // "Enter Results" and "Preview Dashboard" sections).
                     const kpiId = (this._pendingLogin?.kpiId) ?? '';
                     const kpiPw = (this._pendingLogin?.kpiPw) ?? '';
                     const expectedKpiRole = this.state.loginType;
@@ -186,17 +192,9 @@
                         return;
                     }
 
-                    // department_manager and data_entry share the same admin
-                    // screen (both scoped to one department — the screen itself
-                    // conditionally shows the Approve action based on
-                    // _kpiCanApproveResults). viewer shares the Director's
-                    // dashboard (same whole-directorate, read-only scope).
                     const kpiRoleConfig = {
-                        kpi_planner:        { view: 'kpiPlannerAdmin',    nav: 'kpiPlannerNav',     modal: 'kpiPlannerSignInModal',    badge: '📊 KPI Planner',    badgeClass: 'bg-blue-100 text-blue-800' },
-                        kpi_director:       { view: 'kpiDirectorDashboard', nav: 'kpiDirectorNav',  modal: null,                        badge: '📈 KPI Director',   badgeClass: 'bg-purple-100 text-purple-800' },
-                        department_manager: { view: 'kpiDeptManagerAdmin', nav: 'kpiDeptManagerNav', modal: 'kpiDeptManagerSignInModal', badge: '🗂️ Dept Manager',   badgeClass: 'bg-teal-100 text-teal-800' },
-                        data_entry:         { view: 'kpiDeptManagerAdmin', nav: 'kpiDeptManagerNav', modal: 'kpiDataEntrySignInModal',   badge: '✏️ KPI Data Entry', badgeClass: 'bg-amber-100 text-amber-800' },
-                        viewer:             { view: 'kpiDirectorDashboard', nav: 'kpiViewerNav',    modal: 'kpiViewerSignInModal',      badge: '👁️ KPI Viewer',     badgeClass: 'bg-gray-100 text-gray-800' },
+                        kpi_planner:  { view: 'kpiPlannerAdmin',      nav: 'kpiPlannerNav',  modal: 'kpiPlannerSignInModal', badge: '📊 KPI Planner',  badgeClass: 'bg-blue-100 text-blue-800' },
+                        kpi_director: { view: 'kpiDirectorDashboard', nav: 'kpiDirectorNav', modal: null,                    badge: '📈 KPI Director', badgeClass: 'bg-purple-100 text-purple-800' },
                     };
 
                     this.kpiLogin(kpiId, kpiPw, expectedKpiRole).then(success => {
@@ -216,11 +214,11 @@
                         document.getElementById('currentUserName').textContent = user.name;
                         document.getElementById('userTypeBadge').textContent = cfg.badge;
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded ' + cfg.badgeClass;
-                        // Close whichever header modal was used to log in (kpi_director
-                        // has none — it logs in via a full grid card, not a modal, so
-                        // cfg.modal is null there and this is skipped). Done here,
-                        // inside the async callback, since kpiLogin resolves after
-                        // this function returns — the modal's own onclick can't check
+                        // Close the header modal (kpi_director has none — it logs
+                        // in via a full grid card, not a modal, so cfg.modal is
+                        // null there and this is skipped). Done here, inside the
+                        // async callback, since kpiLogin resolves after this
+                        // function returns — the modal's own onclick can't check
                         // success synchronously the way the password-only Planner
                         // modal does.
                         if (cfg.modal) {
@@ -422,8 +420,6 @@
                 document.getElementById('corporateStaffNav').classList.add('hidden');
                 document.getElementById('kpiPlannerNav').classList.add('hidden');
                 document.getElementById('kpiDirectorNav').classList.add('hidden');
-                document.getElementById('kpiDeptManagerNav').classList.add('hidden');
-                document.getElementById('kpiViewerNav').classList.add('hidden');
                 document.getElementById('loginView').style.display = 'flex';
                 document.getElementById('contentArea').innerHTML = '';
 
@@ -439,7 +435,6 @@
                  'plannerLoginPwd','plannerModalPwd','gcLoginId','gcLoginPwd',
                  'maintLoginId','maintLoginPwd',
                  'kpiPlannerModalId','kpiPlannerModalPwd','kpiDirectorLoginId','kpiDirectorLoginPwd',
-                 'kpiDeptManagerModalId','kpiDeptManagerModalPwd','kpiDataEntryModalId','kpiDataEntryModalPwd','kpiViewerModalId','kpiViewerModalPwd',
                  'loginId','loginPassword'].forEach(id => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
