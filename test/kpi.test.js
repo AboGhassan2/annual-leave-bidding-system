@@ -230,6 +230,57 @@ test('role enforcement also applies correctly to linked (Corporate Staff) Direct
 });
 
 // ════════════════════════════════════════════════════════════════════
+// _kpiFindLinkedSourceUser / linked login across every roster, not just
+// Corporate Staff — reproduces the real gap found: a KPI user manually
+// linked to someone on the Golden Command roster couldn't log in at all,
+// because the check only ever searched Corporate Staff.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiFindLinkedSourceUser finds a match on the Golden Command roster, not just Corporate Staff', () => {
+    const app = buildKpiApp({
+        corporateStaffUsers: [],
+        goldenCommandUsers: [{ id: 'G1', name: 'Bob', password: 'gcPassword' }],
+    });
+    const found = app._kpiFindLinkedSourceUser('G1');
+    assert.ok(found, 'must find the person even though they are not in Corporate Staff');
+    assert.equal(found.password, 'gcPassword');
+});
+
+test('a linked KPI user whose source is Golden Command (not Corporate Staff) can log in with their GC password', () => {
+    // This is the exact scenario reported: a manually-added kpi_users
+    // record for someone who only exists on the Golden Command roster.
+    const app = buildKpiApp({
+        corporateStaffUsers: [],
+        goldenCommandUsers: [{ id: 'G1', name: 'Bob', password: 'gcPassword' }],
+    });
+    const user = { id: 'G1', password: '(linked to Corporate Staff)', linked_login: true };
+    assert.equal(app._kpiValidPassword(user, 'gcPassword'), true);
+    assert.equal(app._kpiValidPassword(user, 'wrongpassword'), false);
+});
+
+test('_kpiFindLinkedSourceUser also finds a match on Employees and Maintenance rosters', () => {
+    const app = buildKpiApp({
+        corporateStaffUsers: [],
+        goldenCommandUsers: [],
+        employees: [{ id: 'E1', name: 'Cara', password: 'empPassword' }],
+        maintenanceStaffUsers: [{ id: 'M1', name: 'Dan', password: 'maintPassword' }],
+    });
+    assert.equal(app._kpiFindLinkedSourceUser('E1').password, 'empPassword');
+    assert.equal(app._kpiFindLinkedSourceUser('M1').password, 'maintPassword');
+});
+
+test('_kpiFindLinkedSourceUser returns null when the ID exists on no roster at all', () => {
+    const app = buildKpiApp({ corporateStaffUsers: [], goldenCommandUsers: [], employees: [], maintenanceStaffUsers: [] });
+    assert.equal(app._kpiFindLinkedSourceUser('nobody'), null);
+});
+
+test('linked login still fails correctly (not throws) when the source has since been removed from every roster', () => {
+    const app = buildKpiApp({ corporateStaffUsers: [], goldenCommandUsers: [], employees: [], maintenanceStaffUsers: [] });
+    const user = { id: 'gone', password: '(linked to Corporate Staff)', linked_login: true };
+    assert.equal(app._kpiValidPassword(user, 'anything'), false);
+});
+
+// ════════════════════════════════════════════════════════════════════
 // Stage 5 — the 3 new fine-grained roles' permission and scoping logic
 // ════════════════════════════════════════════════════════════════════
 
