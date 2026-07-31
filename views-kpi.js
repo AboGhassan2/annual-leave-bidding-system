@@ -730,7 +730,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     // Quarterly and Yearly are trend charts spanning every year that has
     // results — not scoped to the single selected year like Monthly is,
     // since the whole point is showing long-term performance over time.
-    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly');
+    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly', year);
     const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
 
     const kpiListRow = (item, color) => `
@@ -828,7 +828,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 app._drawKpiDashboardCharts = function(directorateId, year) {
     if (typeof Chart === 'undefined') return;
     const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
-    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly');
+    const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly', year);
     const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
     const trendColors = ['#1d4ed8', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2'];
 
