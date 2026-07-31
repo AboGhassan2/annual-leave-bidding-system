@@ -883,12 +883,14 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
                     legend: { display: trend.series.length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
-                    datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: v => v != null ? v + '%' : '' },
+                    // No always-visible datalabels here — with 2-3+ KPIs
+                    // grouped per period, the labels overlap and become
+                    // unreadable. Exact values are still available on
+                    // hover via the tooltip instead.
+                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
                 },
                 scales: { y: { beginAtZero: true } },
-                layout: { padding: { top: 14 } },
             },
-            plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
         });
     };
 
