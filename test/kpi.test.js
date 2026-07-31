@@ -1013,4 +1013,40 @@ test('_kpiRuleBasedSummary returns an empty list when there is no data at all', 
     assert.equal(app._kpiRuleBasedSummary(1, 2027).length, 0);
 });
 
+test('_kpiYearStatusLabel classifies >=100% as Excellent', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiYearStatusLabel(109.84).label, 'Excellent');
+    assert.equal(app._kpiYearStatusLabel(100).label, 'Excellent');
+});
+
+test('_kpiYearStatusLabel classifies 80-99% as Good', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiYearStatusLabel(85).label, 'Good');
+    assert.equal(app._kpiYearStatusLabel(80).label, 'Good');
+});
+
+test('_kpiYearStatusLabel classifies below 80% as Needs Attention', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiYearStatusLabel(79.9).label, 'Needs Attention');
+    assert.equal(app._kpiYearStatusLabel(20).label, 'Needs Attention');
+});
+
+test('_kpiYearStatusLabel handles missing input without throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiYearStatusLabel(null).label, 'No Data');
+    assert.equal(app._kpiYearStatusLabel(undefined).label, 'No Data');
+});
+
+test('_kpiMonthColorTier classifies achievement into above/near/below/none correctly', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMonthColorTier(125.71), 'above');
+    assert.equal(app._kpiMonthColorTier(100), 'above');
+    assert.equal(app._kpiMonthColorTier(95.64), 'near');
+    assert.equal(app._kpiMonthColorTier(80), 'near');
+    assert.equal(app._kpiMonthColorTier(35.71), 'below');
+    assert.equal(app._kpiMonthColorTier(0), 'below');
+    assert.equal(app._kpiMonthColorTier(null), 'none');
+    assert.equal(app._kpiMonthColorTier(undefined), 'none');
+});
+
 
