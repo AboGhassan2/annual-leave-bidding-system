@@ -721,6 +721,95 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
     return { labels, series };
 };
 
+// The 3 calendar months (as period_value strings, e.g. '01') making up a
+// given quarter (1-4) — pure lookup, no state.
+app._kpiQuarterMonths = function(quarter) {
+    const start = (quarter - 1) * 3 + 1;
+    return [start, start + 1, start + 2].map(m => String(m).padStart(2, '0'));
+};
+
+// Auto-aggregates a MONTHLY kpi's own results into quarterly and yearly
+// achievement figures — summing the actual values across the relevant
+// months and comparing that sum against the target scaled the same way
+// (3x for a quarter, 12x for a year), so the comparison stays on a
+// consistent scale rather than comparing a 3-month sum against a
+// single-month target. A quarter/year only appears once EVERY one of its
+// months has a real result — no partial/incomplete figures. Computed
+// live every call, nothing is written to kpi_results.
+app._kpiAutoAggregateFromMonthly = function(kpiDef) {
+    if (!kpiDef || kpiDef.period_type !== 'monthly') return { quarterly: [], yearly: [] };
+
+    const byYearMonth = {};
+    (this.state.kpiResults || [])
+        .filter(r => r.kpi_definition_id === kpiDef.id && r.actual_value != null)
+        .forEach(r => {
+            const y = String(r.year);
+            if (!byYearMonth[y]) byYearMonth[y] = {};
+            byYearMonth[y][r.period_value] = r;
+        });
+
+    const quarterly = [];
+    const yearly = [];
+
+    Object.keys(byYearMonth).forEach(year => {
+        const monthsMap = byYearMonth[year];
+
+        for (let q = 1; q <= 4; q++) {
+            const monthResults = this._kpiQuarterMonths(q).map(mk => monthsMap[mk]).filter(Boolean);
+            if (monthResults.length !== 3) continue; // incomplete quarter - skip entirely, no partial figure
+            const sumActual = monthResults.reduce((s, r) => s + Number(r.actual_value), 0);
+            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: kpiDef.target_value * 3 }, sumActual);
+            if (achievement != null) quarterly.push({ period: `${year}-Q${q}`, achievement });
+        }
+
+        const allMonthKeys = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
+        const yearMonthResults = allMonthKeys.map(mk => monthsMap[mk]).filter(Boolean);
+        if (yearMonthResults.length === 12) {
+            const sumActual = yearMonthResults.reduce((s, r) => s + Number(r.actual_value), 0);
+            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: kpiDef.target_value * 12 }, sumActual);
+            if (achievement != null) yearly.push({ period: year, achievement });
+        }
+    });
+
+    return { quarterly, yearly };
+};
+
+// Combines genuinely quarterly/yearly-configured KPIs (_kpiMultiYearTrend)
+// with monthly KPIs' auto-aggregated figures into one unified trend —
+// this is what the dashboard's Quarterly/Yearly trend charts actually
+// call, so a monthly KPI's completed quarters/years appear on the same
+// chart as any KPI directly configured at that cadence.
+app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType) {
+    const base = this._kpiMultiYearTrend(directorateId, periodType);
+    const monthlyKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+
+    const extraSeries = [];
+    const extraLabels = new Set(base.labels);
+    monthlyKpis.forEach(k => {
+        const agg = this._kpiAutoAggregateFromMonthly(k);
+        const points = periodType === 'quarterly' ? agg.quarterly : agg.yearly;
+        if (points.length === 0) return;
+        points.forEach(p => extraLabels.add(p.period));
+        extraSeries.push({ name: k.name, points });
+    });
+
+    if (extraSeries.length === 0) return base;
+
+    const labels = Array.from(extraLabels).sort();
+    const rebuiltBaseSeries = base.series.map(s => {
+        const byLabel = {};
+        base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; });
+        return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+    });
+    const rebuiltExtraSeries = extraSeries.map(s => {
+        const byLabel = {};
+        s.points.forEach(p => { byLabel[p.period] = p.achievement; });
+        return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+    });
+
+    return { labels, series: [...rebuiltBaseSeries, ...rebuiltExtraSeries] };
+};
+
 // ════════════════════════════════════════════════════════════════════
 // Stage 5 — the 3 new fine-grained roles: Department Manager and Data
 // Entry (both scoped to ONE department within a directorate — narrower
