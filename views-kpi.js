@@ -44,6 +44,21 @@ app.renderKpiPlannerView = function() {
     const tab = this.state._kpiAdminTab || 'directorates';
     const esc = this._escHtml.bind(this);
 
+    // One-time backfill: every directorate should always have all 4
+    // standard lines, including ones created before this structure
+    // existed. Guarded to run once per session (not on every render) and
+    // fire-and-forget — ensureKpiLinesForDirectorate is idempotent, so
+    // this is safe even if it overlaps with a later call; any lines it
+    // adds simply appear on the next re-render.
+    if (!this._kpiLinesBackfilled) {
+        this._kpiLinesBackfilled = true;
+        (this.state.kpiDirectorates || []).forEach(d => {
+            this.ensureKpiLinesForDirectorate(d.id).then(() => {
+                if (this.state.activeView === 'kpiPlannerAdmin') this.renderKpiPlannerView();
+            });
+        });
+    }
+
     const tabBtn = (key, icon, label) => `
         <button onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
             class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}">
@@ -92,13 +107,13 @@ app._renderKpiDirectoratesSection = function() {
     const directorates = this.state.kpiDirectorates || [];
 
     const rows = directorates.map(d => {
-        const deptCount = (this.state.kpiDirectorateDepartments || []).filter(m => m.directorate_id === d.id).length;
+        const lines = (this.state.kpiDirectorateDepartments || []).filter(m => m.directorate_id === d.id);
         const kpiCount = (this.state.kpiDefinitions || []).filter(k => k.directorate_id === d.id).length;
         return `
             <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
                 <div>
                     <p style="font-weight:700;">${esc(d.name)}</p>
-                    <p style="font-size:0.75rem;color:#6b7280;">${deptCount} department${deptCount !== 1 ? 's' : ''} mapped · ${kpiCount} KPI${kpiCount !== 1 ? 's' : ''}</p>
+                    <p style="font-size:0.75rem;color:#6b7280;">Lines: ${lines.map(l => esc(l.department_name)).join(', ') || '—'} · ${kpiCount} KPI${kpiCount !== 1 ? 's' : ''}</p>
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="app.openKpiDirectorateModal(${d.id})" style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
@@ -114,19 +129,19 @@ app._renderKpiDirectoratesSection = function() {
                 <h3 class="text-lg font-bold text-gray-800">Directorates</h3>
                 <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
             </div>
-            ${directorates.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No directorates yet — add one to start mapping departments to a director.</p>' : rows}
+            <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;">Every directorate automatically has 4 operational lines — L3, L4, L5, L6. KPIs are configured per line when you add them.</p>
+            ${directorates.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No directorates yet — add one to get started.</p>' : rows}
         </div>
 
-        <!-- Directorate modal -->
+        <!-- Directorate modal — name only, the 4 lines are created automatically -->
         <div id="kpiDirectorateModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:20px;">
-            <div style="background:#fff;border-radius:16px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);padding:28px;">
+            <div style="background:#fff;border-radius:16px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);padding:28px;">
                 <h3 style="font-size:1.15rem;font-weight:700;margin-bottom:16px;" id="kpiDirectorateModalTitle">Add Directorate</h3>
                 <input type="hidden" id="kpiDirectorateEditId" value="" />
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate Name</label>
                 <input type="text" id="kpiDirectorateName" placeholder="e.g. Operations Directorate"
-                    style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:16px;" />
-                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:8px;">Departments in this directorate</label>
-                <div id="kpiDirectorateDeptList" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:20px;"></div>
+                    style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;" />
+                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:20px;">Lines L3, L4, L5, and L6 will be created automatically under this directorate.</p>
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
                     <button onclick="app.saveKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
@@ -137,25 +152,10 @@ app._renderKpiDirectoratesSection = function() {
 };
 
 app.openKpiDirectorateModal = function(directorateId) {
-    const esc = this._escHtml.bind(this);
     const existing = directorateId ? (this.state.kpiDirectorates || []).find(d => d.id === directorateId) : null;
     document.getElementById('kpiDirectorateModalTitle').textContent = existing ? 'Edit Directorate' : 'Add Directorate';
     document.getElementById('kpiDirectorateEditId').value = directorateId || '';
     document.getElementById('kpiDirectorateName').value = existing ? existing.name : '';
-
-    const mappedDeptNames = new Set(
-        (this.state.kpiDirectorateDepartments || []).filter(m => m.directorate_id === directorateId).map(m => m.department_name)
-    );
-    const allDepts = this._kpiAllDepartments();
-    document.getElementById('kpiDirectorateDeptList').innerHTML = allDepts.length === 0
-        ? '<p style="font-size:0.8rem;color:#9ca3af;">No departments found — load employee/maintenance rosters first.</p>'
-        : allDepts.map(dept => `
-            <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.82rem;">
-                <input type="checkbox" class="kpi-dept-checkbox" value="${esc(dept)}" ${mappedDeptNames.has(dept) ? 'checked' : ''} />
-                ${esc(dept)}
-            </label>
-        `).join('');
-
     document.getElementById('kpiDirectorateModal').style.display = 'flex';
 };
 
@@ -172,8 +172,9 @@ app.saveKpiDirectorateModal = async function() {
     const saved = await this.saveKpiDirectorate(name, idNum);
     if (!saved) return;
 
-    const selectedDepts = Array.from(document.querySelectorAll('.kpi-dept-checkbox:checked')).map(el => el.value);
-    await this.saveKpiDirectorateDepartments(saved.id, selectedDepts);
+    // Idempotent — only adds whichever of L3/L4/L5/L6 don't already exist
+    // for this directorate, never touches/replaces any that do.
+    await this.ensureKpiLinesForDirectorate(saved.id);
 
     this.closeKpiDirectorateModal();
     this.renderKpiPlannerView();
@@ -203,12 +204,13 @@ app._renderKpiDefinitionsSection = function() {
 
     const rows = definitions.map(k => {
         const dir = directorates.find(d => d.id === k.directorate_id);
+        const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
         const dirLabel = { higher_is_better: 'Higher is better', lower_is_better: 'Lower is better' }[k.direction] || k.direction;
         return `
             <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
                 <div>
                     <p style="font-weight:700;">${esc(k.name)} ${k.category ? `<span style="font-size:0.72rem;color:#6b7280;font-weight:400;">(${esc(k.category)})</span>` : ''}</p>
-                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')} · Target: ${esc(String(k.target_value))}${k.unit ? ' ' + esc(k.unit) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}</p>
+                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${line ? ' · ' + esc(line.department_name) : ''} · Target: ${esc(String(k.target_value))}${k.unit ? ' ' + esc(k.unit) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}</p>
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="app.openKpiDefinitionModal(${k.id})" style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
@@ -236,9 +238,12 @@ app._renderKpiDefinitionsSection = function() {
                 <input type="hidden" id="kpiDefinitionEditId" value="" />
 
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
-                <select id="kpiDefDirectorate" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;">
+                <select id="kpiDefDirectorate" onchange="app._populateKpiDefLineOptions()" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;">
                     ${directorateOptions}
                 </select>
+
+                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Line</label>
+                <select id="kpiDefLine" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></select>
 
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Name</label>
                 <input type="text" id="kpiDefName" placeholder="e.g. On-Time Performance"
@@ -283,6 +288,18 @@ app._renderKpiDefinitionsSection = function() {
     `;
 };
 
+// Repopulates the Line dropdown to match whichever directorate is
+// currently selected — called on directorate change, and once right
+// after the modal opens to seed the initial state.
+app._populateKpiDefLineOptions = function(selectedLineId) {
+    const esc = this._escHtml.bind(this);
+    const directorateId = parseInt(document.getElementById('kpiDefDirectorate').value, 10);
+    const lines = (this.state.kpiDirectorateDepartments || []).filter(d => d.directorate_id === directorateId);
+    document.getElementById('kpiDefLine').innerHTML = lines.length === 0
+        ? '<option value="">— No lines found —</option>'
+        : lines.map(l => `<option value="${l.id}" ${selectedLineId === l.id ? 'selected' : ''}>${esc(l.department_name)}</option>`).join('');
+};
+
 app.openKpiDefinitionModal = function(kpiId) {
     const existing = kpiId ? (this.state.kpiDefinitions || []).find(k => k.id === kpiId) : null;
     document.getElementById('kpiDefinitionModalTitle').textContent = existing ? 'Edit KPI' : 'Add KPI';
@@ -294,6 +311,7 @@ app.openKpiDefinitionModal = function(kpiId) {
     document.getElementById('kpiDefUnit').value = existing ? (existing.unit || '') : '';
     document.getElementById('kpiDefPeriodType').value = existing ? existing.period_type : 'monthly';
     document.getElementById('kpiDefDirection').value = existing ? existing.direction : 'higher_is_better';
+    this._populateKpiDefLineOptions(existing ? existing.department_id : null);
     document.getElementById('kpiDefinitionModal').style.display = 'flex';
 };
 
@@ -306,10 +324,13 @@ app.saveKpiDefinitionModal = async function() {
     if (!name) { this.showToast('Please enter a KPI name.', 'error'); return; }
     const targetValue = document.getElementById('kpiDefTarget').value;
     if (targetValue === '') { this.showToast('Please enter a target value.', 'error'); return; }
+    const lineIdRaw = document.getElementById('kpiDefLine').value;
+    if (!lineIdRaw) { this.showToast('Please select a line.', 'error'); return; }
 
     const existingId = document.getElementById('kpiDefinitionEditId').value;
     const def = {
         directorateId: parseInt(document.getElementById('kpiDefDirectorate').value, 10),
+        departmentId: parseInt(lineIdRaw, 10),
         name,
         category: document.getElementById('kpiDefCategory').value.trim(),
         unit: document.getElementById('kpiDefUnit').value.trim(),
@@ -704,7 +725,11 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     const top10 = rankedKpis.slice(0, 10);
     const bottom10 = rankedKpis.slice(-10).reverse();
     const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
-    const quarterly = this._kpiPerformanceByPeriod(directorateId, year, 'quarterly');
+    // Quarterly and Yearly are trend charts spanning every year that has
+    // results — not scoped to the single selected year like Monthly is,
+    // since the whole point is showing long-term performance over time.
+    const quarterlyTrend = this._kpiMultiYearTrend(directorateId, 'quarterly');
+    const yearlyTrend = this._kpiMultiYearTrend(directorateId, 'yearly');
 
     const kpiListRow = (item, color) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
@@ -734,23 +759,33 @@ app._buildKpiDashboardBody = function(directorateId, year) {
             </div>
         </div>
 
-        <!-- Performance charts -->
+        <!-- Monthly (single year) -->
+        ${monthly.length > 0 ? `
+            <div class="bg-white rounded-xl shadow p-5 mb-6">
+                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance — ${year}</h3>
+                <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
+            </div>
+        ` : ''}
+
+        <!-- Quarterly and Yearly trends (all available history) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            ${monthly.length > 0 ? `
+            ${quarterlyTrend.series.length > 0 ? `
                 <div class="bg-white rounded-xl shadow p-5">
-                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance</h3>
-                    <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
-                </div>
-            ` : ''}
-            ${quarterly.length > 0 ? `
-                <div class="bg-white rounded-xl shadow p-5">
-                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Quarterly Performance</h3>
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Quarterly Trend</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every quarter with recorded results</p>
                     <div style="height:220px;"><canvas id="kpiQuarterlyChart"></canvas></div>
                 </div>
             ` : ''}
-            ${monthly.length === 0 && quarterly.length === 0 ? `
+            ${yearlyTrend.series.length > 0 ? `
+                <div class="bg-white rounded-xl shadow p-5">
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Year-over-Year Trend</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every year with recorded results</p>
+                    <div style="height:220px;"><canvas id="kpiYearlyChart"></canvas></div>
+                </div>
+            ` : ''}
+            ${monthly.length === 0 && quarterlyTrend.series.length === 0 && yearlyTrend.series.length === 0 ? `
                 <div class="bg-white rounded-xl shadow p-5 lg:col-span-2 text-center py-8">
-                    <p class="text-sm text-gray-400">No results recorded yet for ${year} — charts will appear once results are entered.</p>
+                    <p class="text-sm text-gray-400">No results recorded yet — charts will appear once results are entered.</p>
                 </div>
             ` : ''}
         </div>
@@ -791,10 +826,13 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 app._drawKpiDashboardCharts = function(directorateId, year) {
     if (typeof Chart === 'undefined') return;
     const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
-    const quarterly = this._kpiPerformanceByPeriod(directorateId, year, 'quarterly');
+    const quarterlyTrend = this._kpiMultiYearTrend(directorateId, 'quarterly');
+    const yearlyTrend = this._kpiMultiYearTrend(directorateId, 'yearly');
+    const trendColors = ['#1d4ed8', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2'];
 
     if (this._kpiMonthlyChart) { this._kpiMonthlyChart.destroy(); this._kpiMonthlyChart = null; }
     if (this._kpiQuarterlyChart) { this._kpiQuarterlyChart.destroy(); this._kpiQuarterlyChart = null; }
+    if (this._kpiYearlyChart) { this._kpiYearlyChart.destroy(); this._kpiYearlyChart = null; }
 
     const monthlyCtx = document.getElementById('kpiMonthlyChart');
     if (monthlyCtx && monthly.length > 0) {
@@ -807,17 +845,36 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
         });
     }
-    const quarterlyCtx = document.getElementById('kpiQuarterlyChart');
-    if (quarterlyCtx && quarterly.length > 0) {
-        this._kpiQuarterlyChart = new Chart(quarterlyCtx, {
-            type: 'bar',
+
+    // Quarterly/Yearly trend charts share the same shape: one line per
+    // KPI, plotted across every period that has a result. A shared
+    // helper keeps them from drifting apart in styling.
+    const drawTrendChart = (canvasId, trend) => {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx || trend.series.length === 0) return null;
+        return new Chart(ctx, {
+            type: 'line',
             data: {
-                labels: quarterly.map(q => q.period),
-                datasets: [{ label: 'Avg Achievement %', data: quarterly.map(q => q.avgAchievement), backgroundColor: '#7c3aed', borderRadius: 4 }],
+                labels: trend.labels,
+                datasets: trend.series.map((s, i) => ({
+                    label: s.name,
+                    data: s.data,
+                    borderColor: trendColors[i % trendColors.length],
+                    backgroundColor: trendColors[i % trendColors.length],
+                    spanGaps: true,
+                    tension: 0.25,
+                })),
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: trend.series.length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+                scales: { y: { beginAtZero: true } },
+            },
         });
-    }
+    };
+
+    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend);
+    this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend);
 };
 
 app.renderKpiDirectorView = function() {
