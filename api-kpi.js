@@ -795,7 +795,14 @@ app._kpiAutoAggregateFromMonthly = function(kpiDef) {
 // this is what the dashboard's Quarterly/Yearly trend charts actually
 // call, so a monthly KPI's completed quarters/years appear on the same
 // chart as any KPI directly configured at that cadence.
-app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType) {
+//
+// filterYear is optional: when provided, restricts the result to just
+// that year's labels (e.g. "2027-Q1".."2027-Q4") — used for the
+// Quarterly Trend chart, which the user explicitly wants scoped to the
+// selected year, unlike Year-over-Year Trend, which is left unscoped
+// (multi-year) since comparing across years is the entire point of that
+// specific chart.
+app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, filterYear) {
     const base = this._kpiMultiYearTrend(directorateId, periodType);
     const monthlyKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
 
@@ -809,21 +816,33 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType) 
         extraSeries.push({ name: k.name, points });
     });
 
-    if (extraSeries.length === 0) return base;
+    let labels, series;
+    if (extraSeries.length === 0) {
+        labels = base.labels; series = base.series;
+    } else {
+        labels = Array.from(extraLabels).sort();
+        const rebuiltBaseSeries = base.series.map(s => {
+            const byLabel = {};
+            base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; });
+            return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+        });
+        const rebuiltExtraSeries = extraSeries.map(s => {
+            const byLabel = {};
+            s.points.forEach(p => { byLabel[p.period] = p.achievement; });
+            return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+        });
+        series = [...rebuiltBaseSeries, ...rebuiltExtraSeries];
+    }
 
-    const labels = Array.from(extraLabels).sort();
-    const rebuiltBaseSeries = base.series.map(s => {
-        const byLabel = {};
-        base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; });
-        return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
-    });
-    const rebuiltExtraSeries = extraSeries.map(s => {
-        const byLabel = {};
-        s.points.forEach(p => { byLabel[p.period] = p.achievement; });
-        return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
-    });
+    if (filterYear == null) return { labels, series };
 
-    return { labels, series: [...rebuiltBaseSeries, ...rebuiltExtraSeries] };
+    const keepIndices = labels.map((l, i) => l.startsWith(`${filterYear}-`) || l === String(filterYear) ? i : -1).filter(i => i !== -1);
+    const filteredLabels = keepIndices.map(i => labels[i]);
+    const filteredSeries = series
+        .map(s => ({ name: s.name, data: keepIndices.map(i => s.data[i]) }))
+        .filter(s => s.data.some(v => v !== null));
+
+    return { labels: filteredLabels, series: filteredSeries };
 };
 
 // ════════════════════════════════════════════════════════════════════
