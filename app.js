@@ -379,9 +379,6 @@
                     case 'kpiDirectorDashboard':
                         this.renderKpiDirectorView();
                         break;
-                    case 'kpiDeptManagerAdmin':
-                        this.renderKpiDeptManagerView();
-                        break;
                     case 'manageUsers':
                         this.renderManageUsersView();
                         break;
