@@ -223,12 +223,112 @@ test('role enforcement also applies correctly to linked (Corporate Staff) Direct
         corporateStaffUsers: [{ id: 'C1', name: 'Alice', role: 'Operations Director', password: 'csPassword' }],
     });
     const user = { id: 'C1', password: '(linked to Corporate Staff)', role: 'kpi_director', linked_login: true };
-    // Correct password, wrong entry point -> still rejected
     const wrongEntry = app._kpiLoginAllowed(user, 'csPassword', 'kpi_planner');
     assert.equal(wrongEntry.ok, false);
-    // Correct password, correct entry point -> allowed
     const rightEntry = app._kpiLoginAllowed(user, 'csPassword', 'kpi_director');
     assert.equal(rightEntry.ok, true);
+});
+
+// ════════════════════════════════════════════════════════════════════
+// Stage 5 — the 3 new fine-grained roles' permission and scoping logic
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiCanEnterResults: planner, department_manager, and data_entry can; director and viewer cannot', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiCanEnterResults('kpi_planner'), true);
+    assert.equal(app._kpiCanEnterResults('department_manager'), true);
+    assert.equal(app._kpiCanEnterResults('data_entry'), true);
+    assert.equal(app._kpiCanEnterResults('kpi_director'), false);
+    assert.equal(app._kpiCanEnterResults('viewer'), false);
+});
+
+test('_kpiCanApproveResults: only planner and department_manager can — NOT data_entry', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiCanApproveResults('kpi_planner'), true);
+    assert.equal(app._kpiCanApproveResults('department_manager'), true);
+    assert.equal(app._kpiCanApproveResults('data_entry'), false, 'Data Entry can enter results but must never be able to approve them');
+    assert.equal(app._kpiCanApproveResults('kpi_director'), false);
+    assert.equal(app._kpiCanApproveResults('viewer'), false);
+});
+
+test('_kpiUserScope: kpi_planner is unrestricted, sees everything', () => {
+    const app = buildKpiApp();
+    const scope = app._kpiUserScope({ role: 'kpi_planner' });
+    assert.equal(scope.unrestricted, true);
+});
+
+test('_kpiUserScope: department_manager and data_entry are scoped to their ONE department, narrower than a directorate', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 10, directorate_id: 1, department_name: 'HR' }],
+    });
+    const deptManagerScope = app._kpiUserScope({ role: 'department_manager', department_id: 10 });
+    assert.equal(deptManagerScope.departmentId, 10);
+    assert.equal(deptManagerScope.directorateId, 1, 'directorate is still resolved, for context/breadcrumbs, but departmentId is the real restriction');
+    assert.equal(deptManagerScope.unrestricted, false);
+
+    const dataEntryScope = app._kpiUserScope({ role: 'data_entry', department_id: 10 });
+    assert.equal(dataEntryScope.departmentId, 10);
+});
+
+test('_kpiUserScope: kpi_director and viewer are scoped to the WHOLE directorate, no department restriction', () => {
+    const app = buildKpiApp();
+    const directorScope = app._kpiUserScope({ role: 'kpi_director', directorate_id: 5 });
+    assert.equal(directorScope.directorateId, 5);
+    assert.equal(directorScope.departmentId, null, 'no department-level restriction for this role — the whole directorate is visible');
+
+    const viewerScope = app._kpiUserScope({ role: 'viewer', directorate_id: 5 });
+    assert.equal(viewerScope.directorateId, 5);
+    assert.equal(viewerScope.departmentId, null);
+});
+
+test('_kpiUserScope handles a missing user without throwing', () => {
+    const app = buildKpiApp();
+    const scope = app._kpiUserScope(null);
+    assert.equal(scope.unrestricted, false);
+    assert.equal(scope.directorateId, null);
+});
+
+test('_kpisForUserScope: a department-scoped user sees ONLY their own department\'s KPIs, not the whole directorate\'s', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 10, directorate_id: 1, department_name: 'HR' },
+            { id: 11, directorate_id: 1, department_name: 'Finance' },
+        ],
+        kpiDefinitions: [
+            { id: 1, department_id: 10, is_active: true, name: 'HR KPI' },
+            { id: 2, department_id: 11, is_active: true, name: 'Finance KPI' },
+        ],
+    });
+    const kpis = app._kpisForUserScope({ role: 'department_manager', department_id: 10 });
+    assert.equal(kpis.length, 1);
+    assert.equal(kpis[0].name, 'HR KPI');
+});
+
+test('_kpisForUserScope: a directorate-scoped user (director/viewer) sees ALL departments\' KPIs under their directorate', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 10, directorate_id: 1, department_name: 'HR' },
+            { id: 11, directorate_id: 1, department_name: 'Finance' },
+        ],
+        kpiDefinitions: [
+            { id: 1, department_id: 10, directorate_id: 1, is_active: true, name: 'HR KPI' },
+            { id: 2, department_id: 11, directorate_id: 1, is_active: true, name: 'Finance KPI' },
+        ],
+    });
+    const kpis = app._kpisForUserScope({ role: 'kpi_director', directorate_id: 1 });
+    assert.equal(kpis.length, 2);
+});
+
+test('_kpisForUserScope: kpi_planner (unrestricted) sees every active KPI regardless of directorate', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true },
+            { id: 2, directorate_id: 2, is_active: true },
+            { id: 3, directorate_id: 1, is_active: false },
+        ],
+    });
+    const kpis = app._kpisForUserScope({ role: 'kpi_planner' });
+    assert.equal(kpis.length, 2, 'sees KPIs across both directorates, but still excludes inactive ones');
 });
 
 // ════════════════════════════════════════════════════════════════════
