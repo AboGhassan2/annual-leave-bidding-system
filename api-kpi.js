@@ -1012,22 +1012,12 @@ app._kpiMonthColorTier = function(achievement) {
 // "which KPI is this" purpose would risk a viewer misreading a bar's
 // color as a performance signal it doesn't actually represent.
 app._kpiColorPalette = function() {
-    // Deliberately few, but each one genuinely distinguishable at a
-    // glance — the previous 8-color palette had 5 blue/violet/indigo
-    // variants out of 8, so two unrelated KPIs frequently landed on
-    // colors that were technically different hex values but looked
-    // nearly identical. Magenta (#a21caf) was removed after explicit
-    // feedback that it read as purple next to the blue — this palette
-    // now has no purple/violet tone at all, on purpose:
-    //   #2563eb blue, #0e7490 teal,
-    //   #64748b slate gray, #78716c warm stone gray (a different
-    //   neutral undertone from slate, so the two grays stay
-    //   distinguishable from each other too),
-    //   #1e293b charcoal (near-black, a genuinely different "family").
-    // Still deliberately excludes green/orange/red — those already carry
-    // a specific meaning elsewhere on this dashboard (Monthly's above/
-    // near/below-target status colors).
-    return ['#2563eb', '#0e7490', '#64748b', '#78716c', '#1e293b'];
+    // Matches the Ops "Bidders by Block" chart's exact palette, per
+    // explicit request to use the same colors — including purple next to
+    // blue, which was deliberately excluded earlier for being too close
+    // to blue, but confirmed acceptable specifically here since matching
+    // Ops exactly was the actual goal, not general purple-avoidance.
+    return ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af'];
 };
 
 app._kpiColorForId = function(kpiId) {
