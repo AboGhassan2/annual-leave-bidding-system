@@ -874,7 +874,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 datasets: trend.series.map((s, i) => ({
                     label: s.name,
                     data: s.data,
-                    backgroundColor: this._kpiColorForId(s.id),
+                    backgroundColor: this._kpiColorForIdInDirectorate(s.id, directorateId),
                     borderRadius: 4,
                 })),
             },
