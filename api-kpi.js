@@ -1012,7 +1012,19 @@ app._kpiMonthColorTier = function(achievement) {
 // "which KPI is this" purpose would risk a viewer misreading a bar's
 // color as a performance signal it doesn't actually represent.
 app._kpiColorPalette = function() {
-    return ['#1d4ed8', '#7c3aed', '#0891b2', '#db2777', '#4338ca', '#0e7490', '#6d28d9', '#1e40af'];
+    // Deliberately few, but each one genuinely distinguishable at a
+    // glance — the previous 8-color palette had 5 blue/violet/indigo
+    // variants out of 8, so two unrelated KPIs frequently landed on
+    // colors that were technically different hex values but looked
+    // nearly identical. Chosen to spread across hue, not just pick
+    // different shades of the same one or two hues:
+    //   #2563eb blue, #0e7490 teal, #a21caf magenta,
+    //   #64748b slate gray (neutral, distinct from every saturated hue),
+    //   #1e293b charcoal (near-black, a genuinely different "family").
+    // Still deliberately excludes green/orange/red — those already carry
+    // a specific meaning elsewhere on this dashboard (Monthly's above/
+    // near/below-target status colors).
+    return ['#2563eb', '#0e7490', '#a21caf', '#64748b', '#1e293b'];
 };
 
 app._kpiColorForId = function(kpiId) {
