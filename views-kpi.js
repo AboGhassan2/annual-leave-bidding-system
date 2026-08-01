@@ -867,6 +867,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
     const drawTrendChart = (canvasId, trend, darkTheme, showLabels) => {
         const ctx = document.getElementById(canvasId);
         if (!ctx || trend.series.length === 0) return null;
+        const colorsForThisChart = this._kpiColorsForSeries(trend.series);
         return new Chart(ctx, {
             type: 'bar',
             data: {
@@ -874,7 +875,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 datasets: trend.series.map((s, i) => ({
                     label: s.name,
                     data: s.data,
-                    backgroundColor: this._kpiColorForIdInDirectorate(s.id, directorateId),
+                    backgroundColor: colorsForThisChart.get(s.id),
                     borderRadius: 4,
                 })),
             },
