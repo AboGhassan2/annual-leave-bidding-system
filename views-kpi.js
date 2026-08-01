@@ -765,7 +765,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
         ${monthly.length > 0 ? `
             <div class="bg-white rounded-xl shadow p-5 mb-6">
                 <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance — ${year}</h3>
-                <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiMonthlyChart"></canvas></div>
+                <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
             </div>
         ` : ''}
 
@@ -775,7 +775,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                 <div class="bg-white rounded-xl shadow p-5">
                     <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Quarterly Trend</h3>
                     <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every quarter with recorded results</p>
-                    <div style="height:220px;"><canvas id="kpiQuarterlyChart"></canvas></div>
+                    <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiQuarterlyChart"></canvas></div>
                 </div>
             ` : ''}
             ${yearlyTrend.series.length > 0 ? `
@@ -850,21 +850,11 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                     tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
                     datalabels: {
                         anchor: 'end', align: 'top',
-                        color: '#ffffff', font: { weight: 'bold', size: 11 },
+                        color: '#1e3a8a', font: { weight: 'bold', size: 11 },
                         formatter: v => v + '%',
                     },
                 },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: '#e5e7eb' },
-                        grid: { color: 'rgba(255,255,255,0.08)' },
-                    },
-                    x: {
-                        ticks: { color: '#e5e7eb' },
-                        grid: { display: false },
-                    },
-                },
+                scales: { y: { beginAtZero: true } },
                 layout: { padding: { top: 16 } },
             },
             plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
@@ -874,7 +864,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
     // Quarterly/Yearly trend charts share the same shape: one line per
     // KPI, plotted across every period that has a result. A shared
     // helper keeps them from drifting apart in styling.
-    const drawTrendChart = (canvasId, trend) => {
+    const drawTrendChart = (canvasId, trend, darkTheme) => {
         const ctx = document.getElementById(canvasId);
         if (!ctx || trend.series.length === 0) return null;
         return new Chart(ctx, {
@@ -891,20 +881,27 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: trend.series.length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+                    legend: {
+                        display: trend.series.length > 1, position: 'bottom',
+                        labels: { boxWidth: 10, font: { size: 10 }, color: darkTheme ? '#e5e7eb' : undefined },
+                    },
                     // No always-visible datalabels here — with 2-3+ KPIs
                     // grouped per period, the labels overlap and become
-                    // unreadable. Exact values are still available on
-                    // hover via the tooltip instead.
+                    // unreadable regardless of card background color.
+                    // Exact values are still available on hover via the
+                    // tooltip instead.
                     tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
                 },
-                scales: { y: { beginAtZero: true } },
+                scales: darkTheme ? {
+                    y: { beginAtZero: true, ticks: { color: '#e5e7eb' }, grid: { color: 'rgba(255,255,255,0.08)' } },
+                    x: { ticks: { color: '#e5e7eb' }, grid: { display: false } },
+                } : { y: { beginAtZero: true } },
             },
         });
     };
 
-    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend);
-    this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend);
+    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend, true);
+    this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend, false);
 };
 
 app.renderKpiDirectorView = function() {
