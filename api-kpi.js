@@ -1028,3 +1028,27 @@ app._kpiColorForId = function(kpiId) {
     return palette[idx];
 };
 
+// A real bug in _kpiColorForId above: kpiId % paletteLength can collide
+// for two entirely unrelated KPIs whenever their database ids happen to
+// share the same remainder — with only 3 colors, that's not a rare edge
+// case, it's common (confirmed: 2 KPIs on the same 3-bar Quarterly Trend
+// chart both landed on green). Fixed here by ranking each KPI by its
+// position within the FULL, STABLE set of KPIs for its directorate
+// (sorted by id, not filtered to whichever subset happens to have data
+// on any one chart) — this guarantees zero collisions as long as the
+// directorate has no more KPIs of a given cadence than the palette has
+// colors, while still giving the same KPI the same color on every chart,
+// since the ranking is computed from the directorate's whole KPI list,
+// not from what's visible on the specific chart being drawn.
+app._kpiColorForIdInDirectorate = function(kpiId, directorateId) {
+    const palette = this._kpiColorPalette();
+    if (kpiId == null) return palette[0];
+    const allKpis = (this.state.kpiDefinitions || [])
+        .filter(k => k.directorate_id === directorateId || this._kpiEffectiveDirectorateId(k) === directorateId)
+        .slice()
+        .sort((a, b) => a.id - b.id);
+    const rank = allKpis.findIndex(k => k.id === kpiId);
+    if (rank === -1) return this._kpiColorForId(kpiId); // not found in this directorate's list - fall back to the simple version rather than fail
+    return palette[rank % palette.length];
+};
+
