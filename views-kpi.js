@@ -830,7 +830,6 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
     const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
     const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly', year);
     const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
-    const trendColors = ['#1d4ed8', '#7c3aed', '#059669', '#dc2626', '#d97706', '#0891b2'];
 
     if (this._kpiMonthlyChart) { this._kpiMonthlyChart.destroy(); this._kpiMonthlyChart = null; }
     if (this._kpiQuarterlyChart) { this._kpiQuarterlyChart.destroy(); this._kpiQuarterlyChart = null; }
@@ -875,7 +874,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 datasets: trend.series.map((s, i) => ({
                     label: s.name,
                     data: s.data,
-                    backgroundColor: trendColors[i % trendColors.length],
+                    backgroundColor: this._kpiColorForId(s.id),
                     borderRadius: 4,
                 })),
             },
