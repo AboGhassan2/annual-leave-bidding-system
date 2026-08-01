@@ -1016,15 +1016,18 @@ app._kpiColorPalette = function() {
     // glance — the previous 8-color palette had 5 blue/violet/indigo
     // variants out of 8, so two unrelated KPIs frequently landed on
     // colors that were technically different hex values but looked
-    // nearly identical. Chosen to spread across hue, not just pick
-    // different shades of the same one or two hues:
-    //   #2563eb blue, #0e7490 teal, #a21caf magenta,
-    //   #64748b slate gray (neutral, distinct from every saturated hue),
+    // nearly identical. Magenta (#a21caf) was removed after explicit
+    // feedback that it read as purple next to the blue — this palette
+    // now has no purple/violet tone at all, on purpose:
+    //   #2563eb blue, #0e7490 teal,
+    //   #64748b slate gray, #78716c warm stone gray (a different
+    //   neutral undertone from slate, so the two grays stay
+    //   distinguishable from each other too),
     //   #1e293b charcoal (near-black, a genuinely different "family").
     // Still deliberately excludes green/orange/red — those already carry
     // a specific meaning elsewhere on this dashboard (Monthly's above/
     // near/below-target status colors).
-    return ['#2563eb', '#0e7490', '#a21caf', '#64748b', '#1e293b'];
+    return ['#2563eb', '#0e7490', '#64748b', '#78716c', '#1e293b'];
 };
 
 app._kpiColorForId = function(kpiId) {
