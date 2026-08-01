@@ -877,6 +877,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                     data: s.data,
                     backgroundColor: colorsForThisChart.get(s.id),
                     borderRadius: 4,
+                    details: s.details, // consumed by the tooltip callback below, not read by Chart.js itself
                 })),
             },
             options: {
@@ -886,11 +887,25 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                         display: trend.series.length > 1, position: 'bottom',
                         labels: { boxWidth: 10, font: { size: 10 }, color: darkTheme ? '#e5e7eb' : undefined },
                     },
-                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
-                    // Re-enabled per explicit request — with 2-3+ KPIs
-                    // grouped per period this can get visually tight, but
-                    // showing the figure above each bar was specifically
-                    // asked for here.
+                    // Rich, multi-line hover tooltip — KPI name, period,
+                    // actual value, achievement %, and target — reducing
+                    // on-chart clutter from always-visible labels (real
+                    // problem confirmed with 4 KPIs x 4 periods = 16
+                    // labels at once) while still surfacing full detail
+                    // on demand.
+                    tooltip: {
+                        callbacks: {
+                            title: items => items[0]?.label ?? '',
+                            label: ctx => {
+                                const d = ctx.dataset.details ? ctx.dataset.details[ctx.dataIndex] : null;
+                                const lines = [ctx.dataset.label];
+                                if (d && d.actualValue != null) lines.push(`Value: ${d.actualValue}`);
+                                lines.push(`Achievement: ${ctx.parsed.y}%`);
+                                if (d && d.targetValue != null) lines.push(`Target: ${d.targetValue}`);
+                                return lines;
+                            },
+                        },
+                    },
                     ...(showLabels ? {
                         datalabels: {
                             anchor: 'end', align: 'top',
@@ -910,7 +925,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
         });
     };
 
-    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend, true, true);
+    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend, true, false);
     this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend, false, false);
 };
 
