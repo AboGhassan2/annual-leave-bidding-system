@@ -1256,6 +1256,75 @@ test('_kpiColorForIdInDirectorate does not throw for a null/undefined id', () =>
     assert.ok(palette.includes(app._kpiColorForIdInDirectorate(undefined, 1)));
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiColorsForSeries — the definitive fix. Ranks within the EXACT set
+// of series being rendered on a specific chart, not the whole
+// directorate's KPI list — this is what actually guarantees no
+// collision, since the earlier directorate-wide ranking could still
+// wrap and collide whenever the directorate had more total KPIs than
+// the palette, even with only a few actually shown on any one chart.
+// ════════════════════════════════════════════════════════════════════
+
+test('reproduces why the directorate-wide ranking still wasn\'t enough: a 4th, unrelated KPI in the directorate can still cause 2 of the 3 SHOWN KPIs to collide', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, name: 'Not shown on this chart' },
+            { id: 2, directorate_id: 1, is_active: true, name: 'Closing Year Budget' },
+            { id: 3, directorate_id: 1, is_active: true, name: 'Financial Statement Result' },
+            { id: 4, directorate_id: 1, is_active: true, name: 'Budget Reconciliation' },
+        ],
+    });
+    // Under the old directorate-wide ranking: id 1 -> rank 0, id 4 -> rank 3
+    // -> both rank%3 = 0 -> SAME color, even though id 1 isn't even on
+    // this chart. Confirms the old function still has this gap.
+    const oldWay = app._kpiColorForIdInDirectorate(4, 1);
+    assert.equal(oldWay, app._kpiColorForIdInDirectorate(1, 1), 'demonstrates the directorate-wide approach can still collide due to an unrelated, unshown KPI');
+});
+
+test('_kpiColorsForSeries gives 3 different colors to exactly the 3 series actually being rendered, ignoring unrelated KPIs elsewhere in the directorate', () => {
+    // The same scenario as above, but only the 3 series that ACTUALLY
+    // appear on the chart are passed in — id 1 (not shown) is excluded
+    // entirely, so it can't cause a collision for the other 3.
+    const app = buildKpiApp();
+    const series = [
+        { id: 2, name: 'Closing Year Budget' },
+        { id: 3, name: 'Financial Statement Result' },
+        { id: 4, name: 'Budget Reconciliation' },
+    ];
+    const colors = app._kpiColorsForSeries(series);
+    const c2 = colors.get(2), c3 = colors.get(3), c4 = colors.get(4);
+    assert.notEqual(c2, c3);
+    assert.notEqual(c3, c4);
+    assert.notEqual(c2, c4, 'the exact reported bug: these two must not both be green');
+});
+
+test('_kpiColorsForSeries ranks by id (stable order), not array/insertion order', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    const series = [
+        { id: 9, name: 'Passed first, highest id' },
+        { id: 3, name: 'Passed second, lowest id' },
+    ];
+    const colors = app._kpiColorsForSeries(series);
+    assert.equal(colors.get(3), palette[0], 'lowest id must rank first regardless of array position');
+    assert.equal(colors.get(9), palette[1]);
+});
+
+test('_kpiColorsForSeries wraps gracefully when there are genuinely more series than palette colors', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    const series = [1, 2, 3, 4].map(id => ({ id, name: `KPI ${id}` }));
+    const colors = app._kpiColorsForSeries(series);
+    assert.equal(colors.get(4), palette[3 % palette.length], 'a genuine overflow (4 series, 3 colors) is expected to wrap');
+});
+
+test('_kpiColorsForSeries handles an empty or null series list without throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiColorsForSeries([]).size, 0);
+    assert.equal(app._kpiColorsForSeries(null).size, 0);
+    assert.equal(app._kpiColorsForSeries(undefined).size, 0);
+});
+
 test('_kpiColorPalette matches the "Modern Executive" spec\'s exact hex colors', () => {
     // Supersedes the earlier "match Ops exactly" decision — this palette
     // was provided as an explicit spec (exact hex values), not derived
