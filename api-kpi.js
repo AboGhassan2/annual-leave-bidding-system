@@ -725,6 +725,7 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
 
     const series = kpis
         .map(k => ({
+            id: k.id,
             name: k.name,
             data: labels.map(label => (label in resultsByKpi[k.id]) ? resultsByKpi[k.id][label] : null),
         }))
@@ -813,7 +814,7 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, 
         const points = periodType === 'quarterly' ? agg.quarterly : agg.yearly;
         if (points.length === 0) return;
         points.forEach(p => extraLabels.add(p.period));
-        extraSeries.push({ name: k.name, points });
+        extraSeries.push({ id: k.id, name: k.name, points });
     });
 
     let labels, series;
@@ -824,12 +825,12 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, 
         const rebuiltBaseSeries = base.series.map(s => {
             const byLabel = {};
             base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; });
-            return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+            return { id: s.id, name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
         });
         const rebuiltExtraSeries = extraSeries.map(s => {
             const byLabel = {};
             s.points.forEach(p => { byLabel[p.period] = p.achievement; });
-            return { name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+            return { id: s.id, name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
         });
         series = [...rebuiltBaseSeries, ...rebuiltExtraSeries];
     }
@@ -839,7 +840,7 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, 
     const keepIndices = labels.map((l, i) => l.startsWith(`${filterYear}-`) || l === String(filterYear) ? i : -1).filter(i => i !== -1);
     const filteredLabels = keepIndices.map(i => labels[i]);
     const filteredSeries = series
-        .map(s => ({ name: s.name, data: keepIndices.map(i => s.data[i]) }))
+        .map(s => ({ id: s.id, name: s.name, data: keepIndices.map(i => s.data[i]) }))
         .filter(s => s.data.some(v => v !== null));
 
     return { labels: filteredLabels, series: filteredSeries };
@@ -996,5 +997,28 @@ app._kpiMonthColorTier = function(achievement) {
     if (achievement >= 100) return 'above';
     if (achievement >= 80) return 'near';
     return 'below';
+};
+
+// Deterministic, fixed color per KPI — the SAME kpi_definition_id always
+// gets the SAME color, on every chart it appears on (Quarterly Trend,
+// Year-over-Year Trend, and any future multi-KPI chart), regardless of
+// each chart's own array order or which KPIs happen to be filtered in or
+// out. Colors are assigned by kpiId modulo the palette length, so the
+// mapping is stable without needing to store anything.
+//
+// Deliberately avoids green/orange/red — those already carry a specific
+// meaning elsewhere on this dashboard (the Monthly chart's above/near/
+// below-target status colors), and reusing them here for an unrelated
+// "which KPI is this" purpose would risk a viewer misreading a bar's
+// color as a performance signal it doesn't actually represent.
+app._kpiColorPalette = function() {
+    return ['#1d4ed8', '#7c3aed', '#0891b2', '#db2777', '#4338ca', '#0e7490', '#6d28d9', '#1e40af'];
+};
+
+app._kpiColorForId = function(kpiId) {
+    const palette = this._kpiColorPalette();
+    if (kpiId == null) return palette[0];
+    const idx = ((Number(kpiId) % palette.length) + palette.length) % palette.length; // safe for any integer, including unexpected negatives
+    return palette[idx];
 };
 
