@@ -1158,14 +1158,6 @@ test('_kpiColorForId returns the SAME color for the same id, called repeatedly',
     assert.equal(second, third);
 });
 
-test('_kpiColorForId returns a color that never matches the status palette (green/orange/red)', () => {
-    const app = buildKpiApp();
-    const statusColors = ['#059669', '#d97706', '#dc2626']; // above/near/below-target colors used elsewhere on the dashboard
-    for (let id = 1; id <= 20; id++) {
-        assert.ok(!statusColors.includes(app._kpiColorForId(id)), `id ${id} must not collide with a status color`);
-    }
-});
-
 test('_kpiColorForId does not throw for a null/undefined id, returns a valid fallback color', () => {
     const app = buildKpiApp();
     const palette = app._kpiColorPalette();
@@ -1173,28 +1165,16 @@ test('_kpiColorForId does not throw for a null/undefined id, returns a valid fal
     assert.ok(palette.includes(app._kpiColorForId(undefined)));
 });
 
-test('_kpiColorPalette does not cluster multiple near-identical blue/violet/indigo shades together', () => {
-    // Reproduces the real complaint: the original 8-color palette had 5
-    // blue/violet/indigo variants out of 8, so two unrelated KPIs
-    // frequently landed on colors that were technically different but
-    // looked nearly the same at a glance. Confirms the specific
-    // over-clustered shades from that palette are gone, and the new one
-    // is meaningfully smaller/more deliberate.
+test('_kpiColorPalette matches the Ops "Bidders by Block" chart\'s exact colors, per explicit request', () => {
+    // Deliberately reverses two earlier constraints (avoid green/orange/
+    // red, avoid purple next to blue) — confirmed explicitly that
+    // matching Ops exactly was the actual goal here, overriding those.
     const app = buildKpiApp();
     const palette = app._kpiColorPalette();
-    const oldClusteredShades = ['#7c3aed', '#4338ca', '#6d28d9', '#1e40af'];
-    oldClusteredShades.forEach(shade => {
-        assert.ok(!palette.includes(shade), `${shade} was one of the over-clustered blue/violet shades and must not reappear`);
-    });
-    assert.ok(palette.length <= 6, 'a smaller, more deliberate palette is easier to keep genuinely distinct than a large one');
-});
-
-test('_kpiColorPalette contains no purple/magenta/violet tone at all, per explicit dislike of purple next to blue', () => {
-    const app = buildKpiApp();
-    const palette = app._kpiColorPalette();
-    const purpleFamily = ['#a21caf', '#7c3aed', '#4338ca', '#6d28d9', '#1e40af', '#86198f', '#6d28d9', '#581c87'];
-    purpleFamily.forEach(shade => {
-        assert.ok(!palette.includes(shade), `${shade} is a purple/violet/magenta tone and must not appear alongside blue`);
+    const opsColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af'];
+    assert.equal(palette.length, opsColors.length);
+    opsColors.forEach(color => {
+        assert.ok(palette.includes(color), `${color} from the Ops chart's palette must be present here too`);
     });
 });
 
