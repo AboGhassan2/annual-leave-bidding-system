@@ -1035,15 +1035,18 @@ app._kpiColorPalette = function() {
     // -style spec provided directly (exact hex values), superseding the
     // earlier "match Ops exactly" decision. Emerald, Royal Blue, Amber
     // were the original 3, matching the spec's 3 example KPIs exactly.
-    // Rose was added as a 4th after a real, confirmed overflow: a
+    // A 4th color was needed after a real, confirmed overflow: a
     // directorate with 4 KPIs on one chart wrapped the 4th back onto the
     // 1st color (Balance Sheet landing on the same green as Closing Year
     // Budget) — 3 colors was never actually enough once a 4th KPI showed
-    // up. Rose was chosen specifically because it's not adjacent to any
-    // existing color (not blue-adjacent like purple, not green-adjacent
-    // like teal), avoiding the same "too similar to tell apart" problem
-    // found earlier with a blue-heavy palette.
-    return ['#10B981', '#3B82F6', '#F59E0B', '#F43F5E'];
+    // up. Rose was tried first but explicitly rejected — red/rose tones
+    // are reserved for signaling negative figures specifically, not
+    // spent as a generic "which KPI is this" identity color. Slate gray
+    // was chosen instead: neutral, so it doesn't compete with or sit
+    // near any of the 3 saturated hues already in the palette (unlike
+    // teal near emerald, or violet near blue, both avoided for the same
+    // "too similar to tell apart" reason found earlier tonight).
+    return ['#10B981', '#3B82F6', '#F59E0B', '#64748B'];
 };
 
 app._kpiColorForId = function(kpiId) {
