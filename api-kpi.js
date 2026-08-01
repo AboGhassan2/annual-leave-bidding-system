@@ -1040,6 +1040,27 @@ app._kpiColorForId = function(kpiId) {
 // colors, while still giving the same KPI the same color on every chart,
 // since the ranking is computed from the directorate's whole KPI list,
 // not from what's visible on the specific chart being drawn.
+// The previous approach (rank within the WHOLE directorate's KPI list)
+// was still not enough: if a directorate has more total KPIs than the
+// palette has colors, two KPIs whose ranks differ by exactly the palette
+// length still collide — confirmed happening in practice even with only
+// 3 KPIs visible on a given chart, because the directorate had more than
+// 3 KPIs overall. Fixed properly by ranking within the EXACT set of
+// series actually being rendered on a specific chart, not the broader
+// directorate list — this guarantees zero collisions for that render as
+// long as the number of series on it doesn't exceed the palette size,
+// regardless of how many other (not shown here) KPIs exist elsewhere in
+// the directorate. Returns a Map from kpi id -> color.
+app._kpiColorsForSeries = function(series) {
+    const palette = this._kpiColorPalette();
+    const sorted = (series || []).slice().sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    const colorMap = new Map();
+    sorted.forEach((s, i) => {
+        colorMap.set(s.id, palette[i % palette.length]);
+    });
+    return colorMap;
+};
+
 app._kpiColorForIdInDirectorate = function(kpiId, directorateId) {
     const palette = this._kpiColorPalette();
     if (kpiId == null) return palette[0];
