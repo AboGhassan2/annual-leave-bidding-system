@@ -1101,3 +1101,22 @@ app._kpiColorForIdInDirectorate = function(kpiId, directorateId) {
     return palette[rank % palette.length];
 };
 
+// Powers the Overview tab's Monthly Performance chart, now that it has a
+// KPI selector. selectedKpiId null/undefined keeps the original
+// behavior — averaged across every monthly-cadence KPI for the
+// directorate (via _kpiPerformanceByPeriod) — which is exactly why the
+// chart previously gave no indication of which KPI it represented: it
+// wasn't one KPI at all. When a specific kpi id is passed, returns that
+// KPI's own monthly results instead, reusing _kpiSingleYearStats so this
+// stays consistent with the KPI Detail tab's own monthly data. Both
+// paths return the same {period, avgAchievement}[] shape so the
+// chart-drawing code doesn't need to branch on which mode is active.
+app._kpiOverviewMonthlyChartData = function(directorateId, year, selectedKpiId) {
+    if (selectedKpiId == null) {
+        return this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
+    }
+    const stats = this._kpiSingleYearStats(selectedKpiId, year);
+    if (!stats) return [];
+    return stats.monthlyResults.map(r => ({ period: r.period, avgAchievement: r.achievement }));
+};
+
