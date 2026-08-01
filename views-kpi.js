@@ -765,7 +765,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
         ${monthly.length > 0 ? `
             <div class="bg-white rounded-xl shadow p-5 mb-6">
                 <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance — ${year}</h3>
-                <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
+                <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiMonthlyChart"></canvas></div>
             </div>
         ` : ''}
 
@@ -850,11 +850,21 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                     tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
                     datalabels: {
                         anchor: 'end', align: 'top',
-                        color: '#1e3a8a', font: { weight: 'bold', size: 11 },
+                        color: '#ffffff', font: { weight: 'bold', size: 11 },
                         formatter: v => v + '%',
                     },
                 },
-                scales: { y: { beginAtZero: true } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#e5e7eb' },
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                    },
+                    x: {
+                        ticks: { color: '#e5e7eb' },
+                        grid: { display: false },
+                    },
+                },
                 layout: { padding: { top: 16 } },
             },
             plugins: (typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
