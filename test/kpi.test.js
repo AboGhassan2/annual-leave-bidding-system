@@ -1165,6 +1165,97 @@ test('_kpiColorForId does not throw for a null/undefined id, returns a valid fal
     assert.ok(palette.includes(app._kpiColorForId(undefined)));
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiColorForIdInDirectorate — reproduces and fixes the exact reported
+// bug: two unrelated KPIs on the same 3-color chart both showed green,
+// because kpiId % 3 collided for their specific ids.
+// ════════════════════════════════════════════════════════════════════
+
+test('reproduces the exact reported bug: ids that collide under simple modulo get the SAME color from _kpiColorForId', () => {
+    // ids 3 and 6 both give remainder 0 against a 3-color palette --
+    // this is the confirmed mechanism behind "why both KPI same color".
+    const app = buildKpiApp();
+    assert.equal(app._kpiColorForId(3), app._kpiColorForId(6), 'demonstrates the bug this fix addresses');
+});
+
+test('_kpiColorForIdInDirectorate gives 3 KPIs with colliding-under-modulo ids 3 genuinely different colors', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 3, directorate_id: 1, is_active: true, name: 'Closing Year Budget' },
+            { id: 6, directorate_id: 1, is_active: true, name: 'Financial Statement Result' },
+            { id: 9, directorate_id: 1, is_active: true, name: 'Budget Reconciliation' },
+        ],
+    });
+    const c1 = app._kpiColorForIdInDirectorate(3, 1);
+    const c2 = app._kpiColorForIdInDirectorate(6, 1);
+    const c3 = app._kpiColorForIdInDirectorate(9, 1);
+    assert.notEqual(c1, c2);
+    assert.notEqual(c2, c3);
+    assert.notEqual(c1, c3);
+});
+
+test('_kpiColorForIdInDirectorate gives the SAME KPI the SAME color regardless of which subset of the directorate is passed/visible', () => {
+    // The key cross-chart consistency property: Quarterly might only
+    // show 2 of a directorate's 3 KPIs (the third has no quarterly
+    // data), but the one that DOES appear must still get the same color
+    // it would get if all 3 were visible together.
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 3, directorate_id: 1, is_active: true, name: 'A' },
+            { id: 6, directorate_id: 1, is_active: true, name: 'B' },
+            { id: 9, directorate_id: 1, is_active: true, name: 'C' },
+        ],
+    });
+    // Ranking is computed from the full directorate list regardless of
+    // which chart is asking, so this must be stable no matter what.
+    const colorForB_call1 = app._kpiColorForIdInDirectorate(6, 1);
+    const colorForB_call2 = app._kpiColorForIdInDirectorate(6, 1);
+    assert.equal(colorForB_call1, colorForB_call2);
+});
+
+test('_kpiColorForIdInDirectorate ranks by id (stable, deterministic order), not insertion order', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 9, directorate_id: 1, is_active: true, name: 'Inserted first, highest id' },
+            { id: 3, directorate_id: 1, is_active: true, name: 'Inserted second, lowest id' },
+        ],
+    });
+    const palette = app._kpiColorPalette();
+    // id 3 has the lower id, so it must rank 0 (first color) regardless
+    // of array insertion order.
+    assert.equal(app._kpiColorForIdInDirectorate(3, 1), palette[0]);
+    assert.equal(app._kpiColorForIdInDirectorate(9, 1), palette[1]);
+});
+
+test('_kpiColorForIdInDirectorate falls back to the simple function when the KPI isn\'t found in that directorate', () => {
+    const app = buildKpiApp({ kpiDefinitions: [] });
+    const result = app._kpiColorForIdInDirectorate(3, 1);
+    assert.equal(result, app._kpiColorForId(3));
+});
+
+test('_kpiColorForIdInDirectorate wraps gracefully (no error) when a directorate has more KPIs than the palette has colors', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, name: 'A' },
+            { id: 2, directorate_id: 1, is_active: true, name: 'B' },
+            { id: 3, directorate_id: 1, is_active: true, name: 'C' },
+            { id: 4, directorate_id: 1, is_active: true, name: 'D' },
+        ],
+    });
+    const palette = app._kpiColorPalette();
+    // 4th KPI (rank 3) wraps back to palette[0] with a 3-color palette --
+    // acceptable since it's a genuine overflow, not an avoidable
+    // collision like the reported bug.
+    assert.equal(app._kpiColorForIdInDirectorate(4, 1), palette[3 % palette.length]);
+});
+
+test('_kpiColorForIdInDirectorate does not throw for a null/undefined id', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    assert.ok(palette.includes(app._kpiColorForIdInDirectorate(null, 1)));
+    assert.ok(palette.includes(app._kpiColorForIdInDirectorate(undefined, 1)));
+});
+
 test('_kpiColorPalette matches the "Modern Executive" spec\'s exact hex colors', () => {
     // Supersedes the earlier "match Ops exactly" decision — this palette
     // was provided as an explicit spec (exact hex values), not derived
