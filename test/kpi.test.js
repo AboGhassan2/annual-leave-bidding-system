@@ -1189,6 +1189,15 @@ test('_kpiColorPalette does not cluster multiple near-identical blue/violet/indi
     assert.ok(palette.length <= 6, 'a smaller, more deliberate palette is easier to keep genuinely distinct than a large one');
 });
 
+test('_kpiColorPalette contains no purple/magenta/violet tone at all, per explicit dislike of purple next to blue', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    const purpleFamily = ['#a21caf', '#7c3aed', '#4338ca', '#6d28d9', '#1e40af', '#86198f', '#6d28d9', '#581c87'];
+    purpleFamily.forEach(shade => {
+        assert.ok(!palette.includes(shade), `${shade} is a purple/violet/magenta tone and must not appear alongside blue`);
+    });
+});
+
 test('_kpiMultiYearTrend attaches the KPI id to each series, needed for consistent coloring', () => {
     const app = buildKpiApp({
         kpiDefinitions: [{ id: 42, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'K' }],
