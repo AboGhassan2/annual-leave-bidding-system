@@ -1144,4 +1144,55 @@ test('_kpiMonthColorTier classifies achievement into above/near/below/none corre
     assert.equal(app._kpiMonthColorTier(undefined), 'none');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiColorForId — a fixed, deterministic color per KPI, so the same KPI
+// shows the same color on every chart regardless of array order.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiColorForId returns the SAME color for the same id, called repeatedly', () => {
+    const app = buildKpiApp();
+    const first = app._kpiColorForId(7);
+    const second = app._kpiColorForId(7);
+    const third = app._kpiColorForId(7);
+    assert.equal(first, second);
+    assert.equal(second, third);
+});
+
+test('_kpiColorForId returns a color that never matches the status palette (green/orange/red)', () => {
+    const app = buildKpiApp();
+    const statusColors = ['#059669', '#d97706', '#dc2626']; // above/near/below-target colors used elsewhere on the dashboard
+    for (let id = 1; id <= 20; id++) {
+        assert.ok(!statusColors.includes(app._kpiColorForId(id)), `id ${id} must not collide with a status color`);
+    }
+});
+
+test('_kpiColorForId does not throw for a null/undefined id, returns a valid fallback color', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    assert.ok(palette.includes(app._kpiColorForId(null)));
+    assert.ok(palette.includes(app._kpiColorForId(undefined)));
+});
+
+test('_kpiMultiYearTrend attaches the KPI id to each series, needed for consistent coloring', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 42, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'K' }],
+        kpiResults: [{ kpi_definition_id: 42, period_type: 'yearly', period_label: '2027', achievement: 90 }],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'yearly');
+    assert.equal(trend.series[0].id, 42);
+});
+
+test('_kpiMultiYearTrendWithAutoAggregation preserves the KPI id through auto-aggregated monthly series too', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 99, directorate_id: 1, is_active: true, period_type: 'monthly', direction: 'higher_is_better', target_value: 100, name: 'Monthly KPI' }],
+        kpiResults: [
+            { kpi_definition_id: 99, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 99, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 99, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 100 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
+    assert.equal(trend.series[0].id, 99);
+});
+
 
