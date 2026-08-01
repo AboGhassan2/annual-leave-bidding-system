@@ -1172,10 +1172,14 @@ test('_kpiColorForId does not throw for a null/undefined id, returns a valid fal
 // ════════════════════════════════════════════════════════════════════
 
 test('reproduces the exact reported bug: ids that collide under simple modulo get the SAME color from _kpiColorForId', () => {
-    // ids 3 and 6 both give remainder 0 against a 3-color palette --
-    // this is the confirmed mechanism behind "why both KPI same color".
+    // Derives colliding ids from the palette's ACTUAL current length,
+    // rather than hardcoding 3/6 (which assumed a 3-color palette and
+    // stopped demonstrating anything once a 4th color was added) — this
+    // is the confirmed mechanism behind "why both KPI same color"
+    // regardless of how many colors the palette happens to have.
     const app = buildKpiApp();
-    assert.equal(app._kpiColorForId(3), app._kpiColorForId(6), 'demonstrates the bug this fix addresses');
+    const paletteLength = app._kpiColorPalette().length;
+    assert.equal(app._kpiColorForId(paletteLength), app._kpiColorForId(paletteLength * 2), 'demonstrates the bug this fix addresses');
 });
 
 test('_kpiColorForIdInDirectorate gives 3 KPIs with colliding-under-modulo ids 3 genuinely different colors', () => {
@@ -1265,20 +1269,23 @@ test('_kpiColorForIdInDirectorate does not throw for a null/undefined id', () =>
 // the palette, even with only a few actually shown on any one chart.
 // ════════════════════════════════════════════════════════════════════
 
-test('reproduces why the directorate-wide ranking still wasn\'t enough: a 4th, unrelated KPI in the directorate can still cause 2 of the 3 SHOWN KPIs to collide', () => {
-    const app = buildKpiApp({
-        kpiDefinitions: [
-            { id: 1, directorate_id: 1, is_active: true, name: 'Not shown on this chart' },
-            { id: 2, directorate_id: 1, is_active: true, name: 'Closing Year Budget' },
-            { id: 3, directorate_id: 1, is_active: true, name: 'Financial Statement Result' },
-            { id: 4, directorate_id: 1, is_active: true, name: 'Budget Reconciliation' },
-        ],
-    });
-    // Under the old directorate-wide ranking: id 1 -> rank 0, id 4 -> rank 3
-    // -> both rank%3 = 0 -> SAME color, even though id 1 isn't even on
-    // this chart. Confirms the old function still has this gap.
-    const oldWay = app._kpiColorForIdInDirectorate(4, 1);
-    assert.equal(oldWay, app._kpiColorForIdInDirectorate(1, 1), 'demonstrates the directorate-wide approach can still collide due to an unrelated, unshown KPI');
+test('reproduces why the directorate-wide ranking still wasn\'t enough: an unrelated KPI elsewhere in the directorate can still cause 2 SHOWN KPIs to collide', () => {
+    // Builds exactly paletteLength+1 KPIs — enough to guarantee an
+    // overflow under the old directorate-wide ranking regardless of how
+    // many colors the palette actually has, rather than a hardcoded
+    // count that assumed a specific (now-stale) palette size.
+    const app = buildKpiApp();
+    const paletteLength = app._kpiColorPalette().length;
+    const kpiDefinitions = Array.from({ length: paletteLength + 1 }, (_, i) => ({
+        id: i + 1, directorate_id: 1, is_active: true, name: i === 0 ? 'Not shown on this chart' : `KPI ${i + 1}`,
+    }));
+    const app2 = buildKpiApp({ kpiDefinitions });
+    // Under the old directorate-wide ranking: id 1 -> rank 0, id
+    // (paletteLength+1) -> rank paletteLength -> both rank%paletteLength = 0
+    // -> SAME color, even though id 1 isn't even on this chart.
+    const lastId = paletteLength + 1;
+    const oldWay = app2._kpiColorForIdInDirectorate(lastId, 1);
+    assert.equal(oldWay, app2._kpiColorForIdInDirectorate(1, 1), 'demonstrates the directorate-wide approach can still collide due to an unrelated, unshown KPI');
 });
 
 test('_kpiColorsForSeries gives 3 different colors to exactly the 3 series actually being rendered, ignoring unrelated KPIs elsewhere in the directorate', () => {
@@ -1286,6 +1293,7 @@ test('_kpiColorsForSeries gives 3 different colors to exactly the 3 series actua
     // appear on the chart are passed in — id 1 (not shown) is excluded
     // entirely, so it can't cause a collision for the other 3.
     const app = buildKpiApp();
+
     const series = [
         { id: 2, name: 'Closing Year Budget' },
         { id: 3, name: 'Financial Statement Result' },
@@ -1325,17 +1333,28 @@ test('_kpiColorsForSeries handles an empty or null series list without throwing'
     assert.equal(app._kpiColorsForSeries(undefined).size, 0);
 });
 
-test('_kpiColorPalette matches the "Modern Executive" spec\'s exact hex colors', () => {
-    // Supersedes the earlier "match Ops exactly" decision — this palette
-    // was provided as an explicit spec (exact hex values), not derived
-    // from anything already built.
+test('_kpiColorPalette contains the Modern Executive spec\'s 3 original colors plus a 4th, added after a confirmed overflow', () => {
     const app = buildKpiApp();
     const palette = app._kpiColorPalette();
     const specColors = ['#10B981', '#3B82F6', '#F59E0B']; // Emerald, Royal Blue, Amber
-    assert.equal(palette.length, specColors.length);
+    assert.equal(palette.length, 4);
     specColors.forEach(color => {
         assert.ok(palette.includes(color), `${color} from the Modern Executive spec must be present`);
     });
+});
+
+test('_kpiColorsForSeries gives 4 KPIs 4 genuinely different colors, reproducing and confirming the fix for the exact reported overflow (Balance Sheet landing on the same green as Closing Year Budget)', () => {
+    const app = buildKpiApp();
+    const series = [
+        { id: 1, name: 'Closing Year Budget' },
+        { id: 2, name: 'Financial Statement Result' },
+        { id: 3, name: 'Balance Sheet' },
+        { id: 4, name: 'Budget Reconciliation' },
+    ];
+    const colors = app._kpiColorsForSeries(series);
+    const values = [1, 2, 3, 4].map(id => colors.get(id));
+    const uniqueValues = new Set(values);
+    assert.equal(uniqueValues.size, 4, 'all 4 KPIs, including Balance Sheet, must get genuinely distinct colors now that the palette has 4');
 });
 
 test('_kpiMultiYearTrend attaches the KPI id to each series, needed for consistent coloring', () => {
@@ -1358,6 +1377,89 @@ test('_kpiMultiYearTrendWithAutoAggregation preserves the KPI id through auto-ag
     });
     const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
     assert.equal(trend.series[0].id, 99);
+});
+
+// ════════════════════════════════════════════════════════════════════
+// details array — actual/target values carried alongside achievement,
+// for the rich hover tooltip (Value / Achievement / Target) that
+// replaced always-visible bar labels.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiMultiYearTrend\'s details array carries actual and target values matching each data point', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Closing Year Budget' }],
+        kpiResults: [{ kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 244, actual_value: 244, target_value: 100 }],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'quarterly');
+    assert.equal(trend.series[0].data[0], 244, 'data itself stays a plain number for Chart.js');
+    assert.equal(trend.series[0].details[0].actualValue, 244);
+    assert.equal(trend.series[0].details[0].targetValue, 100);
+    assert.equal(trend.series[0].details[0].achievement, 244);
+});
+
+test('a label with no result for a given KPI has a null entry in both data AND details at that index', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Has Q1' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Has Q2' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 90, actual_value: 90, target_value: 100 },
+            { kpi_definition_id: 2, period_type: 'quarterly', period_label: '2027-Q2', achievement: 80, actual_value: 80, target_value: 100 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrend(1, 'quarterly');
+    const series1 = trend.series.find(s => s.id === 1);
+    const q2Index = trend.labels.indexOf('2027-Q2');
+    assert.equal(series1.data[q2Index], null);
+    assert.equal(series1.details[q2Index], null);
+});
+
+test('_kpiAutoAggregateFromMonthly\'s quarterly/yearly points include the summed actual and scaled target values', () => {
+    const kpiDef = { id: 1, period_type: 'monthly', direction: 'higher_is_better', target_value: 100 };
+    const app = buildKpiApp({
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 90 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 110 },
+        ],
+    });
+    const result = app._kpiAutoAggregateFromMonthly(kpiDef);
+    assert.equal(result.quarterly[0].actualValue, 300, 'sum of 90+100+110');
+    assert.equal(result.quarterly[0].targetValue, 300, '3x the monthly target of 100');
+});
+
+test('_kpiMultiYearTrendWithAutoAggregation preserves details through the merge with genuinely quarterly KPIs', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', direction: 'higher_is_better', target_value: 100, name: 'Monthly KPI' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'Real Quarterly KPI' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '02', actual_value: 100 },
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', actual_value: 100 },
+            { kpi_definition_id: 2, period_type: 'quarterly', period_label: '2027-Q1', achievement: 95, actual_value: 95, target_value: 100 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly');
+    const monthlyKpiSeries = trend.series.find(s => s.id === 1);
+    const realQuarterlySeries = trend.series.find(s => s.id === 2);
+    assert.ok(monthlyKpiSeries.details.some(d => d != null), 'the auto-aggregated series must have real detail data, not all nulls');
+    assert.ok(realQuarterlySeries.details.some(d => d != null), 'the genuinely-quarterly series must also keep its detail data after the merge');
+});
+
+test('_kpiMultiYearTrendWithAutoAggregation preserves details through the filterYear step too', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'quarterly', name: 'K' }],
+        kpiResults: [
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2026-Q4', achievement: 50, actual_value: 50, target_value: 100 },
+            { kpi_definition_id: 1, period_type: 'quarterly', period_label: '2027-Q1', achievement: 90, actual_value: 90, target_value: 100 },
+        ],
+    });
+    const trend = app._kpiMultiYearTrendWithAutoAggregation(1, 'quarterly', 2027);
+    assert.equal(trend.labels.length, 1);
+    assert.equal(trend.series[0].details[0].actualValue, 90, 'details must survive the year-filtering step, not just data');
 });
 
 
