@@ -479,14 +479,7 @@
                     });
                     const monthlySlotCounts = monthlyBidderSets.map(s => s.size);
 
-                    // Deliberately distinct across neighboring bars, not
-                    // just different hex values — same principle as the
-                    // KPI dashboards' color fix. Avoids green/orange/red
-                    // for consistency with how those are used elsewhere
-                    // in the app as status colors, and alternates cool/
-                    // neutral hue families so adjacent months don't read
-                    // as near-identical shades.
-                    const barColors = ['#2563eb', '#a21caf', '#0e7490', '#64748b', '#7c3aed', '#1e293b', '#0891b2', '#be185d', '#4338ca', '#334155', '#86198f', '#0369a1'];
+                    const barColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af', '#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b'];
                     const maxCount = Math.max(1, ...monthlySlotCounts);
                     this._opsBlockChart = new Chart(barCtx, {
                         type: 'bar',
