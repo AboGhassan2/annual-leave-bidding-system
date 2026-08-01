@@ -1165,16 +1165,16 @@ test('_kpiColorForId does not throw for a null/undefined id, returns a valid fal
     assert.ok(palette.includes(app._kpiColorForId(undefined)));
 });
 
-test('_kpiColorPalette matches the Ops "Bidders by Block" chart\'s exact colors, per explicit request', () => {
-    // Deliberately reverses two earlier constraints (avoid green/orange/
-    // red, avoid purple next to blue) — confirmed explicitly that
-    // matching Ops exactly was the actual goal here, overriding those.
+test('_kpiColorPalette matches the "Modern Executive" spec\'s exact hex colors', () => {
+    // Supersedes the earlier "match Ops exactly" decision — this palette
+    // was provided as an explicit spec (exact hex values), not derived
+    // from anything already built.
     const app = buildKpiApp();
     const palette = app._kpiColorPalette();
-    const opsColors = ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af'];
-    assert.equal(palette.length, opsColors.length);
-    opsColors.forEach(color => {
-        assert.ok(palette.includes(color), `${color} from the Ops chart's palette must be present here too`);
+    const specColors = ['#10B981', '#3B82F6', '#F59E0B']; // Emerald, Royal Blue, Amber
+    assert.equal(palette.length, specColors.length);
+    specColors.forEach(color => {
+        assert.ok(palette.includes(color), `${color} from the Modern Executive spec must be present`);
     });
 });
 
