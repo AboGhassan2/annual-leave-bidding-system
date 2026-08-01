@@ -775,7 +775,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                 <div class="bg-white rounded-xl shadow p-5">
                     <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Quarterly Trend</h3>
                     <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every quarter with recorded results</p>
-                    <div style="background:linear-gradient(180deg,#2b3543,#1f2733);border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiQuarterlyChart"></canvas></div>
+                    <div style="background:#1F2937;border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiQuarterlyChart"></canvas></div>
                 </div>
             ` : ''}
             ${yearlyTrend.series.length > 0 ? `
@@ -864,7 +864,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
     // Quarterly/Yearly trend charts share the same shape: one line per
     // KPI, plotted across every period that has a result. A shared
     // helper keeps them from drifting apart in styling.
-    const drawTrendChart = (canvasId, trend, darkTheme) => {
+    const drawTrendChart = (canvasId, trend, darkTheme, showLabels) => {
         const ctx = document.getElementById(canvasId);
         if (!ctx || trend.series.length === 0) return null;
         return new Chart(ctx, {
@@ -885,23 +885,32 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                         display: trend.series.length > 1, position: 'bottom',
                         labels: { boxWidth: 10, font: { size: 10 }, color: darkTheme ? '#e5e7eb' : undefined },
                     },
-                    // No always-visible datalabels here — with 2-3+ KPIs
-                    // grouped per period, the labels overlap and become
-                    // unreadable regardless of card background color.
-                    // Exact values are still available on hover via the
-                    // tooltip instead.
                     tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                    // Re-enabled per explicit request — with 2-3+ KPIs
+                    // grouped per period this can get visually tight, but
+                    // showing the figure above each bar was specifically
+                    // asked for here.
+                    ...(showLabels ? {
+                        datalabels: {
+                            anchor: 'end', align: 'top',
+                            color: darkTheme ? '#ffffff' : '#374151',
+                            font: { weight: 'bold', size: 10 },
+                            formatter: v => v != null ? v + '%' : '',
+                        },
+                    } : {}),
                 },
                 scales: darkTheme ? {
                     y: { beginAtZero: true, ticks: { color: '#e5e7eb' }, grid: { color: 'rgba(255,255,255,0.08)' } },
                     x: { ticks: { color: '#e5e7eb' }, grid: { display: false } },
                 } : { y: { beginAtZero: true } },
+                layout: showLabels ? { padding: { top: 16 } } : undefined,
             },
+            plugins: (showLabels && typeof ChartDataLabels !== 'undefined') ? [ChartDataLabels] : [],
         });
     };
 
-    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend, true);
-    this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend, false);
+    this._kpiQuarterlyChart = drawTrendChart('kpiQuarterlyChart', quarterlyTrend, true, true);
+    this._kpiYearlyChart = drawTrendChart('kpiYearlyChart', yearlyTrend, false, false);
 };
 
 app.renderKpiDirectorView = function() {
