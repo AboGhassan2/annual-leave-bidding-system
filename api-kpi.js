@@ -718,7 +718,7 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
         resultsByKpi[k.id] = {};
         results.forEach(r => {
             allLabels.add(r.period_label);
-            resultsByKpi[k.id][r.period_label] = r.achievement;
+            resultsByKpi[k.id][r.period_label] = { achievement: r.achievement, actualValue: r.actual_value, targetValue: r.target_value };
         });
     });
     const labels = Array.from(allLabels).sort();
@@ -727,7 +727,12 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
         .map(k => ({
             id: k.id,
             name: k.name,
-            data: labels.map(label => (label in resultsByKpi[k.id]) ? resultsByKpi[k.id][label] : null),
+            data: labels.map(label => (label in resultsByKpi[k.id]) ? resultsByKpi[k.id][label].achievement : null),
+            // Parallel, same-length array — details[i] describes data[i].
+            // Kept separate from `data` itself so Chart.js's own reading
+            // of bar heights (plain numbers) is completely unaffected;
+            // only the tooltip callback needs to look this up.
+            details: labels.map(label => (label in resultsByKpi[k.id]) ? resultsByKpi[k.id][label] : null),
         }))
         .filter(s => s.data.some(v => v !== null));
 
@@ -775,16 +780,18 @@ app._kpiAutoAggregateFromMonthly = function(kpiDef) {
             const monthResults = this._kpiQuarterMonths(q).map(mk => monthsMap[mk]).filter(Boolean);
             if (monthResults.length !== 3) continue; // incomplete quarter - skip entirely, no partial figure
             const sumActual = monthResults.reduce((s, r) => s + Number(r.actual_value), 0);
-            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: kpiDef.target_value * 3 }, sumActual);
-            if (achievement != null) quarterly.push({ period: `${year}-Q${q}`, achievement });
+            const scaledTarget = kpiDef.target_value * 3;
+            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: scaledTarget }, sumActual);
+            if (achievement != null) quarterly.push({ period: `${year}-Q${q}`, achievement, actualValue: sumActual, targetValue: scaledTarget });
         }
 
         const allMonthKeys = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
         const yearMonthResults = allMonthKeys.map(mk => monthsMap[mk]).filter(Boolean);
         if (yearMonthResults.length === 12) {
             const sumActual = yearMonthResults.reduce((s, r) => s + Number(r.actual_value), 0);
-            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: kpiDef.target_value * 12 }, sumActual);
-            if (achievement != null) yearly.push({ period: year, achievement });
+            const scaledTarget = kpiDef.target_value * 12;
+            const { achievement } = this._computeKpiResultFields({ ...kpiDef, target_value: scaledTarget }, sumActual);
+            if (achievement != null) yearly.push({ period: year, achievement, actualValue: sumActual, targetValue: scaledTarget });
         }
     });
 
@@ -823,14 +830,22 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, 
     } else {
         labels = Array.from(extraLabels).sort();
         const rebuiltBaseSeries = base.series.map(s => {
-            const byLabel = {};
-            base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; });
-            return { id: s.id, name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+            const byLabel = {}, detailsByLabel = {};
+            base.labels.forEach((l, i) => { byLabel[l] = s.data[i]; detailsByLabel[l] = s.details ? s.details[i] : null; });
+            return {
+                id: s.id, name: s.name,
+                data: labels.map(l => (l in byLabel) ? byLabel[l] : null),
+                details: labels.map(l => (l in detailsByLabel) ? detailsByLabel[l] : null),
+            };
         });
         const rebuiltExtraSeries = extraSeries.map(s => {
-            const byLabel = {};
-            s.points.forEach(p => { byLabel[p.period] = p.achievement; });
-            return { id: s.id, name: s.name, data: labels.map(l => (l in byLabel) ? byLabel[l] : null) };
+            const byLabel = {}, detailsByLabel = {};
+            s.points.forEach(p => { byLabel[p.period] = p.achievement; detailsByLabel[p.period] = { achievement: p.achievement, actualValue: p.actualValue, targetValue: p.targetValue }; });
+            return {
+                id: s.id, name: s.name,
+                data: labels.map(l => (l in byLabel) ? byLabel[l] : null),
+                details: labels.map(l => (l in detailsByLabel) ? detailsByLabel[l] : null),
+            };
         });
         series = [...rebuiltBaseSeries, ...rebuiltExtraSeries];
     }
@@ -840,7 +855,11 @@ app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, 
     const keepIndices = labels.map((l, i) => l.startsWith(`${filterYear}-`) || l === String(filterYear) ? i : -1).filter(i => i !== -1);
     const filteredLabels = keepIndices.map(i => labels[i]);
     const filteredSeries = series
-        .map(s => ({ id: s.id, name: s.name, data: keepIndices.map(i => s.data[i]) }))
+        .map(s => ({
+            id: s.id, name: s.name,
+            data: keepIndices.map(i => s.data[i]),
+            details: keepIndices.map(i => (s.details ? s.details[i] : null)),
+        }))
         .filter(s => s.data.some(v => v !== null));
 
     return { labels: filteredLabels, series: filteredSeries };
@@ -1014,11 +1033,17 @@ app._kpiMonthColorTier = function(achievement) {
 app._kpiColorPalette = function() {
     // "Modern Executive" palette — an explicit Power BI/Microsoft Fabric
     // -style spec provided directly (exact hex values), superseding the
-    // earlier "match Ops exactly" decision. Emerald, Royal Blue, Amber —
-    // deliberately just 3 colors, matching the spec's 3 example KPIs
-    // exactly (Closing Year Budget, Financial Statement Result, Budget
-    // Reconciliation).
-    return ['#10B981', '#3B82F6', '#F59E0B'];
+    // earlier "match Ops exactly" decision. Emerald, Royal Blue, Amber
+    // were the original 3, matching the spec's 3 example KPIs exactly.
+    // Rose was added as a 4th after a real, confirmed overflow: a
+    // directorate with 4 KPIs on one chart wrapped the 4th back onto the
+    // 1st color (Balance Sheet landing on the same green as Closing Year
+    // Budget) — 3 colors was never actually enough once a 4th KPI showed
+    // up. Rose was chosen specifically because it's not adjacent to any
+    // existing color (not blue-adjacent like purple, not green-adjacent
+    // like teal), avoiding the same "too similar to tell apart" problem
+    // found earlier with a blue-heavy palette.
+    return ['#10B981', '#3B82F6', '#F59E0B', '#F43F5E'];
 };
 
 app._kpiColorForId = function(kpiId) {
