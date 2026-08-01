@@ -1471,4 +1471,64 @@ test('_kpiMultiYearTrendWithAutoAggregation preserves details through the filter
     assert.equal(trend.series[0].details[0].actualValue, 90, 'details must survive the year-filtering step, not just data');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// _kpiOverviewMonthlyChartData — powers the Overview tab's Monthly
+// Performance chart's new KPI selector. null/undefined selectedKpiId
+// keeps the original averaged-across-all-KPIs behavior; a specific id
+// switches to that one KPI's own monthly data.
+// ════════════════════════════════════════════════════════════════════
+
+test('with no selectedKpiId, behaves identically to the original averaged-across-all-KPIs function', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 80 },
+            { kpi_definition_id: 2, year: 2027, period_type: 'monthly', period_value: '01', achievement: 100 },
+        ],
+    });
+    const original = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    const viaSelector = app._kpiOverviewMonthlyChartData(1, 2027, null);
+    assert.deepStrictEqual(viaSelector, original);
+});
+
+test('with a specific selectedKpiId, returns ONLY that KPI\'s own monthly data, not averaged with others', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'Budget Reconciliation' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'Financial Statement Result' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 80 },
+            { kpi_definition_id: 2, year: 2027, period_type: 'monthly', period_value: '01', achievement: 100 },
+        ],
+    });
+    const result = app._kpiOverviewMonthlyChartData(1, 2027, 1);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].period, '01');
+    assert.equal(result[0].avgAchievement, 80, 'must be KPI 1\'s own value (80), not averaged with KPI 2\'s 100');
+});
+
+test('a selected KPI with no results for the year returns an empty array, not an error', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'K' }],
+        kpiResults: [],
+    });
+    const result = app._kpiOverviewMonthlyChartData(1, 2027, 1);
+    assert.equal(result.length, 0);
+});
+
+test('both modes return the same {period, avgAchievement} shape', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'K' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90 }],
+    });
+    const allMode = app._kpiOverviewMonthlyChartData(1, 2027, null);
+    const singleMode = app._kpiOverviewMonthlyChartData(1, 2027, 1);
+    assert.deepStrictEqual(Object.keys(allMode[0]).sort(), Object.keys(singleMode[0]).sort());
+});
+
+
 
