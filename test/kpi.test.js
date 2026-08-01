@@ -1173,6 +1173,22 @@ test('_kpiColorForId does not throw for a null/undefined id, returns a valid fal
     assert.ok(palette.includes(app._kpiColorForId(undefined)));
 });
 
+test('_kpiColorPalette does not cluster multiple near-identical blue/violet/indigo shades together', () => {
+    // Reproduces the real complaint: the original 8-color palette had 5
+    // blue/violet/indigo variants out of 8, so two unrelated KPIs
+    // frequently landed on colors that were technically different but
+    // looked nearly the same at a glance. Confirms the specific
+    // over-clustered shades from that palette are gone, and the new one
+    // is meaningfully smaller/more deliberate.
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    const oldClusteredShades = ['#7c3aed', '#4338ca', '#6d28d9', '#1e40af'];
+    oldClusteredShades.forEach(shade => {
+        assert.ok(!palette.includes(shade), `${shade} was one of the over-clustered blue/violet shades and must not reappear`);
+    });
+    assert.ok(palette.length <= 6, 'a smaller, more deliberate palette is easier to keep genuinely distinct than a large one');
+});
+
 test('_kpiMultiYearTrend attaches the KPI id to each series, needed for consistent coloring', () => {
     const app = buildKpiApp({
         kpiDefinitions: [{ id: 42, directorate_id: 1, is_active: true, period_type: 'yearly', name: 'K' }],
