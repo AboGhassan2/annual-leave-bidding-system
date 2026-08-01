@@ -726,7 +726,22 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     const rankedKpis = this._kpiRankedList(directorateId, year);
     const top10 = rankedKpis.slice(0, 10);
     const bottom10 = rankedKpis.slice(-10).reverse();
-    const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
+    // Selector state: null/undefined means "All KPIs (Average)" — the
+    // original behavior. A specific id shows just that KPI's own
+    // monthly data instead, since averaging across every monthly KPI
+    // gave no indication of which KPI the chart actually represented.
+    // Guarded against a stale id from a DIFFERENT directorate (e.g. the
+    // Planner's Preview Dashboard tab switching between directorates) —
+    // only honored if it's actually one of this directorate's own
+    // monthly-cadence KPIs, otherwise treated as no selection for this
+    // render rather than silently showing empty data under a misleading
+    // "All KPIs" title.
+    const monthlyCadenceKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+    const rawSelectedMonthlyKpiId = this.state._kpiOverviewMonthlySelectedKpiId ?? null;
+    const selectedMonthlyKpiId = (rawSelectedMonthlyKpiId != null && monthlyCadenceKpis.some(k => k.id === rawSelectedMonthlyKpiId))
+        ? rawSelectedMonthlyKpiId : null;
+    const monthly = this._kpiOverviewMonthlyChartData(directorateId, year, selectedMonthlyKpiId);
+    const selectedMonthlyKpi = selectedMonthlyKpiId != null ? monthlyCadenceKpis.find(k => k.id === selectedMonthlyKpiId) : null;
     // Quarterly and Yearly are trend charts spanning every year that has
     // results — not scoped to the single selected year like Monthly is,
     // since the whole point is showing long-term performance over time.
@@ -762,10 +777,23 @@ app._buildKpiDashboardBody = function(directorateId, year) {
         </div>
 
         <!-- Monthly (single year) -->
-        ${monthly.length > 0 ? `
+        ${monthly.length > 0 || monthlyCadenceKpis.length > 0 ? `
             <div class="bg-white rounded-xl shadow p-5 mb-6">
-                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">Monthly Performance — ${year}</h3>
-                <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">
+                        Monthly Performance — ${year}${selectedMonthlyKpi ? ` · ${esc(selectedMonthlyKpi.name)}` : ' · All KPIs (Average)'}
+                    </h3>
+                    <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; app.renderKpiDirectorView();"
+                        style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                        <option value="" ${selectedMonthlyKpiId == null ? 'selected' : ''}>All KPIs (Average)</option>
+                        ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}
+                    </select>
+                </div>
+                ${monthly.length > 0 ? `
+                    <div style="height:220px;"><canvas id="kpiMonthlyChart"></canvas></div>
+                ` : `
+                    <p class="text-sm text-gray-400 text-center py-8">No results recorded yet for ${selectedMonthlyKpi ? esc(selectedMonthlyKpi.name) : 'this selection'} in ${year}.</p>
+                `}
             </div>
         ` : ''}
 
@@ -827,7 +855,11 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 // call sites for the same reason as the body-builder above.
 app._drawKpiDashboardCharts = function(directorateId, year) {
     if (typeof Chart === 'undefined') return;
-    const monthly = this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
+    const monthlyCadenceKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+    const rawSelectedMonthlyKpiId = this.state._kpiOverviewMonthlySelectedKpiId ?? null;
+    const selectedMonthlyKpiId = (rawSelectedMonthlyKpiId != null && monthlyCadenceKpis.some(k => k.id === rawSelectedMonthlyKpiId))
+        ? rawSelectedMonthlyKpiId : null;
+    const monthly = this._kpiOverviewMonthlyChartData(directorateId, year, selectedMonthlyKpiId);
     const quarterlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'quarterly', year);
     const yearlyTrend = this._kpiMultiYearTrendWithAutoAggregation(directorateId, 'yearly');
 
