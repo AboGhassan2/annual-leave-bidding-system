@@ -1343,6 +1343,15 @@ test('_kpiColorPalette contains the Modern Executive spec\'s 3 original colors p
     });
 });
 
+test('_kpiColorPalette contains no red/rose tone at all — reserved for signaling negative figures, not spent as a generic KPI identity color', () => {
+    const app = buildKpiApp();
+    const palette = app._kpiColorPalette();
+    const redRoseFamily = ['#dc2626', '#ef4444', '#f43f5e', '#F43F5E', '#be123c', '#9f1239', '#e11d48'];
+    redRoseFamily.forEach(shade => {
+        assert.ok(!palette.includes(shade), `${shade} is a red/rose tone and must not appear in the general KPI palette`);
+    });
+});
+
 test('_kpiColorsForSeries gives 4 KPIs 4 genuinely different colors, reproducing and confirming the fix for the exact reported overflow (Balance Sheet landing on the same green as Closing Year Budget)', () => {
     const app = buildKpiApp();
     const series = [
