@@ -1012,12 +1012,13 @@ app._kpiMonthColorTier = function(achievement) {
 // "which KPI is this" purpose would risk a viewer misreading a bar's
 // color as a performance signal it doesn't actually represent.
 app._kpiColorPalette = function() {
-    // Matches the Ops "Bidders by Block" chart's exact palette, per
-    // explicit request to use the same colors — including purple next to
-    // blue, which was deliberately excluded earlier for being too close
-    // to blue, but confirmed acceptable specifically here since matching
-    // Ops exactly was the actual goal, not general purple-avoidance.
-    return ['#4f6df5', '#22c55e', '#dc2626', '#a855f7', '#f59e0b', '#14b8a6', '#9ca3af'];
+    // "Modern Executive" palette — an explicit Power BI/Microsoft Fabric
+    // -style spec provided directly (exact hex values), superseding the
+    // earlier "match Ops exactly" decision. Emerald, Royal Blue, Amber —
+    // deliberately just 3 colors, matching the spec's 3 example KPIs
+    // exactly (Closing Year Budget, Financial Statement Result, Budget
+    // Reconciliation).
+    return ['#10B981', '#3B82F6', '#F59E0B'];
 };
 
 app._kpiColorForId = function(kpiId) {
