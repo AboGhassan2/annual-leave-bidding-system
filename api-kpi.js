@@ -683,14 +683,24 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
             .filter(r => r.kpi_definition_id === k.id && r.year === year && r.period_type === periodType && r.achievement != null)
             .forEach(r => {
                 const key = r.period_value || String(year);
-                if (!byPeriod[key]) byPeriod[key] = [];
-                byPeriod[key].push(r.achievement);
+                if (!byPeriod[key]) byPeriod[key] = { achievements: [], actuals: [], targets: [] };
+                byPeriod[key].achievements.push(r.achievement);
+                if (r.actual_value != null) byPeriod[key].actuals.push(r.actual_value);
+                if (r.target_value != null) byPeriod[key].targets.push(r.target_value);
             });
     });
+    const avg = arr => arr.length > 0 ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 100) / 100 : null;
     return Object.entries(byPeriod)
-        .map(([period, values]) => ({
+        .map(([period, v]) => ({
             period,
-            avgAchievement: Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 100) / 100,
+            avgAchievement: avg(v.achievements),
+            // With multiple KPIs averaged together, actual/target are
+            // themselves averages across KPIs — same treatment as
+            // avgAchievement, just applied consistently to the other two
+            // figures so the tooltip can show all three regardless of
+            // whether one KPI or several are being averaged.
+            avgActual: avg(v.actuals),
+            avgTarget: avg(v.targets),
         }))
         .sort((a, b) => a.period.localeCompare(b.period));
 };
@@ -953,7 +963,7 @@ app._kpiSingleYearStats = function(kpiId, year) {
         kpiId, year, kpiName: kpiDef.name,
         overallAchievement, targetsMetCount, totalMonthsWithData: monthResults.length,
         bestMonth, lowestMonth,
-        monthlyResults: monthResults.map(r => ({ period: r.period_value, achievement: r.achievement, status: r.status, actualValue: r.actual_value })),
+        monthlyResults: monthResults.map(r => ({ period: r.period_value, achievement: r.achievement, status: r.status, actualValue: r.actual_value, targetValue: r.target_value })),
     };
 };
 
@@ -1117,6 +1127,11 @@ app._kpiOverviewMonthlyChartData = function(directorateId, year, selectedKpiId) 
     }
     const stats = this._kpiSingleYearStats(selectedKpiId, year);
     if (!stats) return [];
-    return stats.monthlyResults.map(r => ({ period: r.period, avgAchievement: r.achievement }));
+    // Same field names as the "All KPIs (Average)" mode (avgActual/
+    // avgTarget) even though there's only one KPI here — with a single
+    // KPI these are just that KPI's own actual/target, not an average of
+    // anything, but keeping the field names uniform lets the tooltip
+    // read from the same shape regardless of which mode is active.
+    return stats.monthlyResults.map(r => ({ period: r.period, avgAchievement: r.achievement, avgActual: r.actualValue, avgTarget: r.targetValue }));
 };
 
