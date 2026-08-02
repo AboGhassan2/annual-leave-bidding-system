@@ -1574,6 +1574,143 @@ test('_kpiOverviewMonthlyChartData\'s single-KPI mode carries that KPI\'s own ac
     assert.equal(result[0].avgTarget, 735);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// KPI/Owner Excel import — pure mapping and parsing helpers.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiMapFrequencyToPeriodType maps Monthly/Quarterly/Annual correctly, case/whitespace-insensitive', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMapFrequencyToPeriodType('Monthly'), 'monthly');
+    assert.equal(app._kpiMapFrequencyToPeriodType('  quarterly '), 'quarterly');
+    assert.equal(app._kpiMapFrequencyToPeriodType('ANNUAL'), 'yearly');
+    assert.equal(app._kpiMapFrequencyToPeriodType('Annually'), 'yearly');
+});
+
+test('_kpiMapFrequencyToPeriodType returns null for unrecognized values, rather than guessing a default', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMapFrequencyToPeriodType('Weekly'), null);
+    assert.equal(app._kpiMapFrequencyToPeriodType(''), null);
+    assert.equal(app._kpiMapFrequencyToPeriodType(null), null);
+    assert.equal(app._kpiMapFrequencyToPeriodType(undefined), null);
+});
+
+test('_kpiMapLineNumberToLineName maps 3-6 to L3-L6, accepting both numbers and numeric strings', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMapLineNumberToLineName(3), 'L3');
+    assert.equal(app._kpiMapLineNumberToLineName('4'), 'L4');
+    assert.equal(app._kpiMapLineNumberToLineName(5), 'L5');
+    assert.equal(app._kpiMapLineNumberToLineName(6), 'L6');
+});
+
+test('_kpiMapLineNumberToLineName returns null for anything outside 3-6', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMapLineNumberToLineName(2), null);
+    assert.equal(app._kpiMapLineNumberToLineName(7), null);
+    assert.equal(app._kpiMapLineNumberToLineName('not a number'), null);
+    assert.equal(app._kpiMapLineNumberToLineName(null), null);
+});
+
+test('_kpiParsePercentValue normalizes every real-world spreadsheet form to a 0-1 fraction', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiParsePercentValue(0.4), 0.4);
+    assert.equal(app._kpiParsePercentValue('0.4'), 0.4);
+    assert.equal(app._kpiParsePercentValue('40%'), 0.4);
+    assert.equal(app._kpiParsePercentValue('40'), 0.4);
+    assert.equal(app._kpiParsePercentValue(1), 1);
+    assert.equal(app._kpiParsePercentValue('100%'), 1);
+});
+
+test('_kpiParsePercentValue returns null for empty/invalid input rather than throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiParsePercentValue(null), null);
+    assert.equal(app._kpiParsePercentValue(undefined), null);
+    assert.equal(app._kpiParsePercentValue(''), null);
+    assert.equal(app._kpiParsePercentValue('not a number'), null);
+});
+
+test('_kpiParseOwnerImportRow parses a genuinely valid row correctly', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseOwnerImportRow({
+        'Line': 3, 'Code': 'A', 'KPI Code': 'A1', 'KPI Name': 'Passenger satisfaction',
+        'Frequency': 'Quarterly', 'KPI Weight %': 0.4, 'Owner Dept': 'Operations',
+        'Owner Name': 'HANI ALHARBI', 'Owner Email': 'Hani.Alharbi@flow-metro.com', 'Owner %': 1,
+    });
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.data.line, 'L3');
+    assert.equal(result.data.periodType, 'quarterly');
+    assert.equal(result.data.kpiCode, 'A1');
+    assert.equal(result.data.ownerPct, 1);
+});
+
+test('_kpiParseOwnerImportRow reports specific, named errors for each missing/invalid required field', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseOwnerImportRow({ 'Line': 99, 'Frequency': 'Weekly', 'Owner %': 'bogus' });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('Line')));
+    assert.ok(result.errors.some(e => e.includes('Frequency')));
+    assert.ok(result.errors.some(e => e.includes('KPI Code')));
+    assert.ok(result.errors.some(e => e.includes('KPI Name')));
+    assert.ok(result.errors.some(e => e.includes('Owner Dept')));
+    assert.ok(result.errors.some(e => e.includes('Owner %')));
+});
+
+test('_kpiParseOwnerImportRows separates valid from invalid rows and tracks the correct spreadsheet row number', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        { 'Line': 3, 'KPI Code': 'A1', 'KPI Name': 'K', 'Frequency': 'Monthly', 'Owner Dept': 'Operations', 'Owner %': 1 }, // valid, row 2
+        { 'Line': 99, 'KPI Code': 'A2', 'KPI Name': 'K', 'Frequency': 'Monthly', 'Owner Dept': 'Operations', 'Owner %': 1 }, // invalid line, row 3
+    ];
+    const { validRows, invalidRows } = app._kpiParseOwnerImportRows(rawRows);
+    assert.equal(validRows.length, 1);
+    assert.equal(invalidRows.length, 1);
+    assert.equal(invalidRows[0].rowNumber, 3, 'row 0 in the array is spreadsheet row 2 (header), so index 1 is row 3');
+});
+
+test('_kpiGroupImportRowsByLineAndCode collapses multi-owner rows into one KPI entry with an owners array — reproduces the real "A3" 90/10 split', () => {
+    const app = buildKpiApp();
+    const validRows = [
+        { line: 'L3', code: 'A', kpiCode: 'A3', kpiName: 'Complaints per boarding', periodType: 'monthly', weight: 0.2, ownerDept: 'Operations', ownerName: 'HANI ALHARBI', ownerEmail: 'h@x.com', ownerPct: 0.9 },
+        { line: 'L3', code: 'A', kpiCode: 'A3', kpiName: 'Complaints per boarding', periodType: 'monthly', weight: 0.2, ownerDept: 'Finance', ownerName: 'TARIQ MANSOUR', ownerEmail: 't@x.com', ownerPct: 0.1 },
+    ];
+    const grouped = app._kpiGroupImportRowsByLineAndCode(validRows);
+    assert.equal(grouped.length, 1, 'both rows describe the same KPI on the same line, must collapse into ONE entry');
+    assert.equal(grouped[0].owners.length, 2);
+    assert.equal(grouped[0].owners[0].dept, 'Operations');
+    assert.equal(grouped[0].owners[0].pct, 0.9);
+    assert.equal(grouped[0].owners[1].dept, 'Finance');
+});
+
+test('_kpiGroupImportRowsByLineAndCode keeps the SAME KPI code on DIFFERENT lines as separate entries, not merged', () => {
+    const app = buildKpiApp();
+    const validRows = [
+        { line: 'L3', code: 'A', kpiCode: 'A1', kpiName: 'K', periodType: 'monthly', weight: 0.4, ownerDept: 'Operations', ownerName: '', ownerEmail: '', ownerPct: 1 },
+        { line: 'L4', code: 'A', kpiCode: 'A1', kpiName: 'K', periodType: 'monthly', weight: 0.4, ownerDept: 'Operations', ownerName: '', ownerEmail: '', ownerPct: 1 },
+    ];
+    const grouped = app._kpiGroupImportRowsByLineAndCode(validRows);
+    assert.equal(grouped.length, 2, 'A1 on L3 and A1 on L4 are genuinely different KPI instances, must stay separate');
+});
+
+test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
+    const app = buildKpiApp();
+    const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
+    assert.equal(app._kpiDeterminePrimaryOwnerDept(owners), 'Operations');
+});
+
+test('_kpiDeterminePrimaryOwnerDept ties are broken by first-in-list, not alphabetically', () => {
+    const app = buildKpiApp();
+    const owners = [{ dept: 'Zebra Dept', pct: 0.5 }, { dept: 'Alpha Dept', pct: 0.5 }];
+    assert.equal(app._kpiDeterminePrimaryOwnerDept(owners), 'Zebra Dept', 'first in the array wins a tie, alphabetical order must not matter');
+});
+
+test('_kpiDeterminePrimaryOwnerDept handles an empty/missing owners list without throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiDeterminePrimaryOwnerDept([]), null);
+    assert.equal(app._kpiDeterminePrimaryOwnerDept(null), null);
+});
+
+
+
 
 
 
