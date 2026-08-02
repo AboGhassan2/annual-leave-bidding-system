@@ -1709,6 +1709,94 @@ test('_kpiDeterminePrimaryOwnerDept handles an empty/missing owners list without
     assert.equal(app._kpiDeterminePrimaryOwnerDept(null), null);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// KPI Threshold Excel import — a separate spreadsheet that fills in
+// Exceptional/Acceptable/Unacceptable on already-imported KPIs, and
+// reveals each KPI's direction from the threshold ordering itself.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiDeriveDirectionFromThresholds infers higher_is_better when Exceptional > Acceptable > Unacceptable', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiDeriveDirectionFromThresholds(0.95, 0.85, 0.75), 'higher_is_better');
+});
+
+test('_kpiDeriveDirectionFromThresholds infers lower_is_better when Exceptional < Acceptable < Unacceptable — reproduces the real "Complaints per boarding" case (5/20/50)', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiDeriveDirectionFromThresholds(5, 20, 50), 'lower_is_better');
+});
+
+test('_kpiDeriveDirectionFromThresholds returns null for a non-monotonic or missing ordering, rather than guessing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiDeriveDirectionFromThresholds(0.85, 0.95, 0.75), null, 'not a consistent order either direction');
+    assert.equal(app._kpiDeriveDirectionFromThresholds(0.9, 0.9, 0.9), null, 'all equal is not a valid ordering');
+    assert.equal(app._kpiDeriveDirectionFromThresholds(null, 0.85, 0.75), null);
+});
+
+test('_kpiParseThresholdImportRow parses a genuinely valid higher-is-better row correctly', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseThresholdImportRow({
+        'Line': 3, 'Code': 'A', 'KPI Code': 'A1', 'KPI Name': 'Passenger satisfaction',
+        'Frequency': 'Quarterly', 'Level 3%': 0.4, 'Unit': '%', 'Exceptional': 0.95, 'Acceptable': 0.85, 'Unacceptable': 0.75,
+    });
+    assert.equal(result.valid, true);
+    assert.equal(result.data.line, 'L3');
+    assert.equal(result.data.direction, 'higher_is_better');
+    assert.equal(result.data.acceptable, 0.85);
+});
+
+test('_kpiParseThresholdImportRow parses a genuinely valid lower-is-better row correctly (real "A3" data: 5/20/50)', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseThresholdImportRow({
+        'Line': 3, 'Code': 'A', 'KPI Code': 'A3', 'KPI Name': 'Complaints per boarding',
+        'Frequency': 'Monthly', 'Level 3%': 0.4, 'Unit': 'Number', 'Exceptional': 5, 'Acceptable': 20, 'Unacceptable': 50,
+    });
+    assert.equal(result.valid, true);
+    assert.equal(result.data.direction, 'lower_is_better');
+    assert.equal(result.data.unit, 'Number');
+});
+
+test('_kpiParseThresholdImportRow reports an error for missing Acceptable/Unacceptable rather than silently defaulting', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseThresholdImportRow({ 'Line': 3, 'KPI Code': 'A1', 'Exceptional': 0.95 });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(e => e.includes('Acceptable')));
+    assert.ok(result.errors.some(e => e.includes('Unacceptable')));
+});
+
+test('_kpiParseThresholdImportRows separates valid from invalid rows across a batch', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        { 'Line': 3, 'KPI Code': 'A1', 'Exceptional': 0.95, 'Acceptable': 0.85, 'Unacceptable': 0.75 }, // valid
+        { 'Line': 3, 'KPI Code': 'A2', 'Exceptional': 0.5, 'Acceptable': 0.9, 'Unacceptable': 0.6 }, // non-monotonic, invalid
+    ];
+    const { validRows, invalidRows } = app._kpiParseThresholdImportRows(rawRows);
+    assert.equal(validRows.length, 1);
+    assert.equal(invalidRows.length, 1);
+});
+
+test('_kpiFindExistingKpiByCodeAndLine finds the right KPI by (kpi_code, line) regardless of which directorate it\'s under', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 10, directorate_id: 1, department_name: 'L3' },
+            { id: 11, directorate_id: 1, department_name: 'L4' },
+            { id: 20, directorate_id: 2, department_name: 'L3' }, // a DIFFERENT directorate's L3 line
+        ],
+        kpiDefinitions: [
+            { id: 100, kpi_code: 'A1', department_id: 10, directorate_id: 1 }, // A1 on L3 under directorate 1
+            { id: 101, kpi_code: 'A1', department_id: 11, directorate_id: 1 }, // A1 on L4 under directorate 1
+            { id: 102, kpi_code: 'B1', department_id: 20, directorate_id: 2 }, // B1 on L3 under directorate 2
+        ],
+    });
+    const found = app._kpiFindExistingKpiByCodeAndLine('A1', 'L3');
+    assert.equal(found.id, 100, 'must find the A1/L3 KPI regardless of not knowing its directorate upfront');
+});
+
+test('_kpiFindExistingKpiByCodeAndLine returns null when no matching KPI exists, rather than throwing', () => {
+    const app = buildKpiApp({ kpiDirectorateDepartments: [], kpiDefinitions: [] });
+    assert.equal(app._kpiFindExistingKpiByCodeAndLine('ZZZ', 'L3'), null);
+});
+
+
 
 
 
