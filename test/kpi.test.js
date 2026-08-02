@@ -1744,6 +1744,45 @@ test('_kpiParseThresholdImportRow parses a genuinely valid higher-is-better row 
     assert.equal(result.data.acceptable, 0.85);
 });
 
+test('_kpiParseThresholdNumericValue handles "95.00%"-style strings — reproduces the exact real bug: the browser\'s actual XLSX parser (raw:false) formats percentage cells this way, and plain Number() cannot parse a string with a % character', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiParseThresholdNumericValue('95.00%'), 0.95);
+    assert.equal(app._kpiParseThresholdNumericValue('83.00%'), 0.83);
+    assert.equal(app._kpiParseThresholdNumericValue('58.00%'), 0.58);
+});
+
+test('_kpiParseThresholdNumericValue treats a plain numeric string with NO % sign as a raw value, never dividing by 100 regardless of magnitude — real "Number"-unit case: "20.00" must stay 20, not become 0.2', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiParseThresholdNumericValue('5.00'), 5);
+    assert.equal(app._kpiParseThresholdNumericValue('20.00'), 20);
+    assert.equal(app._kpiParseThresholdNumericValue('50.00'), 50);
+});
+
+test('_kpiParseThresholdImportRow correctly parses a real-shaped row exactly as the browser\'s SheetJS library actually produces it (percent-formatted strings, not raw decimals)', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseThresholdImportRow({
+        'Line': '3', 'Code': 'A', 'KPI Code': 'A1', 'KPI Name': 'Passenger satisfaction',
+        'Frequency': 'Quarterly', 'Level 3%': '40%', 'Unit': '%',
+        'Exceptional': '95.00%', 'Acceptable': '85.00%', 'Unacceptable': '75.00%',
+    });
+    assert.equal(result.valid, true, `must parse successfully; errors were: ${JSON.stringify(result.errors)}`);
+    assert.equal(result.data.acceptable, 0.85);
+    assert.equal(result.data.direction, 'higher_is_better');
+});
+
+test('_kpiParseThresholdImportRow correctly parses a real-shaped lower-is-better "Number" unit row (A3: "5.00"/"20.00"/"50.00", no % signs)', () => {
+    const app = buildKpiApp();
+    const result = app._kpiParseThresholdImportRow({
+        'Line': '3', 'Code': 'A', 'KPI Code': 'A3', 'KPI Name': 'Complaints per boarding',
+        'Frequency': 'Monthly', 'Level 3%': '40%', 'Unit': 'Number',
+        'Exceptional': '5.00', 'Acceptable': '20.00', 'Unacceptable': '50.00',
+    });
+    assert.equal(result.valid, true, `must parse successfully; errors were: ${JSON.stringify(result.errors)}`);
+    assert.equal(result.data.acceptable, 20, 'must stay 20, not be divided down to 0.2');
+    assert.equal(result.data.direction, 'lower_is_better');
+});
+
+
 test('_kpiParseThresholdImportRow parses a genuinely valid lower-is-better row correctly (real "A3" data: 5/20/50)', () => {
     const app = buildKpiApp();
     const result = app._kpiParseThresholdImportRow({
