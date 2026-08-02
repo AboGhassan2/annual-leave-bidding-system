@@ -1192,21 +1192,23 @@ app._kpiParsePercentValue = function(value) {
 };
 
 // Threshold values (Exceptional/Acceptable/Unacceptable) need DIFFERENT
-// handling than _kpiParsePercentValue above: that function assumes any
-// bare value >1 must be a whole-number percentage meant to be divided by
-// 100 — wrong here, since a threshold can legitimately be a raw count
-// (e.g. "20.00" meaning literally 20 complaints, not 0.2). The browser's
-// actual XLSX parser (SheetJS, raw:false) formats percentage-styled
-// cells as "95.00%" strings and plain-number cells as "20.00" — the
-// presence of a literal % character is what actually distinguishes
-// them, not the magnitude, so that's the only signal used here.
+// handling than _kpiParsePercentValue above. That function divides by
+// 100 to store a 0-1 fraction — correct for owner/weight percentages,
+// but wrong here: this app's established convention (confirmed against
+// real KPI data — e.g. "Budget Reconciliation" stores target=750 and
+// actuals like 70/90, never fractions) is to store raw numbers on the
+// same scale as whatever a planner types into the "Actual Value (%)"
+// field when entering results. A stored target of 0.85 against an
+// entered actual of 87 would silently compute a nonsense achievement %
+// (87/0.85*100 = 10235%). This function only ever strips a literal %
+// character if present — it never divides by 100, regardless of
+// magnitude, keeping thresholds on the same scale results are entered on.
 app._kpiParseThresholdNumericValue = function(value) {
     if (value == null || value === '') return null;
     const str = String(value).trim();
-    const hasPercentSign = str.endsWith('%');
     const numeric = Number(str.replace('%', '').trim());
     if (!Number.isFinite(numeric)) return null;
-    return hasPercentSign ? numeric / 100 : numeric;
+    return numeric;
 };
 
 // Parses and validates one raw spreadsheet row (keys matching the
