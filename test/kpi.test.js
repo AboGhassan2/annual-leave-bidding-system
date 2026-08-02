@@ -1744,14 +1744,14 @@ test('_kpiParseThresholdImportRow parses a genuinely valid higher-is-better row 
     assert.equal(result.data.acceptable, 0.85);
 });
 
-test('_kpiParseThresholdNumericValue handles "95.00%"-style strings — reproduces the exact real bug: the browser\'s actual XLSX parser (raw:false) formats percentage cells this way, and plain Number() cannot parse a string with a % character', () => {
+test('_kpiParseThresholdNumericValue strips a literal % character but does NOT divide by 100 — keeps values on the same scale a planner would type into the Actual Value field when entering results', () => {
     const app = buildKpiApp();
-    assert.equal(app._kpiParseThresholdNumericValue('95.00%'), 0.95);
-    assert.equal(app._kpiParseThresholdNumericValue('83.00%'), 0.83);
-    assert.equal(app._kpiParseThresholdNumericValue('58.00%'), 0.58);
+    assert.equal(app._kpiParseThresholdNumericValue('95.00%'), 95);
+    assert.equal(app._kpiParseThresholdNumericValue('83.00%'), 83);
+    assert.equal(app._kpiParseThresholdNumericValue('58.00%'), 58);
 });
 
-test('_kpiParseThresholdNumericValue treats a plain numeric string with NO % sign as a raw value, never dividing by 100 regardless of magnitude — real "Number"-unit case: "20.00" must stay 20, not become 0.2', () => {
+test('_kpiParseThresholdNumericValue treats a plain numeric string with NO % sign as a raw value too — real "Number"-unit case: "20.00" stays 20', () => {
     const app = buildKpiApp();
     assert.equal(app._kpiParseThresholdNumericValue('5.00'), 5);
     assert.equal(app._kpiParseThresholdNumericValue('20.00'), 20);
@@ -1766,7 +1766,7 @@ test('_kpiParseThresholdImportRow correctly parses a real-shaped row exactly as 
         'Exceptional': '95.00%', 'Acceptable': '85.00%', 'Unacceptable': '75.00%',
     });
     assert.equal(result.valid, true, `must parse successfully; errors were: ${JSON.stringify(result.errors)}`);
-    assert.equal(result.data.acceptable, 0.85);
+    assert.equal(result.data.acceptable, 85, 'must stay 85, matching the scale a planner enters actual results on — not 0.85');
     assert.equal(result.data.direction, 'higher_is_better');
 });
 
