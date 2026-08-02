@@ -25,25 +25,28 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_results').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_users').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_owners').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
         if (definitions.error) throw definitions.error;
         if (results.error) throw results.error;
         if (users.error) throw users.error;
+        if (owners.error) throw owners.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
         this.state.kpiDefinitions = definitions.data || [];
         this.state.kpiResults = results.data || [];
         this.state.kpiUsers = users.data || [];
-        console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results`);
+        this.state.kpiOwners = owners.data || [];
+        console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
     } catch (e) {
         console.error('❌ Failed to load KPI data:', e.message);
@@ -186,6 +189,9 @@ app.saveKpiDefinition = async function(def, existingId) {
             target_value: def.targetValue,
             period_type: def.periodType || 'monthly',
             direction: def.direction || 'higher_is_better',
+            kpi_code: def.kpiCode || null,
+            exceptional_value: def.exceptionalValue != null ? def.exceptionalValue : null,
+            unacceptable_value: def.unacceptableValue != null ? def.unacceptableValue : null,
         };
         let query;
         if (existingId) {
@@ -1133,5 +1139,217 @@ app._kpiOverviewMonthlyChartData = function(directorateId, year, selectedKpiId) 
     // anything, but keeping the field names uniform lets the tooltip
     // read from the same shape regardless of which mode is active.
     return stats.monthlyResults.map(r => ({ period: r.period, avgAchievement: r.achievement, avgActual: r.actualValue, avgTarget: r.targetValue }));
+};
+
+// ════════════════════════════════════════════════════════════════════
+// KPI/Owner Excel import — bulk-configures KPIs from a spreadsheet
+// (columns: Line, Code, KPI Code, KPI Name, Frequency, KPI Weight %,
+// Owner Dept, Owner Name, Owner Email, Owner %). Every step below is
+// pure and independently testable; only the final save-to-Supabase step
+// (elsewhere) actually writes anything.
+// ════════════════════════════════════════════════════════════════════
+
+// "Monthly"/"Quarterly"/"Annual" -> this app's period_type values.
+// Case/whitespace-insensitive since spreadsheet data is never perfectly
+// clean. Returns null for anything unrecognized rather than guessing —
+// an unrecognized frequency should be flagged as an import error, not
+// silently defaulted to some cadence the source data never specified.
+app._kpiMapFrequencyToPeriodType = function(frequency) {
+    if (frequency == null) return null;
+    const normalized = String(frequency).trim().toLowerCase();
+    if (normalized === 'monthly') return 'monthly';
+    if (normalized === 'quarterly') return 'quarterly';
+    if (normalized === 'annual' || normalized === 'annually' || normalized === 'yearly') return 'yearly';
+    return null;
+};
+
+// The Excel's numeric Line values (3/4/5/6) map directly onto this
+// system's existing fixed Line names (L3/L4/L5/L6) — same underlying
+// concept, just Excel stores the bare number. Accepts both a number and
+// a numeric string, since spreadsheet cells can come through as either
+// depending on formatting. Returns null for anything outside 3-6.
+app._kpiMapLineNumberToLineName = function(lineValue) {
+    const n = Number(lineValue);
+    if (!Number.isInteger(n) || n < 3 || n > 6) return null;
+    return `L${n}`;
+};
+
+// Percentages in spreadsheets show up in wildly inconsistent forms
+// depending on how the source cell was formatted: 0.4, "0.4", "40%",
+// "40". This normalizes all of them to a 0-1 fraction (matching how
+// owner_percentage/weight are stored elsewhere in this app). A bare
+// value >1 is assumed to already be a whole-number percentage (40 means
+// 40%, i.e. 0.4) rather than a literal fraction greater than 1, since
+// KPI weights and owner splits are never legitimately >100%.
+app._kpiParsePercentValue = function(value) {
+    if (value == null || value === '') return null;
+    const str = String(value).trim();
+    const hasPercentSign = str.endsWith('%');
+    const numeric = Number(str.replace('%', '').trim());
+    if (!Number.isFinite(numeric)) return null;
+    if (hasPercentSign) return numeric / 100;
+    return numeric > 1 ? numeric / 100 : numeric;
+};
+
+// Parses and validates one raw spreadsheet row (keys matching the
+// Excel's exact column headers) into a clean, typed structure. Every
+// required field is checked explicitly and named in the errors array —
+// a row failing here should be shown to the planner with a specific
+// reason, not silently skipped or guessed at.
+app._kpiParseOwnerImportRow = function(rawRow) {
+    const errors = [];
+    const lineName = this._kpiMapLineNumberToLineName(rawRow['Line']);
+    if (lineName == null) errors.push(`Invalid Line value: "${rawRow['Line']}" (must be 3, 4, 5, or 6)`);
+
+    const periodType = this._kpiMapFrequencyToPeriodType(rawRow['Frequency']);
+    if (periodType == null) errors.push(`Invalid Frequency value: "${rawRow['Frequency']}" (must be Monthly, Quarterly, or Annual)`);
+
+    const kpiCode = rawRow['KPI Code'] != null ? String(rawRow['KPI Code']).trim() : '';
+    if (!kpiCode) errors.push('Missing KPI Code');
+
+    const kpiName = rawRow['KPI Name'] != null ? String(rawRow['KPI Name']).trim() : '';
+    if (!kpiName) errors.push('Missing KPI Name');
+
+    const ownerDept = rawRow['Owner Dept'] != null ? String(rawRow['Owner Dept']).trim() : '';
+    if (!ownerDept) errors.push('Missing Owner Dept');
+
+    const ownerPct = this._kpiParsePercentValue(rawRow['Owner %']);
+    if (ownerPct == null) errors.push(`Invalid Owner %: "${rawRow['Owner %']}"`);
+
+    const weight = this._kpiParsePercentValue(rawRow['KPI Weight %']);
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        data: {
+            line: lineName,
+            code: rawRow['Code'] != null ? String(rawRow['Code']).trim() : '',
+            kpiCode, kpiName, periodType, weight,
+            ownerDept, ownerPct,
+            ownerName: rawRow['Owner Name'] != null ? String(rawRow['Owner Name']).trim() : '',
+            ownerEmail: rawRow['Owner Email'] != null ? String(rawRow['Owner Email']).trim() : '',
+        },
+    };
+};
+
+// Runs every raw row through the parser above, separating rows that
+// parsed cleanly from ones with problems — never silently drops a bad
+// row, so the import UI can show the planner exactly which rows need
+// fixing and why, alongside successfully importing the rest.
+app._kpiParseOwnerImportRows = function(rawRows) {
+    const validRows = [], invalidRows = [];
+    (rawRows || []).forEach((rawRow, index) => {
+        const result = this._kpiParseOwnerImportRow(rawRow);
+        if (result.valid) validRows.push(result.data);
+        else invalidRows.push({ rowNumber: index + 2, errors: result.errors, raw: rawRow }); // +2: header row + 1-indexing, matching what the planner sees in Excel
+    });
+    return { validRows, invalidRows };
+};
+
+// Groups already-validated rows by (line, kpiCode) — multiple rows can
+// describe the SAME KPI-on-a-line split across several owners (e.g. one
+// KPI 90% Operations, 10% Finance) — this collapses those into one KPI
+// entry with an owners[] array, rather than treating each owner row as
+// a separate KPI.
+app._kpiGroupImportRowsByLineAndCode = function(validRows) {
+    const groups = {};
+    const order = [];
+    validRows.forEach(row => {
+        const key = `${row.line}::${row.kpiCode}`;
+        if (!groups[key]) {
+            groups[key] = {
+                line: row.line, code: row.code, kpiCode: row.kpiCode, kpiName: row.kpiName,
+                periodType: row.periodType, weight: row.weight, owners: [],
+            };
+            order.push(key);
+        }
+        groups[key].owners.push({ dept: row.ownerDept, name: row.ownerName, email: row.ownerEmail, pct: row.ownerPct });
+    });
+    return order.map(key => groups[key]);
+};
+
+// Given a KPI's list of owners, returns the dept with the highest
+// ownership % — used as that KPI's primary directorate assignment when
+// a KPI has split ownership. Ties broken by whichever appears first in
+// the list (stable, deterministic — not alphabetical), matching the
+// order owners were actually listed in the source spreadsheet.
+app._kpiDeterminePrimaryOwnerDept = function(owners) {
+    if (!owners || owners.length === 0) return null;
+    let best = owners[0];
+    owners.forEach(o => { if (o.pct > best.pct) best = o; });
+    return best.dept;
+};
+
+// Orchestrates the actual save: given grouped import rows (from
+// _kpiGroupImportRowsByLineAndCode), creates/reuses a directorate per
+// distinct primary owner department, ensures each has its 4 standard
+// lines, then creates or updates each KPI definition and its owner
+// records. Idempotent by kpi_code — re-running the same import (e.g.
+// after fixing a row in the spreadsheet) updates existing KPIs rather
+// than duplicating them, matched within the same directorate+line.
+app.importKpiOwnerData = async function(groupedRows) {
+    if (!this.supabase) return { created: 0, updated: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+
+    const summary = { created: 0, updated: 0, failed: 0, errors: [] };
+    // Cache directorate lookups within this run — many rows share the
+    // same primary dept, no need to re-check/re-create per row.
+    const directorateByDeptName = {};
+
+    for (const group of groupedRows) {
+        try {
+            const primaryDept = this._kpiDeterminePrimaryOwnerDept(group.owners);
+            if (!primaryDept) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): no owner department found`); continue; }
+
+            if (!directorateByDeptName[primaryDept]) {
+                let directorate = (this.state.kpiDirectorates || []).find(d => d.name === primaryDept);
+                if (!directorate) {
+                    directorate = await this.saveKpiDirectorate(primaryDept, null);
+                    if (!directorate) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): could not create directorate "${primaryDept}"`); continue; }
+                }
+                await this.ensureKpiLinesForDirectorate(directorate.id);
+                directorateByDeptName[primaryDept] = directorate;
+            }
+            const directorate = directorateByDeptName[primaryDept];
+
+            const lineRow = (this.state.kpiDirectorateDepartments || []).find(d => d.directorate_id === directorate.id && d.department_name === group.line);
+            if (!lineRow) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): line "${group.line}" not found under "${primaryDept}"`); continue; }
+
+            const existing = (this.state.kpiDefinitions || []).find(k => k.kpi_code === group.kpiCode && k.directorate_id === directorate.id && k.department_id === lineRow.id);
+            const saved = await this.saveKpiDefinition({
+                directorateId: directorate.id, departmentId: lineRow.id,
+                name: group.kpiName, category: group.code, kpiCode: group.kpiCode,
+                periodType: group.periodType, weight: group.weight,
+                // Acceptable/Exceptional/Unacceptable thresholds are left
+                // blank on import — this spreadsheet doesn't provide
+                // them; the planner fills them in manually afterward.
+                targetValue: existing ? existing.target_value : null,
+                exceptionalValue: existing ? existing.exceptional_value : null,
+                unacceptableValue: existing ? existing.unacceptable_value : null,
+            }, existing ? existing.id : null);
+            if (!saved) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): failed to save KPI definition`); continue; }
+
+            // Replace this KPI's owner records wholesale on every
+            // (re-)import — simpler and safer than trying to diff/merge
+            // individual owner rows, and matches how a spreadsheet
+            // re-upload is meant to be treated as the new source of truth.
+            await this.supabase.from('kpi_owners').delete().eq('kpi_definition_id', saved.id);
+            const ownerRows = group.owners.map(o => ({
+                tenant_id: this._tid(), kpi_definition_id: saved.id,
+                owner_dept: o.dept, owner_name: o.name, owner_email: o.email, owner_percentage: o.pct,
+            }));
+            const { data: insertedOwners, error: ownerError } = await this.supabase.from('kpi_owners').insert(ownerRows).select();
+            if (ownerError) throw ownerError;
+
+            this.state.kpiOwners = [...(this.state.kpiOwners || []).filter(o => o.kpi_definition_id !== saved.id), ...(insertedOwners || [])];
+
+            if (existing) summary.updated++; else summary.created++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${group.kpiCode} (${group.line}): ${e.message}`);
+        }
+    }
+
+    this.showToast(`Import complete: ${summary.created} created, ${summary.updated} updated, ${summary.failed} failed.`, summary.failed > 0 ? 'error' : 'success');
+    return summary;
 };
 
