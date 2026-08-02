@@ -1530,5 +1530,50 @@ test('both modes return the same {period, avgAchievement} shape', () => {
     assert.deepStrictEqual(Object.keys(allMode[0]).sort(), Object.keys(singleMode[0]).sort());
 });
 
+// ════════════════════════════════════════════════════════════════════
+// avgActual / avgTarget — added to the Monthly chart's data so its
+// tooltip can show Value/Achievement/Target, matching the Quarterly and
+// Year-over-Year trend charts.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiPerformanceByPeriod computes avgActual and avgTarget as averages across KPIs sharing a period, alongside avgAchievement', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' },
+            { id: 2, directorate_id: 1, is_active: true, period_type: 'monthly' },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 80, actual_value: 80, target_value: 100 },
+            { kpi_definition_id: 2, year: 2027, period_type: 'monthly', period_value: '01', achievement: 120, actual_value: 120, target_value: 100 },
+        ],
+    });
+    const result = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    assert.equal(result[0].avgAchievement, 100, 'average of 80 and 120');
+    assert.equal(result[0].avgActual, 100, 'average of 80 and 120');
+    assert.equal(result[0].avgTarget, 100, 'both KPIs share the same target of 100');
+});
+
+test('_kpiPerformanceByPeriod\'s avgActual/avgTarget are null when no result has those fields recorded, without throwing', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 90 }], // no actual_value/target_value
+    });
+    const result = app._kpiPerformanceByPeriod(1, 2027, 'monthly');
+    assert.equal(result[0].avgAchievement, 90, 'achievement itself is unaffected by missing actual/target');
+    assert.equal(result[0].avgActual, null);
+    assert.equal(result[0].avgTarget, null);
+});
+
+test('_kpiOverviewMonthlyChartData\'s single-KPI mode carries that KPI\'s own actual/target values (not averaged, since there\'s only one)', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 1, is_active: true, period_type: 'monthly', name: 'Budget Reconciliation' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '01', achievement: 102.04, actual_value: 750, target_value: 735 }],
+    });
+    const result = app._kpiOverviewMonthlyChartData(1, 2027, 1);
+    assert.equal(result[0].avgActual, 750);
+    assert.equal(result[0].avgTarget, 735);
+});
+
+
 
 
