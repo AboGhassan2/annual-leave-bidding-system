@@ -71,6 +71,7 @@ app.renderKpiPlannerView = function() {
     else if (tab === 'kpis') sectionHtml = this._renderKpiDefinitionsSection();
     else if (tab === 'results') sectionHtml = this._renderKpiResultsSection();
     else if (tab === 'preview') sectionHtml = this._renderKpiPreviewSection();
+    else if (tab === 'import') sectionHtml = this._renderKpiImportSection();
     else sectionHtml = this._renderKpiUsersSection();
 
     content.innerHTML = `
@@ -84,6 +85,7 @@ app.renderKpiPlannerView = function() {
                 ${tabBtn('kpis', '📈', 'KPIs')}
                 ${tabBtn('results', '✏️', 'Enter Results')}
                 ${tabBtn('preview', '👁️', 'Preview Dashboard')}
+                ${tabBtn('import', '📥', 'Import from Excel')}
                 ${tabBtn('users', '👥', 'Manage Users')}
             </div>
             ${sectionHtml}
@@ -206,11 +208,16 @@ app._renderKpiDefinitionsSection = function() {
         const dir = directorates.find(d => d.id === k.directorate_id);
         const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
         const dirLabel = { higher_is_better: 'Higher is better', lower_is_better: 'Lower is better' }[k.direction] || k.direction;
+        const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
         return `
             <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
                 <div>
                     <p style="font-weight:700;">${esc(k.name)} ${k.category ? `<span style="font-size:0.72rem;color:#6b7280;font-weight:400;">(${esc(k.category)})</span>` : ''}</p>
-                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${line ? ' · ' + esc(line.department_name) : ''} · Target: ${esc(String(k.target_value))}${k.unit ? ' ' + esc(k.unit) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}</p>
+                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${line ? ' · ' + esc(line.department_name) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}${k.unit ? ' · ' + esc(k.unit) : ''}</p>
+                    <p style="font-size:0.75rem;margin-top:4px;">
+                        ${k.exceptional_value != null ? `<span style="color:#059669;font-weight:600;">Exceptional: ${esc(String(k.exceptional_value))}</span> · ` : ''}<span style="color:${k.target_value != null ? '#1d4ed8' : '#9ca3af'};font-weight:600;">Acceptable (Target): ${k.target_value != null ? esc(String(k.target_value)) : 'not set'}</span>${k.unacceptable_value != null ? ` · <span style="color:#dc2626;font-weight:600;">Unacceptable: ${esc(String(k.unacceptable_value))}</span>` : ''}
+                    </p>
+                    ${owners.length > 0 ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">Owner${owners.length !== 1 ? 's' : ''}: ${owners.map(o => `${esc(o.owner_name || o.owner_dept)} (${Math.round((o.owner_percentage || 0) * 100)}%)`).join(', ')}</p>` : ''}
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button onclick="app.openKpiDefinitionModal(${k.id})" style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
@@ -253,12 +260,27 @@ app._renderKpiDefinitionsSection = function() {
                 <input type="text" id="kpiDefCategory" placeholder="e.g. Safety, Punctuality, Incidents"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
 
+                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Performance Thresholds</label>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:8px;">Acceptable is what shows as "Target" on the Executive Director dashboard. Exceptional and Unacceptable are for Planner reference only.</p>
                 <div style="display:flex;gap:10px;margin-bottom:14px;">
                     <div style="flex:1;">
-                        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Target Value</label>
+                        <label style="font-size:0.75rem;font-weight:600;color:#059669;display:block;margin-bottom:6px;">Exceptional</label>
+                        <input type="number" id="kpiDefExceptional" step="any"
+                            style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:0.75rem;font-weight:600;color:#1d4ed8;display:block;margin-bottom:6px;">Acceptable (Target)</label>
                         <input type="number" id="kpiDefTarget" step="any"
                             style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
                     </div>
+                    <div style="flex:1;">
+                        <label style="font-size:0.75rem;font-weight:600;color:#dc2626;display:block;margin-bottom:6px;">Unacceptable</label>
+                        <input type="number" id="kpiDefUnacceptable" step="any"
+                            style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:10px;margin-bottom:14px;">
                     <div style="flex:1;">
                         <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Unit</label>
                         <input type="text" id="kpiDefUnit" placeholder="%, count, days"
@@ -307,7 +329,9 @@ app.openKpiDefinitionModal = function(kpiId) {
     document.getElementById('kpiDefDirectorate').value = existing ? existing.directorate_id : (this.state.kpiDirectorates[0]?.id || '');
     document.getElementById('kpiDefName').value = existing ? existing.name : '';
     document.getElementById('kpiDefCategory').value = existing ? (existing.category || '') : '';
+    document.getElementById('kpiDefExceptional').value = existing && existing.exceptional_value != null ? existing.exceptional_value : '';
     document.getElementById('kpiDefTarget').value = existing ? existing.target_value : '';
+    document.getElementById('kpiDefUnacceptable').value = existing && existing.unacceptable_value != null ? existing.unacceptable_value : '';
     document.getElementById('kpiDefUnit').value = existing ? (existing.unit || '') : '';
     document.getElementById('kpiDefPeriodType').value = existing ? existing.period_type : 'monthly';
     document.getElementById('kpiDefDirection').value = existing ? existing.direction : 'higher_is_better';
@@ -323,9 +347,16 @@ app.saveKpiDefinitionModal = async function() {
     const name = (document.getElementById('kpiDefName').value || '').trim();
     if (!name) { this.showToast('Please enter a KPI name.', 'error'); return; }
     const targetValue = document.getElementById('kpiDefTarget').value;
-    if (targetValue === '') { this.showToast('Please enter a target value.', 'error'); return; }
+    if (targetValue === '') { this.showToast('Please enter an Acceptable (target) value.', 'error'); return; }
     const lineIdRaw = document.getElementById('kpiDefLine').value;
     if (!lineIdRaw) { this.showToast('Please select a line.', 'error'); return; }
+
+    // Exceptional/Unacceptable are optional — Planner-reference-only
+    // thresholds, not used in any achievement calculation, so a KPI can
+    // be saved with just Acceptable filled in (e.g. right after an
+    // Excel import, which never sets these two).
+    const exceptionalRaw = document.getElementById('kpiDefExceptional').value;
+    const unacceptableRaw = document.getElementById('kpiDefUnacceptable').value;
 
     const existingId = document.getElementById('kpiDefinitionEditId').value;
     const def = {
@@ -335,6 +366,8 @@ app.saveKpiDefinitionModal = async function() {
         category: document.getElementById('kpiDefCategory').value.trim(),
         unit: document.getElementById('kpiDefUnit').value.trim(),
         targetValue: Number(targetValue),
+        exceptionalValue: exceptionalRaw !== '' ? Number(exceptionalRaw) : null,
+        unacceptableValue: unacceptableRaw !== '' ? Number(unacceptableRaw) : null,
         periodType: document.getElementById('kpiDefPeriodType').value,
         direction: document.getElementById('kpiDefDirection').value,
     };
@@ -552,6 +585,182 @@ app._renderKpiPreviewSection = function() {
 
         ${this._buildKpiDashboardBody(selectedDirectorateId, year)}
     `;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Import from Excel — bulk-configures KPIs + owners from a spreadsheet.
+// Flow: pick a file -> parsed client-side via the XLSX library already
+// loaded for this app -> validated/grouped via the pure functions in
+// api-kpi.js -> preview shown -> planner confirms -> saved to Supabase.
+// Nothing is written until the planner explicitly clicks Confirm.
+// ════════════════════════════════════════════════════════════════════
+app._renderKpiImportSection = function() {
+    const esc = this._escHtml.bind(this);
+    const preview = this.state._kpiImportPreview;
+    const result = this.state._kpiImportResult;
+
+    return `
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">Import KPIs from Excel</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Expected columns: Line, Code, KPI Code, KPI Name, Frequency, KPI Weight %, Owner Dept, Owner Name, Owner Email, Owner %.
+                Each row is one KPI-line-owner combination — a KPI split across multiple owners should appear as multiple rows with the same Line and KPI Code.
+                Exceptional/Acceptable/Unacceptable thresholds are not part of this import; set those per KPI afterward.
+            </p>
+
+            <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
+                <input type="file" id="kpiImportFileInput" accept=".xlsx,.xls" style="display:none;" onchange="app._handleKpiImportFile(event)" />
+                <label for="kpiImportFileInput" style="cursor:pointer;">
+                    <p style="color:#6b7280;margin-bottom:10px;">Click to browse, or drag a file here</p>
+                    <span style="padding:8px 18px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
+                </label>
+            </div>
+
+            ${preview ? this._renderKpiImportPreview(preview) : ''}
+            ${result ? this._renderKpiImportResult(result) : ''}
+        </div>
+    `;
+};
+
+app._renderKpiImportPreview = function(preview) {
+    const esc = this._escHtml.bind(this);
+    const { validRows, invalidRows, grouped } = preview;
+    const primaryDepts = [...new Set(grouped.map(g => this._kpiDeterminePrimaryOwnerDept(g.owners)))];
+    const existingDirNames = new Set((this.state.kpiDirectorates || []).map(d => d.name));
+    const newDepts = primaryDepts.filter(d => !existingDirNames.has(d));
+
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Preview</h4>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <div style="background:#eff6ff;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#1d4ed8;font-weight:700;">VALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#1d4ed8;">${validRows.length}</p>
+                </div>
+                <div style="background:${invalidRows.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};">${invalidRows.length}</p>
+                </div>
+                <div style="background:#faf5ff;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#7c3aed;font-weight:700;">KPIs TO IMPORT</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#7c3aed;">${grouped.length}</p>
+                </div>
+                <div style="background:#fffbeb;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#92400e;font-weight:700;">NEW DIRECTORATES</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#92400e;">${newDepts.length}</p>
+                </div>
+            </div>
+
+            ${newDepts.length > 0 ? `<p style="font-size:0.8rem;color:#6b7280;margin-bottom:10px;">Will create: ${newDepts.map(d => `<strong>${esc(d)}</strong>`).join(', ')}</p>` : ''}
+
+            ${invalidRows.length > 0 ? `
+                <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:200px;overflow-y:auto;">
+                    <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Rows that will be skipped:</p>
+                    ${invalidRows.map(r => `<p style="font-size:0.75rem;color:#991b1b;">Row ${r.rowNumber}: ${esc(r.errors.join('; '))}</p>`).join('')}
+                </div>
+            ` : ''}
+
+            <div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                    <thead style="position:sticky;top:0;background:#f9fafb;">
+                        <tr style="text-align:left;">
+                            <th style="padding:6px 10px;">Line</th>
+                            <th style="padding:6px 10px;">Code</th>
+                            <th style="padding:6px 10px;">KPI Name</th>
+                            <th style="padding:6px 10px;">Frequency</th>
+                            <th style="padding:6px 10px;">Owner(s)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${grouped.map(g => `
+                            <tr style="border-top:1px solid #f3f4f6;">
+                                <td style="padding:6px 10px;">${esc(g.line)}</td>
+                                <td style="padding:6px 10px;">${esc(g.kpiCode)}</td>
+                                <td style="padding:6px 10px;">${esc(g.kpiName)}</td>
+                                <td style="padding:6px 10px;">${esc(g.periodType)}</td>
+                                <td style="padding:6px 10px;">${g.owners.map(o => `${esc(o.name || o.dept)} (${Math.round(o.pct * 100)}%)`).join(', ')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.state._kpiImportPreview=null;app.state._kpiImportResult=null;app.renderKpiPlannerView();"
+                    style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
+                <button onclick="app._confirmKpiImport()" ${validRows.length === 0 ? 'disabled' : ''}
+                    style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:${validRows.length === 0 ? '#9ca3af' : '#059669'};color:#fff;">
+                    Confirm Import (${grouped.length} KPI${grouped.length !== 1 ? 's' : ''})
+                </button>
+            </div>
+        </div>
+    `;
+};
+
+app._renderKpiImportResult = function(result) {
+    const esc = this._escHtml.bind(this);
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Import Result</h4>
+            <div class="grid grid-cols-3 gap-3 mb-4">
+                <div style="background:#f0fdf4;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#166534;font-weight:700;">CREATED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#166534;">${result.created}</p>
+                </div>
+                <div style="background:#eff6ff;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#1d4ed8;font-weight:700;">UPDATED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#1d4ed8;">${result.updated}</p>
+                </div>
+                <div style="background:${result.failed > 0 ? '#fef2f2' : '#f9fafb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};font-weight:700;">FAILED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};">${result.failed}</p>
+                </div>
+            </div>
+            ${result.errors.length > 0 ? `
+                <div style="background:#fef2f2;border-radius:8px;padding:12px;max-height:200px;overflow-y:auto;">
+                    ${result.errors.map(e => `<p style="font-size:0.75rem;color:#991b1b;">${esc(e)}</p>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+app._handleKpiImportFile = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    this.state._kpiImportPreview = null;
+    this.state._kpiImportResult = null;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
+
+            const { validRows, invalidRows } = this._kpiParseOwnerImportRows(rawRows);
+            const grouped = this._kpiGroupImportRowsByLineAndCode(validRows);
+            this.state._kpiImportPreview = { validRows, invalidRows, grouped };
+            this.renderKpiPlannerView();
+        } catch (err) {
+            console.error('❌ Failed to parse import file:', err.message);
+            this.showToast('Could not read this file: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; // allow re-selecting the same file after fixing it
+};
+
+app._confirmKpiImport = async function() {
+    const preview = this.state._kpiImportPreview;
+    if (!preview) return;
+    const ok = confirm(`Import ${preview.grouped.length} KPIs? This will create/update KPI definitions and owner records.`);
+    if (!ok) return;
+    const result = await this.importKpiOwnerData(preview.grouped);
+    this.state._kpiImportResult = result;
+    this.state._kpiImportPreview = null;
+    this.renderKpiPlannerView();
 };
 
 app._renderKpiUsersSection = function() {
