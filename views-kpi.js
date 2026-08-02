@@ -598,14 +598,16 @@ app._renderKpiImportSection = function() {
     const esc = this._escHtml.bind(this);
     const preview = this.state._kpiImportPreview;
     const result = this.state._kpiImportResult;
+    const thresholdPreview = this.state._kpiThresholdImportPreview;
+    const thresholdResult = this.state._kpiThresholdImportResult;
 
     return `
-        <div class="bg-white rounded-xl shadow-md p-5">
-            <h3 class="text-lg font-bold text-gray-800 mb-2">Import KPIs from Excel</h3>
+        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">1. Import KPIs &amp; Owners from Excel</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
                 Expected columns: Line, Code, KPI Code, KPI Name, Frequency, KPI Weight %, Owner Dept, Owner Name, Owner Email, Owner %.
                 Each row is one KPI-line-owner combination — a KPI split across multiple owners should appear as multiple rows with the same Line and KPI Code.
-                Exceptional/Acceptable/Unacceptable thresholds are not part of this import; set those per KPI afterward.
+                Run this first — it creates the KPIs and directorates. Exceptional/Acceptable/Unacceptable thresholds are not part of this import.
             </p>
 
             <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
@@ -618,6 +620,26 @@ app._renderKpiImportSection = function() {
 
             ${preview ? this._renderKpiImportPreview(preview) : ''}
             ${result ? this._renderKpiImportResult(result) : ''}
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">2. Import Thresholds (Exceptional / Acceptable / Unacceptable)</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Expected columns: Line, KPI Code, Unit, Exceptional, Acceptable, Unacceptable. Updates KPIs already created above — matched by
+                KPI Code and Line — it never creates new ones. Also sets each KPI's direction (higher/lower is better), inferred automatically
+                from whether Exceptional is above or below Unacceptable.
+            </p>
+
+            <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
+                <input type="file" id="kpiThresholdImportFileInput" accept=".xlsx,.xls" style="display:none;" onchange="app._handleKpiThresholdImportFile(event)" />
+                <label for="kpiThresholdImportFileInput" style="cursor:pointer;">
+                    <p style="color:#6b7280;margin-bottom:10px;">Click to browse, or drag a file here</p>
+                    <span style="padding:8px 18px;background:#7c3aed;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
+                </label>
+            </div>
+
+            ${thresholdPreview ? this._renderKpiThresholdImportPreview(thresholdPreview) : ''}
+            ${thresholdResult ? this._renderKpiThresholdImportResult(thresholdResult) : ''}
         </div>
     `;
 };
@@ -760,6 +782,147 @@ app._confirmKpiImport = async function() {
     const result = await this.importKpiOwnerData(preview.grouped);
     this.state._kpiImportResult = result;
     this.state._kpiImportPreview = null;
+    this.renderKpiPlannerView();
+};
+
+app._renderKpiThresholdImportPreview = function(preview) {
+    const esc = this._escHtml.bind(this);
+    const { validRows, invalidRows } = preview;
+    const notFoundCount = validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line)).length;
+
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Preview</h4>
+            <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                <div style="background:#faf5ff;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#7c3aed;font-weight:700;">VALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#7c3aed;">${validRows.length}</p>
+                </div>
+                <div style="background:${invalidRows.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};">${invalidRows.length}</p>
+                </div>
+                <div style="background:${notFoundCount > 0 ? '#fffbeb' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${notFoundCount > 0 ? '#92400e' : '#166534'};font-weight:700;">NO MATCHING KPI</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${notFoundCount > 0 ? '#92400e' : '#166534'};">${notFoundCount}</p>
+                </div>
+            </div>
+
+            ${notFoundCount > 0 ? `<p style="font-size:0.78rem;color:#92400e;margin-bottom:12px;">${notFoundCount} row${notFoundCount !== 1 ? 's' : ''} reference a KPI Code/Line combination that doesn't exist yet — run the KPI &amp; Owners import above first, or check the spreadsheet for typos.</p>` : ''}
+
+            ${invalidRows.length > 0 ? `
+                <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:200px;overflow-y:auto;">
+                    <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Rows that will be skipped:</p>
+                    ${invalidRows.map(r => `<p style="font-size:0.75rem;color:#991b1b;">Row ${r.rowNumber}: ${esc(r.errors.join('; '))}</p>`).join('')}
+                </div>
+            ` : ''}
+
+            <div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                    <thead style="position:sticky;top:0;background:#f9fafb;">
+                        <tr style="text-align:left;">
+                            <th style="padding:6px 10px;">Line</th>
+                            <th style="padding:6px 10px;">KPI Code</th>
+                            <th style="padding:6px 10px;">Direction</th>
+                            <th style="padding:6px 10px;">Exceptional</th>
+                            <th style="padding:6px 10px;">Acceptable</th>
+                            <th style="padding:6px 10px;">Unacceptable</th>
+                            <th style="padding:6px 10px;">Match</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${validRows.map(r => {
+                            const found = this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line);
+                            return `
+                                <tr style="border-top:1px solid #f3f4f6;">
+                                    <td style="padding:6px 10px;">${esc(r.line)}</td>
+                                    <td style="padding:6px 10px;">${esc(r.kpiCode)}</td>
+                                    <td style="padding:6px 10px;">${r.direction === 'higher_is_better' ? '⬆️ Higher' : '⬇️ Lower'}</td>
+                                    <td style="padding:6px 10px;">${r.exceptional != null ? esc(String(r.exceptional)) : '—'}</td>
+                                    <td style="padding:6px 10px;">${esc(String(r.acceptable))}</td>
+                                    <td style="padding:6px 10px;">${esc(String(r.unacceptable))}</td>
+                                    <td style="padding:6px 10px;">${found ? '<span style="color:#059669;">✓ found</span>' : '<span style="color:#dc2626;">✗ not found</span>'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.state._kpiThresholdImportPreview=null;app.state._kpiThresholdImportResult=null;app.renderKpiPlannerView();"
+                    style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
+                <button onclick="app._confirmKpiThresholdImport()" ${validRows.length === 0 ? 'disabled' : ''}
+                    style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:${validRows.length === 0 ? '#9ca3af' : '#7c3aed'};color:#fff;">
+                    Confirm Import (${validRows.length - notFoundCount} will update)
+                </button>
+            </div>
+        </div>
+    `;
+};
+
+app._renderKpiThresholdImportResult = function(result) {
+    const esc = this._escHtml.bind(this);
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Import Result</h4>
+            <div class="grid grid-cols-3 gap-3 mb-4">
+                <div style="background:#f0fdf4;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#166534;font-weight:700;">UPDATED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#166534;">${result.updated}</p>
+                </div>
+                <div style="background:${result.notFound > 0 ? '#fffbeb' : '#f9fafb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${result.notFound > 0 ? '#92400e' : '#6b7280'};font-weight:700;">NOT FOUND</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${result.notFound > 0 ? '#92400e' : '#6b7280'};">${result.notFound}</p>
+                </div>
+                <div style="background:${result.failed > 0 ? '#fef2f2' : '#f9fafb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};font-weight:700;">FAILED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};">${result.failed}</p>
+                </div>
+            </div>
+            ${result.errors.length > 0 ? `
+                <div style="background:#fffbeb;border-radius:8px;padding:12px;max-height:200px;overflow-y:auto;">
+                    ${result.errors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${esc(e)}</p>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+app._handleKpiThresholdImportFile = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    this.state._kpiThresholdImportPreview = null;
+    this.state._kpiThresholdImportResult = null;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
+
+            const { validRows, invalidRows } = this._kpiParseThresholdImportRows(rawRows);
+            this.state._kpiThresholdImportPreview = { validRows, invalidRows };
+            this.renderKpiPlannerView();
+        } catch (err) {
+            console.error('❌ Failed to parse threshold import file:', err.message);
+            this.showToast('Could not read this file: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+};
+
+app._confirmKpiThresholdImport = async function() {
+    const preview = this.state._kpiThresholdImportPreview;
+    if (!preview) return;
+    const ok = confirm(`Update thresholds for ${preview.validRows.length} rows? This overwrites Exceptional/Acceptable/Unacceptable and direction on matching KPIs.`);
+    if (!ok) return;
+    const result = await this.importKpiThresholdData(preview.validRows);
+    this.state._kpiThresholdImportResult = result;
+    this.state._kpiThresholdImportPreview = null;
     this.renderKpiPlannerView();
 };
 
