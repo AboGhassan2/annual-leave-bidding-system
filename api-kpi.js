@@ -1191,6 +1191,24 @@ app._kpiParsePercentValue = function(value) {
     return numeric > 1 ? numeric / 100 : numeric;
 };
 
+// Threshold values (Exceptional/Acceptable/Unacceptable) need DIFFERENT
+// handling than _kpiParsePercentValue above: that function assumes any
+// bare value >1 must be a whole-number percentage meant to be divided by
+// 100 — wrong here, since a threshold can legitimately be a raw count
+// (e.g. "20.00" meaning literally 20 complaints, not 0.2). The browser's
+// actual XLSX parser (SheetJS, raw:false) formats percentage-styled
+// cells as "95.00%" strings and plain-number cells as "20.00" — the
+// presence of a literal % character is what actually distinguishes
+// them, not the magnitude, so that's the only signal used here.
+app._kpiParseThresholdNumericValue = function(value) {
+    if (value == null || value === '') return null;
+    const str = String(value).trim();
+    const hasPercentSign = str.endsWith('%');
+    const numeric = Number(str.replace('%', '').trim());
+    if (!Number.isFinite(numeric)) return null;
+    return hasPercentSign ? numeric / 100 : numeric;
+};
+
 // Parses and validates one raw spreadsheet row (keys matching the
 // Excel's exact column headers) into a clean, typed structure. Every
 // required field is checked explicitly and named in the errors array —
@@ -1385,12 +1403,12 @@ app._kpiParseThresholdImportRow = function(rawRow) {
     const kpiCode = rawRow['KPI Code'] != null ? String(rawRow['KPI Code']).trim() : '';
     if (!kpiCode) errors.push('Missing KPI Code');
 
-    const acceptable = Number(rawRow['Acceptable']);
-    const unacceptable = Number(rawRow['Unacceptable']);
-    const parsedExceptional = rawRow['Exceptional'] !== '' && rawRow['Exceptional'] != null ? Number(rawRow['Exceptional']) : null;
-    if (parsedExceptional != null && !Number.isFinite(parsedExceptional)) errors.push(`Invalid Exceptional value: "${rawRow['Exceptional']}"`);
-    if (!Number.isFinite(acceptable)) errors.push(`Invalid/missing Acceptable value: "${rawRow['Acceptable']}"`);
-    if (!Number.isFinite(unacceptable)) errors.push(`Invalid/missing Unacceptable value: "${rawRow['Unacceptable']}"`);
+    const acceptable = this._kpiParseThresholdNumericValue(rawRow['Acceptable']);
+    const unacceptable = this._kpiParseThresholdNumericValue(rawRow['Unacceptable']);
+    const parsedExceptional = this._kpiParseThresholdNumericValue(rawRow['Exceptional']);
+    if (rawRow['Exceptional'] !== '' && rawRow['Exceptional'] != null && parsedExceptional == null) errors.push(`Invalid Exceptional value: "${rawRow['Exceptional']}"`);
+    if (acceptable == null) errors.push(`Invalid/missing Acceptable value: "${rawRow['Acceptable']}"`);
+    if (unacceptable == null) errors.push(`Invalid/missing Unacceptable value: "${rawRow['Unacceptable']}"`);
 
     let direction = null;
     if (errors.length === 0) {
