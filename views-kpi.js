@@ -873,13 +873,34 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
             type: 'bar',
             data: {
                 labels: monthly.map(m => this.state.months[parseInt(m.period, 10) - 1]?.slice(0, 3) || m.period),
-                datasets: [{ label: 'Avg Achievement %', data: monthly.map(m => m.avgAchievement), backgroundColor: '#1d4ed8', borderRadius: 4 }],
+                datasets: [{
+                    label: 'Avg Achievement %',
+                    data: monthly.map(m => m.avgAchievement),
+                    backgroundColor: '#1d4ed8',
+                    borderRadius: 4,
+                    details: monthly, // consumed by the tooltip callback below, not read by Chart.js itself
+                }],
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: {
                     legend: { display: false },
-                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%` } },
+                    // Rich, multi-line tooltip matching the Quarterly/
+                    // Year-over-Year trend charts — Value, Achievement,
+                    // Target — rather than just the achievement figure
+                    // shown above the bar.
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const d = ctx.dataset.details ? ctx.dataset.details[ctx.dataIndex] : null;
+                                const lines = [];
+                                if (d && d.avgActual != null) lines.push(`Value: ${d.avgActual}`);
+                                lines.push(`Achievement: ${ctx.parsed.y}%`);
+                                if (d && d.avgTarget != null) lines.push(`Target: ${d.avgTarget}`);
+                                return lines;
+                            },
+                        },
+                    },
                     datalabels: {
                         anchor: 'end', align: 'top',
                         color: '#1e3a8a', font: { weight: 'bold', size: 11 },
