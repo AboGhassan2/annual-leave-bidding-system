@@ -2310,11 +2310,19 @@
                     const pos = u.position || 'Unassigned';
                     if (posTotals[pos] !== undefined) posBidded[pos] = (posBidded[pos] || 0) + 1;
                 });
+                // Previously capped to .slice(0, 12) — silently dropped
+                // every position beyond the top 12 by participation %,
+                // even though the header above claims to represent all
+                // staff (confirmed: 395 total staff, but the 12 shown
+                // positions only summed to 187 — 208 staff across other
+                // positions were completely missing from the list).
+                // Every position is now shown, still sorted by
+                // participation % descending.
                 const positions = Object.keys(posTotals).sort((a, b) => {
                     const pctA = posTotals[a] > 0 ? (posBidded[a] || 0) / posTotals[a] : 0;
                     const pctB = posTotals[b] > 0 ? (posBidded[b] || 0) / posTotals[b] : 0;
                     return pctB - pctA;
-                }).slice(0, 12);
+                });
 
                 content.innerHTML = `
                     <div class="max-w-6xl mx-auto">
@@ -2367,21 +2375,23 @@
                         <!-- Position Participation -->
                         <div class="bg-white rounded-xl shadow p-5 mb-6">
                             <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Position Participation</h3>
-                            <p class="text-xs text-gray-400 mb-4">${participated} of ${totalStaff} staff have submitted bids (${pct}% overall)</p>
-                            ${positions.length === 0 ? `<p class="text-sm text-gray-400 text-center py-6">No Maintenance staff loaded yet.</p>` : positions.map(pos => {
-                                const t = posTotals[pos] || 0;
-                                const b = posBidded[pos] || 0;
-                                const p = t > 0 ? Math.round((b / t) * 100) : 0;
-                                return `
-                                    <div class="flex items-center gap-3 mb-2 text-sm">
-                                        <div class="w-40 truncate text-gray-600" title="${this._escHtml(pos)}">${this._escHtml(pos)}</div>
-                                        <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
-                                            <div class="h-5 rounded-full flex items-center justify-end pr-2 text-white text-xs font-bold" style="width:${Math.max(p, 8)}%;background:#ea580c;">${p}%</div>
+                            <p class="text-xs text-gray-400 mb-4">${participated} of ${totalStaff} staff have submitted bids (${pct}% overall) — ${positions.length} position${positions.length !== 1 ? 's' : ''}</p>
+                            <div style="max-height:520px;overflow-y:auto;padding-right:4px;">
+                                ${positions.length === 0 ? `<p class="text-sm text-gray-400 text-center py-6">No Maintenance staff loaded yet.</p>` : positions.map(pos => {
+                                    const t = posTotals[pos] || 0;
+                                    const b = posBidded[pos] || 0;
+                                    const p = t > 0 ? Math.round((b / t) * 100) : 0;
+                                    return `
+                                        <div class="flex items-center gap-3 mb-2 text-sm">
+                                            <div class="w-40 truncate text-gray-600" title="${this._escHtml(pos)}">${this._escHtml(pos)}</div>
+                                            <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                                                <div class="h-5 rounded-full flex items-center justify-end pr-2 text-white text-xs font-bold" style="width:${Math.max(p, 8)}%;background:#ea580c;">${p}%</div>
+                                            </div>
+                                            <div class="w-16 text-right text-gray-400 text-xs">${b}/${t}</div>
                                         </div>
-                                        <div class="w-16 text-right text-gray-400 text-xs">${b}/${t}</div>
-                                    </div>
-                                `;
-                            }).join('')}
+                                    `;
+                                }).join('')}
+                            </div>
                         </div>
 
                         <!-- Submitted list -->
