@@ -1353,3 +1353,122 @@ app.importKpiOwnerData = async function(groupedRows) {
     return summary;
 };
 
+// ════════════════════════════════════════════════════════════════════
+// KPI Threshold Excel import — a SEPARATE spreadsheet (Line, Code, KPI
+// Code, KPI Name, Frequency, Level 3%, Unit, Exceptional, Acceptable,
+// Unacceptable) that fills in Exceptional/Acceptable/Unacceptable on
+// KPIs already created by the owner import above. This import never
+// creates new KPIs — only updates existing ones matched by (KPI Code,
+// Line), regardless of which directorate they ended up under.
+// ════════════════════════════════════════════════════════════════════
+
+// Given the 3 threshold values for one KPI, infers whether higher or
+// lower values are better — Exceptional > Acceptable > Unacceptable
+// means higher is better (e.g. satisfaction %); the reverse ordering
+// means lower is better (e.g. a complaint count). Returns null when the
+// values don't form a strictly consistent ordering either way, since
+// that's a genuine data problem in the source file, not something to
+// guess through.
+app._kpiDeriveDirectionFromThresholds = function(exceptional, acceptable, unacceptable) {
+    if (exceptional == null || acceptable == null || unacceptable == null) return null;
+    if (exceptional > acceptable && acceptable > unacceptable) return 'higher_is_better';
+    if (exceptional < acceptable && acceptable < unacceptable) return 'lower_is_better';
+    return null;
+};
+
+// Parses and validates one raw row from the threshold spreadsheet.
+app._kpiParseThresholdImportRow = function(rawRow) {
+    const errors = [];
+    const lineName = this._kpiMapLineNumberToLineName(rawRow['Line']);
+    if (lineName == null) errors.push(`Invalid Line value: "${rawRow['Line']}" (must be 3, 4, 5, or 6)`);
+
+    const kpiCode = rawRow['KPI Code'] != null ? String(rawRow['KPI Code']).trim() : '';
+    if (!kpiCode) errors.push('Missing KPI Code');
+
+    const acceptable = Number(rawRow['Acceptable']);
+    const unacceptable = Number(rawRow['Unacceptable']);
+    const parsedExceptional = rawRow['Exceptional'] !== '' && rawRow['Exceptional'] != null ? Number(rawRow['Exceptional']) : null;
+    if (parsedExceptional != null && !Number.isFinite(parsedExceptional)) errors.push(`Invalid Exceptional value: "${rawRow['Exceptional']}"`);
+    if (!Number.isFinite(acceptable)) errors.push(`Invalid/missing Acceptable value: "${rawRow['Acceptable']}"`);
+    if (!Number.isFinite(unacceptable)) errors.push(`Invalid/missing Unacceptable value: "${rawRow['Unacceptable']}"`);
+
+    let direction = null;
+    if (errors.length === 0) {
+        direction = this._kpiDeriveDirectionFromThresholds(parsedExceptional, acceptable, unacceptable);
+        if (direction == null) errors.push(`Exceptional/Acceptable/Unacceptable (${parsedExceptional}/${acceptable}/${unacceptable}) don't form a consistent higher-or-lower-is-better ordering`);
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        data: {
+            line: lineName, kpiCode,
+            kpiName: rawRow['KPI Name'] != null ? String(rawRow['KPI Name']).trim() : '',
+            unit: rawRow['Unit'] != null ? String(rawRow['Unit']).trim() : '',
+            exceptional: parsedExceptional, acceptable, unacceptable, direction,
+        },
+    };
+};
+
+// Batch version — same never-silently-drop-a-bad-row philosophy as the
+// owner import's row parser.
+app._kpiParseThresholdImportRows = function(rawRows) {
+    const validRows = [], invalidRows = [];
+    (rawRows || []).forEach((rawRow, index) => {
+        const result = this._kpiParseThresholdImportRow(rawRow);
+        if (result.valid) validRows.push(result.data);
+        else invalidRows.push({ rowNumber: index + 2, errors: result.errors, raw: rawRow });
+    });
+    return { validRows, invalidRows };
+};
+
+// Finds an already-imported KPI by (kpi_code, line) ALONE, without
+// knowing its directorate — necessary because this spreadsheet has no
+// Owner Dept column, unlike the owner import. Searches across every
+// directorate's KPIs, matching kpi_code against the definition and the
+// requested line name against its department_id's line row. Assumes
+// (kpi_code, line) is unique system-wide, which holds as long as the
+// owner import is what originally created these KPIs — each KPI code
+// only ever gets assigned to one, primary-owner directorate.
+app._kpiFindExistingKpiByCodeAndLine = function(kpiCode, lineName) {
+    const lineRows = (this.state.kpiDirectorateDepartments || []).filter(d => d.department_name === lineName);
+    const lineRowIds = new Set(lineRows.map(l => l.id));
+    return (this.state.kpiDefinitions || []).find(k => k.kpi_code === kpiCode && lineRowIds.has(k.department_id)) || null;
+};
+
+// Applies parsed threshold rows to already-existing KPIs — matched by
+// (kpi_code, line), never creating anything new. A row with no matching
+// KPI is reported, not silently skipped, since that usually means the
+// owner import hasn't been run for that KPI yet.
+app.importKpiThresholdData = async function(validRows) {
+    if (!this.supabase) return { updated: 0, notFound: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of validRows) {
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.kpiCode, row.line);
+        if (!existing) {
+            summary.notFound++;
+            summary.errors.push(`${row.kpiCode} (${row.line}): no matching KPI found — run the owner import first`);
+            continue;
+        }
+        try {
+            const saved = await this.saveKpiDefinition({
+                directorateId: existing.directorate_id, departmentId: existing.department_id,
+                name: existing.name, category: existing.category, kpiCode: existing.kpi_code,
+                periodType: existing.period_type, weight: existing.weight,
+                unit: row.unit || existing.unit,
+                targetValue: row.acceptable, exceptionalValue: row.exceptional, unacceptableValue: row.unacceptable,
+                direction: row.direction,
+            }, existing.id);
+            if (!saved) { summary.failed++; summary.errors.push(`${row.kpiCode} (${row.line}): failed to save`); continue; }
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${row.kpiCode} (${row.line}): ${e.message}`);
+        }
+    }
+
+    this.showToast(`Threshold import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
