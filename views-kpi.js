@@ -988,16 +988,30 @@ app._renderKpiUsersSection = function() {
                 <input type="text" id="kpiUserModalName" placeholder="Full name"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
 
-                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Password</label>
-                <input type="text" id="kpiUserModalPwd" placeholder="Set a password"
-                    style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
+                <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#374151;margin-bottom:10px;">
+                    <input type="checkbox" id="kpiUserModalLinked" onchange="document.getElementById('kpiUserModalPwdRow').style.display = this.checked ? 'none' : 'block';" />
+                    Linked login — use the password from their existing ID on another roster (Corporate Staff, Golden Command, Employees, or Maintenance)
+                </label>
+
+                <div id="kpiUserModalPwdRow">
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Password</label>
+                    <input type="text" id="kpiUserModalPwd" placeholder="Set a password"
+                        style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
+                </div>
 
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Role</label>
-                <select id="kpiUserModalRole" onchange="document.getElementById('kpiUserModalDirectorateRow').style.display = this.value === 'kpi_director' ? 'block' : 'none';"
+                <select id="kpiUserModalRole" onchange="document.getElementById('kpiUserModalDirectorateRow').style.display = this.value === 'kpi_director' ? 'block' : 'none'; document.getElementById('kpiUserModalSuperRow').style.display = this.value === 'kpi_director' ? 'block' : 'none';"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;">
                     <option value="kpi_planner">📊 KPI Planner</option>
                     <option value="kpi_director">📈 KPI Executive Director</option>
                 </select>
+
+                <div id="kpiUserModalSuperRow" style="display:none;margin-bottom:14px;">
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:#374151;">
+                        <input type="checkbox" id="kpiUserModalSuper" onchange="document.getElementById('kpiUserModalDirectorateRow').style.display = this.checked ? 'none' : 'block';" />
+                        Super user — view-only access across every directorate, not just one (no edit rights)
+                    </label>
+                </div>
 
                 <div id="kpiUserModalDirectorateRow" style="display:none;margin-bottom:20px;">
                     <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
@@ -1020,7 +1034,11 @@ app.openKpiUserModal = function() {
     document.getElementById('kpiUserModalId').value = '';
     document.getElementById('kpiUserModalName').value = '';
     document.getElementById('kpiUserModalPwd').value = '';
+    document.getElementById('kpiUserModalLinked').checked = false;
+    document.getElementById('kpiUserModalPwdRow').style.display = 'block';
     document.getElementById('kpiUserModalRole').value = 'kpi_planner';
+    document.getElementById('kpiUserModalSuper').checked = false;
+    document.getElementById('kpiUserModalSuperRow').style.display = 'none';
     document.getElementById('kpiUserModalDirectorateRow').style.display = 'none';
     document.getElementById('kpiUserModal').style.display = 'flex';
 };
@@ -1032,12 +1050,21 @@ app.closeKpiUserModal = function() {
 app.saveKpiUserModal = async function() {
     const id = (document.getElementById('kpiUserModalId').value || '').trim();
     const name = (document.getElementById('kpiUserModalName').value || '').trim();
+    const linkedLogin = document.getElementById('kpiUserModalLinked').checked;
     const password = document.getElementById('kpiUserModalPwd').value || '';
     const role = document.getElementById('kpiUserModalRole').value;
+    const canViewAllDirectorates = role === 'kpi_director' && document.getElementById('kpiUserModalSuper').checked;
     const directorateIdRaw = document.getElementById('kpiUserModalDirectorate').value;
 
-    if (!id || !name || !password) {
-        this.showToast('Please fill in ID, name, and password.', 'error');
+    if (!id || !name) {
+        this.showToast('Please fill in ID and name.', 'error');
+        return;
+    }
+    // A linked-login account never needs a password typed here — its
+    // real password always comes from whichever roster (CS/GC/Employees/
+    // Maintenance) already has that same ID.
+    if (!linkedLogin && !password) {
+        this.showToast('Please set a password, or check "Linked login" to use their existing roster password instead.', 'error');
         return;
     }
     if ((this.state.kpiUsers || []).some(u => u.id === id)) {
@@ -1047,8 +1074,8 @@ app.saveKpiUserModal = async function() {
 
     const saved = await this.saveKpiUser({
         id, name, password, role,
-        directorateId: directorateIdRaw ? parseInt(directorateIdRaw, 10) : null,
-        linkedLogin: false,
+        directorateId: (!canViewAllDirectorates && directorateIdRaw) ? parseInt(directorateIdRaw, 10) : null,
+        linkedLogin, canViewAllDirectorates,
     }, null);
     if (saved) {
         this.closeKpiUserModal();
@@ -1158,7 +1185,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                     <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; app.renderKpiDirectorView();"
                         style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                         <option value="" ${selectedMonthlyKpiId == null ? 'selected' : ''}>All KPIs (Average)</option>
-                        ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}
+                        ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('')}
                     </select>
                 </div>
                 ${monthly.length > 0 ? `
@@ -1358,15 +1385,21 @@ app.renderKpiDirectorView = function() {
     const content = document.getElementById('contentArea');
     const esc = this._escHtml.bind(this);
     const user = this.state.verifiedKpiUser;
-    const directorateId = user ? user.directorate_id : null;
+    const isSuperUser = !!(user && user.can_view_all_directorates);
+    // A super user (view-only across every directorate) picks which one
+    // to view via a selector below, rather than being locked to
+    // user.directorate_id like a normal, single-directorate director.
+    const directorateId = isSuperUser
+        ? (this.state._kpiSuperUserSelectedDirectorateId ?? (this.state.kpiDirectorates || [])[0]?.id ?? null)
+        : (user ? user.directorate_id : null);
 
     if (!directorateId) {
         content.innerHTML = `
             <div class="max-w-3xl mx-auto">
                 <div class="bg-white rounded-xl shadow-md p-8 text-center">
                     <p style="font-size:2.5rem;">⏳</p>
-                    <h2 class="text-xl font-bold text-gray-800 mt-2">Not Yet Assigned to a Directorate</h2>
-                    <p class="text-sm text-gray-500 mt-2">Welcome, ${esc(user ? user.name : '')}. Your account hasn't been assigned to a directorate yet — once the KPI Planner assigns you one, your KPI dashboard will appear here.</p>
+                    <h2 class="text-xl font-bold text-gray-800 mt-2">${isSuperUser ? 'No Directorates Yet' : 'Not Yet Assigned to a Directorate'}</h2>
+                    <p class="text-sm text-gray-500 mt-2">Welcome, ${esc(user ? user.name : '')}. ${isSuperUser ? 'No directorates have been created yet — once the KPI Planner adds one, you\'ll be able to browse it here.' : 'Your account hasn\'t been assigned to a directorate yet — once the KPI Planner assigns you one, your KPI dashboard will appear here.'}</p>
                 </div>
             </div>
         `;
@@ -1392,7 +1425,7 @@ app.renderKpiDirectorView = function() {
             bodyHtml = `<div class="bg-white rounded-xl shadow p-8 text-center"><p class="text-sm text-gray-400">No KPIs configured for this directorate yet.</p></div>`;
         } else {
             const selectedKpiId = this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id;
-            const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
+            const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('');
             kpiPickerHtml = `
                 <select onchange="app.state._kpiDirectorSelectedKpiId = parseInt(this.value, 10); app.renderKpiDirectorView();"
                     style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
@@ -1410,9 +1443,15 @@ app.renderKpiDirectorView = function() {
             <div class="flex justify-between items-center flex-wrap gap-3 mb-4">
                 <div>
                     <h2 class="text-2xl font-bold text-gray-800">📈 ${esc(directorate ? directorate.name : 'KPI')} Dashboard</h2>
-                    <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)}.</p>
+                    <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)}.${isSuperUser ? ' <span style="background:#faf5ff;color:#7c3aed;padding:2px 8px;border-radius:999px;font-size:0.72rem;font-weight:700;margin-left:6px;">👁️ VIEW-ONLY · ALL DIRECTORATES</span>' : ''}</p>
                 </div>
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    ${isSuperUser ? `
+                        <select onchange="app.state._kpiSuperUserSelectedDirectorateId = parseInt(this.value, 10); app.state._kpiDirectorSelectedKpiId = null; app.renderKpiDirectorView();"
+                            style="padding:8px 14px;border:1.5px solid #7c3aed;border-radius:8px;font-size:0.85rem;font-weight:600;color:#7c3aed;">
+                            ${(this.state.kpiDirectorates || []).map(d => `<option value="${d.id}" ${d.id === directorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                        </select>
+                    ` : ''}
                     ${kpiPickerHtml}
                     <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
                         style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
