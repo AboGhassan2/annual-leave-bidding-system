@@ -154,9 +154,14 @@ app._renderKpiDirectoratesSection = function() {
 
     return `
         <div class="bg-white rounded-xl shadow-md p-5">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                 <h3 class="text-lg font-bold text-gray-800">${esc(selectedCompany)} Directorates</h3>
-                <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
+                <div style="display:flex;gap:8px;">
+                    ${selectedCompany === 'OMC' && directorates.length > 0 ? `
+                        <button onclick="app.doCopyKpiOmcStructureToAudit()" style="padding:8px 16px;background:#f3f4f6;color:#374151;border-radius:8px;font-size:0.85rem;font-weight:700;">📋 Copy OMC → Audit</button>
+                    ` : ''}
+                    <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
+                </div>
             </div>
             <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;">Every directorate automatically has 4 operational lines — L3, L4, L5, L6. KPIs are configured per line when you add them. New directorates are added under <strong>${esc(selectedCompany)}</strong> — switch company above to add one for the other side.</p>
             ${directorates.length === 0 ? `<p class="text-sm text-gray-400 text-center py-6">No ${esc(selectedCompany)} directorates yet — add one to get started.</p>` : rows}
@@ -213,6 +218,23 @@ app.confirmDeleteKpiDirectorate = async function(id) {
     if (!confirm('Delete this directorate? This also deletes every KPI defined under it and all their recorded results. This cannot be undone.')) return;
     const ok = await this.deleteKpiDirectorate(id);
     if (ok) this.renderKpiPlannerView();
+};
+
+app.doCopyKpiOmcStructureToAudit = async function() {
+    const ok = confirm(
+        'Copy every OMC directorate, line, and KPI (with its thresholds and owners) into Audit?\n\n' +
+        'Recorded results are NOT copied — Audit starts with the same KPI structure but a clean slate of entered data.\n\n' +
+        'Any OMC directorate whose name already exists under Audit will be skipped, so this is safe to run more than once.'
+    );
+    if (!ok) return;
+    this.showToast('Copying OMC structure to Audit…', 'success');
+    const result = await this.copyKpiOmcStructureToAudit();
+    const parts = [`${result.directorates} directorate${result.directorates !== 1 ? 's' : ''}`, `${result.kpis} KPI${result.kpis !== 1 ? 's' : ''}`];
+    if (result.owners > 0) parts.push(`${result.owners} owner record${result.owners !== 1 ? 's' : ''}`);
+    let msg = `Copied ${parts.join(', ')} to Audit.`;
+    if (result.skipped > 0) msg += ` (${result.skipped} directorate${result.skipped !== 1 ? 's' : ''} skipped — already existed under Audit.)`;
+    this.showToast(msg, 'success');
+    this.renderKpiPlannerView();
 };
 
 // ════════════════════════════════════════════════════════════════════
