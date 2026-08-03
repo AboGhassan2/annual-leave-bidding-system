@@ -1673,12 +1673,13 @@ test('_kpiGroupImportRowsByLineAndCode collapses multi-owner rows into one KPI e
         { line: 'L3', code: 'A', kpiCode: 'A3', kpiName: 'Complaints per boarding', periodType: 'monthly', weight: 0.2, ownerDept: 'Operations', ownerName: 'HANI ALHARBI', ownerEmail: 'h@x.com', ownerPct: 0.9 },
         { line: 'L3', code: 'A', kpiCode: 'A3', kpiName: 'Complaints per boarding', periodType: 'monthly', weight: 0.2, ownerDept: 'Finance', ownerName: 'TARIQ MANSOUR', ownerEmail: 't@x.com', ownerPct: 0.1 },
     ];
-    const grouped = app._kpiGroupImportRowsByLineAndCode(validRows);
-    assert.equal(grouped.length, 1, 'both rows describe the same KPI on the same line, must collapse into ONE entry');
-    assert.equal(grouped[0].owners.length, 2);
-    assert.equal(grouped[0].owners[0].dept, 'Operations');
-    assert.equal(grouped[0].owners[0].pct, 0.9);
-    assert.equal(grouped[0].owners[1].dept, 'Finance');
+    const { groups, conflicts } = app._kpiGroupImportRowsByLineAndCode(validRows);
+    assert.equal(conflicts.length, 0, 'identical KPI Name across both rows -> no conflict');
+    assert.equal(groups.length, 1, 'both rows describe the same KPI on the same line, must collapse into ONE entry');
+    assert.equal(groups[0].owners.length, 2);
+    assert.equal(groups[0].owners[0].dept, 'Operations');
+    assert.equal(groups[0].owners[0].pct, 0.9);
+    assert.equal(groups[0].owners[1].dept, 'Finance');
 });
 
 test('_kpiGroupImportRowsByLineAndCode keeps the SAME KPI code on DIFFERENT lines as separate entries, not merged', () => {
@@ -1687,8 +1688,29 @@ test('_kpiGroupImportRowsByLineAndCode keeps the SAME KPI code on DIFFERENT line
         { line: 'L3', code: 'A', kpiCode: 'A1', kpiName: 'K', periodType: 'monthly', weight: 0.4, ownerDept: 'Operations', ownerName: '', ownerEmail: '', ownerPct: 1 },
         { line: 'L4', code: 'A', kpiCode: 'A1', kpiName: 'K', periodType: 'monthly', weight: 0.4, ownerDept: 'Operations', ownerName: '', ownerEmail: '', ownerPct: 1 },
     ];
-    const grouped = app._kpiGroupImportRowsByLineAndCode(validRows);
-    assert.equal(grouped.length, 2, 'A1 on L3 and A1 on L4 are genuinely different KPI instances, must stay separate');
+    const { groups, conflicts } = app._kpiGroupImportRowsByLineAndCode(validRows);
+    assert.equal(conflicts.length, 0);
+    assert.equal(groups.length, 2, 'A1 on L3 and A1 on L4 are genuinely different KPI instances, must stay separate');
+});
+
+test('_kpiGroupImportRowsByLineAndCode flags a CONFLICT instead of silently merging when the same (Line, KPI Code) is reused for two unrelated KPIs with different names', () => {
+    // This reproduces the actual reported bug: if KPI code numbering
+    // restarts per department in the source spreadsheet (e.g. both
+    // Public Relations and Operations independently use "L3/A1" for
+    // their own first KPI), naively merging by (line, kpiCode) alone
+    // would combine two unrelated owners into one KPI — silently
+    // misattributing one department's KPI to the other's directorate.
+    const app = buildKpiApp();
+    const validRows = [
+        { line: 'L3', code: 'A', kpiCode: 'A1', kpiName: 'Passenger satisfaction', periodType: 'quarterly', weight: 0.4, ownerDept: 'Public Relations', ownerName: 'HANI ALHARBI', ownerEmail: 'h@x.com', ownerPct: 1 },
+        { line: 'L3', code: 'A', kpiCode: 'A1', kpiName: 'Track maintenance backlog', periodType: 'monthly', weight: 0.3, ownerDept: 'Operations', ownerName: 'SOME MANAGER', ownerEmail: 'm@x.com', ownerPct: 1 },
+    ];
+    const { groups, conflicts } = app._kpiGroupImportRowsByLineAndCode(validRows);
+    assert.equal(groups.length, 0, 'the conflicting key must NOT be merged into a group at all');
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0].line, 'L3');
+    assert.equal(conflicts[0].kpiCode, 'A1');
+    assert.deepEqual(conflicts[0].names.sort(), ['Passenger satisfaction', 'Track maintenance backlog'].sort());
 });
 
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
