@@ -57,10 +57,20 @@ app.loadKpiData = async function() {
 // ════════════════════════════════════════════════════════════════════
 // Directorates
 // ════════════════════════════════════════════════════════════════════
-app.saveKpiDirectorate = async function(name, existingId) {
+app.saveKpiDirectorate = async function(name, existingId, company) {
     if (!this.supabase) return null;
     try {
         const row = { tenant_id: this._tid(), name };
+        // Company is set on create (defaulting to OMC for the older
+        // Excel-import auto-create paths that don't pass one) and only
+        // updated when a caller explicitly passes it — editing just the
+        // name of an existing directorate must never silently move it to
+        // a different company.
+        if (!existingId) {
+            row.company = company || 'OMC';
+        } else if (company !== undefined) {
+            row.company = company;
+        }
         let query;
         if (existingId) {
             query = this.supabase.from('kpi_directorates').update(row).eq('id', existingId).select();
