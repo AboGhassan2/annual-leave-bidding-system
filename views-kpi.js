@@ -777,12 +777,17 @@ app._renderKpiPreviewSection = function() {
 // ════════════════════════════════════════════════════════════════════
 app._renderKpiImportSection = function() {
     const esc = this._escHtml.bind(this);
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
     const preview = this.state._kpiImportPreview;
     const result = this.state._kpiImportResult;
     const thresholdPreview = this.state._kpiThresholdImportPreview;
     const thresholdResult = this.state._kpiThresholdImportResult;
 
     return `
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#1e40af;">
+            📁 Importing into <strong>${esc(selectedCompany)}</strong> — switch company above if this isn't the one you meant.
+        </div>
+
         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
             <h3 class="text-lg font-bold text-gray-800 mb-2">1. Import KPIs &amp; Owners from Excel</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
@@ -828,8 +833,9 @@ app._renderKpiImportSection = function() {
 app._renderKpiImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
     const { validRows, invalidRows, grouped } = preview;
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
     const primaryDepts = [...new Set(grouped.map(g => this._kpiDeterminePrimaryOwnerDept(g.owners)))];
-    const existingDirNames = new Set((this.state.kpiDirectorates || []).map(d => d.name));
+    const existingDirNames = new Set((this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany).map(d => d.name));
     const newDepts = primaryDepts.filter(d => !existingDirNames.has(d));
 
     return `
@@ -960,7 +966,7 @@ app._confirmKpiImport = async function() {
     if (!preview) return;
     const ok = confirm(`Import ${preview.grouped.length} KPIs? This will create/update KPI definitions and owner records.`);
     if (!ok) return;
-    const result = await this.importKpiOwnerData(preview.grouped);
+    const result = await this.importKpiOwnerData(preview.grouped, this.state._kpiSelectedCompany || 'OMC');
     this.state._kpiImportResult = result;
     this.state._kpiImportPreview = null;
     this.renderKpiPlannerView();
@@ -969,7 +975,8 @@ app._confirmKpiImport = async function() {
 app._renderKpiThresholdImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
     const { validRows, invalidRows } = preview;
-    const notFoundCount = validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line)).length;
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const notFoundCount = validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line, selectedCompany)).length;
 
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
@@ -1101,7 +1108,7 @@ app._confirmKpiThresholdImport = async function() {
     if (!preview) return;
     const ok = confirm(`Update thresholds for ${preview.validRows.length} rows? This overwrites Exceptional/Acceptable/Unacceptable and direction on matching KPIs.`);
     if (!ok) return;
-    const result = await this.importKpiThresholdData(preview.validRows);
+    const result = await this.importKpiThresholdData(preview.validRows, this.state._kpiSelectedCompany || 'OMC');
     this.state._kpiThresholdImportResult = result;
     this.state._kpiThresholdImportPreview = null;
     this.renderKpiPlannerView();
