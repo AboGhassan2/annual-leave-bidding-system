@@ -59,6 +59,22 @@ app.renderKpiPlannerView = function() {
         });
     }
 
+    // ── Company switcher (OMC / Audit) ──
+    // Two companies operate as fully independent KPI setups sharing the
+    // same screens: every directorate belongs to exactly one company, and
+    // everything else (lines, KPI definitions, results) cascades from its
+    // directorate — so scoping by company here is enough to keep OMC and
+    // Audit data completely separate everywhere below. This one switcher
+    // is the single "Company" step of the cascade for every tab, rather
+    // than a separate identical dropdown repeated on each tab.
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const companyBtn = (name) => `
+        <button onclick="app.state._kpiSelectedCompany='${name}'; app.state._kpiResultsSelectedDirectorateId=null; app.state._kpiResultsSelectedId=null; app.state._kpiDefFilterDirectorateId=null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+            style="padding:7px 18px;border-radius:999px;font-weight:700;font-size:0.8rem;border:1.5px solid ${selectedCompany === name ? '#1d4ed8' : '#e5e7eb'};background:${selectedCompany === name ? '#1d4ed8' : '#fff'};color:${selectedCompany === name ? '#fff' : '#374151'};cursor:pointer;">
+            ${esc(name)}
+        </button>
+    `;
+
     const tabBtn = (key, icon, label) => `
         <button onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
             class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}">
@@ -79,6 +95,13 @@ app.renderKpiPlannerView = function() {
             <div class="mb-6">
                 <h2 class="text-2xl font-bold text-gray-800">📊 KPI Planner</h2>
                 <p class="text-gray-500 text-sm mt-1">Define directorates, KPIs, and enter results.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                <span style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.03em;">Company</span>
+                <div style="display:flex;gap:6px;">
+                    ${companyBtn('OMC')}
+                    ${companyBtn('Audit')}
+                </div>
             </div>
             <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
                 ${tabBtn('directorates', '🏛️', 'Directorates')}
@@ -106,7 +129,11 @@ app.renderKpiPlannerView = function() {
 // ════════════════════════════════════════════════════════════════════
 app._renderKpiDirectoratesSection = function() {
     const esc = this._escHtml.bind(this);
-    const directorates = this.state.kpiDirectorates || [];
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    // Directorates created before "company" existed are treated as OMC —
+    // this is also what the DB column defaults to, so this fallback is
+    // purely a safety net for state that predates a migration/reload.
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
 
     const rows = directorates.map(d => {
         const lines = (this.state.kpiDirectorateDepartments || []).filter(m => m.directorate_id === d.id);
@@ -128,11 +155,11 @@ app._renderKpiDirectoratesSection = function() {
     return `
         <div class="bg-white rounded-xl shadow-md p-5">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-                <h3 class="text-lg font-bold text-gray-800">Directorates</h3>
+                <h3 class="text-lg font-bold text-gray-800">${esc(selectedCompany)} Directorates</h3>
                 <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
             </div>
-            <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;">Every directorate automatically has 4 operational lines — L3, L4, L5, L6. KPIs are configured per line when you add them.</p>
-            ${directorates.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No directorates yet — add one to get started.</p>' : rows}
+            <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;">Every directorate automatically has 4 operational lines — L3, L4, L5, L6. KPIs are configured per line when you add them. New directorates are added under <strong>${esc(selectedCompany)}</strong> — switch company above to add one for the other side.</p>
+            ${directorates.length === 0 ? `<p class="text-sm text-gray-400 text-center py-6">No ${esc(selectedCompany)} directorates yet — add one to get started.</p>` : rows}
         </div>
 
         <!-- Directorate modal — name only, the 4 lines are created automatically -->
@@ -143,7 +170,7 @@ app._renderKpiDirectoratesSection = function() {
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate Name</label>
                 <input type="text" id="kpiDirectorateName" placeholder="e.g. Operations Directorate"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;" />
-                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:20px;">Lines L3, L4, L5, and L6 will be created automatically under this directorate.</p>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:20px;">Lines L3, L4, L5, and L6 will be created automatically under this directorate. It will belong to <strong>${esc(selectedCompany)}</strong>.</p>
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
                     <button onclick="app.saveKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
@@ -171,7 +198,7 @@ app.saveKpiDirectorateModal = async function() {
     const existingId = document.getElementById('kpiDirectorateEditId').value;
     const idNum = existingId ? parseInt(existingId, 10) : null;
 
-    const saved = await this.saveKpiDirectorate(name, idNum);
+    const saved = await this.saveKpiDirectorate(name, idNum, this.state._kpiSelectedCompany || 'OMC');
     if (!saved) return;
 
     // Idempotent — only adds whichever of L3/L4/L5/L6 don't already exist
@@ -193,18 +220,52 @@ app.confirmDeleteKpiDirectorate = async function(id) {
 // ════════════════════════════════════════════════════════════════════
 app._renderKpiDefinitionsSection = function() {
     const esc = this._escHtml.bind(this);
-    const definitions = this.state.kpiDefinitions || [];
-    const directorates = this.state.kpiDirectorates || [];
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
+    const definitions = (this.state.kpiDefinitions || []).filter(k => directorates.some(d => d.id === k.directorate_id));
 
     if (directorates.length === 0) {
         return `
             <div class="bg-white rounded-xl shadow-md p-5">
-                <p class="text-sm text-gray-400 text-center py-6">Add a directorate first — every KPI must belong to one.</p>
+                <p class="text-sm text-gray-400 text-center py-6">Add a ${esc(selectedCompany)} directorate first — every KPI must belong to one.</p>
             </div>
         `;
     }
 
-    const rows = definitions.map(k => {
+    // ── Filter: KPI Period -> Directorate -> KPI Name ──
+    // Narrows the list below; Company is the shared switcher at the top
+    // of the page, so it's already applied to `directorates`/`definitions`
+    // above. KPI Name defaults to "All" here (unlike Enter Results, this
+    // is a browsing/management list, not a single-record entry form).
+    const periodTypes = ['monthly', 'quarterly', 'yearly'];
+    const periodLabels = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+    let filterPeriod = this.state._kpiDefFilterPeriod;
+    if (!periodTypes.includes(filterPeriod)) {
+        filterPeriod = 'monthly';
+        this.state._kpiDefFilterPeriod = filterPeriod;
+    }
+
+    let filterDirectorateId = this.state._kpiDefFilterDirectorateId;
+    if (filterDirectorateId == null || !directorates.some(d => d.id === filterDirectorateId)) {
+        filterDirectorateId = directorates[0].id;
+        this.state._kpiDefFilterDirectorateId = filterDirectorateId;
+    }
+
+    const kpisInDirPeriod = definitions.filter(k => k.directorate_id === filterDirectorateId && k.period_type === filterPeriod);
+
+    let filterKpiId = this.state._kpiDefFilterKpiId; // null/undefined = "All KPIs"
+    if (filterKpiId != null && !kpisInDirPeriod.some(k => k.id === filterKpiId)) {
+        filterKpiId = null;
+        this.state._kpiDefFilterKpiId = null;
+    }
+
+    const visibleDefinitions = filterKpiId != null ? kpisInDirPeriod.filter(k => k.id === filterKpiId) : kpisInDirPeriod;
+
+    const periodFilterOptions = periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
+    const directorateFilterOptions = directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+    const kpiNameFilterOptions = `<option value="">All KPIs</option>` + kpisInDirPeriod.map(k => `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('');
+
+    const rows = visibleDefinitions.map(k => {
         const dir = directorates.find(d => d.id === k.directorate_id);
         const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
         const dirLabel = { higher_is_better: 'Higher is better', lower_is_better: 'Lower is better' }[k.direction] || k.direction;
@@ -227,15 +288,45 @@ app._renderKpiDefinitionsSection = function() {
         `;
     }).join('');
 
+    // Directorate options for the Add/Edit KPI modal — scoped to the
+    // active company so a KPI can never be attached to a directorate
+    // belonging to the other one.
     const directorateOptions = directorates.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
 
     return `
+        <div class="bg-white rounded-xl shadow-md p-5 mb-5">
+            <h4 style="font-size:0.8rem;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:10px;">Filter</h4>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <div style="min-width:140px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Period</label>
+                    <select onchange="app.state._kpiDefFilterPeriod=this.value; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                        style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
+                        ${periodFilterOptions}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:180px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
+                    <select onchange="app.state._kpiDefFilterDirectorateId=parseInt(this.value,10); app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                        style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
+                        ${directorateFilterOptions}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:180px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Name</label>
+                    <select onchange="app.state._kpiDefFilterKpiId=this.value?parseInt(this.value,10):null; app.renderKpiPlannerView();"
+                        style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
+                        ${kpiNameFilterOptions}
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <div class="bg-white rounded-xl shadow-md p-5">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-                <h3 class="text-lg font-bold text-gray-800">KPIs</h3>
+                <h3 class="text-lg font-bold text-gray-800">${esc(selectedCompany)} KPIs</h3>
                 <button onclick="app.openKpiDefinitionModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add KPI</button>
             </div>
-            ${definitions.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPIs yet — add one above.</p>' : rows}
+            ${visibleDefinitions.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPIs match this filter.</p>' : rows}
         </div>
 
         <!-- KPI definition modal -->
@@ -326,14 +417,14 @@ app.openKpiDefinitionModal = function(kpiId) {
     const existing = kpiId ? (this.state.kpiDefinitions || []).find(k => k.id === kpiId) : null;
     document.getElementById('kpiDefinitionModalTitle').textContent = existing ? 'Edit KPI' : 'Add KPI';
     document.getElementById('kpiDefinitionEditId').value = kpiId || '';
-    document.getElementById('kpiDefDirectorate').value = existing ? existing.directorate_id : (this.state.kpiDirectorates[0]?.id || '');
+    document.getElementById('kpiDefDirectorate').value = existing ? existing.directorate_id : (this.state._kpiDefFilterDirectorateId || this.state.kpiDirectorates[0]?.id || '');
     document.getElementById('kpiDefName').value = existing ? existing.name : '';
     document.getElementById('kpiDefCategory').value = existing ? (existing.category || '') : '';
     document.getElementById('kpiDefExceptional').value = existing && existing.exceptional_value != null ? existing.exceptional_value : '';
     document.getElementById('kpiDefTarget').value = existing ? existing.target_value : '';
     document.getElementById('kpiDefUnacceptable').value = existing && existing.unacceptable_value != null ? existing.unacceptable_value : '';
     document.getElementById('kpiDefUnit').value = existing ? (existing.unit || '') : '';
-    document.getElementById('kpiDefPeriodType').value = existing ? existing.period_type : 'monthly';
+    document.getElementById('kpiDefPeriodType').value = existing ? existing.period_type : (this.state._kpiDefFilterPeriod || 'monthly');
     document.getElementById('kpiDefDirection').value = existing ? existing.direction : 'higher_is_better';
     this._populateKpiDefLineOptions(existing ? existing.department_id : null);
     document.getElementById('kpiDefinitionModal').style.display = 'flex';
@@ -390,22 +481,39 @@ app.confirmDeleteKpiDefinition = async function(id) {
 // ════════════════════════════════════════════════════════════════════
 app._renderKpiResultsSection = function() {
     const esc = this._escHtml.bind(this);
-    const definitions = this.state.kpiDefinitions || [];
-    const directorates = this.state.kpiDirectorates || [];
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
+    const definitions = (this.state.kpiDefinitions || []).filter(k => directorates.some(d => d.id === k.directorate_id));
 
     if (definitions.length === 0) {
         return `
             <div class="bg-white rounded-xl shadow-md p-5">
-                <p class="text-sm text-gray-400 text-center py-6">Add a KPI first — results are recorded against a specific KPI.</p>
+                <p class="text-sm text-gray-400 text-center py-6">Add a ${esc(selectedCompany)} KPI first — results are recorded against a specific KPI.</p>
             </div>
         `;
     }
 
-    // ── Directorate filter (Step 1 of the cascade) ──
-    // Defaults to the directorate of whatever KPI is currently selected
-    // (so switching tabs doesn't silently reset the user's place); falls
-    // back to the first directorate that actually has KPIs, then the
-    // first directorate at all.
+    // ── KPI Period filter (Step 1 of the on-page cascade — Company is the
+    // shared switcher above the tabs) ──
+    // Defaults to whatever KPI is currently selected's period, so
+    // switching tabs doesn't silently reset the user's place.
+    const periodTypes = ['monthly', 'quarterly', 'yearly'];
+    const periodLabels = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+    let filterPeriod = this.state._kpiResultsFilterPeriod;
+    if (!periodTypes.includes(filterPeriod)) {
+        const currentDef = this.state._kpiResultsSelectedId ? definitions.find(k => k.id === this.state._kpiResultsSelectedId) : null;
+        filterPeriod = currentDef ? currentDef.period_type : 'monthly';
+        this.state._kpiResultsFilterPeriod = filterPeriod;
+    }
+    const periodFilterHtml = `
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Period</label>
+        <select id="kpiResultsPeriodTypeSelect" onchange="app.state._kpiResultsFilterPeriod = this.value; app.state._kpiResultsSelectedId = null; app.renderKpiPlannerView();"
+            style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
+            ${periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('')}
+        </select>
+    `;
+
+    // ── Directorate filter (Step 2) — scoped to the active company ──
     let selectedDirectorateId = this.state._kpiResultsSelectedDirectorateId;
     const directorateIsValid = selectedDirectorateId != null && directorates.some(d => d.id === selectedDirectorateId);
     if (!directorateIsValid) {
@@ -426,15 +534,18 @@ app._renderKpiResultsSection = function() {
         </select>
     `;
 
-    // ── KPI filter (Step 2 of the cascade) — scoped to the directorate above ──
-    const scopedDefinitions = selectedDirectorateId != null ? this._kpisForDirectorate(selectedDirectorateId) : definitions;
+    // ── KPI Name filter (Step 3) — scoped to the directorate AND the
+    // KPI Period selected above ──
+    const scopedDefinitions = (selectedDirectorateId != null ? this._kpisForDirectorate(selectedDirectorateId) : definitions)
+        .filter(k => k.period_type === filterPeriod);
 
     if (scopedDefinitions.length === 0) {
         return `
             <div class="bg-white rounded-xl shadow-md p-5">
                 <h3 class="text-lg font-bold text-gray-800 mb-4">Enter Results</h3>
+                ${periodFilterHtml}
                 ${directorateSelectHtml}
-                <p class="text-sm text-gray-400 text-center py-6">No KPIs defined for this directorate yet.</p>
+                <p class="text-sm text-gray-400 text-center py-6">No ${periodLabels[filterPeriod].toLowerCase()} KPIs defined for this directorate yet.</p>
             </div>
         `;
     }
@@ -445,6 +556,9 @@ app._renderKpiResultsSection = function() {
     this.state._kpiResultsSelectedId = selectedId;
     const selected = scopedDefinitions.find(k => k.id === selectedId) || scopedDefinitions[0];
     const selectedYear = this.state._kpiResultsSelectedYear || this.state.biddingYear || new Date().getFullYear();
+    // selected.period_type always equals filterPeriod (scopedDefinitions is
+    // pre-filtered by it above) — using it directly here is equivalent and
+    // keeps this line self-contained if that invariant ever changes.
     const periodOptions = this.kpiPeriodOptions(selected.period_type, selectedYear);
     const existingResults = (this.state.kpiResults || [])
         .filter(r => r.kpi_definition_id === selected.id)
@@ -482,6 +596,7 @@ app._renderKpiResultsSection = function() {
         <div class="bg-white rounded-xl shadow-md p-5">
             <h3 class="text-lg font-bold text-gray-800 mb-4">Enter Results</h3>
 
+            ${periodFilterHtml}
             ${directorateSelectHtml}
 
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI</label>
