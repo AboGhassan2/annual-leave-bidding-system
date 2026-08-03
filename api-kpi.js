@@ -377,6 +377,11 @@ app.saveKpiUser = async function(user, existingId) {
             role: user.role,
             directorate_id: user.role === 'kpi_director' ? user.directorateId : null,
             linked_login: !!user.linkedLogin,
+            // A "super user" kpi_director can browse EVERY directorate
+            // (view-only — the UI never gives them edit controls), rather
+            // than being locked to a single directorate_id like a normal
+            // director. Only meaningful when role is kpi_director.
+            can_view_all_directorates: user.role === 'kpi_director' ? !!user.canViewAllDirectorates : false,
         };
         let query;
         if (existingId) {
@@ -1490,5 +1495,18 @@ app.importKpiThresholdData = async function(validRows) {
 
     this.showToast(`Threshold import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
     return summary;
+};
+
+// Formats a KPI's display name with its line prefix — e.g. "L3-Staffing
+// Level" — so a director browsing their own KPIs can tell apart
+// same-named KPIs that exist once per line (the normal case: a KPI code
+// like "A1" gets one instance per L3/L4/L5/L6). Falls back to the bare
+// name if the line can't be resolved, rather than showing a broken
+// prefix like "undefined-Staffing Level".
+app._kpiDisplayNameWithLine = function(kpiDef) {
+    if (!kpiDef) return '';
+    const lineRow = (this.state.kpiDirectorateDepartments || []).find(d => d.id === kpiDef.department_id);
+    const linePrefix = lineRow ? lineRow.department_name : null;
+    return linePrefix ? `${linePrefix}-${kpiDef.name}` : kpiDef.name;
 };
 
