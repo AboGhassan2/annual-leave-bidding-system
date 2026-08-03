@@ -273,7 +273,14 @@ app._renderKpiDefinitionsSection = function() {
         this.state._kpiDefFilterDirectorateId = filterDirectorateId;
     }
 
-    const kpisInDirPeriod = definitions.filter(k => k.directorate_id === filterDirectorateId && k.period_type === filterPeriod);
+    // Membership here is by OWNERSHIP SHARE, not just home directorate_id
+    // — a KPI defined under Operations but 5%-owned by Finance should
+    // still show up when browsing Finance, same as it does on Finance's
+    // dashboard. Editing/deleting still always acts on the one real
+    // record (openKpiDefinitionModal reads the KPI's actual
+    // directorate_id, never the filter), so this is purely a visibility
+    // fix, not a duplication of the underlying data.
+    const kpisInDirPeriod = definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
 
     let filterKpiId = this.state._kpiDefFilterKpiId; // null/undefined = "All KPIs"
     if (filterKpiId != null && !kpisInDirPeriod.some(k => k.id === filterKpiId)) {
@@ -285,18 +292,23 @@ app._renderKpiDefinitionsSection = function() {
 
     const periodFilterOptions = periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
     const directorateFilterOptions = directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
-    const kpiNameFilterOptions = `<option value="">All KPIs</option>` + kpisInDirPeriod.map(k => `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('');
+    const kpiNameFilterOptions = `<option value="">All KPIs</option>` + kpisInDirPeriod.map(k => {
+        const w = this._kpiOwnershipWeight(k, filterDirectorateId);
+        return `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${w < 1 ? ` (${Math.round(w * 100)}% share)` : ''}</option>`;
+    }).join('');
 
     const rows = visibleDefinitions.map(k => {
         const dir = directorates.find(d => d.id === k.directorate_id);
         const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
         const dirLabel = { higher_is_better: 'Higher is better', lower_is_better: 'Lower is better' }[k.direction] || k.direction;
         const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
+        const viewWeight = this._kpiOwnershipWeight(k, filterDirectorateId);
+        const isSharedView = viewWeight < 1 && viewWeight > 0;
         return `
             <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
                 <div>
-                    <p style="font-weight:700;">${esc(k.name)} ${k.category ? `<span style="font-size:0.72rem;color:#6b7280;font-weight:400;">(${esc(k.category)})</span>` : ''}</p>
-                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${line ? ' · ' + esc(line.department_name) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}${k.unit ? ' · ' + esc(k.unit) : ''}</p>
+                    <p style="font-weight:700;">${esc(k.name)} ${k.category ? `<span style="font-size:0.72rem;color:#6b7280;font-weight:400;">(${esc(k.category)})</span>` : ''}${isSharedView ? ` <span style="font-size:0.72rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</p>
+                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${isSharedView ? ' (home)' : ''}${line ? ' · ' + esc(line.department_name) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}${k.unit ? ' · ' + esc(k.unit) : ''}</p>
                     <p style="font-size:0.75rem;margin-top:4px;">
                         ${k.exceptional_value != null ? `<span style="color:#059669;font-weight:600;">Exceptional: ${esc(String(k.exceptional_value))}</span> · ` : ''}<span style="color:${k.target_value != null ? '#1d4ed8' : '#9ca3af'};font-weight:600;">Acceptable (Target): ${k.target_value != null ? esc(String(k.target_value)) : 'not set'}</span>${k.unacceptable_value != null ? ` · <span style="color:#dc2626;font-weight:600;">Unacceptable: ${esc(String(k.unacceptable_value))}</span>` : ''}
                     </p>
