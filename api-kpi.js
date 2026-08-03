@@ -1413,8 +1413,9 @@ app._kpiDeterminePrimaryOwnerDept = function(owners) {
 // records. Idempotent by kpi_code — re-running the same import (e.g.
 // after fixing a row in the spreadsheet) updates existing KPIs rather
 // than duplicating them, matched within the same directorate+line.
-app.importKpiOwnerData = async function(groupedRows) {
+app.importKpiOwnerData = async function(groupedRows, company) {
     if (!this.supabase) return { created: 0, updated: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
 
     const summary = { created: 0, updated: 0, failed: 0, errors: [] };
     // Cache directorate lookups within this run — many rows share the
@@ -1427,9 +1428,12 @@ app.importKpiOwnerData = async function(groupedRows) {
             if (!primaryDept) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): no owner department found`); continue; }
 
             if (!directorateByDeptName[primaryDept]) {
-                let directorate = (this.state.kpiDirectorates || []).find(d => d.name === primaryDept);
+                // Scoped to the target company — without this, a name match
+                // against a directorate belonging to the OTHER company would
+                // silently import into the wrong side.
+                let directorate = (this.state.kpiDirectorates || []).find(d => d.name === primaryDept && (d.company || 'OMC') === targetCompany);
                 if (!directorate) {
-                    directorate = await this.saveKpiDirectorate(primaryDept, null);
+                    directorate = await this.saveKpiDirectorate(primaryDept, null, targetCompany);
                     if (!directorate) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): could not create directorate "${primaryDept}"`); continue; }
                 }
                 await this.ensureKpiLinesForDirectorate(directorate.id);
@@ -1548,30 +1552,46 @@ app._kpiParseThresholdImportRows = function(rawRows) {
     return { validRows, invalidRows };
 };
 
-// Finds an already-imported KPI by (kpi_code, line) ALONE, without
-// knowing its directorate — necessary because this spreadsheet has no
-// Owner Dept column, unlike the owner import. Searches across every
-// directorate's KPIs, matching kpi_code against the definition and the
-// requested line name against its department_id's line row. Assumes
-// (kpi_code, line) is unique system-wide, which holds as long as the
-// owner import is what originally created these KPIs — each KPI code
-// only ever gets assigned to one, primary-owner directorate.
-app._kpiFindExistingKpiByCodeAndLine = function(kpiCode, lineName) {
-    const lineRows = (this.state.kpiDirectorateDepartments || []).filter(d => d.department_name === lineName);
+// Finds an already-imported KPI by (kpi_code, line) within a specific
+// company — necessary because this spreadsheet has no Owner Dept column,
+// unlike the owner import. Searches across that company's directorates'
+// KPIs, matching kpi_code against the definition and the requested line
+// name against its department_id's line row. Assumes (kpi_code, line) is
+// unique WITHIN a company, which holds as long as the owner import is
+// what originally created these KPIs — each KPI code only ever gets
+// assigned to one, primary-owner directorate per company. Company
+// scoping matters here specifically: OMC and Audit can each have their
+// own KPI using the same code+line (e.g. both imported from similar
+// spreadsheets), and without this a threshold update meant for one
+// company could silently land on the other's KPI instead.
+app._kpiFindExistingKpiByCodeAndLine = function(kpiCode, lineName, company) {
+    const targetCompany = company || 'OMC';
+    const dirCompanyById = {};
+    (this.state.kpiDirectorates || []).forEach(d => { dirCompanyById[d.id] = d.company || 'OMC'; });
+    const lineRows = (this.state.kpiDirectorateDepartments || []).filter(d => {
+        if (d.department_name !== lineName) return false;
+        // If there's no directorate record for this line at all (e.g.
+        // kpiDirectorates isn't loaded), don't exclude it — only exclude
+        // when we positively know it belongs to the OTHER company.
+        const dirCompany = dirCompanyById[d.directorate_id];
+        return dirCompany === undefined || dirCompany === targetCompany;
+    });
     const lineRowIds = new Set(lineRows.map(l => l.id));
     return (this.state.kpiDefinitions || []).find(k => k.kpi_code === kpiCode && lineRowIds.has(k.department_id)) || null;
 };
 
 // Applies parsed threshold rows to already-existing KPIs — matched by
-// (kpi_code, line), never creating anything new. A row with no matching
-// KPI is reported, not silently skipped, since that usually means the
-// owner import hasn't been run for that KPI yet.
-app.importKpiThresholdData = async function(validRows) {
+// (kpi_code, line) within the given company, never creating anything
+// new. A row with no matching KPI is reported, not silently skipped,
+// since that usually means the owner import hasn't been run for that
+// KPI (in that company) yet.
+app.importKpiThresholdData = async function(validRows, company) {
     if (!this.supabase) return { updated: 0, notFound: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
 
     const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
     for (const row of validRows) {
-        const existing = this._kpiFindExistingKpiByCodeAndLine(row.kpiCode, row.line);
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.kpiCode, row.line, targetCompany);
         if (!existing) {
             summary.notFound++;
             summary.errors.push(`${row.kpiCode} (${row.line}): no matching KPI found — run the owner import first`);
