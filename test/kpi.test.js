@@ -1867,6 +1867,156 @@ test('_kpiDisplayNameWithLine handles a null/missing KPI without throwing', () =
     assert.equal(app._kpiDisplayNameWithLine(null), '');
 });
 
+// ════════════════════════════════════════════════════════════════════
+// Multi-owner directorate weighting — a KPI's result is allocated across
+// each owner's OWN directorate by their ownership percentage (e.g. 95%
+// to Operations, 5% to Contracts), matched by owner_dept naming a real
+// directorate, scoped to the KPI's company so it can never cross OMC/
+// Audit by accident.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiOwnershipWeight: a KPI with NO owner records is 100% its home directorate, 0 elsewhere', () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null }],
+        kpiOwners: [],
+    });
+    const kpiDef = app.state.kpiDefinitions[0];
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 10), 1, 'home directorate gets full weight');
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 99), 0, 'any other directorate gets none');
+});
+
+test('_kpiOwnershipWeight: splits by owner_dept matching directorate name (95%/5% example)', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Contracts', company: 'OMC' },
+        ],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null, name: 'Condition of Trains (D)' }],
+        kpiOwners: [
+            { kpi_definition_id: 1, owner_name: 'KAMRUL ISLAM', owner_dept: 'Operations', owner_percentage: 0.95 },
+            { kpi_definition_id: 1, owner_name: 'MICHAEL BARRY', owner_dept: 'Contracts', owner_percentage: 0.05 },
+        ],
+    });
+    const kpiDef = app.state.kpiDefinitions[0];
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 10), 0.95, 'Operations gets Kamrul\'s 95% share');
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 20), 0.05, 'Contracts gets Michael\'s 5% share');
+});
+
+test('_kpiOwnershipWeight: an owner_dept that matches no directorate contributes to nobody', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null }],
+        kpiOwners: [{ kpi_definition_id: 1, owner_dept: 'Nonexistent Dept', owner_percentage: 0.05 }],
+    });
+    const kpiDef = app.state.kpiDefinitions[0];
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 10), 0, 'no owner row named "Operations" -> its home directorate gets nothing either, since the only owner row present is unmatched');
+});
+
+test('_kpiOwnershipWeight: owner_dept matching is scoped to the KPI\'s own company, never crosses OMC/Audit', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'HSEQ', company: 'OMC' },
+            { id: 20, name: 'HSEQ', company: 'Audit' }, // same name, other company
+        ],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null }], // OMC KPI
+        kpiOwners: [{ kpi_definition_id: 1, owner_dept: 'HSEQ', owner_percentage: 1 }],
+    });
+    const kpiDef = app.state.kpiDefinitions[0];
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 10), 1, 'matches the OMC HSEQ directorate');
+    assert.equal(app._kpiOwnershipWeight(kpiDef, 20), 0, 'does NOT match the Audit HSEQ directorate, despite the same name');
+});
+
+test('_kpisForDirectorateDashboard: a shared KPI appears under BOTH owner directorates, each with its own weight', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Contracts', company: 'OMC' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: null, name: 'Condition of Trains (D)', target_value: 95, is_active: true },
+        ],
+        kpiOwners: [
+            { kpi_definition_id: 1, owner_dept: 'Operations', owner_percentage: 0.95 },
+            { kpi_definition_id: 1, owner_dept: 'Contracts', owner_percentage: 0.05 },
+        ],
+    });
+    const opsKpis = app._kpisForDirectorateDashboard(10);
+    const contractsKpis = app._kpisForDirectorateDashboard(20);
+    assert.equal(opsKpis.length, 1);
+    assert.equal(opsKpis[0]._ownershipWeight, 0.95);
+    assert.equal(opsKpis[0].target_value, 95 * 0.95, 'target_value is pre-scaled by the weight');
+    assert.equal(contractsKpis.length, 1);
+    assert.equal(contractsKpis[0]._ownershipWeight, 0.05);
+    assert.equal(contractsKpis[0].target_value, 95 * 0.05);
+});
+
+test('_kpisForDirectorate (home-only, used by Enter Results/KPIs tab) is NOT affected by ownership splitting', () => {
+    // Enter Results must only ever show a KPI under its home directorate
+    // — Contracts owning a 5% share doesn't mean Contracts can enter its
+    // result too; there is exactly one entry point per KPI.
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Contracts', company: 'OMC' },
+        ],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null, is_active: true }],
+        kpiOwners: [
+            { kpi_definition_id: 1, owner_dept: 'Operations', owner_percentage: 0.95 },
+            { kpi_definition_id: 1, owner_dept: 'Contracts', owner_percentage: 0.05 },
+        ],
+    });
+    assert.equal(app._kpisForDirectorate(10).length, 1, 'still shows under its real home directorate');
+    assert.equal(app._kpisForDirectorate(20).length, 0, 'never shows under a minority-owner directorate');
+});
+
+test('_kpiScopedResults: scales actual_value/target_value by weight, leaves achievement/status untouched', () => {
+    const app = buildKpiApp({
+        kpiResults: [
+            { id: 1, kpi_definition_id: 1, actual_value: 100, target_value: 95, achievement: 105.26, status: 'on_target' },
+        ],
+    });
+    const scaled = app._kpiScopedResults(1, 0.05);
+    assert.equal(scaled[0].actual_value, 5, 'actual scaled to the 5% share');
+    assert.equal(scaled[0].target_value, 4.75, 'target scaled the same way');
+    assert.equal(scaled[0].achievement, 105.26, 'achievement (a ratio) is unchanged by scaling');
+    assert.equal(scaled[0].status, 'on_target', 'status is unchanged by scaling');
+});
+
+test('_kpiScopedResults: weight of 1 (or omitted) returns the real rows completely unchanged', () => {
+    const app = buildKpiApp({
+        kpiResults: [{ id: 1, kpi_definition_id: 1, actual_value: 100, target_value: 95, achievement: 105.26 }],
+    });
+    const real = app.state.kpiResults;
+    assert.deepEqual(app._kpiScopedResults(1, 1), real);
+    assert.deepEqual(app._kpiScopedResults(1, undefined), real, 'omitted weight defaults to 1, no scaling');
+});
+
+test('_kpiDashboardCards counts a shared KPI toward BOTH owner directorates\' totals, each scoped by weight', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Contracts', company: 'OMC' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: null, name: 'Condition of Trains (D)', target_value: 95, direction: 'higher_is_better', is_active: true },
+        ],
+        kpiOwners: [
+            { kpi_definition_id: 1, owner_dept: 'Operations', owner_percentage: 0.95 },
+            { kpi_definition_id: 1, owner_dept: 'Contracts', owner_percentage: 0.05 },
+        ],
+        kpiResults: [
+            { id: 1, kpi_definition_id: 1, year: 2027, actual_value: 100, target_value: 95, status: 'on_target', entered_at: '2027-01-01' },
+        ],
+    });
+    const opsCards = app._kpiDashboardCards(10, 2027);
+    const contractsCards = app._kpiDashboardCards(20, 2027);
+    assert.equal(opsCards.total, 1, 'Operations sees the KPI as one of its own');
+    assert.equal(opsCards.achieved, 1);
+    assert.equal(contractsCards.total, 1, 'Contracts ALSO sees it as one of its own, via its 5% share');
+    assert.equal(contractsCards.achieved, 1, 'status is on_target for Contracts too — a ratio, unaffected by the smaller share');
+});
+
+
 
 
 
