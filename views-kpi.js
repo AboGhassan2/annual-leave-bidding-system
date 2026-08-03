@@ -989,11 +989,19 @@ app._renderKpiUsersSection = function() {
                 </p>
             </div>
             ${u.role === 'kpi_director' ? `
-                <select onchange="app.reassignKpiUserDirectorate('${u.id}', this.value)"
-                    style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.78rem;">
-                    <option value="">— Unassigned —</option>
-                    ${directorates.map(d => `<option value="${d.id}" ${u.directorate_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-                </select>
+                <div style="display:flex;flex-direction:column;gap:6px;min-width:200px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:#374151;">
+                        <input type="checkbox" ${u.can_view_all_directorates ? 'checked' : ''}
+                            onchange="app.toggleKpiUserSuperUser('${u.id}', this.checked)" />
+                        Super user (all directorates)
+                    </label>
+                    <select onchange="app.reassignKpiUserDirectorate('${u.id}', this.value)"
+                        ${u.can_view_all_directorates ? 'disabled' : ''}
+                        style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.78rem;${u.can_view_all_directorates ? 'opacity:0.5;' : ''}">
+                        <option value="">— Unassigned —</option>
+                        ${directorates.map(d => `<option value="${d.id}" ${u.directorate_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                    </select>
+                </div>
             ` : ''}
             <button onclick="app.confirmDeleteKpiUser('${u.id}')" style="padding:6px 12px;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:0.78rem;font-weight:700;">Delete</button>
         </div>
@@ -1139,8 +1147,31 @@ app.reassignKpiUserDirectorate = async function(userId, directorateIdRaw) {
     await this.saveKpiUser({
         name: user.name, role: user.role, directorateId,
         linkedLogin: !!user.linked_login, password: user.password,
+        // Preserve whatever super-user status this director already had —
+        // this dropdown only changes their single directorate assignment,
+        // it must never silently clear an existing super-user grant.
+        canViewAllDirectorates: !!user.can_view_all_directorates,
     }, userId);
     this.renderKpiPlannerView();
+};
+
+// Grants or revokes "super user" (view-only, all-directorates) status on
+// an EXISTING KPI Director. This is the only place that can toggle it
+// after account creation — the Add User modal's checkbox only applies at
+// creation time. Granting clears their single directorate_id (mirrors
+// the Add User modal's own behavior: a super user has no single
+// directorate); revoking leaves them unassigned so the planner picks a
+// real directorate via the dropdown next.
+app.toggleKpiUserSuperUser = async function(userId, isSuper) {
+    const user = (this.state.kpiUsers || []).find(u => u.id === userId);
+    if (!user) return;
+    const saved = await this.saveKpiUser({
+        name: user.name, role: user.role,
+        directorateId: isSuper ? null : user.directorate_id,
+        linkedLogin: !!user.linked_login, password: user.password,
+        canViewAllDirectorates: isSuper,
+    }, userId);
+    if (saved) this.renderKpiPlannerView();
 };
 
 app.confirmDeleteKpiUser = async function(id) {
