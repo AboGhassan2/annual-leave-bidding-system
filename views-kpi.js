@@ -844,7 +844,7 @@ app._renderKpiImportSection = function() {
 
 app._renderKpiImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { validRows, invalidRows, grouped } = preview;
+    const { validRows, invalidRows, grouped, conflicts } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
     const primaryDepts = [...new Set(grouped.map(g => this._kpiDeterminePrimaryOwnerDept(g.owners)))];
     const existingDirNames = new Set((this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany).map(d => d.name));
@@ -858,9 +858,9 @@ app._renderKpiImportPreview = function(preview) {
                     <p style="font-size:0.72rem;color:#1d4ed8;font-weight:700;">VALID ROWS</p>
                     <p style="font-size:1.4rem;font-weight:800;color:#1d4ed8;">${validRows.length}</p>
                 </div>
-                <div style="background:${invalidRows.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
-                    <p style="font-size:0.72rem;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID ROWS</p>
-                    <p style="font-size:1.4rem;font-weight:800;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};">${invalidRows.length}</p>
+                <div style="background:${invalidRows.length > 0 || conflicts.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${invalidRows.length > 0 || conflicts.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID / CONFLICTING ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${invalidRows.length > 0 || conflicts.length > 0 ? '#991b1b' : '#166534'};">${invalidRows.length + conflicts.length}</p>
                 </div>
                 <div style="background:#faf5ff;border-radius:8px;padding:10px;">
                     <p style="font-size:0.72rem;color:#7c3aed;font-weight:700;">KPIs TO IMPORT</p>
@@ -873,6 +873,14 @@ app._renderKpiImportPreview = function(preview) {
             </div>
 
             ${newDepts.length > 0 ? `<p style="font-size:0.8rem;color:#6b7280;margin-bottom:10px;">Will create: ${newDepts.map(d => `<strong>${esc(d)}</strong>`).join(', ')}</p>` : ''}
+
+            ${conflicts.length > 0 ? `
+                <div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:12px;margin-bottom:16px;max-height:220px;overflow-y:auto;">
+                    <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">⚠️ Same Line + KPI Code used for different KPIs — NOT imported:</p>
+                    <p style="font-size:0.72rem;color:#991b1b;margin-bottom:8px;">These rows share the same (Line, KPI Code) but have different KPI Names — merging them would misattribute one KPI's owner to the wrong directorate, so they're excluded until the codes are made unique in the source file.</p>
+                    ${conflicts.map(c => `<p style="font-size:0.75rem;color:#991b1b;">${esc(c.line)} / ${esc(c.kpiCode)}: ${c.names.map(n => `"${esc(n)}"`).join(' vs ')}</p>`).join('')}
+                </div>
+            ` : ''}
 
             ${invalidRows.length > 0 ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:200px;overflow-y:auto;">
@@ -961,8 +969,8 @@ app._handleKpiImportFile = function(event) {
             const rawRows = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
 
             const { validRows, invalidRows } = this._kpiParseOwnerImportRows(rawRows);
-            const grouped = this._kpiGroupImportRowsByLineAndCode(validRows);
-            this.state._kpiImportPreview = { validRows, invalidRows, grouped };
+            const { groups, conflicts } = this._kpiGroupImportRowsByLineAndCode(validRows);
+            this.state._kpiImportPreview = { validRows, invalidRows, grouped: groups, conflicts };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse import file:', err.message);
