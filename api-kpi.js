@@ -708,22 +708,114 @@ app._kpiEffectiveDirectorateId = function(kpiDef) {
     return kpiDef.directorate_id ?? null;
 };
 
-// Every active KPI belonging to a directorate, via the resolver above.
+// Every active KPI belonging to a directorate as its HOME directorate —
+// unaffected by ownership splitting. This is what Enter Results and the
+// KPIs tab use: a director only ever enters/manages results for KPIs
+// actually defined under their own directorate, never for ones they
+// merely hold a minority ownership share in via another directorate's
+// KPI (see _kpisForDirectorateDashboard below for that, dashboard-only,
+// concern).
 app._kpisForDirectorate = function(directorateId) {
     return (this.state.kpiDefinitions || []).filter(k =>
         k.is_active !== false && this._kpiEffectiveDirectorateId(k) === directorateId
     );
 };
 
+// The fraction (0-1) of a KPI's result that belongs to `directorateId`,
+// per the multi-owner allocation enhancement: when a KPI has recorded
+// owners (kpi_owners), each owner's percentage is attributed to whichever
+// directorate is NAMED by their owner_dept — e.g. Kamrul Islam (95%,
+// dept "Operations") attributes 0.95 to the Operations directorate,
+// Michael Barry (5%, dept "Contracts") attributes 0.05 to Contracts,
+// regardless of which directorate the KPI is actually DEFINED under.
+// Matching is scoped to the KPI's own company (OMC/Audit) so an owner
+// dept name can never accidentally match a same-named directorate on the
+// other side. An owner_dept that doesn't match any directorate's name
+// contributes nothing to anyone — it isn't auto-created here.
+//
+// A KPI with NO owner records at all (the common case — every manually
+// added KPI, and any KPI imported with a single 100% owner where that
+// owner IS the KPI's home directorate) is treated as fully (weight 1)
+// owned by its home directorate and 0 everywhere else — completely
+// unaffected by this feature, identical to behavior before it existed.
+app._kpiOwnershipWeight = function(kpiDef, directorateId) {
+    const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === kpiDef.id);
+    if (owners.length === 0) {
+        return this._kpiEffectiveDirectorateId(kpiDef) === directorateId ? 1 : 0;
+    }
+    const homeDirId = this._kpiEffectiveDirectorateId(kpiDef);
+    const homeDir = (this.state.kpiDirectorates || []).find(d => d.id === homeDirId);
+    const company = homeDir ? (homeDir.company || 'OMC') : 'OMC';
+    let weight = 0;
+    owners.forEach(o => {
+        const match = (this.state.kpiDirectorates || []).find(d => d.name === o.owner_dept && (d.company || 'OMC') === company);
+        if (match && match.id === directorateId) weight += (o.owner_percentage || 0);
+    });
+    return weight;
+};
+
+// Returns a KPI's result rows scaled by `weight` (a 0-1 ownership
+// fraction) — both actual_value and target_value scaled equally, so the
+// achievement % (a ratio of the two) comes out mathematically identical
+// to the unscaled figure; only the raw actual/target MAGNITUDES shrink
+// to reflect this directorate's partial share, matching the same
+// "proportionally-scaled target" convention _kpiAutoAggregateFromMonthly
+// already uses for monthly->quarterly/yearly rollups. weight defaults to
+// 1 (the ordinary single-owner case), which returns the real rows
+// completely unchanged — every existing call site behaves byte-for-byte
+// as before whenever no ownership split is involved.
+app._kpiScopedResults = function(kpiId, weight) {
+    const w = weight == null ? 1 : weight;
+    const rows = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === kpiId);
+    if (w === 1) return rows;
+    return rows.map(r => ({
+        ...r,
+        actual_value: r.actual_value != null ? r.actual_value * w : r.actual_value,
+        target_value: r.target_value != null ? r.target_value * w : r.target_value,
+        // achievement/status are left untouched — they're ratios, so
+        // scaling both sides by the same weight leaves them unchanged;
+        // reusing the already-stored figures avoids re-deriving them
+        // (and any edge-case rounding _computeKpiResultFields applied).
+    }));
+};
+
+// DASHBOARD-ONLY variant of _kpisForDirectorate: every active KPI with a
+// nonzero ownership share in this directorate — its home directorate
+// (weight 1, the ordinary case) OR a partial owner via kpi_owners (see
+// _kpiOwnershipWeight above). Used exclusively by the dashboard
+// aggregation functions below (cards, rankings, trends) — NEVER by Enter
+// Results or the KPIs tab, which must stay scoped to _kpisForDirectorate
+// (home-only), since there's only one real data-entry point per KPI.
+// Each returned KPI is a clone carrying its resolved `_ownershipWeight`,
+// with target_value/exceptional_value/unacceptable_value pre-scaled by
+// that weight — so code reading k.target_value directly (e.g. the
+// monthly->quarterly/yearly rollup) automatically gets the correctly-
+// scaled baseline, while code reading individual RESULT rows should call
+// _kpiScopedResults(k.id, k._ownershipWeight) for equally-scaled actual/
+// target figures.
+app._kpisForDirectorateDashboard = function(directorateId) {
+    return (this.state.kpiDefinitions || [])
+        .filter(k => k.is_active !== false)
+        .map(k => ({ kpi: k, weight: this._kpiOwnershipWeight(k, directorateId) }))
+        .filter(x => x.weight > 0)
+        .map(x => ({
+            ...x.kpi,
+            _ownershipWeight: x.weight,
+            target_value: x.kpi.target_value != null ? x.kpi.target_value * x.weight : x.kpi.target_value,
+            exceptional_value: x.kpi.exceptional_value != null ? x.kpi.exceptional_value * x.weight : x.kpi.exceptional_value,
+            unacceptable_value: x.kpi.unacceptable_value != null ? x.kpi.unacceptable_value * x.weight : x.kpi.unacceptable_value,
+        }));
+};
+
 // Dashboard summary cards: total KPIs, how many have their most recent
 // result on_target vs below_target for the given year, and how many have
 // no result recorded at all yet for that year ("pending").
 app._kpiDashboardCards = function(directorateId, year) {
-    const kpis = this._kpisForDirectorate(directorateId);
+    const kpis = this._kpisForDirectorateDashboard(directorateId);
     let achieved = 0, belowTarget = 0, pending = 0;
     kpis.forEach(k => {
-        const results = (this.state.kpiResults || [])
-            .filter(r => r.kpi_definition_id === k.id && r.year === year)
+        const results = this._kpiScopedResults(k.id, k._ownershipWeight)
+            .filter(r => r.year === year)
             .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
         if (results.length === 0) { pending++; return; }
         const latestStatus = results[0].status || this.kpiStatus(results[0].actual_value, results[0].target_value, k.direction);
@@ -768,22 +860,22 @@ app._kpiDepartmentRanking = function(directorateId, year) {
 // each other rather than computed by two separate, potentially-diverging
 // queries).
 app._kpiRankedList = function(directorateId, year) {
-    const kpis = this._kpisForDirectorate(directorateId);
+    const kpis = this._kpisForDirectorateDashboard(directorateId);
     const withAchievement = kpis.map(k => {
-        const results = (this.state.kpiResults || [])
-            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.achievement != null)
+        const results = this._kpiScopedResults(k.id, k._ownershipWeight)
+            .filter(r => r.year === year && r.achievement != null)
             .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
-        return { kpiId: k.id, name: k.name, achievement: results.length > 0 ? results[0].achievement : null };
+        return { kpiId: k.id, name: k.name, achievement: results.length > 0 ? results[0].achievement : null, weight: k._ownershipWeight };
     }).filter(k => k.achievement !== null);
     withAchievement.sort((a, b) => b.achievement - a.achievement);
     return withAchievement;
 };
 
 app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
-    const kpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === periodType);
+    const kpis = this._kpisForDirectorateDashboard(directorateId).filter(k => k.period_type === periodType);
     const byPeriod = {};
     kpis.forEach(k => {
-        (this.state.kpiResults || [])
+        this._kpiScopedResults(k.id, k._ownershipWeight)
             // A KPI's cadence can be edited by the planner after results
             // already exist under the old one (e.g. quarterly -> monthly)
             // — those old rows keep the SAME kpi_definition_id but their
@@ -792,7 +884,7 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
             // isn't enough; each individual result must also match, or
             // leftover results from a previous cadence bleed into this
             // one's chart.
-            .filter(r => r.kpi_definition_id === k.id && r.year === year && r.period_type === periodType && r.achievement != null)
+            .filter(r => r.year === year && r.period_type === periodType && r.achievement != null)
             .forEach(r => {
                 const key = r.period_value || String(year);
                 if (!byPeriod[key]) byPeriod[key] = { achievements: [], actuals: [], targets: [] };
@@ -826,7 +918,7 @@ app._kpiPerformanceByPeriod = function(directorateId, year, periodType) {
 // than 0, so a line chart correctly shows a gap instead of a false dip.
 // KPIs with zero recorded results anywhere are omitted entirely.
 app._kpiMultiYearTrend = function(directorateId, periodType) {
-    const kpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === periodType);
+    const kpis = this._kpisForDirectorateDashboard(directorateId).filter(k => k.period_type === periodType);
     if (kpis.length === 0) return { labels: [], series: [] };
 
     const allLabels = new Set();
@@ -836,7 +928,7 @@ app._kpiMultiYearTrend = function(directorateId, periodType) {
         // result's OWN period_type, not just the KPI's current cadence —
         // a KPI edited from one cadence to another leaves old results
         // behind under the same kpi_definition_id.
-        const results = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id && r.period_type === periodType && r.achievement != null);
+        const results = this._kpiScopedResults(k.id, k._ownershipWeight).filter(r => r.period_type === periodType && r.achievement != null);
         resultsByKpi[k.id] = {};
         results.forEach(r => {
             allLabels.add(r.period_label);
@@ -880,12 +972,12 @@ app._kpiAutoAggregateFromMonthly = function(kpiDef) {
     if (!kpiDef || kpiDef.period_type !== 'monthly') return { quarterly: [], yearly: [] };
 
     const byYearMonth = {};
-    (this.state.kpiResults || [])
+    this._kpiScopedResults(kpiDef.id, kpiDef._ownershipWeight)
         // Same fix as _kpiPerformanceByPeriod/_kpiMultiYearTrend: must
         // also check each result's OWN period_type, not just the KPI's
         // current cadence, or a leftover result from before this KPI was
         // edited to monthly could corrupt the month-by-month grouping.
-        .filter(r => r.kpi_definition_id === kpiDef.id && r.period_type === 'monthly' && r.actual_value != null)
+        .filter(r => r.period_type === 'monthly' && r.actual_value != null)
         .forEach(r => {
             const y = String(r.year);
             if (!byYearMonth[y]) byYearMonth[y] = {};
@@ -934,7 +1026,7 @@ app._kpiAutoAggregateFromMonthly = function(kpiDef) {
 // specific chart.
 app._kpiMultiYearTrendWithAutoAggregation = function(directorateId, periodType, filterYear) {
     const base = this._kpiMultiYearTrend(directorateId, periodType);
-    const monthlyKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+    const monthlyKpis = this._kpisForDirectorateDashboard(directorateId).filter(k => k.period_type === 'monthly');
 
     const extraSeries = [];
     const extraLabels = new Set(base.labels);
@@ -1054,12 +1146,12 @@ app._kpisForUserScope = function(user) {
 // not treated as 0), how many months met target, and which month was
 // best/worst. Returns null if the KPI has zero monthly results for the
 // year at all.
-app._kpiSingleYearStats = function(kpiId, year) {
+app._kpiSingleYearStats = function(kpiId, year, weight) {
     const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiId);
     if (!kpiDef) return null;
 
-    const monthResults = (this.state.kpiResults || [])
-        .filter(r => r.kpi_definition_id === kpiId && r.year === year && r.period_type === 'monthly' && r.achievement != null)
+    const monthResults = this._kpiScopedResults(kpiId, weight)
+        .filter(r => r.year === year && r.period_type === 'monthly' && r.achievement != null)
         .sort((a, b) => a.period_value.localeCompare(b.period_value));
 
     if (monthResults.length === 0) return null;
@@ -1082,8 +1174,8 @@ app._kpiSingleYearStats = function(kpiId, year) {
 // Every month with data for a KPI/year, sorted by achievement descending
 // — slice(0, N) for top-N, slice(-N).reverse() for bottom-N, same
 // pattern as _kpiRankedList uses for the directorate-wide dashboard.
-app._kpiMonthsRanked = function(kpiId, year) {
-    const stats = this._kpiSingleYearStats(kpiId, year);
+app._kpiMonthsRanked = function(kpiId, year, weight) {
+    const stats = this._kpiSingleYearStats(kpiId, year, weight);
     if (!stats) return [];
     return [...stats.monthlyResults].sort((a, b) => b.achievement - a.achievement);
 };
@@ -1091,8 +1183,8 @@ app._kpiMonthsRanked = function(kpiId, year) {
 // Rule-based narrative summary — deliberately NOT an AI call, computed
 // directly from the same stats the cards/charts already show, so the
 // summary can never say something the numbers on screen don't support.
-app._kpiRuleBasedSummary = function(kpiId, year) {
-    const stats = this._kpiSingleYearStats(kpiId, year);
+app._kpiRuleBasedSummary = function(kpiId, year, weight) {
+    const stats = this._kpiSingleYearStats(kpiId, year, weight);
     if (!stats) return [];
     const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiId);
     const monthName = (periodValue) => this.state.months[parseInt(periodValue, 10) - 1] || periodValue;
@@ -1237,7 +1329,9 @@ app._kpiOverviewMonthlyChartData = function(directorateId, year, selectedKpiId) 
     if (selectedKpiId == null) {
         return this._kpiPerformanceByPeriod(directorateId, year, 'monthly');
     }
-    const stats = this._kpiSingleYearStats(selectedKpiId, year);
+    const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === selectedKpiId);
+    const weight = kpiDef ? this._kpiOwnershipWeight(kpiDef, directorateId) : 1;
+    const stats = this._kpiSingleYearStats(selectedKpiId, year, weight);
     if (!stats) return [];
     // Same field names as the "All KPIs (Average)" mode (avgActual/
     // avgTarget) even though there's only one KPI here — with a single
