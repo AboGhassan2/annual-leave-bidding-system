@@ -450,7 +450,7 @@ app._renderKpiResultsSection = function() {
         .filter(r => r.kpi_definition_id === selected.id)
         .sort((a, b) => a.period_label.localeCompare(b.period_label));
 
-    const kpiOptions = scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
+    const kpiOptions = scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('');
     const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
@@ -515,7 +515,7 @@ app._renderKpiResultsSection = function() {
             <textarea id="kpiResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
             <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
 
-            <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(selected.name)}</h4>
+            <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(this._kpiDisplayNameWithLine(selected))}</h4>
             ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
                 <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                     <thead>
