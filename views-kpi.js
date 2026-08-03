@@ -391,6 +391,7 @@ app.confirmDeleteKpiDefinition = async function(id) {
 app._renderKpiResultsSection = function() {
     const esc = this._escHtml.bind(this);
     const definitions = this.state.kpiDefinitions || [];
+    const directorates = this.state.kpiDirectorates || [];
 
     if (definitions.length === 0) {
         return `
@@ -400,15 +401,56 @@ app._renderKpiResultsSection = function() {
         `;
     }
 
-    const selectedId = this.state._kpiResultsSelectedId || definitions[0].id;
-    const selected = definitions.find(k => k.id === selectedId) || definitions[0];
+    // ── Directorate filter (Step 1 of the cascade) ──
+    // Defaults to the directorate of whatever KPI is currently selected
+    // (so switching tabs doesn't silently reset the user's place); falls
+    // back to the first directorate that actually has KPIs, then the
+    // first directorate at all.
+    let selectedDirectorateId = this.state._kpiResultsSelectedDirectorateId;
+    const directorateIsValid = selectedDirectorateId != null && directorates.some(d => d.id === selectedDirectorateId);
+    if (!directorateIsValid) {
+        const currentDef = this.state._kpiResultsSelectedId ? definitions.find(k => k.id === this.state._kpiResultsSelectedId) : null;
+        const fallbackDirId = currentDef ? this._kpiEffectiveDirectorateId(currentDef) : null;
+        selectedDirectorateId = (fallbackDirId != null && directorates.some(d => d.id === fallbackDirId))
+            ? fallbackDirId
+            : (directorates.find(d => this._kpisForDirectorate(d.id).length > 0) || directorates[0] || {}).id ?? null;
+        this.state._kpiResultsSelectedDirectorateId = selectedDirectorateId;
+    }
+
+    const directorateOptions = directorates.map(d => `<option value="${d.id}" ${d.id === selectedDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+    const directorateSelectHtml = `
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
+        <select id="kpiResultsDirectorateSelect" onchange="app.state._kpiResultsSelectedDirectorateId = parseInt(this.value, 10); app.state._kpiResultsSelectedId = null; app.renderKpiPlannerView();"
+            style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
+            ${directorateOptions}
+        </select>
+    `;
+
+    // ── KPI filter (Step 2 of the cascade) — scoped to the directorate above ──
+    const scopedDefinitions = selectedDirectorateId != null ? this._kpisForDirectorate(selectedDirectorateId) : definitions;
+
+    if (scopedDefinitions.length === 0) {
+        return `
+            <div class="bg-white rounded-xl shadow-md p-5">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Enter Results</h3>
+                ${directorateSelectHtml}
+                <p class="text-sm text-gray-400 text-center py-6">No KPIs defined for this directorate yet.</p>
+            </div>
+        `;
+    }
+
+    const selectedId = (this.state._kpiResultsSelectedId && scopedDefinitions.some(k => k.id === this.state._kpiResultsSelectedId))
+        ? this.state._kpiResultsSelectedId
+        : scopedDefinitions[0].id;
+    this.state._kpiResultsSelectedId = selectedId;
+    const selected = scopedDefinitions.find(k => k.id === selectedId) || scopedDefinitions[0];
     const selectedYear = this.state._kpiResultsSelectedYear || this.state.biddingYear || new Date().getFullYear();
     const periodOptions = this.kpiPeriodOptions(selected.period_type, selectedYear);
     const existingResults = (this.state.kpiResults || [])
         .filter(r => r.kpi_definition_id === selected.id)
         .sort((a, b) => a.period_label.localeCompare(b.period_label));
 
-    const kpiOptions = definitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
+    const kpiOptions = scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(k.name)}</option>`).join('');
     const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
@@ -439,6 +481,8 @@ app._renderKpiResultsSection = function() {
     return `
         <div class="bg-white rounded-xl shadow-md p-5">
             <h3 class="text-lg font-bold text-gray-800 mb-4">Enter Results</h3>
+
+            ${directorateSelectHtml}
 
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI</label>
             <select id="kpiResultsKpiSelect" onchange="app.state._kpiResultsSelectedId = parseInt(this.value, 10); app.renderKpiPlannerView();"
