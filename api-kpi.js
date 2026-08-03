@@ -1471,6 +1471,16 @@ app._kpiParseOwnerImportRows = function(rawRows) {
 // KPI 90% Operations, 10% Finance) — this collapses those into one KPI
 // entry with an owners[] array, rather than treating each owner row as
 // a separate KPI.
+//
+// SAFETY CHECK: if two rows share the same (line, kpiCode) key but have
+// DIFFERENT KPI Names, that's not a legitimate multi-owner split — it
+// means the same code was reused for two unrelated KPIs (e.g. numbering
+// restarting per department in the source spreadsheet), and blindly
+// merging them would combine unrelated owners under one KPI, silently
+// misattributing whichever owner has the higher % as if they owned the
+// OTHER KPI too. Those keys are pulled out into `conflicts` instead of
+// being merged, so the caller can surface them as errors rather than
+// import corrupted data.
 app._kpiGroupImportRowsByLineAndCode = function(validRows) {
     const groups = {};
     const order = [];
@@ -1480,12 +1490,26 @@ app._kpiGroupImportRowsByLineAndCode = function(validRows) {
             groups[key] = {
                 line: row.line, code: row.code, kpiCode: row.kpiCode, kpiName: row.kpiName,
                 periodType: row.periodType, weight: row.weight, owners: [],
+                names: new Set([row.kpiName]),
             };
             order.push(key);
+        } else {
+            groups[key].names.add(row.kpiName);
         }
         groups[key].owners.push({ dept: row.ownerDept, name: row.ownerName, email: row.ownerEmail, pct: row.ownerPct });
     });
-    return order.map(key => groups[key]);
+
+    const clean = [], conflicts = [];
+    order.forEach(key => {
+        const g = groups[key];
+        if (g.names.size > 1) {
+            conflicts.push({ line: g.line, kpiCode: g.kpiCode, names: Array.from(g.names) });
+        } else {
+            delete g.names;
+            clean.push(g);
+        }
+    });
+    return { groups: clean, conflicts };
 };
 
 // Given a KPI's list of owners, returns the dept with the highest
