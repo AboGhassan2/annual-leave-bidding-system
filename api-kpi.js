@@ -245,6 +245,97 @@ app.deleteKpiDefinition = async function(id) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+// Bulk copy — duplicates the entire OMC directorate/line/KPI/owner
+// STRUCTURE into Audit (per enhancement request). Deliberately built on
+// top of the existing save functions (saveKpiDirectorate,
+// ensureKpiLinesForDirectorate, saveKpiDefinition) rather than raw
+// inserts, so tenant scoping and existing validation/state-sync all stay
+// correct automatically.
+//
+// What this copies: directorates (as new Audit rows with the same
+// name), their 4 standard lines (created fresh via the same idempotent
+// helper every directorate already uses), every KPI definition under
+// them (name, thresholds, unit, period type, direction), and any KPI
+// owners.
+//
+// What this deliberately does NOT copy: kpi_results (actual entered
+// values per period). Those are real recorded performance numbers —
+// duplicating OMC's historical figures under Audit would create
+// fabricated data that looks real. Audit starts with the same KPI
+// *structure* but a clean slate of results, same as any newly-set-up
+// company would.
+//
+// Safe to re-run: an OMC directorate whose name already exists under
+// Audit is skipped entirely (not re-copied, not merged) to avoid
+// creating duplicates if this is ever run more than once.
+app.copyKpiOmcStructureToAudit = async function() {
+    if (!this.supabase) return { directorates: 0, kpis: 0, owners: 0, skipped: 0 };
+    const omcDirectorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === 'OMC');
+    const existingAuditNames = new Set(
+        (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === 'Audit').map(d => d.name)
+    );
+
+    let directoratesCopied = 0, kpisCopied = 0, ownersCopied = 0, skipped = 0;
+
+    for (const omcDir of omcDirectorates) {
+        if (existingAuditNames.has(omcDir.name)) {
+            skipped++;
+            continue;
+        }
+
+        const newDir = await this.saveKpiDirectorate(omcDir.name, null, 'Audit');
+        if (!newDir) continue;
+        directoratesCopied++;
+
+        await this.ensureKpiLinesForDirectorate(newDir.id);
+        const newLines = (this.state.kpiDirectorateDepartments || []).filter(l => l.directorate_id === newDir.id);
+        const newLineIdByName = {};
+        newLines.forEach(l => { newLineIdByName[l.department_name] = l.id; });
+
+        const omcKpis = (this.state.kpiDefinitions || []).filter(k => k.directorate_id === omcDir.id);
+        for (const k of omcKpis) {
+            const omcLine = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            const newDeptId = omcLine ? newLineIdByName[omcLine.department_name] : null;
+            if (!newDeptId) continue; // every directorate always has the same 4 standard lines, so this shouldn't happen
+
+            const savedKpi = await this.saveKpiDefinition({
+                directorateId: newDir.id,
+                departmentId: newDeptId,
+                name: k.name,
+                category: k.category,
+                unit: k.unit,
+                targetValue: k.target_value,
+                exceptionalValue: k.exceptional_value,
+                unacceptableValue: k.unacceptable_value,
+                periodType: k.period_type,
+                direction: k.direction,
+                kpiCode: k.kpi_code,
+            }, null);
+            if (!savedKpi) continue;
+            kpisCopied++;
+
+            const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
+            if (owners.length > 0) {
+                const ownerRows = owners.map(o => ({
+                    tenant_id: this._tid(),
+                    kpi_definition_id: savedKpi.id,
+                    owner_name: o.owner_name,
+                    owner_dept: o.owner_dept,
+                    owner_percentage: o.owner_percentage,
+                }));
+                const { data: insertedOwners, error: ownerError } = await this.supabase.from('kpi_owners').insert(ownerRows).select();
+                if (!ownerError) {
+                    this.state.kpiOwners = [...(this.state.kpiOwners || []), ...(insertedOwners || [])];
+                    ownersCopied += insertedOwners.length;
+                }
+            }
+        }
+    }
+
+    return { directorates: directoratesCopied, kpis: kpisCopied, owners: ownersCopied, skipped };
+};
+
+// ════════════════════════════════════════════════════════════════════
 // Results
 // ════════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════════
