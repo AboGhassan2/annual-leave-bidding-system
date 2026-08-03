@@ -169,18 +169,20 @@
         }
         .lp-headline {
             font-family: 'Barlow Condensed', sans-serif;
-            font-size: clamp(2.8rem, 5vw, 4rem);
+            font-size: clamp(2.2rem, 4vw, 3.4rem);
             font-weight: 700;
             color: #fff;
-            line-height: 1.05;
+            line-height: 1.1;
             letter-spacing: 0.01em;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            white-space: nowrap;
         }
         .lp-subheadline {
             font-family: 'Barlow Condensed', sans-serif;
-            font-size: clamp(1.8rem, 3vw, 2.5rem);
-            font-weight: 500;
-            color: rgba(255,255,255,0.75);
+            font-size: clamp(1.15rem, 1.6vw, 1.4rem);
+            font-weight: 400;
+            color: rgba(255,255,255,0.6);
+            letter-spacing: 0.01em;
             margin-bottom: 16px;
         }
         .lp-desc {
@@ -897,6 +899,9 @@
         }
         @media (max-width: 1000px) {
             .app-mobile-toggle { display: flex; }
+        }
+        @media (max-width: 640px) {
+            .lp-headline { font-size: clamp(1.6rem, 7vw, 2.2rem); }
         }
         .app-sidebar-item {
             display: flex;
