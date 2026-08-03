@@ -1835,6 +1835,39 @@ test('_kpiFindExistingKpiByCodeAndLine returns null when no matching KPI exists,
     assert.equal(app._kpiFindExistingKpiByCodeAndLine('ZZZ', 'L3'), null);
 });
 
+test('_kpiDisplayNameWithLine formats "L3-Staffing Level" — reproduces the exact requested example', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 10, directorate_id: 1, department_name: 'L3' }],
+    });
+    const kpiDef = { name: 'Staffing Level', department_id: 10 };
+    assert.equal(app._kpiDisplayNameWithLine(kpiDef), 'L3-Staffing Level');
+});
+
+test('_kpiDisplayNameWithLine correctly distinguishes the same KPI name across different lines', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 10, directorate_id: 1, department_name: 'L3' },
+            { id: 11, directorate_id: 1, department_name: 'L4' },
+        ],
+    });
+    const kpiOnL3 = { name: 'Staffing Level', department_id: 10 };
+    const kpiOnL4 = { name: 'Staffing Level', department_id: 11 };
+    assert.equal(app._kpiDisplayNameWithLine(kpiOnL3), 'L3-Staffing Level');
+    assert.equal(app._kpiDisplayNameWithLine(kpiOnL4), 'L4-Staffing Level');
+});
+
+test('_kpiDisplayNameWithLine falls back to the bare name when the line can\'t be resolved, rather than showing a broken prefix', () => {
+    const app = buildKpiApp({ kpiDirectorateDepartments: [] });
+    const kpiDef = { name: 'Staffing Level', department_id: 999 };
+    assert.equal(app._kpiDisplayNameWithLine(kpiDef), 'Staffing Level');
+});
+
+test('_kpiDisplayNameWithLine handles a null/missing KPI without throwing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiDisplayNameWithLine(null), '');
+});
+
+
 
 
 
