@@ -1354,7 +1354,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     // monthly-cadence KPIs, otherwise treated as no selection for this
     // render rather than silently showing empty data under a misleading
     // "All KPIs" title.
-    const monthlyCadenceKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+    const monthlyCadenceKpis = this._kpisForDirectorateDashboard(directorateId).filter(k => k.period_type === 'monthly');
     const rawSelectedMonthlyKpiId = this.state._kpiOverviewMonthlySelectedKpiId ?? null;
     const selectedMonthlyKpiId = (rawSelectedMonthlyKpiId != null && monthlyCadenceKpis.some(k => k.id === rawSelectedMonthlyKpiId))
         ? rawSelectedMonthlyKpiId : null;
@@ -1368,7 +1368,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 
     const kpiListRow = (item, color) => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
-            <span>${esc(item.name)}</span>
+            <span>${esc(item.name)}${item.weight < 1 ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">(${Math.round(item.weight * 100)}% share)</span>` : ''}</span>
             <span style="font-weight:700;color:${color};">${item.achievement}%</span>
         </div>
     `;
@@ -1404,7 +1404,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                     <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; app.renderKpiDirectorView();"
                         style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                         <option value="" ${selectedMonthlyKpiId == null ? 'selected' : ''}>All KPIs (Average)</option>
-                        ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('')}
+                        ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k._ownershipWeight < 1 ? ` (${Math.round(k._ownershipWeight * 100)}% share)` : ''}</option>`).join('')}
                     </select>
                 </div>
                 ${monthly.length > 0 ? `
@@ -1473,7 +1473,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
 // call sites for the same reason as the body-builder above.
 app._drawKpiDashboardCharts = function(directorateId, year) {
     if (typeof Chart === 'undefined') return;
-    const monthlyCadenceKpis = this._kpisForDirectorate(directorateId).filter(k => k.period_type === 'monthly');
+    const monthlyCadenceKpis = this._kpisForDirectorateDashboard(directorateId).filter(k => k.period_type === 'monthly');
     const rawSelectedMonthlyKpiId = this.state._kpiOverviewMonthlySelectedKpiId ?? null;
     const selectedMonthlyKpiId = (rawSelectedMonthlyKpiId != null && monthlyCadenceKpis.some(k => k.id === rawSelectedMonthlyKpiId))
         ? rawSelectedMonthlyKpiId : null;
@@ -1629,7 +1629,7 @@ app.renderKpiDirectorView = function() {
     const year = this.state._kpiDashboardYear || new Date().getFullYear();
     const yearOptions = [year - 1, year, year + 1].map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
     const tab = this.state._kpiDirectorTab || 'overview';
-    const kpisInScope = this._kpisForDirectorate(directorateId);
+    const kpisInScope = this._kpisForDirectorateDashboard(directorateId);
 
     const tabBtn = (key, label) => `
         <button onclick="app.state._kpiDirectorTab='${key}';app.renderKpiDirectorView();"
@@ -1639,19 +1639,22 @@ app.renderKpiDirectorView = function() {
     `;
 
     let bodyHtml, kpiPickerHtml = '';
+    let selectedKpiWeight = 1;
     if (tab === 'detail') {
         if (kpisInScope.length === 0) {
             bodyHtml = `<div class="bg-white rounded-xl shadow p-8 text-center"><p class="text-sm text-gray-400">No KPIs configured for this directorate yet.</p></div>`;
         } else {
             const selectedKpiId = this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id;
-            const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}</option>`).join('');
+            const selectedKpiClone = kpisInScope.find(k => k.id === selectedKpiId);
+            selectedKpiWeight = selectedKpiClone ? selectedKpiClone._ownershipWeight : 1;
+            const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k._ownershipWeight < 1 ? ` (${Math.round(k._ownershipWeight * 100)}% share)` : ''}</option>`).join('');
             kpiPickerHtml = `
                 <select onchange="app.state._kpiDirectorSelectedKpiId = parseInt(this.value, 10); app.renderKpiDirectorView();"
                     style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
                     ${kpiOptions}
                 </select>
             `;
-            bodyHtml = this._buildKpiSingleDetailBody(selectedKpiId, year);
+            bodyHtml = this._buildKpiSingleDetailBody(selectedKpiId, year, selectedKpiWeight);
         }
     } else {
         bodyHtml = this._buildKpiDashboardBody(directorateId, year);
@@ -1687,7 +1690,7 @@ app.renderKpiDirectorView = function() {
     `;
 
     if (tab === 'detail' && kpisInScope.length > 0) {
-        this._drawKpiSingleDetailChart(this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id, year);
+        this._drawKpiSingleDetailChart(this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id, year, selectedKpiWeight);
     } else {
         this._drawKpiDashboardCharts(directorateId, year);
     }
@@ -1701,9 +1704,9 @@ app.renderKpiDirectorView = function() {
 // reads from _kpiSingleYearStats/_kpiMonthsRanked/_kpiRuleBasedSummary,
 // already tested independently in api-kpi.js.
 // ════════════════════════════════════════════════════════════════════
-app._buildKpiSingleDetailBody = function(kpiId, year) {
+app._buildKpiSingleDetailBody = function(kpiId, year, weight) {
     const esc = this._escHtml.bind(this);
-    const stats = this._kpiSingleYearStats(kpiId, year);
+    const stats = this._kpiSingleYearStats(kpiId, year, weight);
 
     if (!stats) {
         return `
@@ -1715,10 +1718,11 @@ app._buildKpiSingleDetailBody = function(kpiId, year) {
 
     const yearStatus = this._kpiYearStatusLabel(stats.overallAchievement);
     const monthName = (p) => this.state.months[parseInt(p, 10) - 1]?.slice(0, 3) || p;
-    const ranked = this._kpiMonthsRanked(kpiId, year);
+    const ranked = this._kpiMonthsRanked(kpiId, year, weight);
     const top5 = ranked.slice(0, 5);
     const bottom5 = ranked.slice(-5).reverse();
-    const summaryLines = this._kpiRuleBasedSummary(kpiId, year);
+    const summaryLines = this._kpiRuleBasedSummary(kpiId, year, weight);
+    const sharePct = weight != null ? Math.round(weight * 100) : 100;
 
     const tierColor = { above: '#059669', near: '#d97706', below: '#dc2626', none: '#9ca3af' };
     const dots = stats.monthlyResults.map(m => `<span title="${esc(monthName(m.period))}: ${m.achievement}%" style="display:inline-block;width:10px;height:10px;border-radius:999px;background:${tierColor[this._kpiMonthColorTier(m.achievement)]};margin-right:3px;"></span>`).join('');
@@ -1731,6 +1735,11 @@ app._buildKpiSingleDetailBody = function(kpiId, year) {
     `;
 
     return `
+        ${sharePct < 100 ? `
+            <div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#7c3aed;">
+                🤝 This directorate owns <strong>${sharePct}%</strong> of this KPI. The achievement % below reflects the KPI's actual overall performance — your ${sharePct}% share is what counts toward this directorate's own totals and averages.
+            </div>
+        ` : ''}
         <!-- 5 summary cards -->
         <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div class="bg-white rounded-xl shadow p-5">
@@ -1795,9 +1804,9 @@ app._buildKpiSingleDetailBody = function(kpiId, year) {
 
 // Draws the color-coded monthly bar chart (per-bar color by tier) with a
 // dashed target-line overlay — a Chart.js bar+line mixed chart.
-app._drawKpiSingleDetailChart = function(kpiId, year) {
+app._drawKpiSingleDetailChart = function(kpiId, year, weight) {
     if (typeof Chart === 'undefined') return;
-    const stats = this._kpiSingleYearStats(kpiId, year);
+    const stats = this._kpiSingleYearStats(kpiId, year, weight);
     if (this._kpiSingleDetailChartInstance) { this._kpiSingleDetailChartInstance.destroy(); this._kpiSingleDetailChartInstance = null; }
     if (!stats) return;
 
