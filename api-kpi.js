@@ -202,7 +202,25 @@ app.saveKpiDefinition = async function(def, existingId) {
             kpi_code: def.kpiCode || null,
             exceptional_value: def.exceptionalValue != null ? def.exceptionalValue : null,
             unacceptable_value: def.unacceptableValue != null ? def.unacceptableValue : null,
+            // Area/Level 1/Level 2/Level 3 weighting hierarchy — a
+            // SEPARATE layer from directorate_id/department_id (see
+            // migration_add_kpi_weight_hierarchy.sql). Undefined means
+            // "caller isn't touching this field", not "clear it" — every
+            // one of these defaults to the KPI's current value so a
+            // partial save (e.g. only updating thresholds) never wipes
+            // out previously-entered weight data.
+            area: def.area !== undefined ? def.area : undefined,
+            area_pct: def.areaPct !== undefined ? def.areaPct : undefined,
+            level1: def.level1 !== undefined ? def.level1 : undefined,
+            level1_pct: def.level1Pct !== undefined ? def.level1Pct : undefined,
+            level2: def.level2 !== undefined ? def.level2 : undefined,
+            level2_pct: def.level2Pct !== undefined ? def.level2Pct : undefined,
+            level3_pct: def.level3Pct !== undefined ? def.level3Pct : undefined,
         };
+        // Strip undefined keys (Supabase's client sends them as literal
+        // JSON nulls otherwise, which WOULD wipe the column) — this is
+        // what makes the "undefined = don't touch" contract above work.
+        Object.keys(row).forEach(k => { if (row[k] === undefined) delete row[k]; });
         let query;
         if (existingId) {
             query = this.supabase.from('kpi_definitions').update(row).eq('id', existingId).select();
@@ -224,6 +242,20 @@ app.saveKpiDefinition = async function(def, existingId) {
         this.showToast('Could not save KPI: ' + e.message, 'error');
         return null;
     }
+};
+
+// Final Weight = Area % x Level 1 % x Level 2 % x Level 3 % — each
+// percentage relative to its immediate parent (not the whole company),
+// so multiplying down the chain converts it into the KPI's actual share
+// of the organization's overall 100% score. Returns null (not 0) when
+// any piece of the hierarchy hasn't been filled in yet — a KPI without
+// weighting data has NO Final Weight, that's different from a Final
+// Weight of 0%, and callers should render that as "—", not "0.0%".
+app._kpiFinalWeight = function(kpiDef) {
+    if (!kpiDef) return null;
+    const parts = [kpiDef.area_pct, kpiDef.level1_pct, kpiDef.level2_pct, kpiDef.level3_pct];
+    if (parts.some(p => p == null)) return null;
+    return parts.reduce((a, b) => a * b, 1);
 };
 
 app.deleteKpiDefinition = async function(id) {
@@ -1733,6 +1765,176 @@ app.importKpiThresholdData = async function(validRows, company) {
     }
 
     this.showToast(`Threshold import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Weight hierarchy import ("Level" spreadsheet) — Area/Level 1/Level 2/
+// Level 3 %, used to compute each KPI's Final Weight. This is a
+// SEPARATE layer from Directorate/Line/Owner — it never creates a KPI,
+// only attaches weighting data to one that already exists (same
+// match-by-code-and-line, never-create philosophy as the threshold
+// importer above).
+// ════════════════════════════════════════════════════════════════════
+
+// Percentages here (Area %/Level 1 %/Level 2 %/Level 3 %) are TRUE
+// percentages of a parent share, stored as fractions (30% -> 0.30) —
+// unlike _kpiParseThresholdNumericValue, which deliberately does NOT
+// divide by 100 (thresholds are raw values on the same scale as entered
+// results, not a percentage of something).
+app._kpiParseWeightPercentValue = function(value) {
+    if (value == null || value === '') return null;
+    const numeric = Number(String(value).replace('%', '').trim());
+    if (!Number.isFinite(numeric)) return null;
+    return numeric / 100;
+};
+
+// Area/Area %/Level 1/Level 1 %/Level 2/Level 2 % are only entered on
+// each group's first row in this file's own convention (confirmed
+// against the actual uploaded file) — every row under it leaves those
+// cells blank, meaning "same as the nearest row above", not "not
+// applicable". This function processes rows IN ORDER, carrying the last
+// seen value/percentage forward — unlike the other importers' parsers,
+// this one can't validate rows independently of each other. Level 3 %
+// (the KPI's own share within its Level 2 group) IS entered on every
+// row, no fill-down needed for it.
+//
+// Line is OPTIONAL here, unlike the owner/threshold imports — the
+// weighting hierarchy describes what a KPI CODE represents in the
+// overall scorecard, not a specific line's instance of it, and the
+// actual "Level" spreadsheet this was built against leaves the Line
+// column blank throughout. When Line is blank, the row applies to every
+// existing line-instance of that KPI code; when a valid Line IS given,
+// it's scoped to just that one instance (in case a future file needs
+// per-line weights after all).
+app._kpiParseWeightImportRows = function(rawRows) {
+    const validRows = [], invalidRows = [];
+    const cur = { area: null, areaPct: null, level1: null, level1Pct: null, level2: null, level2Pct: null };
+
+    (rawRows || []).forEach((rawRow, index) => {
+        const errors = [];
+        const rawLineValue = rawRow['Line'];
+        const lineProvided = rawLineValue != null && String(rawLineValue).trim() !== '';
+        let lineName = null;
+        if (lineProvided) {
+            lineName = this._kpiMapLineNumberToLineName(rawLineValue);
+            if (lineName == null) errors.push(`Invalid Line value: "${rawLineValue}" (must be 3, 4, 5, or 6, or left blank to apply to every line)`);
+        }
+
+        const kpiCode = rawRow['KPI Code'] != null ? String(rawRow['KPI Code']).trim() : '';
+        if (!kpiCode) errors.push('Missing KPI Code');
+
+        const rawArea = rawRow['Area'] != null ? String(rawRow['Area']).trim() : '';
+        if (rawArea) cur.area = rawArea;
+        if (rawRow['Area %'] !== '' && rawRow['Area %'] != null) {
+            const p = this._kpiParseWeightPercentValue(rawRow['Area %']);
+            if (p == null) errors.push(`Invalid Area % value: "${rawRow['Area %']}"`);
+            else cur.areaPct = p;
+        }
+
+        const rawLevel1 = rawRow['Level 1'] != null ? String(rawRow['Level 1']).trim() : '';
+        if (rawLevel1) cur.level1 = rawLevel1;
+        if (rawRow['Level 1 %'] !== '' && rawRow['Level 1 %'] != null) {
+            const p = this._kpiParseWeightPercentValue(rawRow['Level 1 %']);
+            if (p == null) errors.push(`Invalid Level 1 % value: "${rawRow['Level 1 %']}"`);
+            else cur.level1Pct = p;
+        }
+
+        const rawLevel2 = rawRow['Level 2'] != null ? String(rawRow['Level 2']).trim() : '';
+        if (rawLevel2) cur.level2 = rawLevel2;
+        if (rawRow['Level 2 %'] !== '' && rawRow['Level 2 %'] != null) {
+            const p = this._kpiParseWeightPercentValue(rawRow['Level 2 %']);
+            if (p == null) errors.push(`Invalid Level 2 % value: "${rawRow['Level 2 %']}"`);
+            else cur.level2Pct = p;
+        }
+
+        // Column header varies slightly by export ("Level 3%" vs "Level 3 %").
+        const level3PctRaw = rawRow['Level 3%'] != null && rawRow['Level 3%'] !== '' ? rawRow['Level 3%'] : rawRow['Level 3 %'];
+        const level3Pct = this._kpiParseWeightPercentValue(level3PctRaw);
+        if (level3Pct == null) errors.push(`Invalid/missing Level 3 % value: "${level3PctRaw}"`);
+
+        if (!cur.area) errors.push('No Area resolved for this row (blank, with nothing above it to inherit)');
+        if (cur.areaPct == null) errors.push('No Area % resolved for this row');
+        if (!cur.level1) errors.push('No Level 1 resolved for this row');
+        if (cur.level1Pct == null) errors.push('No Level 1 % resolved for this row');
+        if (!cur.level2) errors.push('No Level 2 resolved for this row');
+        if (cur.level2Pct == null) errors.push('No Level 2 % resolved for this row');
+
+        const data = {
+            line: lineName, kpiCode,
+            kpiName: rawRow['KPI Name'] != null ? String(rawRow['KPI Name']).trim() : '',
+            area: cur.area, areaPct: cur.areaPct,
+            level1: cur.level1, level1Pct: cur.level1Pct,
+            level2: cur.level2, level2Pct: cur.level2Pct,
+            level3Pct,
+        };
+        if (errors.length === 0) validRows.push(data);
+        else invalidRows.push({ rowNumber: index + 2, errors, raw: rawRow });
+    });
+
+    return { validRows, invalidRows };
+};
+
+// Same matching as _kpiFindExistingKpiByCodeAndLine, but for when NO
+// line was specified — returns every existing KPI (across all 4 lines)
+// with this kpi_code within the company, since the weighting hierarchy
+// applies uniformly to a KPI code regardless of which line it's on.
+app._kpiFindExistingKpisByCode = function(kpiCode, company) {
+    const targetCompany = company || 'OMC';
+    const dirIds = new Set((this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany).map(d => d.id));
+    return (this.state.kpiDefinitions || []).filter(k => {
+        if (k.kpi_code !== kpiCode) return false;
+        const homeDirId = this._kpiEffectiveDirectorateId(k);
+        // Same "don't exclude on missing data" safety as the single-line
+        // version: only exclude when we positively know it's the other company.
+        return homeDirId == null || dirIds.has(homeDirId) || !(this.state.kpiDirectorates || []).some(d => d.id === homeDirId);
+    });
+};
+
+// Applies parsed weight rows to already-existing KPIs, matched by
+// kpi_code (and Line, when the row specifies one) within the given
+// company — same never-create contract as importKpiThresholdData.
+// Rebuilds every field explicitly from the existing record (rather than
+// relying on partial-update semantics) so this behaves identically
+// regardless of how saveKpiDefinition's undefined-field handling evolves.
+app.importKpiWeightData = async function(validRows, company) {
+    if (!this.supabase) return { updated: 0, notFound: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
+
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of validRows) {
+        const matches = row.line
+            ? [this._kpiFindExistingKpiByCodeAndLine(row.kpiCode, row.line, targetCompany)].filter(Boolean)
+            : this._kpiFindExistingKpisByCode(row.kpiCode, targetCompany);
+
+        if (matches.length === 0) {
+            summary.notFound++;
+            summary.errors.push(`${row.kpiCode}${row.line ? ' (' + row.line + ')' : ''}: no matching KPI found — run the owner import first`);
+            continue;
+        }
+
+        for (const existing of matches) {
+            try {
+                const saved = await this.saveKpiDefinition({
+                    directorateId: existing.directorate_id, departmentId: existing.department_id,
+                    name: existing.name, category: existing.category, kpiCode: existing.kpi_code,
+                    periodType: existing.period_type, unit: existing.unit, direction: existing.direction,
+                    targetValue: existing.target_value, exceptionalValue: existing.exceptional_value, unacceptableValue: existing.unacceptable_value,
+                    area: row.area, areaPct: row.areaPct,
+                    level1: row.level1, level1Pct: row.level1Pct,
+                    level2: row.level2, level2Pct: row.level2Pct,
+                    level3Pct: row.level3Pct,
+                }, existing.id);
+                if (!saved) { summary.failed++; summary.errors.push(`${row.kpiCode} (id ${existing.id}): failed to save`); continue; }
+                summary.updated++;
+            } catch (e) {
+                summary.failed++;
+                summary.errors.push(`${row.kpiCode} (id ${existing.id}): ${e.message}`);
+            }
+        }
+    }
+
+    this.showToast(`Weight import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
     return summary;
 };
 
