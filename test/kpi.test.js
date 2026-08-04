@@ -1713,6 +1713,124 @@ test('_kpiGroupImportRowsByLineAndCode flags a CONFLICT instead of silently merg
     assert.deepEqual(conflicts[0].names.sort(), ['Passenger satisfaction', 'Track maintenance backlog'].sort());
 });
 
+// ════════════════════════════════════════════════════════════════════
+// Weight hierarchy (Area / Level 1 / Level 2 / Level 3 %) and Final
+// Weight — a separate layer from Directorate/Line/Owner, per explicit
+// correction: it must never change dashboards, Enter Results, or the
+// existing directorate structure, only feed each KPI's Final Weight.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiFinalWeight multiplies Area % x Level 1 % x Level 2 % x Level 3 % — reproduces the real "Condition of Trains" (D1) example', () => {
+    const app = buildKpiApp();
+    const kpiDef = { area_pct: 0.25, level1_pct: 1, level2_pct: 0.3, level3_pct: 1 };
+    assert.equal(app._kpiFinalWeight(kpiDef), 0.25 * 1 * 0.3 * 1);
+    assert.equal(Math.round(app._kpiFinalWeight(kpiDef) * 1000) / 1000, 0.075, 'matches the verified 7.5% from the source file');
+});
+
+test('_kpiFinalWeight returns null (not 0) when any part of the hierarchy is missing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiFinalWeight({ area_pct: 0.3, level1_pct: 0.5, level2_pct: null, level3_pct: 1 }), null);
+    assert.equal(app._kpiFinalWeight({ area_pct: null, level1_pct: null, level2_pct: null, level3_pct: null }), null);
+    assert.equal(app._kpiFinalWeight(null), null);
+});
+
+test('_kpiParseWeightImportRows forward-fills Area/Level 1/Level 2 across blank rows, matching the source file\'s own convention', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        { Line: '', 'KPI Code': 'A1', Area: 'Operations', 'Area %': '30%', 'Level 1': 'Passenger Satisfaction', 'Level 1 %': '50%', 'Level 2': 'Passenger Satisfaction', 'Level 2 %': '50%', 'KPI Name': 'Passenger satisfaction', 'Level 3%': '40%' },
+        { Line: '', 'KPI Code': 'A2', Area: '', 'Area %': '', 'Level 1': '', 'Level 1 %': '', 'Level 2': '', 'Level 2 %': '', 'KPI Name': 'Complaints resolution', 'Level 3%': '20%' },
+    ];
+    const { validRows, invalidRows } = app._kpiParseWeightImportRows(rawRows);
+    assert.equal(invalidRows.length, 0);
+    assert.equal(validRows.length, 2);
+    assert.equal(validRows[1].area, 'Operations', 'A2 inherits Area from A1 above it');
+    assert.equal(validRows[1].areaPct, 0.3);
+    assert.equal(validRows[1].level2, 'Passenger Satisfaction');
+    assert.equal(validRows[1].level3Pct, 0.2, 'Level 3 % is NOT forward-filled — always its own row value');
+});
+
+test('_kpiParseWeightImportRows treats a blank Line as "applies to every line", not an error — unlike the owner/threshold imports', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        { Line: '', 'KPI Code': 'D1', Area: 'Transit System Maintenance', 'Area %': '25%', 'Level 1': 'Transit system maintenance', 'Level 1 %': '100%', 'Level 2': 'Trains inspection', 'Level 2 %': '30%', 'KPI Name': 'Condition of Trains', 'Level 3%': '100%' },
+    ];
+    const { validRows, invalidRows } = app._kpiParseWeightImportRows(rawRows);
+    assert.equal(invalidRows.length, 0);
+    assert.equal(validRows[0].line, null);
+});
+
+test('_kpiParseWeightImportRows still validates an explicit invalid Line when one IS given', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        { Line: '9', 'KPI Code': 'A1', Area: 'Operations', 'Area %': '30%', 'Level 1': 'X', 'Level 1 %': '50%', 'Level 2': 'Y', 'Level 2 %': '50%', 'KPI Name': 'K', 'Level 3%': '40%' },
+    ];
+    const { validRows, invalidRows } = app._kpiParseWeightImportRows(rawRows);
+    assert.equal(validRows.length, 0);
+    assert.equal(invalidRows.length, 1);
+    assert.match(invalidRows[0].errors[0], /Invalid Line value/);
+});
+
+test('importKpiWeightData with no Line updates EVERY existing line-instance of that KPI code', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Transit System Maintenance', company: 'OMC' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: null, kpi_code: 'D1', name: 'Condition of Trains', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 95 },
+            { id: 2, directorate_id: 10, department_id: null, kpi_code: 'D1', name: 'Condition of Trains', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 95 },
+        ],
+        kpiOwners: [],
+    });
+    app.supabase = {};
+    const saveCalls = [];
+    app.saveKpiDefinition = async (def, existingId) => { saveCalls.push({ def, existingId }); return { id: existingId, ...def }; };
+    app.showToast = () => {};
+
+    const result = await app.importKpiWeightData([
+        { line: null, kpiCode: 'D1', area: 'Transit System Maintenance', areaPct: 0.25, level1: 'Transit system maintenance', level1Pct: 1, level2: 'Trains inspection', level2Pct: 0.3, level3Pct: 1 },
+    ], 'OMC');
+
+    assert.equal(result.updated, 2, 'both line-instances of D1 got updated');
+    assert.equal(saveCalls.length, 2);
+    assert.equal(saveCalls[0].def.areaPct, 0.25);
+});
+
+test('importKpiWeightData with a Line specified updates ONLY that one line-instance', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 101, directorate_id: 10, department_name: 'L4' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'K', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 90 },
+            { id: 2, directorate_id: 10, department_id: 101, kpi_code: 'A1', name: 'K', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 90 },
+        ],
+        kpiOwners: [],
+    });
+    app.supabase = {};
+    const saveCalls = [];
+    app.saveKpiDefinition = async (def, existingId) => { saveCalls.push({ def, existingId }); return { id: existingId, ...def }; };
+    app.showToast = () => {};
+
+    const result = await app.importKpiWeightData([
+        { line: 'L3', kpiCode: 'A1', area: 'Operations', areaPct: 0.3, level1: 'X', level1Pct: 1, level2: 'Y', level2Pct: 1, level3Pct: 1 },
+    ], 'OMC');
+
+    assert.equal(result.updated, 1);
+    assert.equal(saveCalls.length, 1);
+    assert.equal(saveCalls[0].existingId, 1, 'only the L3 instance (id 1) was touched, not L4 (id 2)');
+});
+
+test('importKpiWeightData reports notFound for a KPI code with no match, rather than silently skipping', async () => {
+    const app = buildKpiApp({ kpiDirectorates: [], kpiDefinitions: [], kpiOwners: [] });
+    app.supabase = {};
+    app.showToast = () => {};
+    const result = await app.importKpiWeightData([
+        { line: null, kpiCode: 'ZZZ', area: 'A', areaPct: 1, level1: 'B', level1Pct: 1, level2: 'C', level2Pct: 1, level3Pct: 1 },
+    ], 'OMC');
+    assert.equal(result.notFound, 1);
+    assert.equal(result.updated, 0);
+});
+
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
     const app = buildKpiApp();
     const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
