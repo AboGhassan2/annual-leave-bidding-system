@@ -298,27 +298,33 @@ app._renderKpiDefinitionsSection = function() {
     }).join('');
 
     const rows = visibleDefinitions.map(k => {
-        const dir = directorates.find(d => d.id === k.directorate_id);
         const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
-        const dirLabel = { higher_is_better: 'Higher is better', lower_is_better: 'Lower is better' }[k.direction] || k.direction;
         const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
+        const primaryOwner = owners.length > 0 ? owners.reduce((a, b) => (b.owner_percentage || 0) > (a.owner_percentage || 0) ? b : a) : null;
         const viewWeight = this._kpiOwnershipWeight(k, filterDirectorateId);
         const isSharedView = viewWeight < 1 && viewWeight > 0;
+        const finalWeight = this._kpiFinalWeight(k);
+        const periodLabel = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type;
         return `
-            <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                    <p style="font-weight:700;">${esc(k.name)} ${k.category ? `<span style="font-size:0.72rem;color:#6b7280;font-weight:400;">(${esc(k.category)})</span>` : ''}${isSharedView ? ` <span style="font-size:0.72rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</p>
-                    <p style="font-size:0.75rem;color:#6b7280;">${esc(dir ? dir.name : 'Unknown directorate')}${isSharedView ? ' (home)' : ''}${line ? ' · ' + esc(line.department_name) : ''} · ${esc(k.period_type)} · ${esc(dirLabel)}${k.unit ? ' · ' + esc(k.unit) : ''}</p>
-                    <p style="font-size:0.75rem;margin-top:4px;">
-                        ${k.exceptional_value != null ? `<span style="color:#059669;font-weight:600;">Exceptional: ${esc(String(k.exceptional_value))}</span> · ` : ''}<span style="color:${k.target_value != null ? '#1d4ed8' : '#9ca3af'};font-weight:600;">Acceptable (Target): ${k.target_value != null ? esc(String(k.target_value)) : 'not set'}</span>${k.unacceptable_value != null ? ` · <span style="color:#dc2626;font-weight:600;">Unacceptable: ${esc(String(k.unacceptable_value))}</span>` : ''}
-                    </p>
-                    ${owners.length > 0 ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">Owner${owners.length !== 1 ? 's' : ''}: ${owners.map(o => `${esc(o.owner_name || o.owner_dept)} (${Math.round((o.owner_percentage || 0) * 100)}%)`).join(', ')}</p>` : ''}
-                </div>
-                <div style="display:flex;gap:8px;">
-                    <button onclick="app.openKpiDefinitionModal(${k.id})" style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
-                    <button onclick="app.confirmDeleteKpiDefinition(${k.id})" style="padding:6px 12px;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:0.78rem;font-weight:700;">Delete</button>
-                </div>
-            </div>
+            <tr style="border-top:1px solid #f3f4f6;">
+                <td style="padding:10px 12px;">
+                    <p style="font-weight:700;">${esc(k.name)}</p>
+                    ${k.category ? `<p style="font-size:0.72rem;color:#6b7280;">${esc(k.category)}</p>` : ''}
+                    ${isSharedView ? `<span style="font-size:0.7rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share (home)</span>` : ''}
+                </td>
+                <td style="padding:10px 12px;">${k.area ? esc(k.area) : '<span style="color:#d1d5db;">—</span>'}</td>
+                <td style="padding:10px 12px;font-weight:700;">${line ? esc(line.department_name) : '—'}</td>
+                <td style="padding:10px 12px;">${esc(periodLabel)}</td>
+                <td style="padding:10px 12px;text-align:right;font-weight:700;color:${finalWeight != null ? '#059669' : '#d1d5db'};">${finalWeight != null ? (finalWeight * 100).toFixed(1) + '%' : '—'}</td>
+                <td style="padding:10px 12px;">${primaryOwner ? esc(primaryOwner.owner_name || primaryOwner.owner_dept) + (owners.length > 1 ? ` <span style="color:#9ca3af;font-size:0.72rem;">+${owners.length - 1}</span>` : '') : '<span style="color:#d1d5db;">—</span>'}</td>
+                <td style="padding:10px 12px;text-align:right;color:${k.exceptional_value != null ? '#059669' : '#d1d5db'};">${k.exceptional_value != null ? esc(String(k.exceptional_value)) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;color:${k.target_value != null ? '#1d4ed8' : '#d1d5db'};font-weight:600;">${k.target_value != null ? esc(String(k.target_value)) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;color:${k.unacceptable_value != null ? '#dc2626' : '#d1d5db'};">${k.unacceptable_value != null ? esc(String(k.unacceptable_value)) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;white-space:nowrap;">
+                    <button onclick="app.openKpiDefinitionModal(${k.id})" title="Edit" style="background:none;border:none;cursor:pointer;font-size:0.95rem;">✏️</button>
+                    <button onclick="app.confirmDeleteKpiDefinition(${k.id})" title="Delete" style="background:none;border:none;cursor:pointer;font-size:0.95rem;">🗑️</button>
+                </td>
+            </tr>
         `;
     }).join('');
 
@@ -360,7 +366,27 @@ app._renderKpiDefinitionsSection = function() {
                 <h3 class="text-lg font-bold text-gray-800">${esc(selectedCompany)} KPIs</h3>
                 <button onclick="app.openKpiDefinitionModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add KPI</button>
             </div>
-            ${visibleDefinitions.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPIs match this filter.</p>' : rows}
+            ${visibleDefinitions.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPIs match this filter.</p>' : `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;border-bottom:1px solid #e5e7eb;">
+                                <th style="padding:8px 12px;">KPI</th>
+                                <th style="padding:8px 12px;">Area</th>
+                                <th style="padding:8px 12px;">Line</th>
+                                <th style="padding:8px 12px;">Frequency</th>
+                                <th style="padding:8px 12px;text-align:right;">Final Weight</th>
+                                <th style="padding:8px 12px;">Owner</th>
+                                <th style="padding:8px 12px;text-align:right;">Exceptional</th>
+                                <th style="padding:8px 12px;text-align:right;">Acceptable</th>
+                                <th style="padding:8px 12px;text-align:right;">Unacceptable</th>
+                                <th style="padding:8px 12px;text-align:right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `}
         </div>
 
         <!-- KPI definition modal -->
@@ -426,6 +452,24 @@ app._renderKpiDefinitionsSection = function() {
                     <option value="lower_is_better">Lower is better (e.g. Incident count)</option>
                 </select>
 
+                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Weight Hierarchy (optional)</label>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:8px;">Separate from Directorate/Line above — feeds Final Weight = Area % × Level 1 % × Level 2 % × Level 3 %. Leave blank if this KPI isn't part of the weighted scorecard.</p>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input type="text" id="kpiDefArea" placeholder="Area (e.g. Operations)" style="flex:2;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                    <input type="number" id="kpiDefAreaPct" placeholder="Area %" step="any" style="flex:1;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input type="text" id="kpiDefLevel1" placeholder="Level 1" style="flex:2;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                    <input type="number" id="kpiDefLevel1Pct" placeholder="Level 1 %" step="any" style="flex:1;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input type="text" id="kpiDefLevel2" placeholder="Level 2" style="flex:2;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                    <input type="number" id="kpiDefLevel2Pct" placeholder="Level 2 %" step="any" style="flex:1;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:20px;">
+                    <input type="number" id="kpiDefLevel3Pct" placeholder="Level 3 % (this KPI's own share)" step="any" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;box-sizing:border-box;" />
+                </div>
+
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiDefinitionModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
                     <button onclick="app.saveKpiDefinitionModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
@@ -460,6 +504,13 @@ app.openKpiDefinitionModal = function(kpiId) {
     document.getElementById('kpiDefUnit').value = existing ? (existing.unit || '') : '';
     document.getElementById('kpiDefPeriodType').value = existing ? existing.period_type : (this.state._kpiDefFilterPeriod || 'monthly');
     document.getElementById('kpiDefDirection').value = existing ? existing.direction : 'higher_is_better';
+    document.getElementById('kpiDefArea').value = existing && existing.area != null ? existing.area : '';
+    document.getElementById('kpiDefAreaPct').value = existing && existing.area_pct != null ? existing.area_pct * 100 : '';
+    document.getElementById('kpiDefLevel1').value = existing && existing.level1 != null ? existing.level1 : '';
+    document.getElementById('kpiDefLevel1Pct').value = existing && existing.level1_pct != null ? existing.level1_pct * 100 : '';
+    document.getElementById('kpiDefLevel2').value = existing && existing.level2 != null ? existing.level2 : '';
+    document.getElementById('kpiDefLevel2Pct').value = existing && existing.level2_pct != null ? existing.level2_pct * 100 : '';
+    document.getElementById('kpiDefLevel3Pct').value = existing && existing.level3_pct != null ? existing.level3_pct * 100 : '';
     this._populateKpiDefLineOptions(existing ? existing.department_id : null);
     document.getElementById('kpiDefinitionModal').style.display = 'flex';
 };
@@ -484,6 +535,19 @@ app.saveKpiDefinitionModal = async function() {
     const unacceptableRaw = document.getElementById('kpiDefUnacceptable').value;
 
     const existingId = document.getElementById('kpiDefinitionEditId').value;
+
+    // Weight Hierarchy is entirely optional — a blank field means "don't
+    // set/change this", not "clear it to zero". Inputs are typed as
+    // whole numbers (30 for 30%) for ease of entry, converted to the
+    // fraction the rest of the app stores (0.30) on the way in.
+    const areaVal = document.getElementById('kpiDefArea').value.trim();
+    const areaPctRaw = document.getElementById('kpiDefAreaPct').value;
+    const level1Val = document.getElementById('kpiDefLevel1').value.trim();
+    const level1PctRaw = document.getElementById('kpiDefLevel1Pct').value;
+    const level2Val = document.getElementById('kpiDefLevel2').value.trim();
+    const level2PctRaw = document.getElementById('kpiDefLevel2Pct').value;
+    const level3PctRaw = document.getElementById('kpiDefLevel3Pct').value;
+
     const def = {
         directorateId: parseInt(document.getElementById('kpiDefDirectorate').value, 10),
         departmentId: parseInt(lineIdRaw, 10),
@@ -495,6 +559,13 @@ app.saveKpiDefinitionModal = async function() {
         unacceptableValue: unacceptableRaw !== '' ? Number(unacceptableRaw) : null,
         periodType: document.getElementById('kpiDefPeriodType').value,
         direction: document.getElementById('kpiDefDirection').value,
+        area: areaVal || null,
+        areaPct: areaPctRaw !== '' ? Number(areaPctRaw) / 100 : null,
+        level1: level1Val || null,
+        level1Pct: level1PctRaw !== '' ? Number(level1PctRaw) / 100 : null,
+        level2: level2Val || null,
+        level2Pct: level2PctRaw !== '' ? Number(level2PctRaw) / 100 : null,
+        level3Pct: level3PctRaw !== '' ? Number(level3PctRaw) / 100 : null,
     };
 
     const saved = await this.saveKpiDefinition(def, existingId ? parseInt(existingId, 10) : null);
@@ -794,6 +865,8 @@ app._renderKpiImportSection = function() {
     const result = this.state._kpiImportResult;
     const thresholdPreview = this.state._kpiThresholdImportPreview;
     const thresholdResult = this.state._kpiThresholdImportResult;
+    const weightPreview = this.state._kpiWeightImportPreview;
+    const weightResult = this.state._kpiWeightImportResult;
 
     return `
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#1e40af;">
@@ -838,6 +911,28 @@ app._renderKpiImportSection = function() {
 
             ${thresholdPreview ? this._renderKpiThresholdImportPreview(thresholdPreview) : ''}
             ${thresholdResult ? this._renderKpiThresholdImportResult(thresholdResult) : ''}
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">3. Import Weight Hierarchy (Area / Level 1 / Level 2 / Level 3 %)</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Expected columns: KPI Code, Area, Area %, Level 1, Level 1 %, Level 2, Level 2 %, Level 3% (Area/Level 1/Level 2 and their %
+                only need to be entered on each group's first row — blank cells inherit the nearest value above, same convention as the source file).
+                Line is optional: leave it blank to apply the same weighting to every line-instance of that KPI Code, or fill it in to weight
+                just one line. Updates KPIs already created by the import above — matched by KPI Code — it never creates new ones. This is a
+                separate layer from Directorate/Line/Owner and doesn't change dashboards or Enter Results — it only powers each KPI's Final Weight.
+            </p>
+
+            <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
+                <input type="file" id="kpiWeightImportFileInput" accept=".xlsx,.xls" style="display:none;" onchange="app._handleKpiWeightImportFile(event)" />
+                <label for="kpiWeightImportFileInput" style="cursor:pointer;">
+                    <p style="color:#6b7280;margin-bottom:10px;">Click to browse, or drag a file here</p>
+                    <span style="padding:8px 18px;background:#059669;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
+                </label>
+            </div>
+
+            ${weightPreview ? this._renderKpiWeightImportPreview(weightPreview) : ''}
+            ${weightResult ? this._renderKpiWeightImportResult(weightResult) : ''}
         </div>
     `;
 };
@@ -1131,6 +1226,158 @@ app._confirmKpiThresholdImport = async function() {
     const result = await this.importKpiThresholdData(preview.validRows, this.state._kpiSelectedCompany || 'OMC');
     this.state._kpiThresholdImportResult = result;
     this.state._kpiThresholdImportPreview = null;
+    this.renderKpiPlannerView();
+};
+
+app._renderKpiWeightImportPreview = function(preview) {
+    const esc = this._escHtml.bind(this);
+    const { validRows, invalidRows } = preview;
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const matchCountFor = (r) => r.line
+        ? (this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line, selectedCompany) ? 1 : 0)
+        : this._kpiFindExistingKpisByCode(r.kpiCode, selectedCompany).length;
+    const notFoundCount = validRows.filter(r => matchCountFor(r) === 0).length;
+    const totalWeight = validRows.reduce((sum, r) => sum + (r.areaPct * r.level1Pct * r.level2Pct * r.level3Pct), 0);
+
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Preview</h4>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                <div style="background:#f0fdf4;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#166534;font-weight:700;">VALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#166534;">${validRows.length}</p>
+                </div>
+                <div style="background:${invalidRows.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${invalidRows.length > 0 ? '#991b1b' : '#166534'};">${invalidRows.length}</p>
+                </div>
+                <div style="background:${notFoundCount > 0 ? '#fffbeb' : '#f0fdf4'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${notFoundCount > 0 ? '#92400e' : '#166534'};font-weight:700;">NO MATCHING KPI</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${notFoundCount > 0 ? '#92400e' : '#166534'};">${notFoundCount}</p>
+                </div>
+                <div style="background:${Math.abs(totalWeight - 1) < 0.001 ? '#f0fdf4' : '#fffbeb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${Math.abs(totalWeight - 1) < 0.001 ? '#166534' : '#92400e'};font-weight:700;">TOTAL WEIGHT</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${Math.abs(totalWeight - 1) < 0.001 ? '#166534' : '#92400e'};">${(totalWeight * 100).toFixed(1)}%</p>
+                </div>
+            </div>
+
+            ${Math.abs(totalWeight - 1) >= 0.001 ? `<p style="font-size:0.78rem;color:#92400e;margin-bottom:12px;">⚠️ These rows sum to ${(totalWeight * 100).toFixed(1)}%, not 100% — double-check the source file before confirming; a hierarchy with gaps or overlaps will under- or over-count some KPIs.</p>` : ''}
+            ${notFoundCount > 0 ? `<p style="font-size:0.78rem;color:#92400e;margin-bottom:12px;">${notFoundCount} row${notFoundCount !== 1 ? 's' : ''} reference a KPI Code that doesn't exist yet${selectedCompany ? ` under ${esc(selectedCompany)}` : ''} — run the KPI &amp; Owners import above first, or check for typos.</p>` : ''}
+
+            ${invalidRows.length > 0 ? `
+                <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:200px;overflow-y:auto;">
+                    <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Rows that will be skipped:</p>
+                    ${invalidRows.map(r => `<p style="font-size:0.75rem;color:#991b1b;">Row ${r.rowNumber}: ${esc(r.errors.join('; '))}</p>`).join('')}
+                </div>
+            ` : ''}
+
+            <div style="max-height:280px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                    <thead style="position:sticky;top:0;background:#f9fafb;">
+                        <tr style="text-align:left;">
+                            <th style="padding:6px 10px;">KPI Code</th>
+                            <th style="padding:6px 10px;">Line</th>
+                            <th style="padding:6px 10px;">Area</th>
+                            <th style="padding:6px 10px;">Level 1</th>
+                            <th style="padding:6px 10px;">Level 2</th>
+                            <th style="padding:6px 10px;">Final Weight</th>
+                            <th style="padding:6px 10px;">Match</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${validRows.map(r => {
+                            const matches = matchCountFor(r);
+                            const finalWeight = r.areaPct * r.level1Pct * r.level2Pct * r.level3Pct;
+                            return `
+                                <tr style="border-top:1px solid #f3f4f6;">
+                                    <td style="padding:6px 10px;">${esc(r.kpiCode)}</td>
+                                    <td style="padding:6px 10px;">${r.line ? esc(r.line) : '<span style="color:#9ca3af;">all lines</span>'}</td>
+                                    <td style="padding:6px 10px;">${esc(r.area)}</td>
+                                    <td style="padding:6px 10px;">${esc(r.level1)}</td>
+                                    <td style="padding:6px 10px;">${esc(r.level2)}</td>
+                                    <td style="padding:6px 10px;font-weight:700;">${(finalWeight * 100).toFixed(3)}%</td>
+                                    <td style="padding:6px 10px;">${matches > 0 ? `<span style="color:#059669;">✓ ${matches} found</span>` : '<span style="color:#dc2626;">✗ not found</span>'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.state._kpiWeightImportPreview=null;app.state._kpiWeightImportResult=null;app.renderKpiPlannerView();"
+                    style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
+                <button onclick="app._confirmKpiWeightImport()" ${validRows.length === 0 ? 'disabled' : ''}
+                    style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:${validRows.length === 0 ? '#9ca3af' : '#059669'};color:#fff;">
+                    Confirm Import
+                </button>
+            </div>
+        </div>
+    `;
+};
+
+app._renderKpiWeightImportResult = function(result) {
+    const esc = this._escHtml.bind(this);
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Import Result</h4>
+            <div class="grid grid-cols-3 gap-3 mb-4">
+                <div style="background:#f0fdf4;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#166534;font-weight:700;">UPDATED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#166534;">${result.updated}</p>
+                </div>
+                <div style="background:${result.notFound > 0 ? '#fffbeb' : '#f9fafb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${result.notFound > 0 ? '#92400e' : '#6b7280'};font-weight:700;">NOT FOUND</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${result.notFound > 0 ? '#92400e' : '#6b7280'};">${result.notFound}</p>
+                </div>
+                <div style="background:${result.failed > 0 ? '#fef2f2' : '#f9fafb'};border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};font-weight:700;">FAILED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};">${result.failed}</p>
+                </div>
+            </div>
+            ${result.errors.length > 0 ? `
+                <div style="background:#fffbeb;border-radius:8px;padding:12px;max-height:200px;overflow-y:auto;">
+                    ${result.errors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${esc(e)}</p>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+app._handleKpiWeightImportFile = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    this.state._kpiWeightImportPreview = null;
+    this.state._kpiWeightImportResult = null;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = XLSX.utils.sheet_to_json(firstSheet, { raw: false, defval: '' });
+
+            const { validRows, invalidRows } = this._kpiParseWeightImportRows(rawRows);
+            this.state._kpiWeightImportPreview = { validRows, invalidRows };
+            this.renderKpiPlannerView();
+        } catch (err) {
+            console.error('❌ Failed to parse weight import file:', err.message);
+            this.showToast('Could not read this file: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+};
+
+app._confirmKpiWeightImport = async function() {
+    const preview = this.state._kpiWeightImportPreview;
+    if (!preview) return;
+    const ok = confirm(`Apply weighting to ${preview.validRows.length} KPI Code(s)? This overwrites Area/Level 1/Level 2/Level 3 % (and Final Weight) on matching KPIs.`);
+    if (!ok) return;
+    const result = await this.importKpiWeightData(preview.validRows, this.state._kpiSelectedCompany || 'OMC');
+    this.state._kpiWeightImportResult = result;
+    this.state._kpiWeightImportPreview = null;
     this.renderKpiPlannerView();
 };
 
