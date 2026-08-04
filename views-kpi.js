@@ -2122,25 +2122,30 @@ app._drawKpiSingleDetailChart = function(kpiId, year, weight) {
             order: 1,
         },
     ];
+    const edgePointRadius = (context) => (context.dataIndex === 0 || context.dataIndex === stats.monthlyResults.length - 1) ? 5 : 0;
+
     if (exceptionalLine != null) {
         datasets.push({
-            type: 'line', label: `Exceptional (${exceptionalLine.toFixed(0)}%)`,
+            type: 'line', label: `Exceptional (${exceptionalLine.toFixed(1)}%)`,
             data: stats.monthlyResults.map(() => exceptionalLine),
-            borderColor: '#059669', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+            borderColor: '#059669', borderDash: [2, 2], borderWidth: 2, order: 0,
+            pointStyle: 'triangle', pointRadius: edgePointRadius, pointBackgroundColor: '#059669', pointBorderColor: '#059669',
         });
     }
     if (acceptableLine != null) {
         datasets.push({
-            type: 'line', label: `Acceptable (${acceptableLine.toFixed(0)}%)`,
+            type: 'line', label: `Acceptable (${acceptableLine.toFixed(1)}%)`,
             data: stats.monthlyResults.map(() => acceptableLine),
-            borderColor: '#1d4ed8', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+            borderColor: '#1d4ed8', borderDash: [10, 3], borderWidth: 2, order: 0,
+            pointStyle: 'circle', pointRadius: edgePointRadius, pointBackgroundColor: '#1d4ed8', pointBorderColor: '#1d4ed8',
         });
     }
     if (unacceptableLine != null) {
         datasets.push({
-            type: 'line', label: `Unacceptable (${unacceptableLine.toFixed(0)}%)`,
+            type: 'line', label: `Unacceptable (${unacceptableLine.toFixed(1)}%)`,
             data: stats.monthlyResults.map(() => unacceptableLine),
-            borderColor: '#dc2626', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+            borderColor: '#dc2626', borderDash: [5, 3, 1, 3], borderWidth: 2, order: 0,
+            pointStyle: 'rectRot', pointRadius: edgePointRadius, pointBackgroundColor: '#dc2626', pointBorderColor: '#dc2626',
         });
     }
 
@@ -2148,9 +2153,31 @@ app._drawKpiSingleDetailChart = function(kpiId, year, weight) {
         data: { labels: stats.monthlyResults.map(m => monthName(m.period)), datasets },
         options: {
             responsive: true, maintainAspectRatio: false,
+            // When the three thresholds sit close together (e.g. 101%/
+            // 100%/99%), the lines themselves can visually overlap and
+            // become hard to tell apart no matter how they're styled —
+            // 'index' mode means hovering ANYWHERE on the chart shows
+            // every series' exact value at that point in one tooltip, so
+            // there's always a reliable way to read them apart.
+            interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { display: true, position: 'right', labels: { boxWidth: 14, font: { size: 11 } } },
-                datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => ctx.dataset.type === 'bar' ? v + '%' : '' },
+                tooltip: { mode: 'index', intersect: false },
+                datalabels: {
+                    anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 },
+                    formatter: (v, ctx) => {
+                        if (ctx.dataset.type !== 'bar') return '';
+                        const m = stats.monthlyResults[ctx.dataIndex];
+                        if (!m || m.actualValue == null) return '';
+                        // "%"-unit KPIs read naturally as "85.86%" (no
+                        // space); anything else gets a space before the
+                        // unit ("42 days", "3 Number" if unit is literally
+                        // "Number", etc.) — falls back to the bare number
+                        // when no unit is set at all.
+                        const unit = kpiDef ? kpiDef.unit : '';
+                        return unit === '%' ? `${m.actualValue}%` : `${m.actualValue}${unit ? ' ' + unit : ''}`;
+                    },
+                },
             },
             scales: { y: { beginAtZero: true } },
         },
