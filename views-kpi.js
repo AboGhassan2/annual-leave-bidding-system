@@ -300,9 +300,18 @@ app._renderKpiDefinitionsSection = function() {
     const rows = visibleDefinitions.map(k => {
         const line = (this.state.kpiDirectorateDepartments || []).find(d => d.id === k.department_id);
         const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
-        const primaryOwner = owners.length > 0 ? owners.reduce((a, b) => (b.owner_percentage || 0) > (a.owner_percentage || 0) ? b : a) : null;
+        // Show the owner relevant to the directorate CURRENTLY BEING
+        // VIEWED, not just whoever has the highest overall percentage —
+        // filtering to Finance (a 10% share) must show Finance's own
+        // owner (e.g. Tariq), never the 90% owner from a different
+        // directorate (e.g. Hani), even though Hani has the bigger share.
+        const filterDir = directorates.find(d => d.id === filterDirectorateId);
+        const contextOwner = filterDir ? owners.find(o => o.owner_dept === filterDir.name) : null;
+        const displayOwner = contextOwner || (owners.length > 0 ? owners.reduce((a, b) => (b.owner_percentage || 0) > (a.owner_percentage || 0) ? b : a) : null);
+        const otherOwnerCount = owners.length - (displayOwner ? 1 : 0);
         const viewWeight = this._kpiOwnershipWeight(k, filterDirectorateId);
         const isSharedView = viewWeight < 1 && viewWeight > 0;
+        const homeDir = directorates.find(d => d.id === k.directorate_id);
         const finalWeight = this._kpiFinalWeight(k);
         const periodLabel = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type;
         return `
@@ -310,13 +319,13 @@ app._renderKpiDefinitionsSection = function() {
                 <td style="padding:10px 12px;">
                     <p style="font-weight:700;">${esc(k.name)}</p>
                     ${k.category ? `<p style="font-size:0.72rem;color:#6b7280;">${esc(k.category)}</p>` : ''}
-                    ${isSharedView ? `<span style="font-size:0.7rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share (home)</span>` : ''}
+                    ${isSharedView ? `<span style="font-size:0.7rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share (home: ${esc(homeDir ? homeDir.name : 'unknown')})</span>` : ''}
                 </td>
                 <td style="padding:10px 12px;">${k.area ? esc(k.area) : '<span style="color:#d1d5db;">—</span>'}</td>
                 <td style="padding:10px 12px;font-weight:700;">${line ? esc(line.department_name) : '—'}</td>
                 <td style="padding:10px 12px;">${esc(periodLabel)}</td>
                 <td style="padding:10px 12px;text-align:right;font-weight:700;color:${finalWeight != null ? '#059669' : '#d1d5db'};">${finalWeight != null ? (finalWeight * 100).toFixed(1) + '%' : '—'}</td>
-                <td style="padding:10px 12px;">${primaryOwner ? esc(primaryOwner.owner_name || primaryOwner.owner_dept) + (owners.length > 1 ? ` <span style="color:#9ca3af;font-size:0.72rem;">+${owners.length - 1}</span>` : '') : '<span style="color:#d1d5db;">—</span>'}</td>
+                <td style="padding:10px 12px;">${displayOwner ? esc(displayOwner.owner_name || displayOwner.owner_dept) + (displayOwner.owner_percentage != null ? ` <span style="color:#9ca3af;font-size:0.72rem;">(${Math.round(displayOwner.owner_percentage * 100)}%)</span>` : '') + (otherOwnerCount > 0 ? ` <span style="color:#9ca3af;font-size:0.72rem;">+${otherOwnerCount}</span>` : '') : '<span style="color:#d1d5db;">—</span>'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${k.exceptional_value != null ? '#059669' : '#d1d5db'};">${k.exceptional_value != null ? esc(String(k.exceptional_value)) : '—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${k.target_value != null ? '#1d4ed8' : '#d1d5db'};font-weight:600;">${k.target_value != null ? esc(String(k.target_value)) : '—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${k.unacceptable_value != null ? '#dc2626' : '#d1d5db'};">${k.unacceptable_value != null ? esc(String(k.unacceptable_value)) : '—'}</td>
