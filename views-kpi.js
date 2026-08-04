@@ -2089,36 +2089,68 @@ app._drawKpiSingleDetailChart = function(kpiId, year, weight) {
     const ctx = document.getElementById('kpiSingleDetailChart');
     if (!ctx) return;
 
+    const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiId);
     const tierColor = { above: '#059669', near: '#d97706', below: '#dc2626', none: '#9ca3af' };
     const monthName = (p) => this.state.months[parseInt(p, 10) - 1]?.slice(0, 3) || p;
 
-    this._kpiSingleDetailChartInstance = new Chart(ctx, {
-        data: {
-            labels: stats.monthlyResults.map(m => monthName(m.period)),
-            datasets: [
-                {
-                    type: 'bar',
-                    label: 'Achievement (%)',
-                    data: stats.monthlyResults.map(m => m.achievement),
-                    backgroundColor: stats.monthlyResults.map(m => tierColor[this._kpiMonthColorTier(m.achievement)]),
-                    borderRadius: 4,
-                },
-                {
-                    type: 'line',
-                    label: 'Target (100%)',
-                    data: stats.monthlyResults.map(() => 100),
-                    borderColor: '#dc2626',
-                    borderDash: [6, 4],
-                    pointRadius: 0,
-                    borderWidth: 2,
-                },
-            ],
+    // Convert each raw threshold into the SAME achievement-% scale the
+    // bars already use — "what achievement % would this month have
+    // scored if its actual value exactly hit this threshold" — using the
+    // identical direction-aware formula _computeKpiResultFields uses for
+    // real results (higher_is_better: value/target*100; lower_is_better:
+    // target/value*100, inverted). Acceptable is always exactly 100% by
+    // definition, since Acceptable IS the target. This is what lets three
+    // thresholds on a KPI's own raw unit (%, count, currency, whatever)
+    // sit correctly on one shared achievement-% axis alongside the bars.
+    const target = kpiDef ? kpiDef.target_value : null;
+    const lowerIsBetter = kpiDef && kpiDef.direction === 'lower_is_better';
+    const thresholdAsAchievement = (value) => {
+        if (value == null || target == null || target === 0 || value === 0) return null;
+        return lowerIsBetter ? (target / value) * 100 : (value / target) * 100;
+    };
+    const exceptionalLine = kpiDef ? thresholdAsAchievement(kpiDef.exceptional_value) : null;
+    const acceptableLine = target != null ? 100 : null;
+    const unacceptableLine = kpiDef ? thresholdAsAchievement(kpiDef.unacceptable_value) : null;
+
+    const datasets = [
+        {
+            type: 'bar',
+            label: 'Achievement (%)',
+            data: stats.monthlyResults.map(m => m.achievement),
+            backgroundColor: stats.monthlyResults.map(m => tierColor[this._kpiMonthColorTier(m.achievement)]),
+            borderRadius: 4,
+            order: 1,
         },
+    ];
+    if (exceptionalLine != null) {
+        datasets.push({
+            type: 'line', label: `Exceptional (${exceptionalLine.toFixed(0)}%)`,
+            data: stats.monthlyResults.map(() => exceptionalLine),
+            borderColor: '#059669', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+        });
+    }
+    if (acceptableLine != null) {
+        datasets.push({
+            type: 'line', label: `Acceptable (${acceptableLine.toFixed(0)}%)`,
+            data: stats.monthlyResults.map(() => acceptableLine),
+            borderColor: '#1d4ed8', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+        });
+    }
+    if (unacceptableLine != null) {
+        datasets.push({
+            type: 'line', label: `Unacceptable (${unacceptableLine.toFixed(0)}%)`,
+            data: stats.monthlyResults.map(() => unacceptableLine),
+            borderColor: '#dc2626', borderDash: [6, 4], pointRadius: 0, borderWidth: 2, order: 0,
+        });
+    }
+
+    this._kpiSingleDetailChartInstance = new Chart(ctx, {
+        data: { labels: stats.monthlyResults.map(m => monthName(m.period)), datasets },
         options: {
             responsive: true, maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
-                datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => ctx.datasetIndex === 0 ? v + '%' : '' },
+                legend: { display: true, position: 'right', labels: { boxWidth: 14, font: { size: 11 } } },
+                datalabels: { anchor: 'end', align: 'top', color: '#374151', font: { weight: 'bold', size: 10 }, formatter: (v, ctx) => ctx.dataset.type === 'bar' ? v + '%' : '' },
             },
             scales: { y: { beginAtZero: true } },
         },
