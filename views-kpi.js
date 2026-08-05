@@ -833,7 +833,11 @@ app._renderKpiPreviewSection = function() {
     const selectedDirectorate = directorates.find(d => d.id === selectedDirectorateId) || directorates[0];
     const year = this.state._kpiPreviewYear || new Date().getFullYear();
     const yearOptions = [year - 1, year, year + 1].map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`).join('');
-    const directorateOptions = directorates.map(d => `<option value="${d.id}" ${d.id === selectedDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+    const directorateOptions = ['OMC', 'Audit'].map(company => {
+        const inCompany = directorates.filter(d => (d.company || 'OMC') === company);
+        if (inCompany.length === 0) return '';
+        return `<optgroup label="${esc(company)}">${inCompany.map(d => `<option value="${d.id}" ${d.id === selectedDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`;
+    }).join('');
 
     return `
         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
@@ -1419,7 +1423,11 @@ app._renderKpiUsersSection = function() {
                         ${u.can_view_all_directorates ? 'disabled' : ''}
                         style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.78rem;${u.can_view_all_directorates ? 'opacity:0.5;' : ''}">
                         <option value="">— Unassigned —</option>
-                        ${directorates.map(d => `<option value="${d.id}" ${u.directorate_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                        ${['OMC', 'Audit'].map(company => {
+                            const inCompany = directorates.filter(d => (d.company || 'OMC') === company);
+                            if (inCompany.length === 0) return '';
+                            return `<optgroup label="${esc(company)}">${inCompany.map(d => `<option value="${d.id}" ${u.directorate_id === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`;
+                        }).join('')}
                     </select>
                 </div>
             ` : ''}
@@ -1947,7 +1955,11 @@ app.renderKpiDirectorView = function() {
                     ${isSuperUser ? `
                         <select onchange="app.state._kpiSuperUserSelectedDirectorateId = parseInt(this.value, 10); app.state._kpiDirectorSelectedKpiId = null; app.renderKpiDirectorView();"
                             style="padding:8px 14px;border:1.5px solid #7c3aed;border-radius:8px;font-size:0.85rem;font-weight:600;color:#7c3aed;">
-                            ${(this.state.kpiDirectorates || []).map(d => `<option value="${d.id}" ${d.id === directorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                            ${['OMC', 'Audit'].map(company => {
+                                const inCompany = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === company);
+                                if (inCompany.length === 0) return '';
+                                return `<optgroup label="${esc(company)}">${inCompany.map(d => `<option value="${d.id}" ${d.id === directorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`;
+                            }).join('')}
                         </select>
                     ` : ''}
                     ${kpiPickerHtml}
