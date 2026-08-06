@@ -701,7 +701,12 @@ app._renderKpiResultsSection = function() {
             Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         const isOverridden = r.final_kpi != null && r.factor_score != null && Math.abs(r.final_kpi - r.factor_score) > 1e-9;
-        const shares = this._kpiPartnerShares(selected, r.final_kpi != null ? Number(r.final_kpi) : null);
+        // Per explicit correction: the three partners calculate their
+        // ratio from Final Weight, NOT from this period's Final KPI/
+        // Factor score — same static, design-time allocation already
+        // shown in the KPIs tab, not a per-period performance split.
+        const finalWeight = this._kpiFinalWeight(selected);
+        const shares = this._kpiAllocationSharesFromFinalWeight(selected);
         // KPI Month / Fee Month (M1-M121 / M2-M122) — only meaningful for
         // monthly results, since the mapping is per calendar month; a
         // quarterly/yearly result has no single month to look up.
@@ -724,13 +729,11 @@ app._renderKpiResultsSection = function() {
                         style="width:70px;padding:4px 6px;border:1.5px solid ${isOverridden ? '#7c3aed' : '#e5e7eb'};border-radius:6px;font-size:0.8rem;font-weight:${isOverridden ? '700' : '400'};color:${isOverridden ? '#7c3aed' : '#111827'};" />
                     ${isOverridden ? '<span title="Manually overridden — differs from the auto-calculated Factor Score" style="font-size:0.7rem;color:#7c3aed;">✎</span>' : ''}
                 </td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.hit != null ? esc(shares.hit.toFixed(3)) : '—'}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.fs != null ? esc(shares.fs.toFixed(3)) : '—'}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.als != null ? esc(shares.als.toFixed(3)) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:${finalWeight != null ? '#059669' : '#d1d5db'};">${finalWeight != null ? (finalWeight * 100).toFixed(2) + '%' : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.hit != null ? (shares.hit * 100).toFixed(3) + '%' : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.fs != null ? (shares.fs * 100).toFixed(3) + '%' : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.als != null ? (shares.als * 100).toFixed(3) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.75rem;">
-                    ${r.approved_at ? `<span style="color:#065f46;">✓ ${esc(r.approved_by || 'Approved')}</span>` : `<button onclick="app.doApproveKpiResult(${r.id})" style="padding:4px 10px;background:#166534;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Approve</button>`}
-                </td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">
                     <button onclick="app.confirmDeleteKpiResultEntry(${r.id})" style="color:#991b1b;background:none;border:none;font-size:0.75rem;cursor:pointer;text-decoration:underline;">Delete</button>
                 </td>
@@ -797,11 +800,11 @@ app._renderKpiResultsSection = function() {
                             <th style="padding:8px 12px;">Status</th>
                             <th style="padding:8px 12px;">Factor</th>
                             <th style="padding:8px 12px;">Final KPI</th>
+                            <th style="padding:8px 12px;text-align:right;">Final Weight</th>
                             <th style="padding:8px 12px;text-align:right;">HIT Share</th>
                             <th style="padding:8px 12px;text-align:right;">FS Share</th>
                             <th style="padding:8px 12px;text-align:right;">ALS Share</th>
                             <th style="padding:8px 12px;">Remarks</th>
-                            <th style="padding:8px 12px;">Approval</th>
                             <th></th>
                         </tr>
                     </thead>
