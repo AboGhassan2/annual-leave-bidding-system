@@ -726,7 +726,13 @@ app._renderKpiResultsSection = function() {
                 style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
                 ${kpiOptions}
             </select>
-            <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">Target: <strong>${esc(String(selected.target_value))}${selected.unit ? ' ' + esc(selected.unit) : ''}</strong> · ${esc(selected.period_type)} · ${selected.direction === 'lower_is_better' ? 'Lower is better' : 'Higher is better'}</p>
+            <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">
+                ${esc(selected.period_type)} · ${selected.direction === 'lower_is_better' ? 'Lower is better' : 'Higher is better'}${selected.unit ? ' · ' + esc(selected.unit) : ''}<br/>
+                <span style="color:#059669;font-weight:600;">Exceptional: ${selected.exceptional_value != null ? esc(String(selected.exceptional_value)) : '—'}</span>
+                &nbsp;·&nbsp;<span style="color:#1d4ed8;font-weight:600;">Acceptable (Target): ${esc(String(selected.target_value))}</span>
+                &nbsp;·&nbsp;<span style="color:#dc2626;font-weight:600;">Unacceptable: ${selected.unacceptable_value != null ? esc(String(selected.unacceptable_value)) : '—'}</span>
+                ${(selected.exceptional_value == null || selected.unacceptable_value == null) ? '<br/><span style="color:#92400e;">⚠️ Exceptional and/or Unacceptable isn\'t set for this KPI yet — Factor Score can\'t be calculated until both are configured (Edit this KPI in the KPIs tab).</span>' : ''}
+            </p>
 
             <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
                 <div style="min-width:100px;">
@@ -743,7 +749,7 @@ app._renderKpiResultsSection = function() {
                     </select>
                 </div>
                 <div style="flex:1;min-width:120px;">
-                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Actual Value${selected.unit ? ' (' + esc(selected.unit) + ')' : ''}</label>
+                    <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Result${selected.unit ? ' (' + esc(selected.unit) + ')' : ''}</label>
                     <input type="number" step="any" id="kpiResultValue"
                         style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;" />
                 </div>
@@ -758,7 +764,7 @@ app._renderKpiResultsSection = function() {
                     <thead>
                         <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
                             <th style="padding:8px 12px;">Period</th>
-                            <th style="padding:8px 12px;">Actual</th>
+                            <th style="padding:8px 12px;">KPI Result</th>
                             <th style="padding:8px 12px;">Target</th>
                             <th style="padding:8px 12px;">Achievement</th>
                             <th style="padding:8px 12px;">Status</th>
