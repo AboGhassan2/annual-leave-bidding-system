@@ -1956,6 +1956,150 @@ test('_kpiBenchmarkLabel returns null when Exceptional or Unacceptable is missin
     assert.equal(app._kpiBenchmarkLabel(null, 100, 85, 'higher_is_better'), null);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// Financial Calendar & Partner Allocation (Master_File.xlsx) — Period
+// KPI vs Fees, Line FFt lag/status schedule, and the HIT/FS/ALS partner
+// split. End goal: compute each partner's allocated share of a KPI's
+// actual Final KPI/Factor score.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiParseDateCell parses the source file\'s "26-Nov-2023" format into ISO, not via ambiguous Date parsing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiParseDateCell('26-Nov-2023'), '2023-11-26');
+    assert.equal(app._kpiParseDateCell('5-Jan-2024'), '2024-01-05');
+    assert.equal(app._kpiParseDateCell(''), null);
+    assert.equal(app._kpiParseDateCell('garbage'), null);
+});
+
+test('_kpiParseFeePeriodRows: the fee month is always 1 month ahead of the KPI month, per the real file\'s first row', () => {
+    const app = buildKpiApp();
+    const rows = app._kpiParseFeePeriodRows([{
+        'KPI Month No': '1', 'KPI Fiscal Month': 'M1', 'KPI Month Period Start': '26-Nov-2023', 'KPI Month Period End': '25-Dec-2023',
+        'KPI Month Year': '2023', 'KPI Cal Month': '11', 'KPI Month Name': 'Nov', 'KPI Cal Quarter': 'Q4', 'KPI Fiscal Year': '1', 'KPI Fiscal Quarter': 'Q1',
+        'KPI Fixed Fee No': '2', 'KPI Fixed Fee Month': 'M2', 'KPI Fixed Fee Period Start': '26-Dec-2023', 'KPI Fixed Fee Period End': '25-Jan-2024',
+        'KPI Fixed Fee Year': '2024', 'KPI Fixed Fee Cal Month': '12', 'KPI Fixed Fee Name': 'Dec', 'KPI Fixed Fee Cal Quarter': 'Q4',
+        'KPI Fixed Fee Fiscal Year': '1', 'KPI Fixed Fee Fiscal Quarter': 'Q1', 'KPI Fixed Fee Difference (Months)': '1',
+    }]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].kpi_month_no, 1);
+    assert.equal(rows[0].fee_month_no, 2);
+    assert.equal(rows[0].kpi_period_start, '2023-11-26');
+    assert.equal(rows[0].fee_diff_months, 1);
+});
+
+test('_kpiFeePeriodForCalendarDate looks up by calendar year+month, not fiscal date-range math', () => {
+    const app = buildKpiApp({
+        kpiFeePeriods: [{ kpi_year: 2023, kpi_cal_month: 11, kpi_month_no: 1, fee_month_no: 2 }],
+    });
+    const found = app._kpiFeePeriodForCalendarDate(2023, 11);
+    assert.equal(found.fee_month_no, 2);
+    assert.equal(app._kpiFeePeriodForCalendarDate(2023, 12), null, 'no match for a month not in the calendar');
+});
+
+test('_kpiParseLineFeeScheduleRows: "-" placeholder cells become null, not the string "-" or NaN', () => {
+    const app = buildKpiApp();
+    const rows = app._kpiParseLineFeeScheduleRows([{
+        'Report Month No': '1', 'Report Fiscal Month': 'M1', 'Year': '2023', 'Fiscal Year': '1', 'KPI Fiscal Quarter': 'Q1',
+        'Fee Stream': 'Line 3 FFt', 'Lag (Months)': '13', 'KPI Month No': '-12', 'KPI Fiscal Month': '-',
+        'Fixed Fee Month No': '-11', 'Fixed Fee Fiscal Month': '-', 'Status': 'Pre-project',
+    }]);
+    assert.equal(rows[0].kpi_month_no, -12, 'negative KPI Month No parses correctly, not treated as invalid');
+    assert.equal(rows[0].kpi_fiscal_month, null, '"-" placeholder becomes null');
+    assert.equal(rows[0].status, 'Pre-project');
+});
+
+test('_kpiLineNameToFeeStream translates this app\'s "L3" naming to the source file\'s "Line 3 FFt"', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiLineNameToFeeStream('L3'), 'Line 3 FFt');
+    assert.equal(app._kpiLineNameToFeeStream('L6'), 'Line 6 FFt');
+    assert.equal(app._kpiLineNameToFeeStream('Management'), null, 'not a line, no translation');
+});
+
+test('_kpiLineFeeStatus finds a line\'s Active/Pre-project status at a given KPI Month, reproducing the real Line 3 pre-project period', () => {
+    const app = buildKpiApp({
+        kpiLineFeeSchedule: [
+            { fee_stream: 'Line 3 FFt', kpi_month_no: -12, status: 'Pre-project' },
+            { fee_stream: 'Line 4 FFt', kpi_month_no: 1, status: 'Active' },
+        ],
+    });
+    assert.equal(app._kpiLineFeeStatus('L3', -12), 'Pre-project');
+    assert.equal(app._kpiLineFeeStatus('L4', 1), 'Active');
+    assert.equal(app._kpiLineFeeStatus('L3', 999), null, 'no schedule row for that month');
+});
+
+test('_kpiParsePartnerAllocationRows matches the real A1 row exactly, including the pre-multiplied Allocation HIT/FS/ALS %', () => {
+    const app = buildKpiApp();
+    const { validRows, invalidRows } = app._kpiParsePartnerAllocationRows([{
+        Line: '3', Code: 'A', 'KPI Code': 'A1', 'KPI Name': 'Passenger satisfaction', Frequency: 'Quarterly',
+        'Level 3 %': '40%', 'Allocation %': '3.00%', 'HIT%': '25.00%', 'FS%': '25.00%', 'ALS%': '50.00%',
+        'Allocation HIT%': '0.75%', 'Allocation FS%': '0.75%', 'Allocation ALS%': '1.50%',
+    }]);
+    assert.equal(invalidRows.length, 0);
+    assert.equal(validRows[0].hitPct, 0.25);
+    assert.equal(validRows[0].fsPct, 0.25);
+    assert.equal(validRows[0].alsPct, 0.5);
+    assert.equal(Math.round(validRows[0].allocationHitPct * 10000) / 10000, 0.0075);
+});
+
+test('_kpiParsePartnerAllocationRows: a blank partner % (KPI only involves 2 of 3 partners) parses as null, not 0', () => {
+    const app = buildKpiApp();
+    const { validRows } = app._kpiParsePartnerAllocationRows([{
+        Line: '3', Code: 'A', 'KPI Code': 'A5', 'KPI Name': 'Station environment', Frequency: 'Monthly',
+        'Level 3 %': '50%', 'Allocation %': '2.25%', 'HIT%': '50.00%', 'FS%': '50.00%', 'ALS%': '',
+        'Allocation HIT%': '1.13%', 'Allocation FS%': '1.13%', 'Allocation ALS%': '0.00%',
+    }]);
+    assert.equal(validRows[0].alsPct, null, 'ALS is not involved in this KPI at all');
+});
+
+test('_kpiPartnerShares splits Final KPI by each partner\'s raw percentage, summing back to the original score', () => {
+    const app = buildKpiApp();
+    const kpiDef = { hit_pct: 0.25, fs_pct: 0.25, als_pct: 0.5 };
+    const shares = app._kpiPartnerShares(kpiDef, 1.5);
+    assert.equal(shares.hit, 0.375);
+    assert.equal(shares.fs, 0.375);
+    assert.equal(shares.als, 0.75);
+    assert.equal(shares.hit + shares.fs + shares.als, 1.5, 'the three shares always sum back to the original score');
+});
+
+test('_kpiPartnerShares: a partner with no configured share gets null, not 0, distinguishing "uninvolved" from "0%"', () => {
+    const app = buildKpiApp();
+    const kpiDef = { hit_pct: 0.5, fs_pct: 0.5, als_pct: null };
+    const shares = app._kpiPartnerShares(kpiDef, 1.5);
+    assert.equal(shares.als, null);
+    assert.equal(shares.hit, 0.75);
+});
+
+test('_kpiPartnerShares returns all-null when the score itself is missing, rather than guessing', () => {
+    const app = buildKpiApp();
+    const shares = app._kpiPartnerShares({ hit_pct: 0.25, fs_pct: 0.25, als_pct: 0.5 }, null);
+    assert.equal(shares.hit, null);
+    assert.equal(shares.fs, null);
+    assert.equal(shares.als, null);
+});
+
+test('importKpiPartnerAllocation matched by (kpi_code, line), never creates a new KPI, reports notFound for a miss', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'K', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 90 }],
+        kpiOwners: [],
+    });
+    const saveCalls = [];
+    app.supabase = {};
+    app.saveKpiDefinition = async (def, existingId) => { saveCalls.push({ def, existingId }); return { id: existingId, ...def }; };
+    app.showToast = () => {};
+
+    const result = await app.importKpiPartnerAllocation([
+        { line: 'L3', kpiCode: 'A1', allocationPct: 0.03, hitPct: 0.25, fsPct: 0.25, alsPct: 0.5, allocationHitPct: 0.0075, allocationFsPct: 0.0075, allocationAlsPct: 0.015 },
+        { line: 'L3', kpiCode: 'ZZZ', hitPct: 1, fsPct: 0, alsPct: 0 },
+    ], 'OMC');
+
+    assert.equal(result.updated, 1);
+    assert.equal(result.notFound, 1);
+    assert.equal(saveCalls.length, 1);
+    assert.equal(saveCalls[0].def.hitPct, 0.25);
+});
+
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
     const app = buildKpiApp();
     const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
