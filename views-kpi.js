@@ -1563,14 +1563,23 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.partnerAllocation) lines.push(`Partner Allocation: ${result.partnerAllocation.updated} updated, ${result.partnerAllocation.notFound} not found, ${result.partnerAllocation.failed} failed`);
     if (result.feePeriods) lines.push(`Fee periods: ${result.feePeriods.imported} imported`);
     if (result.lineSchedule) lines.push(`Line fee schedule: ${result.lineSchedule.imported} imported`);
-    const anyErrors = (result.partnerAllocation && result.partnerAllocation.errors.length > 0);
+    // Every one of the three pieces can carry its own errors — a
+    // previous version of this only checked Partner Allocation's, so a
+    // real failure saving fee periods/line schedule (e.g. a missing
+    // table from an unrun migration) was silently swallowed and showed
+    // as a bare "0 imported" with nothing explaining why.
+    const allErrors = [
+        ...(result.partnerAllocation ? result.partnerAllocation.errors.map(e => `Partner Allocation — ${e}`) : []),
+        ...(result.feePeriods ? result.feePeriods.errors.map(e => `Fee periods — ${e}`) : []),
+        ...(result.lineSchedule ? result.lineSchedule.errors.map(e => `Line fee schedule — ${e}`) : []),
+    ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
             <h4 style="font-weight:700;margin-bottom:10px;">Import Result</h4>
             ${lines.map(l => `<p style="font-size:0.82rem;color:#374151;margin-bottom:4px;">${esc(l)}</p>`).join('')}
-            ${anyErrors ? `
+            ${allErrors.length > 0 ? `
                 <div style="background:#fffbeb;border-radius:8px;padding:12px;margin-top:10px;max-height:200px;overflow-y:auto;">
-                    ${result.partnerAllocation.errors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${esc(e)}</p>`).join('')}
+                    ${allErrors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${esc(e)}</p>`).join('')}
                 </div>
             ` : ''}
         </div>
