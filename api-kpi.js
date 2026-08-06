@@ -2304,7 +2304,8 @@ app.importKpiLineFeeSchedule = async function(rows) {
 // data already carries each KPI Month's anchoring calendar year/month
 // directly (KPI Month Year / KPI Cal Month).
 app._kpiFeePeriodForCalendarDate = function(calYear, calMonth) {
-    return (this.state.kpiFeePeriods || []).find(r => r.kpi_year === calYear && r.kpi_cal_month === calMonth) || null;
+    const y = Number(calYear), m = Number(calMonth);
+    return (this.state.kpiFeePeriods || []).find(r => Number(r.kpi_year) === y && Number(r.kpi_cal_month) === m) || null;
 };
 
 // Translates this app's line naming ("L3") to the Line FFt sheet's fee
@@ -2318,7 +2319,8 @@ app._kpiLineNameToFeeStream = function(lineName) {
 app._kpiLineFeeStatus = function(lineName, kpiMonthNo) {
     const feeStream = this._kpiLineNameToFeeStream(lineName);
     if (!feeStream || kpiMonthNo == null) return null;
-    const row = (this.state.kpiLineFeeSchedule || []).find(r => r.fee_stream === feeStream && r.kpi_month_no === kpiMonthNo);
+    const target = Number(kpiMonthNo);
+    const row = (this.state.kpiLineFeeSchedule || []).find(r => r.fee_stream === feeStream && Number(r.kpi_month_no) === target);
     return row ? row.status : null;
 };
 
