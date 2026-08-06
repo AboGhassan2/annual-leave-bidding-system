@@ -1996,6 +1996,24 @@ test('_kpiFeePeriodForCalendarDate looks up by calendar year+month, not fiscal d
     assert.equal(app._kpiFeePeriodForCalendarDate(2023, 12), null, 'no match for a month not in the calendar');
 });
 
+test('_kpiFeePeriodForCalendarDate matches even when Supabase returns kpi_year/kpi_cal_month as strings, or the caller passes a string year — this exact mismatch was silently breaking every KPI Month/Fee Month lookup in Enter Results', () => {
+    const app = buildKpiApp({
+        // Reproduces Supabase's real behavior for some numeric column types
+        kpiFeePeriods: [{ kpi_year: '2027', kpi_cal_month: '1', kpi_month_no: 39, fee_month_no: 40 }],
+    });
+    // Caller side: r.year from a saved kpi_results row could also arrive as a string
+    const found = app._kpiFeePeriodForCalendarDate('2027', 1);
+    assert.notEqual(found, null, 'must match despite the string/number type mismatch on both sides');
+    assert.equal(found.fee_month_no, 40);
+});
+
+test('_kpiLineFeeStatus matches even when kpi_month_no comes back as a string from Supabase', () => {
+    const app = buildKpiApp({
+        kpiLineFeeSchedule: [{ fee_stream: 'Line 3 FFt', kpi_month_no: '-12', status: 'Pre-project' }],
+    });
+    assert.equal(app._kpiLineFeeStatus('L3', -12), 'Pre-project');
+});
+
 test('_kpiParseLineFeeScheduleRows: "-" placeholder cells become null, not the string "-" or NaN', () => {
     const app = buildKpiApp();
     const rows = app._kpiParseLineFeeScheduleRows([{
