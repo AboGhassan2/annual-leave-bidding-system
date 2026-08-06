@@ -398,6 +398,46 @@ app._computeKpiResultFields = function(kpiDef, actualValue) {
     return { achievement, status };
 };
 
+// Factor Score — a 0-2 scale scoring an actual result against its three
+// thresholds, per the exact formula in Levels_Formula.xlsx:
+//   0   at/beyond Unacceptable (the worst end)
+//   0-1 linear between Unacceptable and Acceptable
+//   1   exactly at Acceptable (= the target)
+//   1-2 linear between Acceptable and Exceptional
+//   2   at/beyond Exceptional (the best end)
+// This is a SEPARATE scale from achievement % (which is a simple ratio,
+// can exceed 200%+ with no ceiling) — Factor Score is deliberately
+// bounded and threshold-shaped, matching how the source spreadsheet
+// weights KPI performance into the Area/Level rollups. Direction-aware,
+// using the same stored `direction` field as everything else (mirrors
+// the two formula shapes confirmed in the source file — higher_is_better
+// and lower_is_better are exact mirror images of each other).
+// Returns null when any of the four inputs is missing (a KPI without
+// Exceptional/Acceptable/Unacceptable configured has no Factor Score
+// yet), or when the thresholds are degenerate (Acceptable equals
+// Exceptional or Unacceptable, making the linear portion undefined).
+app._kpiFactorScore = function(actual, exceptional, acceptable, unacceptable, direction) {
+    if (actual == null || exceptional == null || acceptable == null || unacceptable == null) return null;
+    const R = Number(actual), S = Number(exceptional), T = Number(acceptable), U = Number(unacceptable);
+    if (!Number.isFinite(R) || !Number.isFinite(S) || !Number.isFinite(T) || !Number.isFinite(U)) return null;
+    if (T === U || S === T) return null; // degenerate thresholds, linear portion undefined
+
+    if (direction === 'lower_is_better') {
+        if (R >= U) return 0;
+        if (R > T && R < U) return (U - R) / (U - T);
+        if (R === T) return 1;
+        if (R > S && R < T) return 1 + (T - R) / (T - S);
+        return 2; // R <= S
+    }
+    // higher_is_better (default)
+    if (R <= U) return 0;
+    if (R > U && R < T) return (R - U) / (T - U);
+    if (R === T) return 1;
+    if (R > T && R < S) return 1 + (R - T) / (S - T);
+    return 2; // R >= S
+};
+
+
 app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source }) {
     if (!this.supabase) return null;
     try {
@@ -408,6 +448,18 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         // period_label kept for backward compatibility with anything still
         // reading the old combined-string format (e.g. "2027-01", "2027-Q1").
         const periodLabel = periodType === 'yearly' ? `${year}` : `${year}-${periodValue}`;
+
+        const factorScore = this._kpiFactorScore(actualValue, kpiDef.exceptional_value, kpiDef.target_value, kpiDef.unacceptable_value, kpiDef.direction);
+        // Final KPI auto-follows the freshly computed Factor Score UNLESS
+        // it was already manually overridden on a previous save of this
+        // same result (i.e. its stored value no longer matches its own
+        // last factor_score) — matching the source spreadsheet, where
+        // "Final KPI" starts as "=Factor Score" but stays wherever
+        // someone typed a literal override, even if the underlying
+        // result is corrected afterward.
+        const existing = (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDefinitionId && r.period_label === periodLabel);
+        const wasOverridden = existing && existing.final_kpi != null && existing.factor_score != null && Math.abs(existing.final_kpi - existing.factor_score) > 1e-9;
+        const finalKpi = wasOverridden ? existing.final_kpi : factorScore;
 
         const row = {
             tenant_id: this._tid(),
@@ -426,6 +478,8 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
             target_value: kpiDef.target_value,
             achievement,
             status,
+            factor_score: factorScore,
+            final_kpi: finalKpi,
             remarks: remarks || '',
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
@@ -447,6 +501,31 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
     } catch (e) {
         console.error('❌ Failed to save KPI result:', e.message);
         this.showToast('Could not save result: ' + e.message, 'error');
+        return null;
+    }
+};
+
+// Manually overrides ONLY the Final KPI value on an already-saved
+// result — never touches actual_value, factor_score, achievement, or
+// status. This is the "must remain editable" override the source
+// spreadsheet's Final KPI column allows (typing a literal number over
+// what was "=Factor Score"). Passing null resets it back to auto-follow
+// factor_score again.
+app.overrideKpiFinalScore = async function(resultId, newValue) {
+    if (!this.supabase) return null;
+    try {
+        const { data, error } = await this.supabase
+            .from('kpi_results')
+            .update({ final_kpi: newValue })
+            .eq('id', resultId)
+            .select();
+        if (error) throw error;
+        const saved = data[0];
+        this.state.kpiResults = this.state.kpiResults.map(r => r.id === resultId ? saved : r);
+        return saved;
+    } catch (e) {
+        console.error('❌ Failed to update Final KPI:', e.message);
+        this.showToast('Could not update Final KPI: ' + e.message, 'error');
         return null;
     }
 };
