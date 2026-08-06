@@ -683,11 +683,18 @@ app._renderKpiResultsSection = function() {
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
     const resultsRows = existingResults.map(r => {
-        // Prefer the stored status/achievement (computed and snapshotted at
-        // entry time) — falls back to a live computation only for older
-        // rows saved before this snapshotting existed.
-        const status = r.status || this.kpiStatus(r.actual_value, r.target_value ?? selected.target_value, selected.direction);
-        const statusBadge = { on_target: ['On Target', '#d1fae5', '#065f46'], below_target: ['Below Target', '#fee2e2', '#991b1b'], no_data: ['—', '#f3f4f6', '#6b7280'] }[status];
+        // Benchmark label (Exceptional/Acceptable/Unacceptable) per the
+        // exact V-column formula — replaces the old 2-tier on_target/
+        // below_target badge in this table specifically. Falls back to
+        // r.status's simpler "—" behavior only when Exceptional or
+        // Unacceptable isn't configured for this KPI (benchmark can't be
+        // computed), so the column never just goes blank.
+        const benchmark = this._kpiBenchmarkLabel(r.actual_value, selected.exceptional_value, selected.unacceptable_value, selected.direction);
+        const benchmarkBadge = {
+            Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
+            Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
+            Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
+        }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         const isOverridden = r.final_kpi != null && r.factor_score != null && Math.abs(r.final_kpi - r.factor_score) > 1e-9;
         return `
             <tr>
@@ -695,7 +702,7 @@ app._renderKpiResultsSection = function() {
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.target_value != null ? esc(String(r.target_value)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${statusBadge[1]};color:${statusBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${statusBadge[0]}</span></td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${r.factor_score != null ? esc(Number(r.factor_score).toFixed(2)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">
                     <input type="number" step="any" value="${r.final_kpi != null ? r.final_kpi : ''}"
