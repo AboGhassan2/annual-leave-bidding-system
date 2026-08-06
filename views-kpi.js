@@ -697,9 +697,17 @@ app._renderKpiResultsSection = function() {
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         const isOverridden = r.final_kpi != null && r.factor_score != null && Math.abs(r.final_kpi - r.factor_score) > 1e-9;
         const shares = this._kpiPartnerShares(selected, r.final_kpi != null ? Number(r.final_kpi) : null);
+        // KPI Month / Fee Month (M1-M121 / M2-M122) — only meaningful for
+        // monthly results, since the mapping is per calendar month; a
+        // quarterly/yearly result has no single month to look up.
+        const feePeriod = r.period_type === 'monthly' && r.period_value
+            ? this._kpiFeePeriodForCalendarDate(r.year, parseInt(r.period_value, 10))
+            : null;
         return `
             <tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${feePeriod ? esc(feePeriod.kpi_fiscal_month) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${feePeriod ? esc(feePeriod.fee_fiscal_month) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.target_value != null ? esc(String(r.target_value)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
@@ -776,6 +784,8 @@ app._renderKpiResultsSection = function() {
                     <thead>
                         <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
                             <th style="padding:8px 12px;">Period</th>
+                            <th style="padding:8px 12px;">KPI Month</th>
+                            <th style="padding:8px 12px;">Fee Month</th>
                             <th style="padding:8px 12px;">KPI Result</th>
                             <th style="padding:8px 12px;">Target</th>
                             <th style="padding:8px 12px;">Achievement</th>
