@@ -279,6 +279,27 @@ app._kpiFinalWeight = function(kpiDef) {
     return parts.reduce((a, b) => a * b, 1);
 };
 
+// Static per-KPI Allocation HIT%/FS%/ALS% breakdown — per explicit
+// correction: "Allocation %" in the source Partner Allocation sheet IS
+// the same thing as Final Weight in this app (Area % x Level 1 % x
+// Level 2 % x Level 3 %), so this is derived LIVE from Final Weight
+// rather than trusting the separately-imported allocation_pct/
+// allocation_hit_pct/etc. columns, which could drift out of sync if the
+// Weight Hierarchy is ever edited after the Partner Allocation import
+// ran. This is a STATIC, design-time weighting — how much of the whole
+// company scorecard each partner is responsible for via this KPI —
+// deliberately separate from _kpiPartnerShares below, which splits a
+// SPECIFIC period's actual Final KPI/Factor score instead.
+app._kpiAllocationSharesFromFinalWeight = function(kpiDef) {
+    const finalWeight = this._kpiFinalWeight(kpiDef);
+    if (finalWeight == null || !kpiDef) return { hit: null, fs: null, als: null };
+    return {
+        hit: kpiDef.hit_pct != null ? finalWeight * kpiDef.hit_pct : null,
+        fs: kpiDef.fs_pct != null ? finalWeight * kpiDef.fs_pct : null,
+        als: kpiDef.als_pct != null ? finalWeight * kpiDef.als_pct : null,
+    };
+};
+
 app.deleteKpiDefinition = async function(id) {
     if (!this.supabase) return false;
     try {
