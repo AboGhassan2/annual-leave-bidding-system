@@ -25,13 +25,15 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_results').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_users').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_owners').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_fee_periods').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_fee_schedule').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -39,6 +41,8 @@ app.loadKpiData = async function() {
         if (results.error) throw results.error;
         if (users.error) throw users.error;
         if (owners.error) throw owners.error;
+        if (feePeriods.error) throw feePeriods.error;
+        if (lineFeeSchedule.error) throw lineFeeSchedule.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -46,6 +50,8 @@ app.loadKpiData = async function() {
         this.state.kpiResults = results.data || [];
         this.state.kpiUsers = users.data || [];
         this.state.kpiOwners = owners.data || [];
+        this.state.kpiFeePeriods = feePeriods.data || [];
+        this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
     } catch (e) {
@@ -216,6 +222,21 @@ app.saveKpiDefinition = async function(def, existingId) {
             level2: def.level2 !== undefined ? def.level2 : undefined,
             level2_pct: def.level2Pct !== undefined ? def.level2Pct : undefined,
             level3_pct: def.level3Pct !== undefined ? def.level3Pct : undefined,
+            // Partner Allocation (HIT/FS/ALS) — same "undefined = don't
+            // touch" contract, a separate layer again from everything
+            // above. allocation_pct is this KPI's overall weight (same
+            // role as the Level 3 % / Final Weight chain elsewhere);
+            // hit_pct/fs_pct/als_pct are the 3-way split of THIS KPI's
+            // own result across the three named partners; the
+            // allocation_*_pct trio are the pre-multiplied
+            // (allocation_pct x partner_pct) company-wide weights.
+            allocation_pct: def.allocationPct !== undefined ? def.allocationPct : undefined,
+            hit_pct: def.hitPct !== undefined ? def.hitPct : undefined,
+            fs_pct: def.fsPct !== undefined ? def.fsPct : undefined,
+            als_pct: def.alsPct !== undefined ? def.alsPct : undefined,
+            allocation_hit_pct: def.allocationHitPct !== undefined ? def.allocationHitPct : undefined,
+            allocation_fs_pct: def.allocationFsPct !== undefined ? def.allocationFsPct : undefined,
+            allocation_als_pct: def.allocationAlsPct !== undefined ? def.allocationAlsPct : undefined,
         };
         // Strip undefined keys (Supabase's client sends them as literal
         // JSON nulls otherwise, which WOULD wipe the column) — this is
@@ -2042,6 +2063,242 @@ app.importKpiWeightData = async function(validRows, company) {
 
     this.showToast(`Weight import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
     return summary;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Financial calendar & Partner Allocation — per Master_File.xlsx.
+// Three pieces, all sharing the goal of computing each partner's
+// (HIT/FS/ALS) allocated share of a KPI's actual score:
+//
+//   1. Partner Allocation — HIT%/FS%/ALS% split on each KPI, attached
+//      directly to kpi_definitions (same match-by-code pattern as the
+//      Weight import above).
+//   2. kpi_fee_periods — reference table mapping each KPI Month to its
+//      Fixed Fee Month (always 1 month ahead).
+//   3. kpi_line_fee_schedule — reference table of each line's lag and
+//      Active/Pre-project status per KPI Month.
+//
+// (2) and (3) are pure reference/lookup data with no per-row editing —
+// re-importing wholesale-replaces the tenant's copy rather than
+// matching/merging row by row, since there's nothing to preserve
+// (nobody hand-edits a fiscal calendar).
+// ════════════════════════════════════════════════════════════════════
+
+app._kpiParsePercentGeneric = function(value) {
+    if (value == null || value === '') return null;
+    const n = Number(String(value).replace('%', '').trim());
+    if (!Number.isFinite(n)) return null;
+    return n / 100;
+};
+
+// Excel exports these as "26-Nov-2023"-style strings (via raw:false) —
+// parsed explicitly rather than trusting new Date(string), whose
+// handling of non-ISO formats varies by JS engine.
+app._kpiParseDateCell = function(value) {
+    if (!value || typeof value !== 'string') return null;
+    const months = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+    const m = value.trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
+    if (!m) return null;
+    const mon = months[m[2].toLowerCase()];
+    if (!mon) return null;
+    return `${m[3]}-${mon}-${m[1].padStart(2, '0')}`;
+};
+
+// Partner Allocation sheet — every row is fully populated (Line, Code,
+// KPI Code all present on every row, unlike the sparse Level Weight
+// sheet), so no fill-down needed. HIT%/FS%/ALS% can individually be
+// blank when a KPI only involves 2 of the 3 partners (e.g. "Station
+// environment" splits only HIT/FS, ALS blank) — left as null, not 0, so
+// _kpiPartnerShares can tell "no share" apart from "explicitly 0%".
+app._kpiParsePartnerAllocationRows = function(rawRows) {
+    const validRows = [], invalidRows = [];
+    (rawRows || []).forEach((rawRow, index) => {
+        const errors = [];
+        const lineName = this._kpiMapLineNumberToLineName(rawRow['Line']);
+        if (lineName == null) errors.push(`Invalid Line value: "${rawRow['Line']}"`);
+        const kpiCode = rawRow['KPI Code'] != null ? String(rawRow['KPI Code']).trim() : '';
+        if (!kpiCode) errors.push('Missing KPI Code');
+
+        const data = {
+            line: lineName, kpiCode,
+            kpiName: rawRow['KPI Name'] != null ? String(rawRow['KPI Name']).trim() : '',
+            allocationPct: this._kpiParsePercentGeneric(rawRow['Allocation %']),
+            hitPct: this._kpiParsePercentGeneric(rawRow['HIT%']),
+            fsPct: this._kpiParsePercentGeneric(rawRow['FS%']),
+            alsPct: this._kpiParsePercentGeneric(rawRow['ALS%']),
+            allocationHitPct: this._kpiParsePercentGeneric(rawRow['Allocation HIT%']),
+            allocationFsPct: this._kpiParsePercentGeneric(rawRow['Allocation FS%']),
+            allocationAlsPct: this._kpiParsePercentGeneric(rawRow['Allocation ALS%']),
+        };
+        if (errors.length === 0) validRows.push(data);
+        else invalidRows.push({ rowNumber: index + 2, errors, raw: rawRow });
+    });
+    return { validRows, invalidRows };
+};
+
+// Matched by (kpi_code, line) — same never-create contract as the
+// threshold/weight importers.
+app.importKpiPartnerAllocation = async function(validRows, company) {
+    if (!this.supabase) return { updated: 0, notFound: 0, failed: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of validRows) {
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.kpiCode, row.line, targetCompany);
+        if (!existing) {
+            summary.notFound++;
+            summary.errors.push(`${row.kpiCode} (${row.line}): no matching KPI found — run the owner import first`);
+            continue;
+        }
+        try {
+            const saved = await this.saveKpiDefinition({
+                directorateId: existing.directorate_id, departmentId: existing.department_id,
+                name: existing.name, category: existing.category, kpiCode: existing.kpi_code,
+                periodType: existing.period_type, unit: existing.unit, direction: existing.direction,
+                targetValue: existing.target_value, exceptionalValue: existing.exceptional_value, unacceptableValue: existing.unacceptable_value,
+                allocationPct: row.allocationPct, hitPct: row.hitPct, fsPct: row.fsPct, alsPct: row.alsPct,
+                allocationHitPct: row.allocationHitPct, allocationFsPct: row.allocationFsPct, allocationAlsPct: row.allocationAlsPct,
+            }, existing.id);
+            if (!saved) { summary.failed++; summary.errors.push(`${row.kpiCode} (id ${existing.id}): failed to save`); continue; }
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${row.kpiCode} (id ${existing.id}): ${e.message}`);
+        }
+    }
+    this.showToast(`Partner Allocation import complete: ${summary.updated} updated, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
+// Given a partner-split KPI and a score (typically its Final KPI, the
+// "official" figure — Factor Score works the same way since both are on
+// the same 0-2 scale), splits it across HIT/FS/ALS by their raw
+// percentage share of THIS KPI's own result (hit_pct/fs_pct/als_pct —
+// NOT allocation_hit_pct/etc., which are a different, company-wide-
+// weighted figure — see the comment on saveKpiDefinition's row builder
+// above). A partner with no configured share on this KPI gets null, not
+// 0, so "uninvolved" stays visually distinct from "involved at 0%".
+app._kpiPartnerShares = function(kpiDef, score) {
+    if (!kpiDef || score == null) return { hit: null, fs: null, als: null };
+    return {
+        hit: kpiDef.hit_pct != null ? score * kpiDef.hit_pct : null,
+        fs: kpiDef.fs_pct != null ? score * kpiDef.fs_pct : null,
+        als: kpiDef.als_pct != null ? score * kpiDef.als_pct : null,
+    };
+};
+
+// "Period KPI vs Fees" sheet — a straightforward 1-row-per-KPI-Month
+// reference table, no fill-down or grouping needed.
+app._kpiParseFeePeriodRows = function(rawRows) {
+    return (rawRows || []).map(r => ({
+        kpi_month_no: parseInt(r['KPI Month No'], 10),
+        kpi_fiscal_month: r['KPI Fiscal Month'] || null,
+        kpi_period_start: this._kpiParseDateCell(r['KPI Month Period Start']),
+        kpi_period_end: this._kpiParseDateCell(r['KPI Month Period End']),
+        kpi_year: parseInt(r['KPI Month Year'], 10) || null,
+        kpi_cal_month: parseInt(r['KPI Cal Month'], 10) || null,
+        kpi_month_name: r['KPI Month Name'] || null,
+        kpi_cal_quarter: r['KPI Cal Quarter'] || null,
+        kpi_fiscal_year: parseInt(r['KPI Fiscal Year'], 10) || null,
+        kpi_fiscal_quarter: r['KPI Fiscal Quarter'] || null,
+        fee_month_no: parseInt(r['KPI Fixed Fee No'], 10) || null,
+        fee_fiscal_month: r['KPI Fixed Fee Month'] || null,
+        fee_period_start: this._kpiParseDateCell(r['KPI Fixed Fee Period Start']),
+        fee_period_end: this._kpiParseDateCell(r['KPI Fixed Fee Period End']),
+        fee_year: parseInt(r['KPI Fixed Fee Year'], 10) || null,
+        fee_cal_month: parseInt(r['KPI Fixed Fee Cal Month'], 10) || null,
+        fee_month_name: r['KPI Fixed Fee Name'] || null,
+        fee_cal_quarter: r['KPI Fixed Fee Cal Quarter'] || null,
+        fee_fiscal_year: parseInt(r['KPI Fixed Fee Fiscal Year'], 10) || null,
+        fee_fiscal_quarter: r['KPI Fixed Fee Fiscal Quarter'] || null,
+        fee_diff_months: parseInt(r['KPI Fixed Fee Difference (Months)'], 10) || null,
+    })).filter(r => Number.isFinite(r.kpi_month_no));
+};
+
+// Wholesale replace — this is fiscal-calendar reference data, not
+// something anyone hand-edits row by row, so re-importing simply
+// replaces the tenant's whole set rather than matching/merging.
+app.importKpiFeePeriods = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_fee_periods').delete().eq('tenant_id', tid);
+        if (delError) throw delError;
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase.from('kpi_fee_periods').insert(insertRows).select();
+        if (error) throw error;
+        this.state.kpiFeePeriods = data || [];
+        this.showToast(`Fee period calendar imported: ${data.length} KPI months.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import fee periods:', e.message);
+        this.showToast('Could not import fee periods: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
+};
+
+// "Line FFt" sheet — one row per (report month x fee stream). "KPI
+// Month No"/"Fixed Fee Month No" can be "-" (literal dash) during a
+// line's pre-lag setup period, meaning not yet applicable — kept as
+// null, not parsed as a number.
+app._kpiParseLineFeeScheduleRows = function(rawRows) {
+    const dashOrNull = (v) => (v == null || v === '' || v === '-') ? null : v;
+    return (rawRows || []).map(r => ({
+        report_month_no: parseInt(r['Report Month No'], 10),
+        report_fiscal_month: r['Report Fiscal Month'] || null,
+        cal_year: parseInt(r['Year'], 10) || null,
+        fiscal_year: parseInt(r['Fiscal Year'], 10) || null,
+        fiscal_quarter: r['KPI Fiscal Quarter'] || null,
+        fee_stream: r['Fee Stream'] != null ? String(r['Fee Stream']).trim() : '',
+        lag_months: parseInt(r['Lag (Months)'], 10) || 0,
+        kpi_month_no: dashOrNull(r['KPI Month No']) != null ? parseInt(r['KPI Month No'], 10) : null,
+        kpi_fiscal_month: dashOrNull(r['KPI Fiscal Month']),
+        fixed_fee_month_no: dashOrNull(r['Fixed Fee Month No']) != null ? parseInt(r['Fixed Fee Month No'], 10) : null,
+        fixed_fee_fiscal_month: dashOrNull(r['Fixed Fee Fiscal Month']),
+        status: r['Status'] || null,
+    })).filter(r => Number.isFinite(r.report_month_no) && r.fee_stream);
+};
+
+app.importKpiLineFeeSchedule = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_line_fee_schedule').delete().eq('tenant_id', tid);
+        if (delError) throw delError;
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase.from('kpi_line_fee_schedule').insert(insertRows).select();
+        if (error) throw error;
+        this.state.kpiLineFeeSchedule = data || [];
+        this.showToast(`Line fee schedule imported: ${data.length} rows.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import line fee schedule:', e.message);
+        this.showToast('Could not import line fee schedule: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
+};
+
+// Looks up a KPI Month's fee-period info by CALENDAR year+month (1-12)
+// — simpler and more robust than trying to re-derive which fiscal
+// (26th-to-25th) period a calendar date falls in, since the imported
+// data already carries each KPI Month's anchoring calendar year/month
+// directly (KPI Month Year / KPI Cal Month).
+app._kpiFeePeriodForCalendarDate = function(calYear, calMonth) {
+    return (this.state.kpiFeePeriods || []).find(r => r.kpi_year === calYear && r.kpi_cal_month === calMonth) || null;
+};
+
+// Translates this app's line naming ("L3") to the Line FFt sheet's fee
+// stream naming ("Line 3 FFt").
+app._kpiLineNameToFeeStream = function(lineName) {
+    const m = (lineName || '').match(/^L(\d+)$/i);
+    return m ? `Line ${m[1]} FFt` : null;
+};
+
+// Active/Pre-project status for a given line at a given KPI Month No.
+app._kpiLineFeeStatus = function(lineName, kpiMonthNo) {
+    const feeStream = this._kpiLineNameToFeeStream(lineName);
+    if (!feeStream || kpiMonthNo == null) return null;
+    const row = (this.state.kpiLineFeeSchedule || []).find(r => r.fee_stream === feeStream && r.kpi_month_no === kpiMonthNo);
+    return row ? row.status : null;
 };
 
 // Formats a KPI's display name with its line prefix — e.g. "L3-Staffing
