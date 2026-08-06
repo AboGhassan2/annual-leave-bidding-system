@@ -696,6 +696,7 @@ app._renderKpiResultsSection = function() {
             Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         const isOverridden = r.final_kpi != null && r.factor_score != null && Math.abs(r.final_kpi - r.factor_score) > 1e-9;
+        const shares = this._kpiPartnerShares(selected, r.final_kpi != null ? Number(r.final_kpi) : null);
         return `
             <tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
@@ -710,6 +711,9 @@ app._renderKpiResultsSection = function() {
                         style="width:70px;padding:4px 6px;border:1.5px solid ${isOverridden ? '#7c3aed' : '#e5e7eb'};border-radius:6px;font-size:0.8rem;font-weight:${isOverridden ? '700' : '400'};color:${isOverridden ? '#7c3aed' : '#111827'};" />
                     ${isOverridden ? '<span title="Manually overridden — differs from the auto-calculated Factor Score" style="font-size:0.7rem;color:#7c3aed;">✎</span>' : ''}
                 </td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.hit != null ? esc(shares.hit.toFixed(3)) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.fs != null ? esc(shares.fs.toFixed(3)) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.als != null ? esc(shares.als.toFixed(3)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.75rem;">
                     ${r.approved_at ? `<span style="color:#065f46;">✓ ${esc(r.approved_by || 'Approved')}</span>` : `<button onclick="app.doApproveKpiResult(${r.id})" style="padding:4px 10px;background:#166534;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Approve</button>`}
@@ -739,6 +743,7 @@ app._renderKpiResultsSection = function() {
                 &nbsp;·&nbsp;<span style="color:#1d4ed8;font-weight:600;">Acceptable (Target): ${esc(String(selected.target_value))}</span>
                 &nbsp;·&nbsp;<span style="color:#dc2626;font-weight:600;">Unacceptable: ${selected.unacceptable_value != null ? esc(String(selected.unacceptable_value)) : '—'}</span>
                 ${(selected.exceptional_value == null || selected.unacceptable_value == null) ? '<br/><span style="color:#92400e;">⚠️ Exceptional and/or Unacceptable isn\'t set for this KPI yet — Factor Score can\'t be calculated until both are configured (Edit this KPI in the KPIs tab).</span>' : ''}
+                ${(selected.hit_pct != null || selected.fs_pct != null || selected.als_pct != null) ? `<br/><span style="color:#0891b2;">Partner split: HIT ${selected.hit_pct != null ? Math.round(selected.hit_pct * 100) + '%' : '—'} · FS ${selected.fs_pct != null ? Math.round(selected.fs_pct * 100) + '%' : '—'} · ALS ${selected.als_pct != null ? Math.round(selected.als_pct * 100) + '%' : '—'}</span>` : ''}
             </p>
 
             <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
@@ -777,6 +782,9 @@ app._renderKpiResultsSection = function() {
                             <th style="padding:8px 12px;">Status</th>
                             <th style="padding:8px 12px;">Factor</th>
                             <th style="padding:8px 12px;">Final KPI</th>
+                            <th style="padding:8px 12px;text-align:right;">HIT Share</th>
+                            <th style="padding:8px 12px;text-align:right;">FS Share</th>
+                            <th style="padding:8px 12px;text-align:right;">ALS Share</th>
                             <th style="padding:8px 12px;">Remarks</th>
                             <th style="padding:8px 12px;">Approval</th>
                             <th></th>
@@ -903,6 +911,8 @@ app._renderKpiImportSection = function() {
     const thresholdResult = this.state._kpiThresholdImportResult;
     const weightPreview = this.state._kpiWeightImportPreview;
     const weightResult = this.state._kpiWeightImportResult;
+    const financialPreview = this.state._kpiFinancialImportPreview;
+    const financialResult = this.state._kpiFinancialImportResult;
 
     return `
         <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#1e40af;">
@@ -969,6 +979,30 @@ app._renderKpiImportSection = function() {
 
             ${weightPreview ? this._renderKpiWeightImportPreview(weightPreview) : ''}
             ${weightResult ? this._renderKpiWeightImportResult(weightResult) : ''}
+        </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">4. Import Financial Calendar &amp; Partner Allocation</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Upload the whole master workbook in one go — each piece is detected automatically by its column headers, regardless of what
+                the sheet tabs are named: a <strong>Period KPI vs Fees</strong> sheet (KPI Month No / KPI Fixed Fee No — maps each KPI month to
+                its fee month, always 1 month ahead), a <strong>Line FFt</strong> sheet (Report Month No / Fee Stream / Lag (Months) — each
+                line's Active/Pre-project schedule), and a <strong>Partner Allocation</strong> sheet (KPI Code / Allocation % / HIT% / FS% /
+                ALS% — splits each KPI's result across the three partners, matched by KPI Code + Line against KPIs already created above).
+                The fee-period and line-schedule pieces replace the tenant's whole reference calendar each time (nothing to merge — nobody
+                hand-edits a fiscal calendar); Partner Allocation only updates matching existing KPIs, same as the imports above.
+            </p>
+
+            <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
+                <input type="file" id="kpiFinancialImportFileInput" accept=".xlsx,.xls" style="display:none;" onchange="app._handleKpiFinancialImportFile(event)" />
+                <label for="kpiFinancialImportFileInput" style="cursor:pointer;">
+                    <p style="color:#6b7280;margin-bottom:10px;">Click to browse, or drag a file here</p>
+                    <span style="padding:8px 18px;background:#0891b2;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
+                </label>
+            </div>
+
+            ${financialPreview ? this._renderKpiFinancialImportPreview(financialPreview) : ''}
+            ${financialResult ? this._renderKpiFinancialImportResult(financialResult) : ''}
         </div>
     `;
 };
@@ -1414,6 +1448,143 @@ app._confirmKpiWeightImport = async function() {
     const result = await this.importKpiWeightData(preview.validRows, this.state._kpiSelectedCompany || 'OMC');
     this.state._kpiWeightImportResult = result;
     this.state._kpiWeightImportPreview = null;
+    this.renderKpiPlannerView();
+};
+
+// Reads every sheet in the uploaded workbook and detects which of the 3
+// known formats each one matches by its column headers (not sheet
+// name — the actual master file's tabs aren't named exactly what a
+// user might expect, so name-matching would be fragile).
+app._handleKpiFinancialImportFile = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    this.state._kpiFinancialImportPreview = null;
+    this.state._kpiFinancialImportResult = null;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null;
+            workbook.SheetNames.forEach(name => {
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { raw: false, defval: '' });
+                if (rows.length === 0) return;
+                const headers = Object.keys(rows[0]);
+                if (!partnerAllocation && headers.includes('Allocation %') && headers.includes('HIT%')) {
+                    const nonEmpty = rows.filter(r => r['KPI Code']);
+                    partnerAllocation = this._kpiParsePartnerAllocationRows(nonEmpty);
+                } else if (!feePeriods && headers.includes('KPI Month No') && headers.includes('KPI Fixed Fee No')) {
+                    feePeriods = this._kpiParseFeePeriodRows(rows);
+                } else if (!lineSchedule && headers.includes('Report Month No') && headers.includes('Fee Stream')) {
+                    lineSchedule = this._kpiParseLineFeeScheduleRows(rows);
+                }
+            });
+
+            if (!partnerAllocation && !feePeriods && !lineSchedule) {
+                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, or Line FFt.', 'error');
+                return;
+            }
+
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule };
+            this.renderKpiPlannerView();
+        } catch (err) {
+            console.error('❌ Failed to parse financial import file:', err.message);
+            this.showToast('Could not read this file: ' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+};
+
+app._renderKpiFinancialImportPreview = function(preview) {
+    const esc = this._escHtml.bind(this);
+    const { partnerAllocation, feePeriods, lineSchedule } = preview;
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+
+    const tile = (label, found, count, extra) => `
+        <div style="background:${found ? '#f0fdf4' : '#f9fafb'};border-radius:8px;padding:10px;">
+            <p style="font-size:0.72rem;color:${found ? '#166534' : '#9ca3af'};font-weight:700;">${esc(label)}</p>
+            <p style="font-size:1.2rem;font-weight:800;color:${found ? '#166534' : '#9ca3af'};">${found ? count : 'not found'}</p>
+            ${extra ? `<p style="font-size:0.72rem;color:#6b7280;">${extra}</p>` : ''}
+        </div>
+    `;
+
+    let paNotFound = 0;
+    if (partnerAllocation) {
+        paNotFound = partnerAllocation.validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line, selectedCompany)).length;
+    }
+
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Detected in this file</h4>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+                ${tile('Partner Allocation rows', !!partnerAllocation, partnerAllocation ? partnerAllocation.validRows.length : 0, partnerAllocation && paNotFound > 0 ? `${paNotFound} won't match any existing KPI` : '')}
+                ${tile('Fee period months', !!feePeriods, feePeriods ? feePeriods.length : 0, feePeriods ? 'replaces the whole calendar' : '')}
+                ${tile('Line fee schedule rows', !!lineSchedule, lineSchedule ? lineSchedule.length : 0, lineSchedule ? 'replaces the whole schedule' : '')}
+            </div>
+            ${partnerAllocation && partnerAllocation.invalidRows.length > 0 ? `
+                <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:160px;overflow-y:auto;">
+                    <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Partner Allocation rows that will be skipped:</p>
+                    ${partnerAllocation.invalidRows.map(r => `<p style="font-size:0.75rem;color:#991b1b;">Row ${r.rowNumber}: ${esc(r.errors.join('; '))}</p>`).join('')}
+                </div>
+            ` : ''}
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.state._kpiFinancialImportPreview=null;app.state._kpiFinancialImportResult=null;app.renderKpiPlannerView();"
+                    style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
+                <button onclick="app._confirmKpiFinancialImport()"
+                    style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#0891b2;color:#fff;">
+                    Confirm Import
+                </button>
+            </div>
+        </div>
+    `;
+};
+
+app._renderKpiFinancialImportResult = function(result) {
+    const esc = this._escHtml.bind(this);
+    const lines = [];
+    if (result.partnerAllocation) lines.push(`Partner Allocation: ${result.partnerAllocation.updated} updated, ${result.partnerAllocation.notFound} not found, ${result.partnerAllocation.failed} failed`);
+    if (result.feePeriods) lines.push(`Fee periods: ${result.feePeriods.imported} imported`);
+    if (result.lineSchedule) lines.push(`Line fee schedule: ${result.lineSchedule.imported} imported`);
+    const anyErrors = (result.partnerAllocation && result.partnerAllocation.errors.length > 0);
+    return `
+        <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+            <h4 style="font-weight:700;margin-bottom:10px;">Import Result</h4>
+            ${lines.map(l => `<p style="font-size:0.82rem;color:#374151;margin-bottom:4px;">${esc(l)}</p>`).join('')}
+            ${anyErrors ? `
+                <div style="background:#fffbeb;border-radius:8px;padding:12px;margin-top:10px;max-height:200px;overflow-y:auto;">
+                    ${result.partnerAllocation.errors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${esc(e)}</p>`).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+app._confirmKpiFinancialImport = async function() {
+    const preview = this.state._kpiFinancialImportPreview;
+    if (!preview) return;
+    const parts = [];
+    if (preview.partnerAllocation) parts.push(`${preview.partnerAllocation.validRows.length} Partner Allocation row(s)`);
+    if (preview.feePeriods) parts.push(`${preview.feePeriods.length} fee period month(s) (replaces the existing calendar)`);
+    if (preview.lineSchedule) parts.push(`${preview.lineSchedule.length} line fee schedule row(s) (replaces the existing schedule)`);
+    const ok = confirm(`Import ${parts.join(', ')}?`);
+    if (!ok) return;
+
+    const result = {};
+    if (preview.partnerAllocation) {
+        result.partnerAllocation = await this.importKpiPartnerAllocation(preview.partnerAllocation.validRows, this.state._kpiSelectedCompany || 'OMC');
+    }
+    if (preview.feePeriods) {
+        result.feePeriods = await this.importKpiFeePeriods(preview.feePeriods);
+    }
+    if (preview.lineSchedule) {
+        result.lineSchedule = await this.importKpiLineFeeSchedule(preview.lineSchedule);
+    }
+
+    this.state._kpiFinancialImportResult = result;
+    this.state._kpiFinancialImportPreview = null;
     this.renderKpiPlannerView();
 };
 
