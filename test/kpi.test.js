@@ -2100,6 +2100,33 @@ test('importKpiPartnerAllocation matched by (kpi_code, line), never creates a ne
     assert.equal(saveCalls[0].def.hitPct, 0.25);
 });
 
+test('_kpiAllocationSharesFromFinalWeight matches the real A1 example exactly: Final Weight (=Allocation %) x each partner % = Allocation HIT/FS/ALS %', () => {
+    const app = buildKpiApp();
+    // A1: Area 30% x Level1 50% x Level2 50% x Level3 40% = Final Weight 3.00%, matching Allocation % in the sheet
+    const kpiDef = { area_pct: 0.30, level1_pct: 0.50, level2_pct: 0.50, level3_pct: 0.40, hit_pct: 0.25, fs_pct: 0.25, als_pct: 0.50 };
+    assert.equal(app._kpiFinalWeight(kpiDef), 0.03);
+    const shares = app._kpiAllocationSharesFromFinalWeight(kpiDef);
+    assert.equal(Math.round(shares.hit * 10000) / 10000, 0.0075);
+    assert.equal(Math.round(shares.fs * 10000) / 10000, 0.0075);
+    assert.equal(Math.round(shares.als * 10000) / 10000, 0.015);
+});
+
+test('_kpiAllocationSharesFromFinalWeight returns all-null when Final Weight itself has no value yet (Weight Hierarchy not configured)', () => {
+    const app = buildKpiApp();
+    const shares = app._kpiAllocationSharesFromFinalWeight({ area_pct: null, level1_pct: 0.5, level2_pct: 0.5, level3_pct: 0.4, hit_pct: 0.25, fs_pct: 0.25, als_pct: 0.5 });
+    assert.equal(shares.hit, null);
+    assert.equal(shares.fs, null);
+    assert.equal(shares.als, null);
+});
+
+test('_kpiAllocationSharesFromFinalWeight is a SEPARATE, static figure from _kpiPartnerShares (which splits a period\'s actual score, not the design-time weight)', () => {
+    const app = buildKpiApp();
+    const kpiDef = { area_pct: 0.30, level1_pct: 0.50, level2_pct: 0.50, level3_pct: 0.40, hit_pct: 0.25, fs_pct: 0.25, als_pct: 0.50 };
+    const staticShares = app._kpiAllocationSharesFromFinalWeight(kpiDef);
+    const periodShares = app._kpiPartnerShares(kpiDef, 1.5); // a period's actual Final KPI score
+    assert.notEqual(staticShares.hit, periodShares.hit, 'these answer different questions and must not collapse to the same number');
+});
+
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
     const app = buildKpiApp();
     const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
