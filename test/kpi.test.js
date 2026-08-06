@@ -1926,6 +1926,36 @@ test('overrideKpiFinalScore updates ONLY final_kpi, leaving factor_score/actual_
     assert.equal(saved.actual_value, 0.9, 'actual_value is unchanged');
 });
 
+test('_kpiBenchmarkLabel matches the source spreadsheet\'s Benchmark column exactly for higher_is_better KPIs (A2, A4)', () => {
+    const app = buildKpiApp();
+    // A2: S=1, U=0.58, R=0.9927 -> below Exceptional, above Unacceptable -> Acceptable
+    assert.equal(app._kpiBenchmarkLabel(0.9927, 1, 0.58, 'higher_is_better'), 'Acceptable');
+    // A4: S=0.98, U=0.9, R=0.9996 -> at/beyond Exceptional
+    assert.equal(app._kpiBenchmarkLabel(0.9996, 0.98, 0.9, 'higher_is_better'), 'Exceptional');
+});
+
+test('_kpiBenchmarkLabel matches the source spreadsheet exactly for lower_is_better KPIs (A3, F1)', () => {
+    const app = buildKpiApp();
+    // A3: S=5, U=50, R=16.02 -> between Exceptional and Unacceptable -> Acceptable
+    assert.equal(app._kpiBenchmarkLabel(16.02, 5, 50, 'lower_is_better'), 'Acceptable');
+    // F1: S=1.8, U=6.2, R=0.09 -> at/beyond Exceptional (lower is better, so <= S)
+    assert.equal(app._kpiBenchmarkLabel(0.09, 1.8, 6.2, 'lower_is_better'), 'Exceptional');
+});
+
+test('_kpiBenchmarkLabel: Unacceptable at and beyond the threshold, both directions', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiBenchmarkLabel(90, 100, 90, 'higher_is_better'), 'Unacceptable', 'exactly at U counts as Unacceptable');
+    assert.equal(app._kpiBenchmarkLabel(25, 100, 90, 'higher_is_better'), 'Unacceptable', 'well below U');
+    assert.equal(app._kpiBenchmarkLabel(50, 5, 50, 'lower_is_better'), 'Unacceptable', 'exactly at U counts as Unacceptable (lower_is_better)');
+});
+
+test('_kpiBenchmarkLabel returns null when Exceptional or Unacceptable is missing, never guesses', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiBenchmarkLabel(90, null, 85, 'higher_is_better'), null);
+    assert.equal(app._kpiBenchmarkLabel(90, 100, null, 'higher_is_better'), null);
+    assert.equal(app._kpiBenchmarkLabel(null, 100, 85, 'higher_is_better'), null);
+});
+
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
     const app = buildKpiApp();
     const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
