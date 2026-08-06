@@ -438,6 +438,33 @@ app._kpiFactorScore = function(actual, exceptional, acceptable, unacceptable, di
 };
 
 
+// Benchmark label — Exceptional/Acceptable/Unacceptable, per the exact
+// formula in Levels_Formula.xlsx's "Benchmark" column (V):
+//   =IF(R>=S,"Exceptional",IF(AND(R<S,R>U),"Acceptable",IF(R<=U,"Unacceptable")))
+// Note this only compares against Exceptional (S) and Unacceptable (U)
+// — Acceptable/target isn't referenced at all, matching the source file
+// exactly. This is a separate, finer-grained 3-tier categorization from
+// the existing on_target/below_target status (which stays as-is
+// everywhere else in the app) — used only where this specific
+// Exceptional/Acceptable/Unacceptable labeling was explicitly requested.
+// Direction-aware, mirroring the same two formula shapes as
+// _kpiFactorScore. Returns null when Exceptional or Unacceptable isn't
+// configured for this KPI.
+app._kpiBenchmarkLabel = function(actual, exceptional, unacceptable, direction) {
+    if (actual == null || exceptional == null || unacceptable == null) return null;
+    const R = Number(actual), S = Number(exceptional), U = Number(unacceptable);
+    if (!Number.isFinite(R) || !Number.isFinite(S) || !Number.isFinite(U)) return null;
+    if (direction === 'lower_is_better') {
+        if (R <= S) return 'Exceptional';
+        if (R > S && R < U) return 'Acceptable';
+        return 'Unacceptable'; // R >= U
+    }
+    if (R >= S) return 'Exceptional';
+    if (R < S && R > U) return 'Acceptable';
+    return 'Unacceptable'; // R <= U
+};
+
+
 app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source }) {
     if (!this.supabase) return null;
     try {
