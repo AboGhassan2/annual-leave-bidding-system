@@ -688,6 +688,7 @@ app._renderKpiResultsSection = function() {
         // rows saved before this snapshotting existed.
         const status = r.status || this.kpiStatus(r.actual_value, r.target_value ?? selected.target_value, selected.direction);
         const statusBadge = { on_target: ['On Target', '#d1fae5', '#065f46'], below_target: ['Below Target', '#fee2e2', '#991b1b'], no_data: ['—', '#f3f4f6', '#6b7280'] }[status];
+        const isOverridden = r.final_kpi != null && r.factor_score != null && Math.abs(r.final_kpi - r.factor_score) > 1e-9;
         return `
             <tr>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
@@ -695,6 +696,13 @@ app._renderKpiResultsSection = function() {
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.target_value != null ? esc(String(r.target_value)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${statusBadge[1]};color:${statusBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${statusBadge[0]}</span></td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${r.factor_score != null ? esc(Number(r.factor_score).toFixed(2)) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">
+                    <input type="number" step="any" value="${r.final_kpi != null ? r.final_kpi : ''}"
+                        onchange="app.overrideKpiFinalScore(${r.id}, this.value === '' ? null : parseFloat(this.value))"
+                        style="width:70px;padding:4px 6px;border:1.5px solid ${isOverridden ? '#7c3aed' : '#e5e7eb'};border-radius:6px;font-size:0.8rem;font-weight:${isOverridden ? '700' : '400'};color:${isOverridden ? '#7c3aed' : '#111827'};" />
+                    ${isOverridden ? '<span title="Manually overridden — differs from the auto-calculated Factor Score" style="font-size:0.7rem;color:#7c3aed;">✎</span>' : ''}
+                </td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.75rem;">
                     ${r.approved_at ? `<span style="color:#065f46;">✓ ${esc(r.approved_by || 'Approved')}</span>` : `<button onclick="app.doApproveKpiResult(${r.id})" style="padding:4px 10px;background:#166534;color:#fff;border:none;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;">Approve</button>`}
@@ -754,6 +762,8 @@ app._renderKpiResultsSection = function() {
                             <th style="padding:8px 12px;">Target</th>
                             <th style="padding:8px 12px;">Achievement</th>
                             <th style="padding:8px 12px;">Status</th>
+                            <th style="padding:8px 12px;">Factor</th>
+                            <th style="padding:8px 12px;">Final KPI</th>
                             <th style="padding:8px 12px;">Remarks</th>
                             <th style="padding:8px 12px;">Approval</th>
                             <th></th>
