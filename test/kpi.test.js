@@ -1831,6 +1831,101 @@ test('importKpiWeightData reports notFound for a KPI code with no match, rather 
     assert.equal(result.updated, 0);
 });
 
+// ════════════════════════════════════════════════════════════════════
+// Factor Score / Final KPI — the piecewise 0-2 scoring formula from
+// Levels_Formula.xlsx, plus the "auto-calculated but user-overridable"
+// Final KPI requirement. Test values below are taken directly from real
+// rows in the source spreadsheet to confirm the JS matches Excel exactly.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiFactorScore matches the source spreadsheet exactly for higher_is_better KPIs (A2, D2)', () => {
+    const app = buildKpiApp();
+    // A2: Complaints resolution — S=1, T=0.83, U=0.58, R=0.9927 -> ~1.9571
+    assert.equal(Math.round(app._kpiFactorScore(0.9927, 1, 0.83, 0.58, 'higher_is_better') * 10000) / 10000, 1.9571);
+    // D2: Transit System Preventive Maintenance — S=1, T=0.95, U=0.85, R=0.9943 -> ~1.886
+    assert.equal(Math.round(app._kpiFactorScore(0.9943, 1, 0.95, 0.85, 'higher_is_better') * 1000) / 1000, 1.886);
+});
+
+test('_kpiFactorScore matches the source spreadsheet exactly for lower_is_better KPIs (A3, F1)', () => {
+    const app = buildKpiApp();
+    // A3: Complaints per boarding — S=5, T=20, U=50, R=16.02 -> ~1.2653
+    assert.equal(Math.round(app._kpiFactorScore(16.02, 5, 20, 50, 'lower_is_better') * 10000) / 10000, 1.2653);
+    // F1: Injury Frequency Rate — S=1.8, T=3.8, U=6.2, R=0.09 (way below Exceptional) -> capped at 2
+    assert.equal(app._kpiFactorScore(0.09, 1.8, 3.8, 6.2, 'lower_is_better'), 2);
+});
+
+test('_kpiFactorScore hits all five bands: at/beyond Unacceptable=0, linear 0-1, exactly Acceptable=1, linear 1-2, at/beyond Exceptional=2', () => {
+    const app = buildKpiApp();
+    // higher_is_better: S=0.95, T=0.85 (Acceptable/target), U=0.75
+    assert.equal(app._kpiFactorScore(0.75, 0.95, 0.85, 0.75, 'higher_is_better'), 0, 'at Unacceptable');
+    assert.equal(app._kpiFactorScore(0.70, 0.95, 0.85, 0.75, 'higher_is_better'), 0, 'below Unacceptable');
+    assert.equal(Math.round(app._kpiFactorScore(0.80, 0.95, 0.85, 0.75, 'higher_is_better') * 1000) / 1000, 0.5, 'halfway between Unacceptable and Acceptable');
+    assert.equal(app._kpiFactorScore(0.85, 0.95, 0.85, 0.75, 'higher_is_better'), 1, 'exactly Acceptable');
+    assert.equal(Math.round(app._kpiFactorScore(0.90, 0.95, 0.85, 0.75, 'higher_is_better') * 1000) / 1000, 1.5, 'halfway between Acceptable and Exceptional');
+    assert.equal(app._kpiFactorScore(0.95, 0.95, 0.85, 0.75, 'higher_is_better'), 2, 'at Exceptional');
+    assert.equal(app._kpiFactorScore(1.00, 0.95, 0.85, 0.75, 'higher_is_better'), 2, 'beyond Exceptional, capped at 2');
+});
+
+test('_kpiFactorScore returns null when any threshold or the result is missing, rather than throwing or guessing', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiFactorScore(null, 1, 0.95, 0.85, 'higher_is_better'), null);
+    assert.equal(app._kpiFactorScore(0.9, null, 0.95, 0.85, 'higher_is_better'), null);
+    assert.equal(app._kpiFactorScore(0.9, 1, null, 0.85, 'higher_is_better'), null);
+    assert.equal(app._kpiFactorScore(0.9, 1, 0.95, null, 'higher_is_better'), null);
+});
+
+test('_kpiFactorScore returns null for degenerate thresholds (Acceptable equal to Exceptional or Unacceptable) instead of dividing by zero', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiFactorScore(0.9, 0.95, 0.95, 0.85, 'higher_is_better'), null, 'Acceptable == Exceptional');
+    assert.equal(app._kpiFactorScore(0.9, 0.95, 0.85, 0.85, 'higher_is_better'), null, 'Acceptable == Unacceptable');
+});
+
+test('saveKpiResult: Final KPI auto-follows a freshly computed Factor Score when there is no prior override', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null, target_value: 0.85, exceptional_value: 0.95, unacceptable_value: 0.75, direction: 'higher_is_better', name: 'K' }],
+        kpiResults: [],
+    });
+    app.supabase = { from: () => ({ upsert: () => ({ select: async () => ({ data: [{ id: 1, kpi_definition_id: 1, period_label: '2027-01', factor_score: 1, final_kpi: 1 }], error: null }) }) }) };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const saved = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 0.85, remarks: '' });
+    assert.equal(saved.factor_score, 1);
+    assert.equal(saved.final_kpi, 1, 'no prior override exists, so Final KPI follows the computed Factor Score');
+});
+
+test('saveKpiResult: re-saving a result PRESERVES a manually overridden Final KPI instead of resetting it', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: null, target_value: 0.85, exceptional_value: 0.95, unacceptable_value: 0.75, direction: 'higher_is_better', name: 'K' }],
+        // Existing result whose Final KPI (1.9) was manually overridden away from its last Factor Score (1.0)
+        kpiResults: [{ id: 1, kpi_definition_id: 1, period_label: '2027-01', factor_score: 1, final_kpi: 1.9 }],
+    });
+    let upsertedRow = null;
+    app.supabase = { from: () => ({ upsert: (row) => { upsertedRow = row; return { select: async () => ({ data: [{ id: 1, ...row }], error: null }) }; } }) };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    // Planner corrects the actual value slightly — Factor Score recomputes, but the override must survive.
+    const saved = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 0.86, remarks: '' });
+    assert.notEqual(upsertedRow.factor_score, 1.9, 'factor_score itself is freshly recomputed, not frozen');
+    assert.equal(saved.final_kpi, 1.9, 'the manual override survives a re-save of the underlying result');
+});
+
+test('overrideKpiFinalScore updates ONLY final_kpi, leaving factor_score/actual_value/achievement untouched', async () => {
+    const app = buildKpiApp({
+        kpiResults: [{ id: 1, kpi_definition_id: 1, period_label: '2027-01', actual_value: 0.9, factor_score: 1.5, final_kpi: 1.5, achievement: 105.88 }],
+    });
+    let updatePayload = null;
+    app.supabase = { from: () => ({ update: (payload) => { updatePayload = payload; return { eq: () => ({ select: async () => ({ data: [{ id: 1, kpi_definition_id: 1, period_label: '2027-01', actual_value: 0.9, factor_score: 1.5, final_kpi: 1.9, achievement: 105.88 }], error: null }) }) }; } }) };
+    app.showToast = () => {};
+
+    const saved = await app.overrideKpiFinalScore(1, 1.9);
+    assert.deepEqual(Object.keys(updatePayload), ['final_kpi'], 'only final_kpi is sent to the database');
+    assert.equal(saved.final_kpi, 1.9);
+    assert.equal(saved.factor_score, 1.5, 'factor_score is unchanged');
+    assert.equal(saved.actual_value, 0.9, 'actual_value is unchanged');
+});
+
 test('_kpiDeterminePrimaryOwnerDept returns the dept with the highest ownership %', () => {
     const app = buildKpiApp();
     const owners = [{ dept: 'Operations', pct: 0.9 }, { dept: 'Finance', pct: 0.1 }];
