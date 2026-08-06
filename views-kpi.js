@@ -313,6 +313,8 @@ app._renderKpiDefinitionsSection = function() {
         const isSharedView = viewWeight < 1 && viewWeight > 0;
         const homeDir = directorates.find(d => d.id === k.directorate_id);
         const finalWeight = this._kpiFinalWeight(k);
+        const allocShares = this._kpiAllocationSharesFromFinalWeight(k);
+        const hasAllocShares = allocShares.hit != null || allocShares.fs != null || allocShares.als != null;
         const periodLabel = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type;
         return `
             <tr style="border-top:1px solid #f3f4f6;">
@@ -324,7 +326,10 @@ app._renderKpiDefinitionsSection = function() {
                 <td style="padding:10px 12px;">${k.area ? esc(k.area) : '<span style="color:#d1d5db;">—</span>'}</td>
                 <td style="padding:10px 12px;font-weight:700;">${line ? esc(line.department_name) : '—'}</td>
                 <td style="padding:10px 12px;">${esc(periodLabel)}</td>
-                <td style="padding:10px 12px;text-align:right;font-weight:700;color:${finalWeight != null ? '#059669' : '#d1d5db'};">${finalWeight != null ? (finalWeight * 100).toFixed(1) + '%' : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;">
+                    <span style="font-weight:700;color:${finalWeight != null ? '#059669' : '#d1d5db'};">${finalWeight != null ? (finalWeight * 100).toFixed(1) + '%' : '—'}</span>
+                    ${hasAllocShares ? `<br/><span style="font-size:0.68rem;color:#0891b2;white-space:nowrap;">HIT ${allocShares.hit != null ? (allocShares.hit * 100).toFixed(2) + '%' : '—'} · FS ${allocShares.fs != null ? (allocShares.fs * 100).toFixed(2) + '%' : '—'} · ALS ${allocShares.als != null ? (allocShares.als * 100).toFixed(2) + '%' : '—'}</span>` : ''}
+                </td>
                 <td style="padding:10px 12px;">${displayOwner ? esc(displayOwner.owner_name || displayOwner.owner_dept) + (displayOwner.owner_percentage != null ? ` <span style="color:#9ca3af;font-size:0.72rem;">(${Math.round(displayOwner.owner_percentage * 100)}%)</span>` : '') + (otherOwnerCount > 0 ? ` <span style="color:#9ca3af;font-size:0.72rem;">+${otherOwnerCount}</span>` : '') : '<span style="color:#d1d5db;">—</span>'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${k.exceptional_value != null ? '#059669' : '#d1d5db'};">${k.exceptional_value != null ? esc(String(k.exceptional_value)) : '—'}</td>
                 <td style="padding:10px 12px;text-align:right;color:${k.target_value != null ? '#1d4ed8' : '#d1d5db'};font-weight:600;">${k.target_value != null ? esc(String(k.target_value)) : '—'}</td>
