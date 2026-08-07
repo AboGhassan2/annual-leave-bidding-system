@@ -1083,3 +1083,12 @@
         #fpOverlay * { box-sizing: border-box; }
         #fpOverlay input, #fpOverlay select { color: #111827 !important; -webkit-text-fill-color: #111827 !important; }
         #fpOverlay input::placeholder { color: #9ca3af !important; }
+
+        /* ── KPI Planner/Director sidebar navigation superseded these ──
+           #kpiPlannerNav/#kpiDirectorNav were a single floating button
+           ("📊 KPI Admin"/"📈 My KPIs") that just re-rendered the same
+           view you were already on — now redundant since both screens
+           have their own full sidebar. !important overrides the
+           classList.remove('hidden') toggle in views-auth.js on login,
+           without needing to touch that show/hide logic itself. */
+        #kpiPlannerNav, #kpiDirectorNav { display: none !important; }
