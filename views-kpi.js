@@ -41,7 +41,7 @@ app.kpiPeriodOptions = function(periodType, year) {
 
 app.renderKpiPlannerView = function() {
     const content = document.getElementById('contentArea');
-    const tab = this.state._kpiAdminTab || 'directorates';
+    const tab = this.state._kpiAdminTab || 'overview';
     const esc = this._escHtml.bind(this);
 
     // One-time backfill: every directorate should always have all 4
@@ -90,7 +90,8 @@ app.renderKpiPlannerView = function() {
     };
 
     let sectionHtml = '';
-    if (tab === 'directorates') sectionHtml = this._renderKpiDirectoratesSection();
+    if (tab === 'overview') sectionHtml = this._renderKpiOverviewSection();
+    else if (tab === 'directorates') sectionHtml = this._renderKpiDirectoratesSection();
     else if (tab === 'kpis') sectionHtml = this._renderKpiDefinitionsSection();
     else if (tab === 'results') sectionHtml = this._renderKpiResultsSection();
     else if (tab === 'preview') sectionHtml = this._renderKpiPreviewSection();
@@ -114,6 +115,7 @@ app.renderKpiPlannerView = function() {
                 <nav style="position:relative;padding:4px 0;">
                     <div style="position:absolute;left:23px;top:14px;bottom:14px;width:3px;background:rgba(255,255,255,0.12);border-radius:2px;"></div>
                     ${navItem('directorates', '🏛️', 'Directorates')}
+                    ${navItem('overview', '🏠', 'Overview')}
                     ${navItem('kpis', '📈', 'KPIs')}
                     ${navItem('results', '✏️', 'Enter Results')}
                     ${navItem('preview', '👁️', 'Preview Dashboard')}
@@ -139,6 +141,145 @@ app.renderKpiPlannerView = function() {
 // ════════════════════════════════════════════════════════════════════
 // Section 1: Directorates
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// Overview — landing page for the KPI Planner, per the redesign concept.
+// Real computed figures (not mockup placeholders): KPI/directorate
+// counts, average Final KPI across entered results, a benchmark
+// (Exceptional/Acceptable/Unacceptable) breakdown bar, monthly KPIs
+// still awaiting this month's entry, a preview of the first 3
+// directorates, and a quick-actions grid linking to every other tab.
+// ════════════════════════════════════════════════════════════════════
+app._renderKpiOverviewSection = function() {
+    const esc = this._escHtml.bind(this);
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
+    const dirIds = new Set(directorates.map(d => d.id));
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && dirIds.has(this._kpiEffectiveDirectorateId(k)));
+    const results = (this.state.kpiResults || []).filter(r => definitions.some(k => k.id === r.kpi_definition_id));
+
+    const totalKpis = definitions.length;
+    const totalDirectorates = directorates.length;
+
+    const finalKpiValues = results.map(r => r.final_kpi).filter(v => v != null).map(Number);
+    const avgFinalKpi = finalKpiValues.length > 0 ? finalKpiValues.reduce((a, b) => a + b, 0) / finalKpiValues.length : null;
+
+    // Benchmark breakdown across each KPI's most recent result, for the stacked bar.
+    let excCount = 0, accCount = 0, unaccCount = 0;
+    definitions.forEach(k => {
+        const kResults = results.filter(r => r.kpi_definition_id === k.id).sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
+        if (kResults.length === 0) return;
+        const label = this._kpiBenchmarkLabel(kResults[0].actual_value, k.exceptional_value, k.unacceptable_value, k.direction);
+        if (label === 'Exceptional') excCount++;
+        else if (label === 'Acceptable') accCount++;
+        else if (label === 'Unacceptable') unaccCount++;
+    });
+    const gradedTotal = excCount + accCount + unaccCount;
+    const excPct = gradedTotal ? (excCount / gradedTotal * 100) : 0;
+    const accPct = gradedTotal ? (accCount / gradedTotal * 100) : 0;
+    const unaccPct = gradedTotal ? (unaccCount / gradedTotal * 100) : 0;
+
+    // Monthly KPIs with no result entered for the current calendar month yet.
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const awaitingCount = definitions.filter(k => k.period_type === 'monthly').filter(k =>
+        !results.some(r => r.kpi_definition_id === k.id && r.year === curYear && r.period_value === curMonth)
+    ).length;
+
+    const lineColors = { L3: '#7C3AED', L4: '#0891B2', L5: '#2D6A4F', L6: '#DC2626' };
+    const dirPreview = directorates.slice(0, 3).map(d => {
+        const dKpis = definitions.filter(k => this._kpiEffectiveDirectorateId(k) === d.id);
+        const dWeight = dKpis.reduce((sum, k) => sum + (this._kpiFinalWeight(k) || 0), 0);
+        const dLines = [...new Set(dKpis.map(k => {
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            return line ? line.department_name : null;
+        }).filter(Boolean))].sort();
+        return `
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:#1B4332;">${esc(d.name)}</p>
+                <p style="font-size:0.76rem;color:#6b7280;margin:4px 0 12px 0;">${dKpis.length} KPI${dKpis.length !== 1 ? 's' : ''}</p>
+                <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+                    ${dLines.length > 0 ? dLines.map(l => `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;font-weight:600;color:#fff;padding:3px 8px;border-radius:5px;background:${lineColors[l] || '#6b7280'};">${esc(l)}</span>`).join('') : '<span style="font-size:0.75rem;color:#9ca3af;">No lines yet</span>'}
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:0.78rem;">
+                    <span style="color:#6b7280;">${dKpis.length} KPI${dKpis.length !== 1 ? 's' : ''}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#1B4332;">${(dWeight * 100).toFixed(1)}% weight</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const quickAction = (tabKey, icon, title, desc) => `
+        <div onclick="app.state._kpiAdminTab='${tabKey}';app.renderKpiPlannerView();"
+            style="background:#1B4332;color:#fff;border-radius:12px;padding:18px 16px;cursor:pointer;display:flex;flex-direction:column;gap:10px;">
+            <div style="font-size:1.4rem;">${icon}</div>
+            <div>
+                <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.95rem;">${esc(title)}</div>
+                <div style="font-size:0.7rem;color:rgba(255,255,255,0.55);margin-top:2px;">${esc(desc)}</div>
+            </div>
+        </div>
+    `;
+
+    return `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+            <div>
+                <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;">Overview</h1>
+                <p style="font-size:0.8rem;color:#6b7280;margin-top:2px;">${esc(selectedCompany)} · Company-wide, all directorates · ${curYear}</p>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button onclick="app.state._kpiAdminTab='import';app.renderKpiPlannerView();" style="padding:9px 18px;background:#fff;border:1.5px solid #e5e7eb;color:#1B4332;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.85rem;letter-spacing:0.04em;">📥 Import</button>
+                <button onclick="app.state._kpiAdminTab='kpis';app.renderKpiPlannerView();" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.85rem;letter-spacing:0.04em;">+ Add KPI</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Total KPIs</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#14251C;margin-top:2px;">${totalKpis}</p>
+                ${gradedTotal > 0 ? `
+                    <div style="display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:12px;">
+                        <span style="width:${excPct}%;background:#2D6A4F;"></span>
+                        <span style="width:${accPct}%;background:#1D4ED8;"></span>
+                        <span style="width:${unaccPct}%;background:#DC2626;"></span>
+                    </div>
+                ` : ''}
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Directorates</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#14251C;margin-top:2px;">${totalDirectorates}</p>
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Avg Final KPI</p>
+                <p style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:2rem;color:#14251C;margin-top:2px;">${avgFinalKpi != null ? avgFinalKpi.toFixed(2) : '—'}</p>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-top:8px;">of 2.00 max, all entered results</p>
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Awaiting Entry</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:${awaitingCount > 0 ? '#DC2626' : '#14251C'};margin-top:2px;">${awaitingCount}</p>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-top:8px;">monthly KPIs, this month</p>
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
+            <h2 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;color:#14251C;">Directorates</h2>
+            <span onclick="app.state._kpiAdminTab='directorates';app.renderKpiPlannerView();" style="font-size:0.8rem;color:#B8860B;font-weight:600;cursor:pointer;">View all →</span>
+        </div>
+        ${directorates.length === 0 ? `<p style="font-size:0.85rem;color:#9ca3af;margin-bottom:28px;">No ${esc(selectedCompany)} directorates yet.</p>` : `
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-7">${dirPreview}</div>
+        `}
+
+        <h2 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;color:#14251C;margin-bottom:14px;">Quick actions</h2>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            ${quickAction('directorates', '🏛️', 'Directorates', 'Manage areas & lines')}
+            ${quickAction('kpis', '📈', 'KPIs', 'Definitions & weights')}
+            ${quickAction('results', '✏️', 'Enter Results', 'Record this period')}
+            ${quickAction('preview', '👁️', 'Preview', 'Director dashboard')}
+            ${quickAction('import', '📥', 'Import', 'From Excel')}
+            ${quickAction('users', '👥', 'Users', 'Directors & access')}
+        </div>
+    `;
+};
+
 app._renderKpiDirectoratesSection = function() {
     const esc = this._escHtml.bind(this);
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
