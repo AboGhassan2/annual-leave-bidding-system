@@ -1957,6 +1957,151 @@ test('_kpiBenchmarkLabel returns null when Exceptional or Unacceptable is missin
 });
 
 // ════════════════════════════════════════════════════════════════════
+// MGT Ratio Per Line (AMEEN (1).xlsx, M31_IWF sheet) — verified
+// byte-exact against the real KPI Month 31 snapshot.
+// ════════════════════════════════════════════════════════════════════
+
+test('_kpiMPercFromFactor matches all four real M31_IWF values exactly', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMPercFromFactor(1.6839), 0.066839);
+    assert.equal(app._kpiMPercFromFactor(1.7984), 0.067984);
+    assert.equal(app._kpiMPercFromFactor(1.7778), 0.067778);
+    assert.equal(app._kpiMPercFromFactor(1.8028), 0.068028);
+});
+
+test('_kpiMPercFromFactor hits all five bands: 0=1%, 0-1 linear, 1=6%, 1-2 linear, >=2=7%', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMPercFromFactor(0), 0.01);
+    assert.equal(Math.round(app._kpiMPercFromFactor(0.5) * 100000) / 100000, 0.035);
+    assert.equal(app._kpiMPercFromFactor(1), 0.06);
+    assert.equal(Math.round(app._kpiMPercFromFactor(1.5) * 100000) / 100000, 0.065);
+    assert.equal(app._kpiMPercFromFactor(2), 0.07);
+    assert.equal(app._kpiMPercFromFactor(2.5), 0.07, 'capped at 7% beyond 2');
+});
+
+test('_kpiMPercFromFactor returns null for a missing/non-numeric input, not a guess', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMPercFromFactor(null), null);
+    assert.equal(app._kpiMPercFromFactor(undefined), null);
+});
+
+test('_kpiLineStationRatio matches the real M31 station split exactly (22/9/12/11 of 54 total)', () => {
+    const app = buildKpiApp({
+        kpiLineStationCounts: [
+            { kpi_month_no: 31, line: 'L3', station_count: 22 },
+            { kpi_month_no: 31, line: 'L4', station_count: 9 },
+            { kpi_month_no: 31, line: 'L5', station_count: 12 },
+            { kpi_month_no: 31, line: 'L6', station_count: 11 },
+        ],
+    });
+    assert.equal(Math.round(app._kpiLineStationRatio('L3', 31) * 1e6) / 1e6, 0.407407);
+    assert.equal(Math.round(app._kpiLineStationRatio('L4', 31) * 1e6) / 1e6, 0.166667);
+    assert.equal(app._kpiLineStationRatio('L3', 99), null, 'no station data for that month');
+});
+
+test('_kpiLineFactorScore: a weighted average by Final Weight, normalized by the weight of KPIs that actually reported this month', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 0.6, level1_pct: 1, level2_pct: 1, level3_pct: 1 }, // Final Weight 0.6
+            { id: 2, directorate_id: 10, department_id: 100, is_active: true, area_pct: 0.4, level1_pct: 1, level2_pct: 1, level3_pct: 1 }, // Final Weight 0.4
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 2.0 },
+            { kpi_definition_id: 2, year: 2026, period_value: '05', factor_score: 1.0 },
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+    });
+    // (0.6*2.0 + 0.4*1.0) / (0.6+0.4) = 1.6
+    assert.equal(app._kpiLineFactorScore('L3', 31, 10), 1.6);
+});
+
+test('_kpiLineFactorScore excludes a KPI with no result this month from the average, rather than treating it as 0', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 0.5, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 2, directorate_id: 10, department_id: 100, is_active: true, area_pct: 0.5, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 2.0 },
+            // KPI 2 has no result for this month at all
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+    });
+    assert.equal(app._kpiLineFactorScore('L3', 31, 10), 2.0, 'normalized by the weight actually present (0.5), not diluted to 1.0 by a missing KPI');
+});
+
+test('_kpiLineFactorScore is scoped per-directorate when a directorateId is given, and company-wide when omitted', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 200, directorate_id: 20, department_name: 'L3' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 2, directorate_id: 20, department_id: 200, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 2.0 },
+            { kpi_definition_id: 2, year: 2026, period_value: '05', factor_score: 0.0 },
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+    });
+    assert.equal(app._kpiLineFactorScore('L3', 31, 10), 2.0, 'directorate 10 only sees its own KPI');
+    assert.equal(app._kpiLineFactorScore('L3', 31, 20), 0.0, 'directorate 20 only sees its own KPI');
+    assert.equal(app._kpiLineFactorScore('L3', 31, null), 1.0, 'company-wide averages across both directorates');
+});
+
+test('_kpiMgtRatioPerLine reproduces the real M31_IWF table exactly, including the 6.7481% total', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 101, directorate_id: 10, department_name: 'L4' },
+            { id: 102, directorate_id: 10, department_name: 'L5' },
+            { id: 103, directorate_id: 10, department_name: 'L6' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 2, directorate_id: 10, department_id: 101, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 3, directorate_id: 10, department_id: 102, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 4, directorate_id: 10, department_id: 103, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.6839 },
+            { kpi_definition_id: 2, year: 2026, period_value: '05', factor_score: 1.7984 },
+            { kpi_definition_id: 3, year: 2026, period_value: '05', factor_score: 1.7778 },
+            { kpi_definition_id: 4, year: 2026, period_value: '05', factor_score: 1.8028 },
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+        kpiLineStationCounts: [
+            { kpi_month_no: 31, line: 'L3', station_count: 22 },
+            { kpi_month_no: 31, line: 'L4', station_count: 9 },
+            { kpi_month_no: 31, line: 'L5', station_count: 12 },
+            { kpi_month_no: 31, line: 'L6', station_count: 11 },
+        ],
+    });
+    const { rows, total } = app._kpiMgtRatioPerLine(31, 10);
+    assert.equal(rows.length, 4);
+    assert.equal(rows[0].line, 'L3');
+    assert.equal(rows[0].stations, 22);
+    assert.equal(Math.round(rows[0].weighted * 1e6) / 1e6, 0.027231, 'Line 3 weighted contribution');
+    assert.equal(Math.round(total * 1e4) / 1e4, 0.0675, 'total rounds to the real 6.75%');
+});
+
+test('_kpiParseStationCountRows matches the real Stations sheet format exactly', () => {
+    const app = buildKpiApp();
+    const rows = app._kpiParseStationCountRows([
+        { 'Fiscal Month': 'M31', 'Fiscal Month No': '31', 'Line': '3', 'No. of Stations': '22', 'Remarks': '', 'Key': 'M31|3' },
+        { 'Fiscal Month': 'M31', 'Fiscal Month No': '31', 'Line': '4', 'No. of Stations': '9', 'Remarks': '', 'Key': 'M31|4' },
+    ]);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].kpi_month_no, 31);
+    assert.equal(rows[0].line, 'L3');
+    assert.equal(rows[0].station_count, 22);
+});
+
+// ════════════════════════════════════════════════════════════════════
 // Financial Calendar & Partner Allocation (Master_File.xlsx) — Period
 // KPI vs Fees, Line FFt lag/status schedule, and the HIT/FS/ALS partner
 // split. End goal: compute each partner's allocated share of a KPI's
