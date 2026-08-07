@@ -1599,7 +1599,56 @@ app._renderKpiImportSection = function() {
                 </div>
             ` : ''}
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">6. Directorate Assignment Audit</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Read-only check comparing every KPI's current home directorate against its correct primary owner from the real
+                KPI_Owner.xlsx (highest-% owner per KPI Code — same across all 4 lines). This does NOT change anything automatically —
+                reassigning a KPI's directorate also needs its Line record repointed to the new directorate's own L3/L4/L5/L6, not just
+                swapping one field, so any fix found here needs to be done manually via the Directorates/KPIs tabs after review.
+            </p>
+            <button onclick="app._runKpiDirectorateAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Run Audit</button>
+            ${this.state._kpiDirectorateAudit ? `
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+                    <p style="font-size:0.82rem;color:#374151;margin-bottom:10px;">
+                        Checked ${this.state._kpiDirectorateAudit.checked} KPIs against the reference
+                        ${this.state._kpiDirectorateAudit.noReference > 0 ? `(${this.state._kpiDirectorateAudit.noReference} skipped — no matching KPI Code in the reference, e.g. custom KPIs not in the original file)` : ''} —
+                        <strong style="color:${this.state._kpiDirectorateAudit.mismatches.length > 0 ? '#991b1b' : '#166534'};">${this.state._kpiDirectorateAudit.mismatches.length} mismatch(es) found</strong>.
+                    </p>
+                    ${this.state._kpiDirectorateAudit.mismatches.length > 0 ? `
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                        <th style="padding:8px 12px;">KPI</th>
+                                        <th style="padding:8px 12px;">Line</th>
+                                        <th style="padding:8px 12px;">Currently Under</th>
+                                        <th style="padding:8px 12px;">Should Be</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.state._kpiDirectorateAudit.mismatches.map(m => `
+                                        <tr style="border-top:1px solid #f3f4f6;">
+                                            <td style="padding:8px 12px;font-weight:600;">${this._escHtml(m.kpiCode)}: ${this._escHtml(m.kpiName)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.line)}</td>
+                                            <td style="padding:8px 12px;color:#991b1b;">${this._escHtml(m.currentDirectorate)}</td>
+                                            <td style="padding:8px 12px;color:#166534;font-weight:600;">${this._escHtml(m.expectedDirectorate)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
+                </div>
+            ` : ''}
+        </div>
     `;
+};
+
+app._runKpiDirectorateAudit = function() {
+    this.state._kpiDirectorateAudit = this.auditKpiDirectorateAssignments(this.state._kpiSelectedCompany || 'OMC');
+    this.renderKpiPlannerView();
 };
 
 app._renderKpiImportPreview = function(preview) {
