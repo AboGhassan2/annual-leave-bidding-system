@@ -191,27 +191,39 @@ app._renderKpiOverviewSection = function() {
     ).length;
 
     const lineColors = { L3: '#7C3AED', L4: '#0891B2', L5: '#2D6A4F', L6: '#DC2626' };
-    const dirPreview = directorates.slice(0, 3).map(d => {
-        const dKpis = definitions.filter(k => this._kpiEffectiveDirectorateId(k) === d.id);
-        const dWeight = dKpis.reduce((sum, k) => sum + (this._kpiFinalWeight(k) || 0), 0);
-        const dLines = [...new Set(dKpis.map(k => {
-            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
-            return line ? line.department_name : null;
-        }).filter(Boolean))].sort();
-        return `
-            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
-                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:#1B4332;">${esc(d.name)}</p>
-                <p style="font-size:0.76rem;color:#6b7280;margin:4px 0 12px 0;">${dKpis.length} KPI${dKpis.length !== 1 ? 's' : ''}</p>
-                <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
-                    ${dLines.length > 0 ? dLines.map(l => `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;font-weight:600;color:#fff;padding:3px 8px;border-radius:5px;background:${lineColors[l] || '#6b7280'};">${esc(l)}</span>`).join('') : '<span style="font-size:0.75rem;color:#9ca3af;">No lines yet</span>'}
-                </div>
-                <div style="display:flex;align-items:center;justify-content:space-between;font-size:0.78rem;">
-                    <span style="color:#6b7280;">${dKpis.length} KPI${dKpis.length !== 1 ? 's' : ''}</span>
-                    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#1B4332;">${(dWeight * 100).toFixed(1)}% weight</span>
-                </div>
+    const allLineBadges = ['L3', 'L4', 'L5', 'L6'].map(l =>
+        `<span style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;font-weight:600;color:#fff;padding:3px 8px;border-radius:5px;background:${lineColors[l]};">${l}</span>`
+    ).join('');
+
+    // Areas — a DIFFERENT concept from Directorates: Area lives on each
+    // KPI (k.area/k.area_pct, from the Weight Hierarchy import) and
+    // doesn't map 1:1 to a Directorate record. Grouped here directly
+    // from the KPIs that have an area set, per explicit request to show
+    // the real Operations/Transit System Maintenance/Facilities
+    // Maintenance/Management breakdown (not whichever Directorates
+    // happen to have the most KPIs). Every card shows all 4 lines,
+    // regardless of which lines that area's own KPIs actually sit on —
+    // also per explicit request, not a bug.
+    const areaGroups = {};
+    definitions.forEach(k => {
+        if (!k.area) return;
+        if (!areaGroups[k.area]) areaGroups[k.area] = { name: k.area, pct: k.area_pct, count: 0 };
+        areaGroups[k.area].count++;
+        if (areaGroups[k.area].pct == null && k.area_pct != null) areaGroups[k.area].pct = k.area_pct;
+    });
+    const areaList = Object.values(areaGroups).sort((a, b) => (b.pct || 0) - (a.pct || 0));
+
+    const dirPreview = areaList.map(a => `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+            <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:#1B4332;">${esc(a.name)}</p>
+            <p style="font-size:0.76rem;color:#6b7280;margin:4px 0 12px 0;">Area · ${a.pct != null ? (a.pct * 100).toFixed(0) : '—'}% of company score</p>
+            <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">${allLineBadges}</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;font-size:0.78rem;">
+                <span style="color:#6b7280;">${a.count} KPI${a.count !== 1 ? 's' : ''}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#1B4332;">${a.pct != null ? (a.pct * 100).toFixed(1) : '0.0'}% weight</span>
             </div>
-        `;
-    }).join('');
+        </div>
+    `).join('');
 
     const quickAction = (tabKey, icon, title, desc) => `
         <div onclick="app.state._kpiAdminTab='${tabKey}';app.renderKpiPlannerView();"
@@ -251,6 +263,7 @@ app._renderKpiOverviewSection = function() {
             <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
                 <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Directorates</p>
                 <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#14251C;margin-top:2px;">${totalDirectorates}</p>
+                <p style="font-size:0.72rem;color:#9ca3af;margin-top:8px;">${areaList.length} Area${areaList.length !== 1 ? 's' : ''} · 4 Lines each</p>
             </div>
             <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
                 <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Avg Final KPI</p>
@@ -268,8 +281,8 @@ app._renderKpiOverviewSection = function() {
             <h2 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;color:#14251C;">Directorates</h2>
             <span onclick="app.state._kpiAdminTab='directorates';app.renderKpiPlannerView();" style="font-size:0.8rem;color:#B8860B;font-weight:600;cursor:pointer;">View all →</span>
         </div>
-        ${directorates.length === 0 ? `<p style="font-size:0.85rem;color:#9ca3af;margin-bottom:28px;">No ${esc(selectedCompany)} directorates yet.</p>` : `
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-7">${dirPreview}</div>
+        ${areaList.length === 0 ? `<p style="font-size:0.85rem;color:#9ca3af;margin-bottom:28px;">No Area data yet for ${esc(selectedCompany)} — run the Weight Hierarchy import (Import from Excel tab) to populate Area/Level percentages.</p>` : `
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-7">${dirPreview}</div>
         `}
 
         <h2 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;color:#14251C;margin-bottom:14px;">Quick actions</h2>
