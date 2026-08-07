@@ -77,7 +77,7 @@ app.renderKpiPlannerView = function() {
 
     // ── Sidebar nav — a vertical "metro line" rail with station dots,
     // matching the site's own dark-green/gold identity ──
-    const navItem = (key, icon, label) => {
+    const navItem = (key, icon, label, count) => {
         const active = tab === key;
         return `
             <div onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
@@ -85,9 +85,15 @@ app.renderKpiPlannerView = function() {
                 <span style="width:11px;height:11px;border-radius:50%;flex-shrink:0;z-index:1;background:${active ? '#D4A017' : '#2D6A4F'};border:3px solid ${active ? '#D4A017' : 'rgba(255,255,255,0.28)'};box-shadow:${active ? '0 0 0 3px rgba(212,160,23,0.25)' : 'none'};"></span>
                 <span style="font-size:0.92rem;">${icon}</span>
                 <span style="font-size:0.85rem;font-weight:600;">${esc(label)}</span>
+                ${count != null ? `<span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:rgba(255,255,255,0.4);">${count}</span>` : ''}
             </div>
         `;
     };
+
+    // Counts for the two nav items the redesign shows a badge on.
+    const navDirectorateCount = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany).length;
+    const navDirIds = new Set((this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany).map(d => d.id));
+    const navKpiCount = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && navDirIds.has(this._kpiEffectiveDirectorateId(k))).length;
 
     let sectionHtml = '';
     if (tab === 'overview') sectionHtml = this._renderKpiOverviewSection();
@@ -102,23 +108,23 @@ app.renderKpiPlannerView = function() {
 
     content.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
-            <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
-                <div style="padding:0 18px 14px 18px;">
-                    <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;">📊 KPI Planner</h2>
-                    <p style="color:rgba(255,255,255,0.5);font-size:0.72rem;margin-top:2px;">Define directorates, KPIs, and enter results.</p>
+            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:20px;display:flex;flex-direction:column;">
+                <div style="padding:0 22px 22px 22px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:20px;">
+                    <div style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.5rem;letter-spacing:0.02em;">FLOW <span style="color:#D4A017;">◆</span> KPI</div>
+                    <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Riyadh Metro Operator</div>
                 </div>
-                <div style="padding:14px 18px 16px 18px;border-top:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:10px;">
+                <div style="padding:0 22px 26px 22px;">
                     <div style="font-size:0.66rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Company</div>
-                    <div style="display:flex;gap:6px;">
+                    <div style="display:flex;gap:6px;background:rgba(255,255,255,0.06);border-radius:8px;padding:3px;">
                         ${companyBtn('OMC')}
                         ${companyBtn('Audit')}
                     </div>
                 </div>
-                <nav style="position:relative;padding:4px 0;">
+                <nav style="position:relative;padding:4px 0;flex:1;">
                     <div style="position:absolute;left:23px;top:14px;bottom:14px;width:3px;background:rgba(255,255,255,0.12);border-radius:2px;"></div>
-                    ${navItem('directorates', '🏛️', 'Directorates')}
+                    ${navItem('directorates', '🏛️', 'Directorates', navDirectorateCount)}
                     ${navItem('overview', '🏠', 'Overview')}
-                    ${navItem('kpis', '📈', 'KPIs')}
+                    ${navItem('kpis', '📈', 'KPIs', navKpiCount)}
                     ${navItem('results', '✏️', 'Enter Results')}
                     ${navItem('kpiReporting', '📊', 'KPI Reporting')}
                     ${navItem('financialReporting', '💰', 'Financial Reporting')}
@@ -126,6 +132,13 @@ app.renderKpiPlannerView = function() {
                     ${navItem('import', '📥', 'Import from Excel')}
                     ${navItem('users', '👥', 'Manage Users')}
                 </nav>
+                <div style="padding:16px 22px 4px 22px;border-top:1px solid rgba(255,255,255,0.08);margin-top:12px;display:flex;align-items:center;gap:10px;">
+                    <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg, #7C3AED, #2D6A4F);"></div>
+                    <div>
+                        <div style="font-size:0.8rem;font-weight:600;color:#fff;">KPI Planner</div>
+                        <div style="font-size:0.68rem;color:rgba(255,255,255,0.45);">Full Access · Admin</div>
+                    </div>
+                </div>
             </aside>
             <main style="flex:1;min-width:0;">
                 ${sectionHtml}
@@ -290,6 +303,8 @@ app._renderKpiOverviewSection = function() {
             ${quickAction('directorates', '🏛️', 'Directorates', 'Manage areas & lines')}
             ${quickAction('kpis', '📈', 'KPIs', 'Definitions & weights')}
             ${quickAction('results', '✏️', 'Enter Results', 'Record this period')}
+            ${quickAction('kpiReporting', '📊', 'KPI Reporting', 'Scorecards & trends')}
+            ${quickAction('financialReporting', '💰', 'Financial Reporting', 'Fee periods & partner shares')}
             ${quickAction('preview', '👁️', 'Preview', 'Director dashboard')}
             ${quickAction('import', '📥', 'Import', 'From Excel')}
             ${quickAction('users', '👥', 'Users', 'Directors & access')}
@@ -2498,17 +2513,26 @@ app.renderKpiDirectorView = function() {
 
     content.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
-            <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
-                <div style="padding:0 18px 14px 18px;">
+            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:20px;display:flex;flex-direction:column;">
+                <div style="padding:0 22px 14px 22px;">
+                    <div style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.2rem;letter-spacing:0.02em;">FLOW <span style="color:#D4A017;">◆</span> KPI</div>
+                </div>
+                <div style="padding:0 22px 14px 22px;">
                     <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.15rem;">📈 ${esc(directorate ? directorate.name : 'KPI')}</h2>
-                    <p style="color:rgba(255,255,255,0.5);font-size:0.72rem;margin-top:2px;">Welcome, ${esc(user.name)}.</p>
                     ${isSuperUser ? '<span style="display:inline-block;margin-top:8px;background:rgba(212,160,23,0.18);color:#D4A017;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:700;">👁️ VIEW-ONLY · ALL</span>' : ''}
                 </div>
-                <nav style="position:relative;padding:14px 0 4px 0;border-top:1px solid rgba(255,255,255,0.1);">
+                <nav style="position:relative;padding:14px 0 4px 0;border-top:1px solid rgba(255,255,255,0.1);flex:1;">
                     <div style="position:absolute;left:23px;top:28px;bottom:14px;width:3px;background:rgba(255,255,255,0.12);border-radius:2px;"></div>
                     ${navItem('overview', '🏛️', 'Overview')}
                     ${navItem('detail', '🔍', 'KPI Detail')}
                 </nav>
+                <div style="padding:16px 22px 4px 22px;border-top:1px solid rgba(255,255,255,0.08);margin-top:12px;display:flex;align-items:center;gap:10px;">
+                    <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg, #7C3AED, #2D6A4F);"></div>
+                    <div>
+                        <div style="font-size:0.8rem;font-weight:600;color:#fff;">${esc(user.name)}</div>
+                        <div style="font-size:0.68rem;color:rgba(255,255,255,0.45);">${isSuperUser ? 'Super User · All Directorates' : 'KPI Executive Director'}</div>
+                    </div>
+                </div>
             </aside>
             <main style="flex:1;min-width:0;">
                 <div class="flex justify-between items-center flex-wrap gap-3 mb-4">
