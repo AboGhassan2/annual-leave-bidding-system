@@ -1577,15 +1577,17 @@ app._renderKpiImportSection = function() {
         </div>
 
         <div class="bg-white rounded-xl shadow-md p-5 mt-6">
-            <h3 class="text-lg font-bold text-gray-800 mb-2">5. One-Time: Import M31_IWF Line 3 Results</h3>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">5. One-Time: Import M31_IWF Results (All Lines)</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
-                A one-time historical backfill of the 32 real values from AMEEN (1).xlsx's M31_IWF sheet (Line 3 section, column R — the two
-                KPIs showing "-" there, A1 and A6, are correctly left out). KPI Month 31 maps to <strong>May 2026</strong> on the imported fee
-                calendar, so each KPI is saved under whatever real period its own frequency implies for that month: Monthly &rarr; May 2026,
-                Quarterly &rarr; Q2 2026, Annual (E3, H1) &rarr; 2026. Matched by KPI Code against L3 KPIs already created under the selected
-                company — this only updates existing KPIs, it never creates new ones.
+                A one-time historical backfill of 128 real values from AMEEN (1).xlsx's M31_IWF sheet — all four line sections (L3-L6),
+                column R (the KPIs showing "-" in each line's section, A1 and A6, are correctly left out of every line). Note some KPIs'
+                frequency genuinely differs by line in the source file (e.g. C1 "Cleanliness of Trains" is Monthly on L3 but Quarterly on
+                L4/L5/L6) — preserved exactly as found per line, not assumed uniform. KPI Month 31 maps to <strong>May 2026</strong> on the
+                imported fee calendar, so each KPI is saved under whatever real period its own frequency implies for that month: Monthly
+                &rarr; May 2026, Quarterly &rarr; Q2 2026, Annual (E3, H1) &rarr; 2026. Matched by KPI Code + Line against KPIs already
+                created under the selected company — this only updates existing KPIs, it never creates new ones.
             </p>
-            <button onclick="app._confirmM31IWFImport()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Import Line 3 Results</button>
+            <button onclick="app._confirmM31IWFImport()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Import All Lines</button>
             ${this.state._kpiM31ImportResult ? `
                 <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
                     <p style="font-size:0.82rem;color:#374151;margin-bottom:4px;">${this.state._kpiM31ImportResult.updated} saved, ${this.state._kpiM31ImportResult.notFound} not found, ${this.state._kpiM31ImportResult.failed} failed.</p>
@@ -2200,9 +2202,9 @@ app._confirmKpiFinancialImport = async function() {
 };
 
 app._confirmM31IWFImport = async function() {
-    const ok = confirm('Import the 32 real M31_IWF Line 3 results (May 2026 / Q2 2026 / 2026, per each KPI\'s own frequency)? This only updates existing L3 KPIs, matched by KPI Code.');
+    const ok = confirm('Import the 128 real M31_IWF results across all 4 lines (May 2026 / Q2 2026 / 2026, per each KPI\'s own frequency)? This only updates existing KPIs, matched by KPI Code + Line.');
     if (!ok) return;
-    const result = await this.importM31IWFLine3Results(this.state._kpiSelectedCompany || 'OMC');
+    const result = await this.importM31IWFResults(this.state._kpiSelectedCompany || 'OMC');
     this.state._kpiM31ImportResult = result;
     this.renderKpiPlannerView();
 };
