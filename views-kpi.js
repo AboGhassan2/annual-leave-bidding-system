@@ -1257,7 +1257,14 @@ app._renderKpiResultsSection = function() {
             </div>
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Remarks (optional)</label>
             <textarea id="kpiResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
-            <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+                <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Save Result</button>
+                ${selected.period_type === 'monthly' ? `
+                    <button onclick="app.state._kpiBulkInsertOpen = !app.state._kpiBulkInsertOpen; app.renderKpiPlannerView();" style="padding:9px 18px;background:#fff;border:1.5px solid #1B4332;color:#1B4332;border-radius:8px;font-weight:700;font-size:0.85rem;">📅 ${this.state._kpiBulkInsertOpen ? 'Close Bulk Insert' : 'Bulk Insert (Whole Year)'}</button>
+                ` : ''}
+            </div>
+
+            ${(selected.period_type === 'monthly' && this.state._kpiBulkInsertOpen) ? this._renderKpiBulkInsertPanel(selected, selectedYear) : ''}
 
             <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(this._kpiDisplayNameWithLine(selected))}</h4>
             ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
@@ -1308,6 +1315,77 @@ app.saveKpiResultEntry = async function(kpiDefinitionId) {
         this.showToast('Result saved.', 'success');
         this.renderKpiPlannerView();
     }
+};
+
+// Bulk Insert (Whole Year) — a second way to enter results alongside the
+// single-entry form above, not a replacement for it. Twelve inputs, one
+// per calendar month, all funneled through the exact same saveKpiResult
+// used by the single-entry form, so Factor Score/Final KPI-override
+// preservation/achievement all behave identically either way. Only
+// offered for monthly-cadence KPIs, since quarterly (4 periods) and
+// yearly (1) don't have the same "12 separate saves" burden this solves.
+app._renderKpiBulkInsertPanel = function(kpiDef, year) {
+    const esc = this._escHtml.bind(this);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    // Pre-fill with whatever's already saved for this KPI+year, so
+    // reopening the panel shows existing values (editable) rather than
+    // starting blank and risking an accidental overwrite of context.
+    const existingByMonth = {};
+    (this.state.kpiResults || []).forEach(r => {
+        if (r.kpi_definition_id === kpiDef.id && Number(r.year) === Number(year) && r.period_value) {
+            existingByMonth[r.period_value] = r.actual_value;
+        }
+    });
+
+    return `
+        <div style="background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:20px;">
+            <p style="font-size:0.8rem;font-weight:700;color:#1B4332;margin-bottom:4px;">Bulk Insert — ${esc(this._kpiDisplayNameWithLine(kpiDef))}, ${year}</p>
+            <p style="font-size:0.72rem;color:#6b7280;margin-bottom:14px;">Fill in whichever months you have — blank months are skipped, not overwritten. Existing values for ${year} are pre-filled below.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(90px, 1fr));gap:10px;margin-bottom:14px;">
+                ${monthNames.map((name, i) => {
+                    const mm = String(i + 1).padStart(2, '0');
+                    const existing = existingByMonth[mm];
+                    return `
+                        <div>
+                            <label style="font-size:0.72rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">${name}</label>
+                            <input type="number" step="any" id="kpiBulkMonth${mm}" value="${existing != null ? existing : ''}"
+                                style="width:100%;padding:7px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.82rem;box-sizing:border-box;" />
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            <button onclick="app.saveKpiResultBulk(${kpiDef.id}, ${year})" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.82rem;">Save All Filled Months</button>
+        </div>
+    `;
+};
+
+app.saveKpiResultBulk = async function(kpiDefinitionId, year) {
+    const monthNames = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+    const toSave = monthNames
+        .map(mm => ({ mm, value: document.getElementById(`kpiBulkMonth${mm}`).value }))
+        .filter(m => m.value !== '');
+
+    if (toSave.length === 0) {
+        this.showToast('Enter at least one month\'s value first.', 'error');
+        return;
+    }
+
+    // Sequential, not Promise.all — saveKpiResult reads this.state.kpiResults
+    // to decide whether a prior Final KPI override survives a re-save, and
+    // running twelve of those concurrently against the same in-memory state
+    // risks two saves reading a stale snapshot before either has written
+    // back, which Promise.all's concurrent, out-of-order completion doesn't
+    // guarantee protection against for a single-threaded state array like
+    // this one.
+    let saveCount = 0, failCount = 0;
+    for (const m of toSave) {
+        const saved = await this.saveKpiResult(kpiDefinitionId, { year, periodType: 'monthly', periodValue: m.mm, actualValue: Number(m.value), remarks: '', source: 'bulk' });
+        if (saved) saveCount++; else failCount++;
+    }
+
+    this.showToast(`Bulk insert complete: ${saveCount} saved${failCount > 0 ? `, ${failCount} failed` : ''}.`, failCount > 0 ? 'error' : 'success');
+    this.state._kpiBulkInsertOpen = false;
+    this.renderKpiPlannerView();
 };
 
 
