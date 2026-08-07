@@ -473,7 +473,49 @@ app._renderKpiFinancialReportingSection = function() {
             </div>
         </div>
 
-        <p style="font-size:0.75rem;color:#9ca3af;">This is a summary view built on the Financial Calendar &amp; Partner Allocation data — see the Enter Results tab for each KPI's own HIT/FS/ALS Share, and the KPIs tab for per-KPI Final Weight breakdowns.</p>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:6px;">
+            <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;margin-bottom:4px;">MGT Ratio Per Line — Company-Wide</p>
+            ${feePeriod ? `
+                <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(feePeriod.kpi_fiscal_month)} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
+                ${(() => {
+                    const mgtTable = this._kpiMgtRatioPerLine(feePeriod.kpi_month_no, null);
+                    return `
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                        <th style="padding:8px 12px;">Line</th>
+                                        <th style="padding:8px 12px;text-align:right;">Stations</th>
+                                        <th style="padding:8px 12px;text-align:right;">Ratio</th>
+                                        <th style="padding:8px 12px;text-align:right;">KPIFt</th>
+                                        <th style="padding:8px 12px;text-align:right;">M%erc</th>
+                                        <th style="padding:8px 12px;text-align:right;">Weighted</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${mgtTable.rows.map(r => `
+                                        <tr style="border-top:1px solid #f3f4f6;">
+                                            <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                            <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
+                                            <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
+                                            <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}</td>
+                                            <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
+                                            <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                        </tr>
+                                    `).join('')}
+                                    <tr style="border-top:2px solid #e5e7eb;">
+                                        <td colspan="5" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
+                                        <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtTable.total * 100).toFixed(4)}%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                })()}
+            ` : `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet for the current month — run the Financial Calendar import (Import from Excel tab).</p>`}
+        </div>
+
+        <p style="font-size:0.75rem;color:#9ca3af;">This is a summary view built on the Financial Calendar &amp; Partner Allocation data — see the Enter Results tab for each KPI's own HIT/FS/ALS Share, the KPIs tab for per-KPI Final Weight breakdowns, and each Director's Overview page for their own directorate's MGT Ratio Per Line.</p>
     `;
 };
 
@@ -1350,15 +1392,17 @@ app._renderKpiImportSection = function() {
         </div>
 
         <div class="bg-white rounded-xl shadow-md p-5 mt-6">
-            <h3 class="text-lg font-bold text-gray-800 mb-2">4. Import Financial Calendar &amp; Partner Allocation</h3>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">4. Import Financial Calendar, Stations &amp; Partner Allocation</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
                 Upload the whole master workbook in one go — each piece is detected automatically by its column headers, regardless of what
                 the sheet tabs are named: a <strong>Period KPI vs Fees</strong> sheet (KPI Month No / KPI Fixed Fee No — maps each KPI month to
                 its fee month, always 1 month ahead), a <strong>Line FFt</strong> sheet (Report Month No / Fee Stream / Lag (Months) — each
-                line's Active/Pre-project schedule), and a <strong>Partner Allocation</strong> sheet (KPI Code / Allocation % / HIT% / FS% /
+                line's Active/Pre-project schedule), a <strong>Stations</strong> sheet (Fiscal Month No / Line / No. of Stations — feeds the
+                MGT Ratio Per Line table's Ratio column), and a <strong>Partner Allocation</strong> sheet (KPI Code / Allocation % / HIT% / FS% /
                 ALS% — splits each KPI's result across the three partners, matched by KPI Code + Line against KPIs already created above).
-                The fee-period and line-schedule pieces replace the tenant's whole reference calendar each time (nothing to merge — nobody
-                hand-edits a fiscal calendar); Partner Allocation only updates matching existing KPIs, same as the imports above.
+                The fee-period, line-schedule, and station-count pieces replace the tenant's whole reference table each time (nothing to merge
+                — nobody hand-edits a fiscal calendar or a station count); Partner Allocation only updates matching existing KPIs, same as the
+                imports above.
             </p>
 
             <div style="border:2px dashed #d1d5db;border-radius:10px;padding:24px;text-align:center;margin-bottom:20px;">
@@ -1835,7 +1879,7 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null;
             workbook.SheetNames.forEach(name => {
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { raw: false, defval: '' });
                 if (rows.length === 0) return;
@@ -1847,15 +1891,17 @@ app._handleKpiFinancialImportFile = function(event) {
                     feePeriods = this._kpiParseFeePeriodRows(rows);
                 } else if (!lineSchedule && headers.includes('Report Month No') && headers.includes('Fee Stream')) {
                     lineSchedule = this._kpiParseLineFeeScheduleRows(rows);
+                } else if (!stationCounts && headers.includes('Fiscal Month No') && headers.includes('No. of Stations') && headers.includes('Line')) {
+                    stationCounts = this._kpiParseStationCountRows(rows);
                 }
             });
 
-            if (!partnerAllocation && !feePeriods && !lineSchedule) {
-                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, or Line FFt.', 'error');
+            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts) {
+                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, or Stations.', 'error');
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -1868,7 +1914,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -1887,10 +1933,11 @@ app._renderKpiFinancialImportPreview = function(preview) {
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <h4 style="font-weight:700;margin-bottom:10px;">Detected in this file</h4>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-4">
                 ${tile('Partner Allocation rows', !!partnerAllocation, partnerAllocation ? partnerAllocation.validRows.length : 0, partnerAllocation && paNotFound > 0 ? `${paNotFound} won't match any existing KPI` : '')}
                 ${tile('Fee period months', !!feePeriods, feePeriods ? feePeriods.length : 0, feePeriods ? 'replaces the whole calendar' : '')}
                 ${tile('Line fee schedule rows', !!lineSchedule, lineSchedule ? lineSchedule.length : 0, lineSchedule ? 'replaces the whole schedule' : '')}
+                ${tile('Station count rows', !!stationCounts, stationCounts ? stationCounts.length : 0, stationCounts ? 'replaces the whole table' : '')}
             </div>
             ${partnerAllocation && partnerAllocation.invalidRows.length > 0 ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:160px;overflow-y:auto;">
@@ -1916,15 +1963,17 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.partnerAllocation) lines.push(`Partner Allocation: ${result.partnerAllocation.updated} updated, ${result.partnerAllocation.notFound} not found, ${result.partnerAllocation.failed} failed`);
     if (result.feePeriods) lines.push(`Fee periods: ${result.feePeriods.imported} imported`);
     if (result.lineSchedule) lines.push(`Line fee schedule: ${result.lineSchedule.imported} imported`);
-    // Every one of the three pieces can carry its own errors — a
-    // previous version of this only checked Partner Allocation's, so a
-    // real failure saving fee periods/line schedule (e.g. a missing
-    // table from an unrun migration) was silently swallowed and showed
-    // as a bare "0 imported" with nothing explaining why.
+    if (result.stationCounts) lines.push(`Station counts: ${result.stationCounts.imported} imported`);
+    // Every one of the pieces can carry its own errors — a previous
+    // version of this only checked Partner Allocation's, so a real
+    // failure saving fee periods/line schedule (e.g. a missing table
+    // from an unrun migration) was silently swallowed and showed as a
+    // bare "0 imported" with nothing explaining why.
     const allErrors = [
         ...(result.partnerAllocation ? result.partnerAllocation.errors.map(e => `Partner Allocation — ${e}`) : []),
         ...(result.feePeriods ? result.feePeriods.errors.map(e => `Fee periods — ${e}`) : []),
         ...(result.lineSchedule ? result.lineSchedule.errors.map(e => `Line fee schedule — ${e}`) : []),
+        ...(result.stationCounts ? result.stationCounts.errors.map(e => `Station counts — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -1946,6 +1995,7 @@ app._confirmKpiFinancialImport = async function() {
     if (preview.partnerAllocation) parts.push(`${preview.partnerAllocation.validRows.length} Partner Allocation row(s)`);
     if (preview.feePeriods) parts.push(`${preview.feePeriods.length} fee period month(s) (replaces the existing calendar)`);
     if (preview.lineSchedule) parts.push(`${preview.lineSchedule.length} line fee schedule row(s) (replaces the existing schedule)`);
+    if (preview.stationCounts) parts.push(`${preview.stationCounts.length} station count row(s) (replaces the existing table)`);
     const ok = confirm(`Import ${parts.join(', ')}?`);
     if (!ok) return;
 
@@ -1958,6 +2008,9 @@ app._confirmKpiFinancialImport = async function() {
     }
     if (preview.lineSchedule) {
         result.lineSchedule = await this.importKpiLineFeeSchedule(preview.lineSchedule);
+    }
+    if (preview.stationCounts) {
+        result.stationCounts = await this.importKpiLineStationCounts(preview.stationCounts);
     }
 
     this.state._kpiFinancialImportResult = result;
@@ -2228,6 +2281,17 @@ app._buildKpiDashboardBody = function(directorateId, year) {
         </div>
     `;
 
+    // MGT Ratio Per Line — per AMEEN (1).xlsx's M31_IWF sheet. Defaults
+    // to the latest imported KPI Month, since (unlike the KPI Detail
+    // list) there's no meaningful "just show me the latest result"
+    // fallback for a table that's inherently anchored to one specific
+    // month's station counts.
+    const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const mgtRawSelected = this.state._kpiMgtRatioSelectedMonthNo;
+    const mgtSelectedMonthNo = mgtRawSelected != null ? Number(mgtRawSelected) : (mgtFeePeriods.length > 0 ? mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no : null);
+    const mgtTable = mgtSelectedMonthNo != null ? this._kpiMgtRatioPerLine(mgtSelectedMonthNo, directorateId) : null;
+    const mgtSelectedPeriod = mgtSelectedMonthNo != null ? mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo) : null;
+
     return `
         <!-- Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -2247,6 +2311,53 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                 <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Pending</p>
                 <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#6b7280;margin-top:2px;">${cards.pending}</p>
             </div>
+        </div>
+
+        <!-- MGT Ratio Per Line -->
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                <div>
+                    <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">MGT Ratio Per Line</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;">This directorate's own KPIs, weighted by each line's share of station count</p>
+                </div>
+                ${mgtFeePeriods.length > 0 ? `
+                    <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);app.renderKpiDirectorView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${mgtSelectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                    </select>
+                ` : ''}
+            </div>
+            ${!mgtTable ? `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet — run the Import from Excel section to enable this table.</p>` : `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                <th style="padding:8px 12px;">Line</th>
+                                <th style="padding:8px 12px;text-align:right;">Stations</th>
+                                <th style="padding:8px 12px;text-align:right;">Ratio</th>
+                                <th style="padding:8px 12px;text-align:right;">KPIFt</th>
+                                <th style="padding:8px 12px;text-align:right;">M%erc</th>
+                                <th style="padding:8px 12px;text-align:right;">Weighted</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${mgtTable.rows.map(r => `
+                                <tr style="border-top:1px solid #f3f4f6;">
+                                    <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                    <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                </tr>
+                            `).join('')}
+                            <tr style="border-top:2px solid #e5e7eb;">
+                                <td colspan="5" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
+                                <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtTable.total * 100).toFixed(4)}%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `}
         </div>
 
         <!-- Monthly (single year) -->
