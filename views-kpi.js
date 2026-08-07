@@ -474,45 +474,73 @@ app._renderKpiFinancialReportingSection = function() {
         </div>
 
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:6px;">
-            <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;margin-bottom:4px;">MGT Ratio Per Line — Company-Wide</p>
-            ${feePeriod ? `
-                <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(feePeriod.kpi_fiscal_month)} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">MGT Ratio Per Line — Company-Wide</p>
                 ${(() => {
-                    const mgtTable = this._kpiMgtRatioPerLine(feePeriod.kpi_month_no, null);
+                    // Its own selector, independent of the "Current Fee
+                    // Period" card above — that one is deliberately
+                    // pinned to today's real calendar date, but this
+                    // table is something the user browses across months,
+                    // and today's still-in-progress month usually has no
+                    // results entered yet (which was rendering the whole
+                    // table as blank dashes with no way to pick an
+                    // earlier month that actually has data).
+                    const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+                    if (mgtFeePeriods.length === 0) return '';
+                    const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
+                    const selectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
                     return `
-                        <div style="overflow-x:auto;">
-                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
-                                <thead>
-                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
-                                        <th style="padding:8px 12px;">Line</th>
-                                        <th style="padding:8px 12px;text-align:right;">Stations</th>
-                                        <th style="padding:8px 12px;text-align:right;">Ratio</th>
-                                        <th style="padding:8px 12px;text-align:right;">KPIFt</th>
-                                        <th style="padding:8px 12px;text-align:right;">M%erc</th>
-                                        <th style="padding:8px 12px;text-align:right;">Weighted</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${mgtTable.rows.map(r => `
-                                        <tr style="border-top:1px solid #f3f4f6;">
-                                            <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
-                                            <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
-                                            <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
-                                            <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}</td>
-                                            <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
-                                            <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
-                                        </tr>
-                                    `).join('')}
-                                    <tr style="border-top:2px solid #e5e7eb;">
-                                        <td colspan="5" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
-                                        <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtTable.total * 100).toFixed(4)}%</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                            ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        </select>
                     `;
                 })()}
-            ` : `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet for the current month — run the Financial Calendar import (Import from Excel tab).</p>`}
+            </div>
+            ${(() => {
+                const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+                if (mgtFeePeriods.length === 0) {
+                    return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
+                }
+                const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
+                const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
+                const mgtSelectedPeriod = mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo);
+                const mgtTable = this._kpiMgtRatioPerLine(mgtSelectedMonthNo, null);
+                return `
+                    <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : String(mgtSelectedMonthNo))} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                            <thead>
+                                <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                    <th style="padding:8px 12px;">Line</th>
+                                    <th style="padding:8px 12px;text-align:right;">Stations</th>
+                                    <th style="padding:8px 12px;text-align:right;">Ratio</th>
+                                    <th style="padding:8px 12px;text-align:right;">KPIFt</th>
+                                    <th style="padding:8px 12px;text-align:right;">M%erc</th>
+                                    <th style="padding:8px 12px;text-align:right;">Weighted</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${mgtTable.rows.map(r => `
+                                    <tr style="border-top:1px solid #f3f4f6;">
+                                        <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr style="border-top:2px solid #e5e7eb;">
+                                    <td colspan="5" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
+                                    <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtTable.total * 100).toFixed(4)}%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    ${mgtTable.rows.every(r => r.stations == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:10px;">⚠️ No station counts imported for ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : '')} — run the Stations import.</p>` : ''}
+                    ${mgtTable.rows.every(r => r.kpiFt == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:4px;">⚠️ No KPI results recorded yet for this month — enter results for the corresponding calendar month to populate KPIFt.</p>` : ''}
+                `;
+            })()}
         </div>
 
         <p style="font-size:0.75rem;color:#9ca3af;">This is a summary view built on the Financial Calendar &amp; Partner Allocation data — see the Enter Results tab for each KPI's own HIT/FS/ALS Share, the KPIs tab for per-KPI Final Weight breakdowns, and each Director's Overview page for their own directorate's MGT Ratio Per Line.</p>
@@ -1301,7 +1329,7 @@ app._renderKpiPreviewSection = function() {
             <p style="font-size:0.72rem;color:#9ca3af;margin-top:10px;">This is a read-only preview — exactly what a Director/Viewer for ${esc(selectedDirectorate.name)} would see.</p>
         </div>
 
-        ${this._buildKpiDashboardBody(selectedDirectorateId, year)}
+        ${this._buildKpiDashboardBody(selectedDirectorateId, year, "app.renderKpiPlannerView()")}
     `;
 };
 
@@ -2245,7 +2273,17 @@ app.confirmDeleteKpiUser = async function(id) {
 // rendering logic. Deliberately excludes the outer page wrapper/header/
 // year-selector, since those differ between a full-page view and an
 // embedded preview inside another screen's tab.
-app._buildKpiDashboardBody = function(directorateId, year) {
+app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
+    // This body is shared by TWO different top-level pages: the Director
+    // dashboard's own Overview (renderKpiDirectorView) AND the Planner's
+    // "Preview Dashboard" tab (renderKpiPlannerView, previewing another
+    // directorate read-only). Every interactive control inside here must
+    // call back into whichever one is actually hosting it — hardcoding
+    // renderKpiDirectorView() broke Preview Dashboard's controls for a
+    // Planner session (no verifiedKpiUser exists for a Planner login, so
+    // that function's directorateId resolution failed and showed the
+    // Director-only "Not Yet Assigned to a Directorate" error page).
+    const rerender = rerenderCall || 'app.renderKpiDirectorView()';
     const esc = this._escHtml.bind(this);
     const cards = this._kpiDashboardCards(directorateId, year);
     const ranking = this._kpiDepartmentRanking(directorateId, year);
@@ -2321,7 +2359,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                     <p style="font-size:0.72rem;color:#9ca3af;">This directorate's own KPIs, weighted by each line's share of station count</p>
                 </div>
                 ${mgtFeePeriods.length > 0 ? `
-                    <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);app.renderKpiDirectorView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                    <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                         ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${mgtSelectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
                     </select>
                 ` : ''}
@@ -2367,7 +2405,7 @@ app._buildKpiDashboardBody = function(directorateId, year) {
                     <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">
                         Monthly Performance — ${year}${selectedMonthlyKpi ? ` · ${esc(selectedMonthlyKpi.name)}` : ' · All KPIs (Average)'}
                     </h3>
-                    <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; app.renderKpiDirectorView();"
+                    <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; ${rerender};"
                         style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                         <option value="" ${selectedMonthlyKpiId == null ? 'selected' : ''}>All KPIs (Average)</option>
                         ${monthlyCadenceKpis.map(k => `<option value="${k.id}" ${k.id === selectedMonthlyKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k._ownershipWeight < 1 ? ` (${Math.round(k._ownershipWeight * 100)}% share)` : ''}</option>`).join('')}
