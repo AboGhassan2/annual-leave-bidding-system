@@ -2448,6 +2448,34 @@ app._kpiMgtRatioPerLine = function(kpiMonthNo, directorateId) {
     return { rows, total };
 };
 
+// Annual view — SUMS each month's Weighted Contribution across every KPI
+// Month within the given calendar year (not an average). Per-month
+// Ratio/KPIFt/M%erc don't have a single coherent "yearly" value (they're
+// each anchored to one specific month's station counts/results), so this
+// only aggregates the one figure that legitimately sums across months:
+// Weighted Contribution. monthsCounted tells you how many of the year's
+// KPI Months actually had both a station count AND a KPIFt to contribute
+// — so a low count is visibly distinguishable from a genuinely small sum.
+app._kpiMgtRatioPerLineAnnual = function(year, directorateId) {
+    const monthsInYear = (this.state.kpiFeePeriods || []).filter(p => Number(p.kpi_year) === Number(year)).sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const lines = ['L3', 'L4', 'L5', 'L6'];
+    const rows = lines.map(line => {
+        let sumWeighted = 0, monthsCounted = 0;
+        monthsInYear.forEach(p => {
+            const ratio = this._kpiLineStationRatio(line, p.kpi_month_no);
+            const kpiFt = this._kpiLineFactorScore(line, p.kpi_month_no, directorateId);
+            const mPerc = this._kpiMPercFromFactor(kpiFt);
+            if (ratio != null && mPerc != null) {
+                sumWeighted += ratio * mPerc;
+                monthsCounted++;
+            }
+        });
+        return { line, sumWeighted, monthsCounted };
+    });
+    const total = rows.reduce((sum, r) => sum + r.sumWeighted, 0);
+    return { rows, total, monthsInYearCount: monthsInYear.length };
+};
+
 // Formats a KPI's display name with its line prefix — e.g. "L3-Staffing
 // Level" — so a director browsing their own KPIs can tell apart
 // same-named KPIs that exist once per line (the normal case: a KPI code
