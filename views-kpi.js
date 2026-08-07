@@ -327,13 +327,22 @@ app._renderKpiReportingSection = function() {
     const dirIds = new Set(directorates.map(d => d.id));
     const allDefinitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && dirIds.has(this._kpiEffectiveDirectorateId(k)));
 
+    // Membership by OWNERSHIP SHARE, not just home directorate — same
+    // fix already applied to the KPIs tab (a KPI defined under Operations
+    // but partly owned by Finance should still show up when filtering to
+    // Finance). This section is purely a read-only report, so there's no
+    // "which directorate can enter this KPI's result" concern to protect
+    // against, unlike Enter Results.
     const filterDirectorateId = this.state._kpiReportingFilterDirectorateId || '';
-    const definitions = filterDirectorateId
-        ? allDefinitions.filter(k => this._kpiEffectiveDirectorateId(k) === parseInt(filterDirectorateId, 10))
+    const filterDirectorateIdNum = filterDirectorateId ? parseInt(filterDirectorateId, 10) : null;
+    const definitions = filterDirectorateIdNum
+        ? allDefinitions.filter(k => this._kpiOwnershipWeight(k, filterDirectorateIdNum) > 0)
         : allDefinitions;
 
     const rows = definitions.map(k => {
         const dir = directorates.find(d => d.id === this._kpiEffectiveDirectorateId(k));
+        const viewWeight = filterDirectorateIdNum ? this._kpiOwnershipWeight(k, filterDirectorateIdNum) : 1;
+        const isSharedView = viewWeight > 0 && viewWeight < 1;
         const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
         const latest = (this.state.kpiResults || [])
             .filter(r => r.kpi_definition_id === k.id)
@@ -346,8 +355,8 @@ app._renderKpiReportingSection = function() {
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         return `
             <tr style="border-top:1px solid #f3f4f6;">
-                <td style="padding:8px 12px;font-weight:600;">${esc(k.name)}</td>
-                <td style="padding:8px 12px;">${dir ? esc(dir.name) : '—'}</td>
+                <td style="padding:8px 12px;font-weight:600;">${esc(k.name)}${isSharedView ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</td>
+                <td style="padding:8px 12px;">${dir ? esc(dir.name) : '—'}${isSharedView ? ' (home)' : ''}</td>
                 <td style="padding:8px 12px;">${line ? esc(line.department_name) : '—'}</td>
                 <td style="padding:8px 12px;">${{ monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type}</td>
                 <td style="padding:8px 12px;">${latest ? esc(latest.period_label) : '—'}</td>
@@ -2494,18 +2503,28 @@ app.renderKpiDirectorView = function() {
     if (tab === 'detail') {
         if (kpisInScope.length === 0) {
             bodyHtml = `<div class="bg-white rounded-xl shadow p-8 text-center"><p class="text-sm text-gray-400">No KPIs configured for this directorate yet.</p></div>`;
-        } else {
-            const selectedKpiId = this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id;
+        } else if (this.state._kpiDirectorSelectedKpiId != null && kpisInScope.some(k => k.id === this.state._kpiDirectorSelectedKpiId)) {
+            const selectedKpiId = this.state._kpiDirectorSelectedKpiId;
             const selectedKpiClone = kpisInScope.find(k => k.id === selectedKpiId);
             selectedKpiWeight = selectedKpiClone ? selectedKpiClone._ownershipWeight : 1;
             const kpiOptions = kpisInScope.map(k => `<option value="${k.id}" ${k.id === selectedKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k._ownershipWeight < 1 ? ` (${Math.round(k._ownershipWeight * 100)}% share)` : ''}</option>`).join('');
             kpiPickerHtml = `
+                <button onclick="app.state._kpiDirectorSelectedKpiId = null; app.renderKpiDirectorView();"
+                    style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;color:#1B4332;background:#fff;">← All KPIs</button>
                 <select onchange="app.state._kpiDirectorSelectedKpiId = parseInt(this.value, 10); app.renderKpiDirectorView();"
                     style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
                     ${kpiOptions}
                 </select>
             `;
             bodyHtml = this._buildKpiSingleDetailBody(selectedKpiId, year, selectedKpiWeight);
+        } else {
+            // Default: every configured KPI, filterable, with an
+            // M1-M121 Month selector matching the source Excel's
+            // convention — per explicit request, this replaces the old
+            // behavior of always auto-picking one KPI (which functionally
+            // meant only ever seeing a single, often unrepresentative,
+            // KPI on first load).
+            bodyHtml = this._buildKpiDetailListBody(directorateId, year, kpisInScope);
         }
     } else {
         bodyHtml = this._buildKpiDashboardBody(directorateId, year);
@@ -2560,9 +2579,9 @@ app.renderKpiDirectorView = function() {
         </div>
     `;
 
-    if (tab === 'detail' && kpisInScope.length > 0) {
-        this._drawKpiSingleDetailChart(this.state._kpiDirectorSelectedKpiId || kpisInScope[0].id, year, selectedKpiWeight);
-    } else {
+    if (tab === 'detail' && kpisInScope.length > 0 && this.state._kpiDirectorSelectedKpiId != null && kpisInScope.some(k => k.id === this.state._kpiDirectorSelectedKpiId)) {
+        this._drawKpiSingleDetailChart(this.state._kpiDirectorSelectedKpiId, year, selectedKpiWeight);
+    } else if (tab !== 'detail') {
         this._drawKpiDashboardCharts(directorateId, year);
     }
 };
@@ -2575,8 +2594,119 @@ app.renderKpiDirectorView = function() {
 // reads from _kpiSingleYearStats/_kpiMonthsRanked/_kpiRuleBasedSummary,
 // already tested independently in api-kpi.js.
 // ════════════════════════════════════════════════════════════════════
-app._buildKpiSingleDetailBody = function(kpiId, year, weight) {
+// Default view for the "KPI Detail" tab — every configured KPI for this
+// directorate, filterable, with an M1-M121 Month selector built directly
+// from the imported Financial Calendar (kpi_fee_periods), matching the
+// source Excel's own numbering exactly. Clicking a row drills into the
+// existing single-KPI chart view (_buildKpiSingleDetailBody) — this
+// doesn't replace that, it's just no longer the forced starting point.
+app._buildKpiDetailListBody = function(directorateId, year, kpisInScope) {
     const esc = this._escHtml.bind(this);
+
+    const filterPeriod = this.state._kpiDetailFilterPeriod || 'all';
+    const filterLine = this.state._kpiDetailFilterLine || 'all';
+
+    // Month (Excel) selector — only meaningful for monthly KPIs; picking
+    // one just has no effect on quarterly/yearly rows, which always show
+    // their own latest result regardless.
+    const feePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const selectedMonthNo = this.state._kpiDetailSelectedMonthNo != null ? Number(this.state._kpiDetailSelectedMonthNo) : null;
+    const selectedFeePeriod = selectedMonthNo != null ? feePeriods.find(p => p.kpi_month_no === selectedMonthNo) : null;
+
+    const lineOf = (k) => (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+
+    let filtered = kpisInScope;
+    if (filterPeriod !== 'all') filtered = filtered.filter(k => k.period_type === filterPeriod);
+    if (filterLine !== 'all') filtered = filtered.filter(k => { const l = lineOf(k); return l && l.department_name === filterLine; });
+
+    const rows = filtered.map(k => {
+        const line = lineOf(k);
+        let result = null;
+        if (k.period_type === 'monthly' && selectedFeePeriod) {
+            const calMonthStr = String(selectedFeePeriod.kpi_cal_month).padStart(2, '0');
+            result = (this.state.kpiResults || []).find(r => r.kpi_definition_id === k.id && Number(r.year) === selectedFeePeriod.kpi_year && r.period_value === calMonthStr) || null;
+        } else {
+            const scoped = this._kpiScopedResults(k.id, k._ownershipWeight).filter(r => Number(r.year) === year).sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
+            result = scoped[0] || null;
+        }
+        const benchmark = result ? this._kpiBenchmarkLabel(result.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
+        const benchmarkBadge = {
+            Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
+            Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
+            Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
+        }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
+        const periodLabel = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type;
+        return `
+            <tr style="border-top:1px solid #f3f4f6;cursor:pointer;" onclick="app.state._kpiDirectorSelectedKpiId=${k.id};app.renderKpiDirectorView();">
+                <td style="padding:10px 12px;font-weight:600;color:#1B4332;">${esc(k.name)}${k._ownershipWeight < 1 ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">(${Math.round(k._ownershipWeight * 100)}% share)</span>` : ''}</td>
+                <td style="padding:10px 12px;">${line ? esc(line.department_name) : '—'}</td>
+                <td style="padding:10px 12px;">${esc(periodLabel)}</td>
+                <td style="padding:10px 12px;">${result ? esc(result.period_label) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;">${result ? esc(String(result.actual_value)) : '—'}</td>
+                <td style="padding:10px 12px;text-align:right;">${result && result.achievement != null ? esc(String(result.achievement)) + '%' : '—'}</td>
+                <td style="padding:10px 12px;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
+            </tr>
+        `;
+    }).join('');
+
+    const distinctLines = [...new Set(kpisInScope.map(k => { const l = lineOf(k); return l ? l.department_name : null; }).filter(Boolean))].sort();
+
+    return `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Period</label>
+                    <select onchange="app.state._kpiDetailFilterPeriod=this.value;app.renderKpiDirectorView();" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;">
+                        <option value="all" ${filterPeriod === 'all' ? 'selected' : ''}>All</option>
+                        <option value="monthly" ${filterPeriod === 'monthly' ? 'selected' : ''}>Monthly</option>
+                        <option value="quarterly" ${filterPeriod === 'quarterly' ? 'selected' : ''}>Quarterly</option>
+                        <option value="yearly" ${filterPeriod === 'yearly' ? 'selected' : ''}>Yearly</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Line</label>
+                    <select onchange="app.state._kpiDetailFilterLine=this.value;app.renderKpiDirectorView();" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;">
+                        <option value="all" ${filterLine === 'all' ? 'selected' : ''}>All Lines</option>
+                        ${distinctLines.map(l => `<option value="${esc(l)}" ${filterLine === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+                    </select>
+                </div>
+                ${feePeriods.length > 0 ? `
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Month (Excel)</label>
+                    <select onchange="app.state._kpiDetailSelectedMonthNo=this.value?parseInt(this.value,10):null;app.renderKpiDirectorView();" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;min-width:180px;">
+                        <option value="">Latest result</option>
+                        ${feePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                    </select>
+                </div>
+                ` : ''}
+            </div>
+            ${feePeriods.length === 0 ? '<p style="font-size:0.72rem;color:#9ca3af;margin-top:10px;">No fee period calendar imported yet — the Month selector will appear once the Planner runs the Financial Calendar import.</p>' : ''}
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            ${filtered.length === 0 ? '<p style="padding:30px;text-align:center;color:#9ca3af;font-size:0.85rem;">No KPIs match this filter.</p>' : `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                <th style="padding:8px 12px;">KPI</th>
+                                <th style="padding:8px 12px;">Line</th>
+                                <th style="padding:8px 12px;">Frequency</th>
+                                <th style="padding:8px 12px;">Period</th>
+                                <th style="padding:8px 12px;text-align:right;">Result</th>
+                                <th style="padding:8px 12px;text-align:right;">Achievement</th>
+                                <th style="padding:8px 12px;">Benchmark</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+};
+
+app._buildKpiSingleDetailBody = function(kpiId, year, weight) {    const esc = this._escHtml.bind(this);
     const stats = this._kpiSingleYearStats(kpiId, year, weight);
 
     if (!stats) {
