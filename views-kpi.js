@@ -70,14 +70,14 @@ app.renderKpiPlannerView = function() {
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
     const companyBtn = (name) => `
         <button onclick="app.state._kpiSelectedCompany='${name}'; app.state._kpiResultsSelectedDirectorateId=null; app.state._kpiResultsSelectedId=null; app.state._kpiDefFilterDirectorateId=null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
-            style="padding:7px 18px;border-radius:999px;font-weight:700;font-size:0.8rem;border:1.5px solid ${selectedCompany === name ? '#1d4ed8' : '#e5e7eb'};background:${selectedCompany === name ? '#1d4ed8' : '#fff'};color:${selectedCompany === name ? '#fff' : '#374151'};cursor:pointer;">
+            style="padding:7px 18px;border-radius:999px;font-weight:700;font-size:0.8rem;border:1.5px solid ${selectedCompany === name ? '#2D6A4F' : '#e5e7eb'};background:${selectedCompany === name ? '#2D6A4F' : '#fff'};color:${selectedCompany === name ? '#fff' : '#374151'};cursor:pointer;">
             ${esc(name)}
         </button>
     `;
 
     const tabBtn = (key, icon, label) => `
         <button onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
-            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}">
+            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'text-white' : 'bg-gray-100 text-gray-600'}" style="${tab === key ? 'background:#1B4332;' : ''}">
             ${icon} ${label}
         </button>
     `;
@@ -145,7 +145,7 @@ app._renderKpiDirectoratesSection = function() {
                     <p style="font-size:0.75rem;color:#6b7280;">Lines: ${lines.map(l => esc(l.department_name)).join(', ') || '—'} · ${kpiCount} KPI${kpiCount !== 1 ? 's' : ''}</p>
                 </div>
                 <div style="display:flex;gap:8px;">
-                    <button onclick="app.openKpiDirectorateModal(${d.id})" style="padding:6px 12px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
+                    <button onclick="app.openKpiDirectorateModal(${d.id})" style="padding:6px 12px;background:#EAF5EF;color:#2D6A4F;border-radius:8px;font-size:0.78rem;font-weight:700;">Edit</button>
                     <button onclick="app.confirmDeleteKpiDirectorate(${d.id})" style="padding:6px 12px;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:0.78rem;font-weight:700;">Delete</button>
                 </div>
             </div>
@@ -160,7 +160,7 @@ app._renderKpiDirectoratesSection = function() {
                     ${selectedCompany === 'OMC' && directorates.length > 0 ? `
                         <button onclick="app.doCopyKpiOmcStructureToAudit()" style="padding:8px 16px;background:#f3f4f6;color:#374151;border-radius:8px;font-size:0.85rem;font-weight:700;">📋 Copy OMC → Audit</button>
                     ` : ''}
-                    <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
+                    <button onclick="app.openKpiDirectorateModal(null)" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add Directorate</button>
                 </div>
             </div>
             <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:12px;">Every directorate automatically has 4 operational lines — L3, L4, L5, L6. KPIs are configured per line when you add them. New directorates are added under <strong>${esc(selectedCompany)}</strong> — switch company above to add one for the other side.</p>
@@ -178,7 +178,7 @@ app._renderKpiDirectoratesSection = function() {
                 <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:20px;">Lines L3, L4, L5, and L6 will be created automatically under this directorate. It will belong to <strong>${esc(selectedCompany)}</strong>.</p>
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
-                    <button onclick="app.saveKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
+                    <button onclick="app.saveKpiDirectorateModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;">Save</button>
                 </div>
             </div>
         </div>
@@ -378,7 +378,7 @@ app._renderKpiDefinitionsSection = function() {
         <div class="bg-white rounded-xl shadow-md p-5">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
                 <h3 class="text-lg font-bold text-gray-800">${esc(selectedCompany)} KPIs</h3>
-                <button onclick="app.openKpiDefinitionModal(null)" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add KPI</button>
+                <button onclick="app.openKpiDefinitionModal(null)" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add KPI</button>
             </div>
             ${visibleDefinitions.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPIs match this filter.</p>' : `
                 <div style="overflow-x:auto;">
@@ -486,7 +486,7 @@ app._renderKpiDefinitionsSection = function() {
 
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiDefinitionModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
-                    <button onclick="app.saveKpiDefinitionModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
+                    <button onclick="app.saveKpiDefinitionModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;">Save</button>
                 </div>
             </div>
         </div>
@@ -784,7 +784,7 @@ app._renderKpiResultsSection = function() {
             </div>
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Remarks (optional)</label>
             <textarea id="kpiResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
-            <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
+            <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;margin-bottom:20px;">Save Result</button>
 
             <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(this._kpiDisplayNameWithLine(selected))}</h4>
             ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
@@ -933,7 +933,7 @@ app._renderKpiImportSection = function() {
     const financialResult = this.state._kpiFinancialImportResult;
 
     return `
-        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#1e40af;">
+        <div style="background:#EAF5EF;border:1px solid #C4E0D1;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:0.82rem;color:#1B4332;">
             📁 Importing into <strong>${esc(selectedCompany)}</strong> — switch company above if this isn't the one you meant.
         </div>
 
@@ -949,7 +949,7 @@ app._renderKpiImportSection = function() {
                 <input type="file" id="kpiImportFileInput" accept=".xlsx,.xls" style="display:none;" onchange="app._handleKpiImportFile(event)" />
                 <label for="kpiImportFileInput" style="cursor:pointer;">
                     <p style="color:#6b7280;margin-bottom:10px;">Click to browse, or drag a file here</p>
-                    <span style="padding:8px 18px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
+                    <span style="padding:8px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">📁 Choose Excel File</span>
                 </label>
             </div>
 
@@ -1037,9 +1037,9 @@ app._renderKpiImportPreview = function(preview) {
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <h4 style="font-weight:700;margin-bottom:10px;">Preview</h4>
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                <div style="background:#eff6ff;border-radius:8px;padding:10px;">
-                    <p style="font-size:0.72rem;color:#1d4ed8;font-weight:700;">VALID ROWS</p>
-                    <p style="font-size:1.4rem;font-weight:800;color:#1d4ed8;">${validRows.length}</p>
+                <div style="background:#EAF5EF;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#2D6A4F;font-weight:700;">VALID ROWS</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#2D6A4F;">${validRows.length}</p>
                 </div>
                 <div style="background:${invalidRows.length > 0 || conflicts.length > 0 ? '#fef2f2' : '#f0fdf4'};border-radius:8px;padding:10px;">
                     <p style="font-size:0.72rem;color:${invalidRows.length > 0 || conflicts.length > 0 ? '#991b1b' : '#166534'};font-weight:700;">INVALID / CONFLICTING ROWS</p>
@@ -1119,9 +1119,9 @@ app._renderKpiImportResult = function(result) {
                     <p style="font-size:0.72rem;color:#166534;font-weight:700;">CREATED</p>
                     <p style="font-size:1.4rem;font-weight:800;color:#166534;">${result.created}</p>
                 </div>
-                <div style="background:#eff6ff;border-radius:8px;padding:10px;">
-                    <p style="font-size:0.72rem;color:#1d4ed8;font-weight:700;">UPDATED</p>
-                    <p style="font-size:1.4rem;font-weight:800;color:#1d4ed8;">${result.updated}</p>
+                <div style="background:#EAF5EF;border-radius:8px;padding:10px;">
+                    <p style="font-size:0.72rem;color:#2D6A4F;font-weight:700;">UPDATED</p>
+                    <p style="font-size:1.4rem;font-weight:800;color:#2D6A4F;">${result.updated}</p>
                 </div>
                 <div style="background:${result.failed > 0 ? '#fef2f2' : '#f9fafb'};border-radius:8px;padding:10px;">
                     <p style="font-size:0.72rem;color:${result.failed > 0 ? '#991b1b' : '#6b7280'};font-weight:700;">FAILED</p>
@@ -1630,7 +1630,7 @@ app._renderKpiUsersSection = function() {
                 <p style="font-weight:700;">${esc(u.name)} <span style="font-size:0.7rem;font-weight:400;color:#6b7280;">(${esc(u.id)})</span></p>
                 <p style="font-size:0.75rem;color:#6b7280;">
                     ${u.role === 'kpi_planner' ? '📊 KPI Planner' : '📈 KPI Director'}
-                    ${u.linked_login ? ' · <span style="color:#1d4ed8;">🔗 Linked to Corporate Staff login</span>' : ''}
+                    ${u.linked_login ? ' · <span style="color:#40916C;">🔗 Linked to Corporate Staff login</span>' : ''}
                 </p>
             </div>
             ${u.role === 'kpi_director' ? `
@@ -1663,7 +1663,7 @@ app._renderKpiUsersSection = function() {
                 Found ${csDirectorCount} Corporate Staff member${csDirectorCount !== 1 ? 's' : ''} whose role contains "Director"${alreadyGranted > 0 ? ` (${alreadyGranted} already granted)` : ''}.
                 Granting access lets them log in with their existing Corporate Staff ID and password — no separate password to manage, it always checks their current Corporate Staff login.
             </p>
-            <button onclick="app.doGrantKpiDirectorAccess()" style="padding:9px 18px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">
+            <button onclick="app.doGrantKpiDirectorAccess()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">
                 🔗 Grant Access to All Matching Directors
             </button>
         </div>
@@ -1671,7 +1671,7 @@ app._renderKpiUsersSection = function() {
         <div class="bg-white rounded-xl shadow-md p-5">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
                 <h3 class="text-lg font-bold text-gray-800">All KPI Users (${users.length})</h3>
-                <button onclick="app.openKpiUserModal()" style="padding:8px 16px;background:#1d4ed8;color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add User</button>
+                <button onclick="app.openKpiUserModal()" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border-radius:8px;font-size:0.85rem;font-weight:700;">+ Add User</button>
             </div>
             ${users.length === 0 ? '<p class="text-sm text-gray-400 text-center py-6">No KPI users yet.</p>' : rows}
         </div>
@@ -1724,7 +1724,7 @@ app._renderKpiUsersSection = function() {
 
                 <div style="display:flex;gap:10px;justify-content:flex-end;">
                     <button onclick="app.closeKpiUserModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;">Cancel</button>
-                    <button onclick="app.saveKpiUserModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#1d4ed8;color:#fff;">Save</button>
+                    <button onclick="app.saveKpiUserModal()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;">Save</button>
                 </div>
             </div>
         </div>
@@ -1999,7 +1999,7 @@ app._drawKpiDashboardCharts = function(directorateId, year) {
                 datasets: [{
                     label: 'Avg Achievement %',
                     data: monthly.map(m => m.avgAchievement),
-                    backgroundColor: '#1d4ed8',
+                    backgroundColor: '#40916C',
                     borderRadius: 4,
                     details: monthly, // consumed by the tooltip callback below, not read by Chart.js itself
                 }],
@@ -2138,7 +2138,7 @@ app.renderKpiDirectorView = function() {
 
     const tabBtn = (key, label) => `
         <button onclick="app.state._kpiDirectorTab='${key}';app.renderKpiDirectorView();"
-            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}">
+            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'text-white' : 'bg-gray-100 text-gray-600'}" style="${tab === key ? 'background:#1B4332;' : ''}">
             ${label}
         </button>
     `;
