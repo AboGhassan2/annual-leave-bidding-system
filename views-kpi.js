@@ -70,17 +70,24 @@ app.renderKpiPlannerView = function() {
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
     const companyBtn = (name) => `
         <button onclick="app.state._kpiSelectedCompany='${name}'; app.state._kpiResultsSelectedDirectorateId=null; app.state._kpiResultsSelectedId=null; app.state._kpiDefFilterDirectorateId=null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
-            style="padding:7px 18px;border-radius:999px;font-weight:700;font-size:0.8rem;border:1.5px solid ${selectedCompany === name ? '#2D6A4F' : '#e5e7eb'};background:${selectedCompany === name ? '#2D6A4F' : '#fff'};color:${selectedCompany === name ? '#fff' : '#374151'};cursor:pointer;">
+            style="flex:1;padding:6px 0;border-radius:7px;font-weight:700;font-size:0.78rem;border:none;background:${selectedCompany === name ? '#D4A017' : 'rgba(255,255,255,0.08)'};color:${selectedCompany === name ? '#1B4332' : 'rgba(255,255,255,0.7)'};cursor:pointer;">
             ${esc(name)}
         </button>
     `;
 
-    const tabBtn = (key, icon, label) => `
-        <button onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
-            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'text-white' : 'bg-gray-100 text-gray-600'}" style="${tab === key ? 'background:#1B4332;' : ''}">
-            ${icon} ${label}
-        </button>
-    `;
+    // ── Sidebar nav — a vertical "metro line" rail with station dots,
+    // matching the site's own dark-green/gold identity ──
+    const navItem = (key, icon, label) => {
+        const active = tab === key;
+        return `
+            <div onclick="app.state._kpiAdminTab='${key}';app.renderKpiPlannerView();"
+                style="position:relative;display:flex;align-items:center;gap:12px;padding:10px 18px;cursor:pointer;color:${active ? '#fff' : 'rgba(255,255,255,0.65)'};background:${active ? 'rgba(255,255,255,0.06)' : 'transparent'};">
+                <span style="width:11px;height:11px;border-radius:50%;flex-shrink:0;z-index:1;background:${active ? '#D4A017' : '#2D6A4F'};border:3px solid ${active ? '#D4A017' : 'rgba(255,255,255,0.28)'};box-shadow:${active ? '0 0 0 3px rgba(212,160,23,0.25)' : 'none'};"></span>
+                <span style="font-size:0.92rem;">${icon}</span>
+                <span style="font-size:0.85rem;font-weight:600;">${esc(label)}</span>
+            </div>
+        `;
+    };
 
     let sectionHtml = '';
     if (tab === 'directorates') sectionHtml = this._renderKpiDirectoratesSection();
@@ -91,27 +98,32 @@ app.renderKpiPlannerView = function() {
     else sectionHtml = this._renderKpiUsersSection();
 
     content.innerHTML = `
-        <div class="max-w-5xl mx-auto">
-            <div class="mb-6">
-                <h2 class="text-2xl font-bold text-gray-800">📊 KPI Planner</h2>
-                <p class="text-gray-500 text-sm mt-1">Define directorates, KPIs, and enter results.</p>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-                <span style="font-size:0.75rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.03em;">Company</span>
-                <div style="display:flex;gap:6px;">
-                    ${companyBtn('OMC')}
-                    ${companyBtn('Audit')}
+        <div class="max-w-7xl mx-auto" style="display:flex;align-items:flex-start;gap:26px;">
+            <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
+                <div style="padding:0 18px 14px 18px;">
+                    <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;">📊 KPI Planner</h2>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.72rem;margin-top:2px;">Define directorates, KPIs, and enter results.</p>
                 </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
-                ${tabBtn('directorates', '🏛️', 'Directorates')}
-                ${tabBtn('kpis', '📈', 'KPIs')}
-                ${tabBtn('results', '✏️', 'Enter Results')}
-                ${tabBtn('preview', '👁️', 'Preview Dashboard')}
-                ${tabBtn('import', '📥', 'Import from Excel')}
-                ${tabBtn('users', '👥', 'Manage Users')}
-            </div>
-            ${sectionHtml}
+                <div style="padding:14px 18px 16px 18px;border-top:1px solid rgba(255,255,255,0.1);border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:10px;">
+                    <div style="font-size:0.66rem;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Company</div>
+                    <div style="display:flex;gap:6px;">
+                        ${companyBtn('OMC')}
+                        ${companyBtn('Audit')}
+                    </div>
+                </div>
+                <nav style="position:relative;padding:4px 0;">
+                    <div style="position:absolute;left:23px;top:14px;bottom:14px;width:3px;background:rgba(255,255,255,0.12);border-radius:2px;"></div>
+                    ${navItem('directorates', '🏛️', 'Directorates')}
+                    ${navItem('kpis', '📈', 'KPIs')}
+                    ${navItem('results', '✏️', 'Enter Results')}
+                    ${navItem('preview', '👁️', 'Preview Dashboard')}
+                    ${navItem('import', '📥', 'Import from Excel')}
+                    ${navItem('users', '👥', 'Manage Users')}
+                </nav>
+            </aside>
+            <main style="flex:1;min-width:0;">
+                ${sectionHtml}
+            </main>
         </div>
     `;
 
@@ -2136,12 +2148,17 @@ app.renderKpiDirectorView = function() {
     const tab = this.state._kpiDirectorTab || 'overview';
     const kpisInScope = this._kpisForDirectorateDashboard(directorateId);
 
-    const tabBtn = (key, label) => `
-        <button onclick="app.state._kpiDirectorTab='${key}';app.renderKpiDirectorView();"
-            class="px-4 py-2 rounded-lg font-semibold text-sm ${tab === key ? 'text-white' : 'bg-gray-100 text-gray-600'}" style="${tab === key ? 'background:#1B4332;' : ''}">
-            ${label}
-        </button>
-    `;
+    const navItem = (key, icon, label) => {
+        const active = tab === key;
+        return `
+            <div onclick="app.state._kpiDirectorTab='${key}';app.renderKpiDirectorView();"
+                style="position:relative;display:flex;align-items:center;gap:12px;padding:10px 18px;cursor:pointer;color:${active ? '#fff' : 'rgba(255,255,255,0.65)'};background:${active ? 'rgba(255,255,255,0.06)' : 'transparent'};">
+                <span style="width:11px;height:11px;border-radius:50%;flex-shrink:0;z-index:1;background:${active ? '#D4A017' : '#2D6A4F'};border:3px solid ${active ? '#D4A017' : 'rgba(255,255,255,0.28)'};box-shadow:${active ? '0 0 0 3px rgba(212,160,23,0.25)' : 'none'};"></span>
+                <span style="font-size:0.92rem;">${icon}</span>
+                <span style="font-size:0.85rem;font-weight:600;">${esc(label)}</span>
+            </div>
+        `;
+    };
 
     let bodyHtml, kpiPickerHtml = '';
     let selectedKpiWeight = 1;
@@ -2166,35 +2183,42 @@ app.renderKpiDirectorView = function() {
     }
 
     content.innerHTML = `
-        <div class="max-w-6xl mx-auto">
-            <div class="flex justify-between items-center flex-wrap gap-3 mb-4">
-                <div>
-                    <h2 class="text-2xl font-bold text-gray-800">📈 ${esc(directorate ? directorate.name : 'KPI')} Dashboard</h2>
-                    <p class="text-gray-500 text-sm mt-1">Welcome, ${esc(user.name)}.${isSuperUser ? ' <span style="background:#faf5ff;color:#7c3aed;padding:2px 8px;border-radius:999px;font-size:0.72rem;font-weight:700;margin-left:6px;">👁️ VIEW-ONLY · ALL DIRECTORATES</span>' : ''}</p>
+        <div class="max-w-7xl mx-auto" style="display:flex;align-items:flex-start;gap:26px;">
+            <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
+                <div style="padding:0 18px 14px 18px;">
+                    <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.15rem;">📈 ${esc(directorate ? directorate.name : 'KPI')}</h2>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.72rem;margin-top:2px;">Welcome, ${esc(user.name)}.</p>
+                    ${isSuperUser ? '<span style="display:inline-block;margin-top:8px;background:rgba(212,160,23,0.18);color:#D4A017;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:700;">👁️ VIEW-ONLY · ALL</span>' : ''}
                 </div>
-                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                    ${isSuperUser ? `
-                        <select onchange="app.state._kpiSuperUserSelectedDirectorateId = parseInt(this.value, 10); app.state._kpiDirectorSelectedKpiId = null; app.renderKpiDirectorView();"
-                            style="padding:8px 14px;border:1.5px solid #7c3aed;border-radius:8px;font-size:0.85rem;font-weight:600;color:#7c3aed;">
-                            ${['OMC', 'Audit'].map(company => {
-                                const inCompany = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === company);
-                                if (inCompany.length === 0) return '';
-                                return `<optgroup label="${esc(company)}">${inCompany.map(d => `<option value="${d.id}" ${d.id === directorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`;
-                            }).join('')}
+                <nav style="position:relative;padding:14px 0 4px 0;border-top:1px solid rgba(255,255,255,0.1);">
+                    <div style="position:absolute;left:23px;top:28px;bottom:14px;width:3px;background:rgba(255,255,255,0.12);border-radius:2px;"></div>
+                    ${navItem('overview', '🏛️', 'Overview')}
+                    ${navItem('detail', '🔍', 'KPI Detail')}
+                </nav>
+            </aside>
+            <main style="flex:1;min-width:0;">
+                <div class="flex justify-between items-center flex-wrap gap-3 mb-4">
+                    <div></div>
+                    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        ${isSuperUser ? `
+                            <select onchange="app.state._kpiSuperUserSelectedDirectorateId = parseInt(this.value, 10); app.state._kpiDirectorSelectedKpiId = null; app.renderKpiDirectorView();"
+                                style="padding:8px 14px;border:1.5px solid #7c3aed;border-radius:8px;font-size:0.85rem;font-weight:600;color:#7c3aed;">
+                                ${['OMC', 'Audit'].map(company => {
+                                    const inCompany = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === company);
+                                    if (inCompany.length === 0) return '';
+                                    return `<optgroup label="${esc(company)}">${inCompany.map(d => `<option value="${d.id}" ${d.id === directorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</optgroup>`;
+                                }).join('')}
+                            </select>
+                        ` : ''}
+                        ${kpiPickerHtml}
+                        <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
+                            style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
+                            ${yearOptions}
                         </select>
-                    ` : ''}
-                    ${kpiPickerHtml}
-                    <select onchange="app.state._kpiDashboardYear = parseInt(this.value, 10); app.renderKpiDirectorView();"
-                        style="padding:8px 14px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;font-weight:600;">
-                        ${yearOptions}
-                    </select>
+                    </div>
                 </div>
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:20px;">
-                ${tabBtn('overview', '🏛️ Overview')}
-                ${tabBtn('detail', '🔍 KPI Detail')}
-            </div>
-            ${bodyHtml}
+                ${bodyHtml}
+            </main>
         </div>
     `;
 
