@@ -2549,6 +2549,61 @@ app.importM31IWFResults = async function(company) {
     return summary;
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Directorate Assignment Audit — read-only diagnostic, per explicit
+// request after finding a KPI whose home directorate ("Public
+// Relations") turned out to be leftover bad data from before the
+// owner-import conflict-detection fix existed. Compares every KPI's
+// CURRENT home directorate against the correct primary owner from the
+// real KPI_Owner.xlsx (highest % owner per KPI Code — identical across
+// all 4 lines in the source file, verified directly). Deliberately does
+// NOT auto-fix anything: reassigning a KPI's directorate also requires
+// pointing department_id at the correct directorate's OWN line record,
+// not just swapping directorate_id, so a blind bulk-write here risks
+// silently breaking that link across potentially dozens of KPIs. This
+// only reports mismatches for a human to review and fix via the
+// Directorates/KPIs tabs.
+// ════════════════════════════════════════════════════════════════════
+app._kpiCorrectPrimaryOwnerByCode = {
+    A1: 'Operations', A2: 'Operations', A3: 'Operations', A4: 'Contract', A5: 'Maintenance', A6: 'Operations',
+    B1: 'Operations', B2: 'Operations', B3: 'Operations', B4: 'Operations', B5: 'Operations', B6: 'Operations',
+    C1: 'Maintenance', C2: 'Operations', C3: 'Maintenance',
+    D1: 'Operations', D2: 'Contract', D3: 'Contract', D4: 'Contract',
+    E1: 'Maintenance', E2: 'Maintenance', E3: 'Maintenance', E4: 'Maintenance', E5: 'Maintenance', E6: 'Maintenance',
+    F1: 'Safety', F2: 'Safety', F3: 'Safety', F4: 'Safety', F5: 'Security',
+    FOSA: 'Maintenance',
+    G1: 'Human Resources', G2: 'Human Resources',
+    H1: 'Safety', I1: 'Safety',
+    PSA: 'Operations', TLR: 'Contract', TSA: 'Contract', TSR: 'Human Resources',
+};
+
+app.auditKpiDirectorateAssignments = function(company) {
+    const targetCompany = company || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany);
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && directorates.some(d => d.id === k.directorate_id));
+
+    const mismatches = [];
+    let checked = 0, noReference = 0;
+    definitions.forEach(k => {
+        const code = k.kpi_code;
+        const expectedDept = code ? this._kpiCorrectPrimaryOwnerByCode[code] : null;
+        if (!expectedDept) { noReference++; return; }
+        checked++;
+        const currentDir = directorates.find(d => d.id === k.directorate_id);
+        const currentName = currentDir ? currentDir.name : '(none)';
+        if (currentName !== expectedDept) {
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            mismatches.push({
+                kpiId: k.id, kpiCode: code, kpiName: k.name,
+                line: line ? line.department_name : '?',
+                currentDirectorate: currentName, expectedDirectorate: expectedDept,
+            });
+        }
+    });
+
+    return { checked, noReference, mismatches };
+};
+
 // M%erc — converts a line's overall Factor Score (KPIFt, 0-2 scale)
 // into a management bonus percentage. Exact piecewise formula from
 // M31_IWF, verified byte-exact: G5=1.6839 -> H5=0.066839.
