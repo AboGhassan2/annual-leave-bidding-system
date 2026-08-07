@@ -2364,6 +2364,79 @@ app.importKpiLineStationCounts = async function(rows) {
     }
 };
 
+// One-time historical backfill: the "KPI Result" column (N=name, R=value)
+// from AMEEN (1).xlsx's M31_IWF sheet, Line 3 section. KPI Month 31 maps
+// to May 2026 on the real imported fee calendar (M1 = Nov 2023), so each
+// row is saved under whichever real period that KPI's own frequency
+// implies for that month: Monthly -> May 2026, Quarterly -> Q2 2026 (the
+// quarter May falls in), Annual -> 2026. The two KPIs with no data in the
+// sheet (A1, A6 — both showed "-") are correctly left out. Reuses
+// saveKpiResult exactly like every other entry path, so Factor Score/
+// Final KPI compute identically to a normal manual save.
+app.importM31IWFLine3Results = async function(company) {
+    if (!this.supabase) { this.showToast('Not connected to Supabase.', 'error'); return { updated: 0, notFound: 0, failed: 0, errors: [] }; }
+    const targetCompany = company || 'OMC';
+    const YEAR = 2026, MONTH = '05', QUARTER = 'Q2';
+    const rows = [
+        { code: 'A2', periodType: 'monthly', actualValue: 0.9927 },
+        { code: 'A3', periodType: 'monthly', actualValue: 16.02 },
+        { code: 'A4', periodType: 'monthly', actualValue: 0.9996 },
+        { code: 'A5', periodType: 'monthly', actualValue: 1 },
+        { code: 'B1', periodType: 'quarterly', actualValue: 0.8929 },
+        { code: 'B2', periodType: 'quarterly', actualValue: 0.96 },
+        { code: 'B3', periodType: 'monthly', actualValue: 1 },
+        { code: 'B4', periodType: 'monthly', actualValue: 1 },
+        { code: 'B5', periodType: 'monthly', actualValue: 1 },
+        { code: 'B6', periodType: 'monthly', actualValue: 1 },
+        { code: 'C1', periodType: 'monthly', actualValue: 0.98 },
+        { code: 'C2', periodType: 'monthly', actualValue: 0.865 },
+        { code: 'C3', periodType: 'monthly', actualValue: 0.98 },
+        { code: 'D1', periodType: 'monthly', actualValue: 1 },
+        { code: 'D2', periodType: 'monthly', actualValue: 0.9943 },
+        { code: 'D3', periodType: 'monthly', actualValue: 0.9811 },
+        { code: 'D4', periodType: 'monthly', actualValue: 0.9792 },
+        { code: 'E1', periodType: 'monthly', actualValue: 1 },
+        { code: 'E2', periodType: 'monthly', actualValue: 0.9957 },
+        { code: 'E3', periodType: 'yearly', actualValue: 1 },
+        { code: 'E4', periodType: 'monthly', actualValue: 0.9985 },
+        { code: 'E5', periodType: 'monthly', actualValue: 0.9716 },
+        { code: 'E6', periodType: 'monthly', actualValue: 0.9789 },
+        { code: 'F1', periodType: 'monthly', actualValue: 0.09 },
+        { code: 'F2', periodType: 'monthly', actualValue: 0.02 },
+        { code: 'F3', periodType: 'monthly', actualValue: 0 },
+        { code: 'F4', periodType: 'monthly', actualValue: 0.06 },
+        { code: 'F5', periodType: 'quarterly', actualValue: 0.9867 },
+        { code: 'G1', periodType: 'monthly', actualValue: 0.9935 },
+        { code: 'G2', periodType: 'quarterly', actualValue: 1 },
+        { code: 'H1', periodType: 'yearly', actualValue: 0.9259 },
+        { code: 'I1', periodType: 'monthly', actualValue: 1 },
+    ];
+
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of rows) {
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.code, 'L3', targetCompany);
+        if (!existing) {
+            summary.notFound++;
+            summary.errors.push(`${row.code}: no matching L3 KPI found`);
+            continue;
+        }
+        const periodValue = row.periodType === 'monthly' ? MONTH : row.periodType === 'quarterly' ? QUARTER : null;
+        try {
+            const saved = await this.saveKpiResult(existing.id, {
+                year: YEAR, periodType: row.periodType, periodValue,
+                actualValue: row.actualValue, remarks: 'Imported from M31_IWF (AMEEN)', source: 'm31_iwf_import',
+            });
+            if (!saved) { summary.failed++; summary.errors.push(`${row.code}: failed to save`); continue; }
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${row.code}: ${e.message}`);
+        }
+    }
+    this.showToast(`M31_IWF Line 3 import complete: ${summary.updated} saved, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
 // M%erc — converts a line's overall Factor Score (KPIFt, 0-2 scale)
 // into a management bonus percentage. Exact piecewise formula from
 // M31_IWF, verified byte-exact: G5=1.6839 -> H5=0.066839.
