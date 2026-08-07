@@ -477,22 +477,36 @@ app._renderKpiFinancialReportingSection = function() {
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
                 <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">MGT Ratio Per Line — Company-Wide</p>
                 ${(() => {
-                    // Its own selector, independent of the "Current Fee
-                    // Period" card above — that one is deliberately
-                    // pinned to today's real calendar date, but this
-                    // table is something the user browses across months,
-                    // and today's still-in-progress month usually has no
-                    // results entered yet (which was rendering the whole
-                    // table as blank dashes with no way to pick an
-                    // earlier month that actually has data).
+                    // Independent of the "Current Fee Period" card above
+                    // — that one is deliberately pinned to today's real
+                    // calendar date, but this table is something the
+                    // user browses across months (or an annual sum), and
+                    // today's still-in-progress month usually has no
+                    // results entered yet.
                     const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                     if (mgtFeePeriods.length === 0) return '';
+                    const mode = this.state._kpiFinReportMgtMode === 'year' ? 'year' : 'month';
                     const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
                     const selectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
+                    const yearOptions = [...new Set(mgtFeePeriods.map(p => p.kpi_year))].sort((a, b) => a - b);
+                    const rawYear = this.state._kpiFinReportMgtSelectedYear;
+                    const selectedYear = rawYear != null ? Number(rawYear) : (yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : new Date().getFullYear());
                     return `
-                        <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                            ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
-                        </select>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <div style="display:flex;border:1.5px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                                <button onclick="app.state._kpiFinReportMgtMode='month';app.renderKpiPlannerView();" style="padding:6px 12px;border:none;font-size:0.78rem;font-weight:700;cursor:pointer;background:${mode === 'month' ? '#1B4332' : '#fff'};color:${mode === 'month' ? '#fff' : '#374151'};">Month</button>
+                                <button onclick="app.state._kpiFinReportMgtMode='year';app.renderKpiPlannerView();" style="padding:6px 12px;border:none;font-size:0.78rem;font-weight:700;cursor:pointer;background:${mode === 'year' ? '#1B4332' : '#fff'};color:${mode === 'year' ? '#fff' : '#374151'};">Year (Sum)</button>
+                            </div>
+                            ${mode === 'month' ? `
+                                <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                                </select>
+                            ` : `
+                                <select onchange="app.state._kpiFinReportMgtSelectedYear=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                                    ${yearOptions.map(y => `<option value="${y}" ${selectedYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+                                </select>
+                            `}
+                        </div>
                     `;
                 })()}
             </div>
@@ -501,6 +515,45 @@ app._renderKpiFinancialReportingSection = function() {
                 if (mgtFeePeriods.length === 0) {
                     return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
                 }
+                const mode = this.state._kpiFinReportMgtMode === 'year' ? 'year' : 'month';
+
+                if (mode === 'year') {
+                    const yearOptions = [...new Set(mgtFeePeriods.map(p => p.kpi_year))].sort((a, b) => a - b);
+                    const rawYear = this.state._kpiFinReportMgtSelectedYear;
+                    const selectedYear = rawYear != null ? Number(rawYear) : (yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : new Date().getFullYear());
+                    const annual = this._kpiMgtRatioPerLineAnnual(selectedYear, null);
+                    if (annual.monthsInYearCount === 0) {
+                        return `<p style="font-size:0.85rem;color:#9ca3af;">No Financial Calendar imported yet for ${esc(String(selectedYear))}.</p>`;
+                    }
+                    return `
+                        <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">Sum of each month's Weighted Contribution across all ${annual.monthsInYearCount} KPI Month(s) configured in ${esc(String(selectedYear))} — not an average, and across every ${esc(selectedCompany)} directorate.</p>
+                        <div style="overflow-x:auto;">
+                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                        <th style="padding:8px 12px;">Line</th>
+                                        <th style="padding:8px 12px;text-align:right;">Months Counted</th>
+                                        <th style="padding:8px 12px;text-align:right;">Weighted (Sum)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${annual.rows.map(r => `
+                                        <tr style="border-top:1px solid #f3f4f6;">
+                                            <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                            <td style="padding:8px 12px;text-align:right;">${r.monthsCounted} / ${annual.monthsInYearCount}</td>
+                                            <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${(r.sumWeighted * 100).toFixed(4)}%</td>
+                                        </tr>
+                                    `).join('')}
+                                    <tr style="border-top:2px solid #e5e7eb;">
+                                        <td colspan="2" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
+                                        <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(annual.total * 100).toFixed(4)}%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                }
+
                 const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
                 const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
                 const mgtSelectedPeriod = mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo);
@@ -2323,12 +2376,19 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
     // to the latest imported KPI Month, since (unlike the KPI Detail
     // list) there's no meaningful "just show me the latest result"
     // fallback for a table that's inherently anchored to one specific
-    // month's station counts.
+    // month's station counts. A separate "Year (Sum)" mode sums each
+    // month's Weighted Contribution across the whole year instead — per
+    // explicit request, a SUM across all KPI Months in that year, not an
+    // average.
     const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const mgtMode = this.state._kpiMgtRatioMode === 'year' ? 'year' : 'month';
     const mgtRawSelected = this.state._kpiMgtRatioSelectedMonthNo;
     const mgtSelectedMonthNo = mgtRawSelected != null ? Number(mgtRawSelected) : (mgtFeePeriods.length > 0 ? mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no : null);
-    const mgtTable = mgtSelectedMonthNo != null ? this._kpiMgtRatioPerLine(mgtSelectedMonthNo, directorateId) : null;
+    const mgtTable = mgtMode === 'month' && mgtSelectedMonthNo != null ? this._kpiMgtRatioPerLine(mgtSelectedMonthNo, directorateId) : null;
     const mgtSelectedPeriod = mgtSelectedMonthNo != null ? mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo) : null;
+    const mgtYearOptions = [...new Set(mgtFeePeriods.map(p => p.kpi_year))].sort((a, b) => a - b);
+    const mgtSelectedYear = this.state._kpiMgtRatioSelectedYear != null ? Number(this.state._kpiMgtRatioSelectedYear) : (mgtYearOptions.length > 0 ? mgtYearOptions[mgtYearOptions.length - 1] : year);
+    const mgtAnnual = mgtMode === 'year' ? this._kpiMgtRatioPerLineAnnual(mgtSelectedYear, directorateId) : null;
 
     return `
         <!-- Cards -->
@@ -2358,13 +2418,24 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                     <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">MGT Ratio Per Line</h3>
                     <p style="font-size:0.72rem;color:#9ca3af;">This directorate's own KPIs, weighted by each line's share of station count</p>
                 </div>
-                ${mgtFeePeriods.length > 0 ? `
-                    <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${mgtSelectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
-                    </select>
-                ` : ''}
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <div style="display:flex;border:1.5px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                        <button onclick="app.state._kpiMgtRatioMode='month';${rerender};" style="padding:6px 12px;border:none;font-size:0.78rem;font-weight:700;cursor:pointer;background:${mgtMode === 'month' ? '#1B4332' : '#fff'};color:${mgtMode === 'month' ? '#fff' : '#374151'};">Month</button>
+                        <button onclick="app.state._kpiMgtRatioMode='year';${rerender};" style="padding:6px 12px;border:none;font-size:0.78rem;font-weight:700;cursor:pointer;background:${mgtMode === 'year' ? '#1B4332' : '#fff'};color:${mgtMode === 'year' ? '#fff' : '#374151'};">Year (Sum)</button>
+                    </div>
+                    ${mgtMode === 'month' && mgtFeePeriods.length > 0 ? `
+                        <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                            ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${mgtSelectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        </select>
+                    ` : ''}
+                    ${mgtMode === 'year' && mgtYearOptions.length > 0 ? `
+                        <select onchange="app.state._kpiMgtRatioSelectedYear=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                            ${mgtYearOptions.map(y => `<option value="${y}" ${mgtSelectedYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+                        </select>
+                    ` : ''}
+                </div>
             </div>
-            ${!mgtTable ? `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet — run the Import from Excel section to enable this table.</p>` : `
+            ${mgtMode === 'month' ? (!mgtTable ? `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet — run the Import from Excel section to enable this table.</p>` : `
                 <div style="overflow-x:auto;">
                     <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                         <thead>
@@ -2395,7 +2466,33 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                         </tbody>
                     </table>
                 </div>
-            `}
+            `) : (!mgtAnnual || mgtAnnual.monthsInYearCount === 0 ? `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet for ${esc(String(mgtSelectedYear))} — run the Import from Excel section to enable this table.</p>` : `
+                <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Sum of each month's Weighted Contribution across all ${mgtAnnual.monthsInYearCount} KPI Month(s) configured in ${esc(String(mgtSelectedYear))} — not an average.</p>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                <th style="padding:8px 12px;">Line</th>
+                                <th style="padding:8px 12px;text-align:right;">Months Counted</th>
+                                <th style="padding:8px 12px;text-align:right;">Weighted (Sum)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${mgtAnnual.rows.map(r => `
+                                <tr style="border-top:1px solid #f3f4f6;">
+                                    <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                    <td style="padding:8px 12px;text-align:right;">${r.monthsCounted} / ${mgtAnnual.monthsInYearCount}</td>
+                                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${(r.sumWeighted * 100).toFixed(4)}%</td>
+                                </tr>
+                            `).join('')}
+                            <tr style="border-top:2px solid #e5e7eb;">
+                                <td colspan="2" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
+                                <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtAnnual.total * 100).toFixed(4)}%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `)}
         </div>
 
         <!-- Monthly (single year) -->
