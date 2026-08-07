@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -34,6 +34,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_owners').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_fee_periods').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_fee_schedule').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_station_counts').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -43,6 +44,7 @@ app.loadKpiData = async function() {
         if (owners.error) throw owners.error;
         if (feePeriods.error) throw feePeriods.error;
         if (lineFeeSchedule.error) throw lineFeeSchedule.error;
+        if (stationCounts.error) throw stationCounts.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -52,6 +54,7 @@ app.loadKpiData = async function() {
         this.state.kpiOwners = owners.data || [];
         this.state.kpiFeePeriods = feePeriods.data || [];
         this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
+        this.state.kpiLineStationCounts = stationCounts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
     } catch (e) {
@@ -2322,6 +2325,127 @@ app._kpiLineFeeStatus = function(lineName, kpiMonthNo) {
     const target = Number(kpiMonthNo);
     const row = (this.state.kpiLineFeeSchedule || []).find(r => r.fee_stream === feeStream && Number(r.kpi_month_no) === target);
     return row ? row.status : null;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// MGT Ratio Per Line — per AMEEN (1).xlsx's M31_IWF sheet. Converts
+// each line's overall performance into a management bonus percentage,
+// weighted by that line's share of the network's station count. Verified
+// byte-exact against the real M31_IWF snapshot for KPI Month 31.
+// ════════════════════════════════════════════════════════════════════
+
+// "Stations"/"Station Open Month" sheet — one row per (KPI Month x
+// Line). Wholesale-replace on import, same pattern as fee periods and
+// the line fee schedule (physical network data, nobody hand-edits it).
+app._kpiParseStationCountRows = function(rawRows) {
+    return (rawRows || []).map(r => ({
+        kpi_month_no: parseInt(r['Fiscal Month No'], 10),
+        line: this._kpiMapLineNumberToLineName(r['Line']),
+        station_count: parseInt(r['No. of Stations'], 10) || 0,
+    })).filter(r => Number.isFinite(r.kpi_month_no) && r.line);
+};
+
+app.importKpiLineStationCounts = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_line_station_counts').delete().eq('tenant_id', tid);
+        if (delError) throw delError;
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase.from('kpi_line_station_counts').insert(insertRows).select();
+        if (error) throw error;
+        this.state.kpiLineStationCounts = data || [];
+        this.showToast(`Station counts imported: ${data.length} rows.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import station counts:', e.message);
+        this.showToast('Could not import station counts: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
+};
+
+// M%erc — converts a line's overall Factor Score (KPIFt, 0-2 scale)
+// into a management bonus percentage. Exact piecewise formula from
+// M31_IWF, verified byte-exact: G5=1.6839 -> H5=0.066839.
+app._kpiMPercFromFactor = function(kpiFt) {
+    if (kpiFt == null) return null;
+    const g = Number(kpiFt);
+    if (!Number.isFinite(g)) return null;
+    if (g > 0 && g < 1) return 0.01 + (g * 0.05);
+    if (g === 1) return 0.06;
+    if (g === 0) return 0.01;
+    if (g > 1 && g < 2) return 0.06 + ((g - 1) * 0.01);
+    return 0.07; // g >= 2
+};
+
+// A line's overall Factor Score (KPIFt) for a given KPI Month — a
+// weighted average of that line's own KPIs' Factor Scores for the
+// matching calendar month, weighted by each KPI's Final Weight (Area% x
+// Level1% x Level2% x Level3%). This is mathematically equivalent to the
+// source spreadsheet's explicit Area->Level1->Level2->KPI tree rollup,
+// since Final Weight is already that full chain multiplied down to each
+// individual KPI — no need to separately model Area/Level as their own
+// entities. Normalizes by the weight of KPIs that actually HAVE a result
+// this month (rather than zeroing the whole line out if one KPI hasn't
+// reported yet) — the source spreadsheet doesn't handle partial data
+// explicitly, so this is a deliberate, documented judgment call.
+// directorateId: pass a directorate to scope to just that directorate's
+// own KPIs on this line (matches this app's per-directorate L3-L6
+// structure); pass null/omit for a company-wide figure across every
+// directorate's KPIs on that line.
+app._kpiLineFactorScore = function(lineName, kpiMonthNo, directorateId) {
+    const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
+    if (!feePeriod) return null;
+    const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
+
+    const deptFilter = directorateId != null
+        ? (d) => d.directorate_id === directorateId && d.department_name === lineName
+        : (d) => d.department_name === lineName;
+    const lineDeptIds = new Set((this.state.kpiDirectorateDepartments || []).filter(deptFilter).map(d => d.id));
+    if (lineDeptIds.size === 0) return null;
+
+    const lineKpis = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && lineDeptIds.has(k.department_id) && this._kpiFinalWeight(k) != null);
+
+    let weightedSum = 0, weightTotal = 0;
+    lineKpis.forEach(k => {
+        const w = this._kpiFinalWeight(k);
+        const result = (this.state.kpiResults || []).find(r => r.kpi_definition_id === k.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr);
+        if (result && result.factor_score != null) {
+            weightedSum += w * Number(result.factor_score);
+            weightTotal += w;
+        }
+    });
+    if (weightTotal === 0) return null;
+    return weightedSum / weightTotal;
+};
+
+// A line's share of the network's total station count for a given KPI
+// Month — always company-wide (physical station counts aren't scoped to
+// a directorate), matching the source sheet's Ratio column exactly.
+app._kpiLineStationRatio = function(lineName, kpiMonthNo) {
+    const rows = (this.state.kpiLineStationCounts || []).filter(r => Number(r.kpi_month_no) === Number(kpiMonthNo));
+    const total = rows.reduce((sum, r) => sum + (r.station_count || 0), 0);
+    const thisLine = rows.find(r => r.line === lineName);
+    if (!thisLine || total === 0) return null;
+    return thisLine.station_count / total;
+};
+
+// The full MGT Ratio Per Line table for a given KPI Month — Line,
+// Stations, Ratio, KPIFt, M%erc, and each line's Weighted Contribution,
+// plus the total (the headline company- or directorate-wide bonus %).
+app._kpiMgtRatioPerLine = function(kpiMonthNo, directorateId) {
+    const lines = ['L3', 'L4', 'L5', 'L6'];
+    const rows = lines.map(line => {
+        const stationRow = (this.state.kpiLineStationCounts || []).find(r => Number(r.kpi_month_no) === Number(kpiMonthNo) && r.line === line);
+        const stations = stationRow ? stationRow.station_count : null;
+        const ratio = this._kpiLineStationRatio(line, kpiMonthNo);
+        const kpiFt = this._kpiLineFactorScore(line, kpiMonthNo, directorateId);
+        const mPerc = this._kpiMPercFromFactor(kpiFt);
+        const weighted = (ratio != null && mPerc != null) ? ratio * mPerc : null;
+        return { line, stations, ratio, kpiFt, mPerc, weighted };
+    });
+    const total = rows.reduce((sum, r) => sum + (r.weighted || 0), 0);
+    return { rows, total };
 };
 
 // Formats a KPI's display name with its line prefix — e.g. "L3-Staffing
