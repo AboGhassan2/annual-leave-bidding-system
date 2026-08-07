@@ -108,7 +108,7 @@ app.renderKpiPlannerView = function() {
 
     content.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
-            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:20px;display:flex;flex-direction:column;">
+            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:calc(var(--topbar-h, 0px) + 20px);display:flex;flex-direction:column;">
                 <div style="padding:0 22px 22px 22px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:20px;">
                     <div style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.5rem;letter-spacing:0.02em;">FLOW <span style="color:#D4A017;">◆</span> KPI</div>
                     <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Riyadh Metro Operator</div>
@@ -2222,29 +2222,29 @@ app._buildKpiDashboardBody = function(directorateId, year) {
     return `
         <!-- Cards -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white rounded-xl shadow p-5">
-                <p class="text-xs font-semibold text-gray-500 uppercase">Total KPIs</p>
-                <p class="text-3xl font-bold text-gray-800 mt-1">${cards.total}</p>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Total KPIs</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#14251C;margin-top:2px;">${cards.total}</p>
             </div>
-            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-emerald-500">
-                <p class="text-xs font-semibold text-gray-500 uppercase">Achieved</p>
-                <p class="text-3xl font-bold text-emerald-700 mt-1">${cards.achieved}</p>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #2D6A4F;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Achieved</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#2D6A4F;margin-top:2px;">${cards.achieved}</p>
             </div>
-            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-red-500">
-                <p class="text-xs font-semibold text-gray-500 uppercase">Below Target</p>
-                <p class="text-3xl font-bold text-red-700 mt-1">${cards.belowTarget}</p>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #DC2626;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Below Target</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#DC2626;margin-top:2px;">${cards.belowTarget}</p>
             </div>
-            <div class="bg-white rounded-xl shadow p-5 border-l-4 border-gray-300">
-                <p class="text-xs font-semibold text-gray-500 uppercase">Pending</p>
-                <p class="text-3xl font-bold text-gray-500 mt-1">${cards.pending}</p>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #d1d5db;border-radius:12px;padding:18px 20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Pending</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:2rem;color:#6b7280;margin-top:2px;">${cards.pending}</p>
             </div>
         </div>
 
         <!-- Monthly (single year) -->
         ${monthly.length > 0 || monthlyCadenceKpis.length > 0 ? `
-            <div class="bg-white rounded-xl shadow p-5 mb-6">
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
-                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                    <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">
                         Monthly Performance — ${year}${selectedMonthlyKpi ? ` · ${esc(selectedMonthlyKpi.name)}` : ' · All KPIs (Average)'}
                     </h3>
                     <select onchange="app.state._kpiOverviewMonthlySelectedKpiId = this.value ? parseInt(this.value, 10) : null; app.renderKpiDirectorView();"
@@ -2264,50 +2264,50 @@ app._buildKpiDashboardBody = function(directorateId, year) {
         <!-- Quarterly and Yearly trends (all available history) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
             ${quarterlyTrend.series.length > 0 ? `
-                <div class="bg-white rounded-xl shadow p-5">
-                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Quarterly Trend</h3>
-                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every quarter with recorded results</p>
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                    <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;margin-bottom:1px;">Quarterly Trend</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:12px;">Across every quarter with recorded results</p>
                     <div style="background:#1F2937;border-radius:10px;padding:14px;box-sizing:border-box;height:248px;"><canvas id="kpiQuarterlyChart"></canvas></div>
                 </div>
             ` : ''}
             ${yearlyTrend.series.length > 0 ? `
-                <div class="bg-white rounded-xl shadow p-5">
-                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-1">Year-over-Year Trend</h3>
-                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:10px;">Across every year with recorded results</p>
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                    <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;margin-bottom:1px;">Year-over-Year Trend</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:12px;">Across every year with recorded results</p>
                     <div style="height:220px;"><canvas id="kpiYearlyChart"></canvas></div>
                 </div>
             ` : ''}
             ${monthly.length === 0 && quarterlyTrend.series.length === 0 && yearlyTrend.series.length === 0 ? `
-                <div class="bg-white rounded-xl shadow p-5 lg:col-span-2 text-center py-8">
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:32px;text-align:center;" class="lg:col-span-2">
                     <p class="text-sm text-gray-400">No results recorded yet — charts will appear once results are entered.</p>
                 </div>
             ` : ''}
         </div>
 
         <!-- Department ranking -->
-        <div class="bg-white rounded-xl shadow p-5 mb-6">
-            <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">Department Ranking</h3>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;margin-bottom:16px;">Department Ranking</h3>
             ${ranking.length === 0 ? '<p class="text-sm text-gray-400 text-center py-4">No department results yet.</p>' : ranking.map((r, i) => `
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-                    <span style="width:20px;color:#9ca3af;font-size:0.8rem;">#${i + 1}</span>
-                    <span style="width:140px;font-size:0.85rem;font-weight:600;">${esc(r.departmentName)}</span>
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                    <span style="width:20px;color:#9ca3af;font-size:0.8rem;font-family:'JetBrains Mono',monospace;">#${i + 1}</span>
+                    <span style="width:140px;font-size:0.85rem;font-weight:600;color:#14251C;">${esc(r.departmentName)}</span>
                     <div style="flex:1;background:#f3f4f6;border-radius:999px;height:18px;overflow:hidden;">
-                        <div style="height:100%;width:${Math.min(100, Math.max(4, r.avgAchievement))}%;background:${r.avgAchievement >= 100 ? '#10b981' : '#f59e0b'};border-radius:999px;"></div>
+                        <div style="height:100%;width:${Math.min(100, Math.max(4, r.avgAchievement))}%;background:${r.avgAchievement >= 100 ? '#2D6A4F' : '#D4A017'};border-radius:999px;"></div>
                     </div>
-                    <span style="width:60px;text-align:right;font-size:0.8rem;font-weight:700;">${r.avgAchievement}%</span>
+                    <span style="width:60px;text-align:right;font-size:0.8rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:#14251C;">${r.avgAchievement}%</span>
                 </div>
             `).join('')}
         </div>
 
         <!-- Top / Lowest KPIs -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div class="bg-white rounded-xl shadow p-5">
-                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Top KPIs</h3>
-                ${top10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : top10.map(k => kpiListRow(k, '#065f46')).join('')}
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#2D6A4F;margin-bottom:10px;">🏆 Top KPIs</h3>
+                ${top10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : top10.map(k => kpiListRow(k, '#2D6A4F')).join('')}
             </div>
-            <div class="bg-white rounded-xl shadow p-5">
-                <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide mb-2">Lowest KPIs</h3>
-                ${bottom10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : bottom10.map(k => kpiListRow(k, '#991b1b')).join('')}
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#DC2626;margin-bottom:10px;">⚠️ Lowest KPIs</h3>
+                ${bottom10.length === 0 ? '<p class="text-sm text-gray-400 py-4">No results yet.</p>' : bottom10.map(k => kpiListRow(k, '#DC2626')).join('')}
             </div>
         </div>
     `;
@@ -2513,7 +2513,7 @@ app.renderKpiDirectorView = function() {
 
     content.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
-            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:20px;display:flex;flex-direction:column;">
+            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:calc(var(--topbar-h, 0px) + 20px);display:flex;flex-direction:column;">
                 <div style="padding:0 22px 14px 22px;">
                     <div style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.2rem;letter-spacing:0.02em;">FLOW <span style="color:#D4A017;">◆</span> KPI</div>
                 </div>
