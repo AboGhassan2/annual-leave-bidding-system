@@ -94,12 +94,14 @@ app.renderKpiPlannerView = function() {
     else if (tab === 'directorates') sectionHtml = this._renderKpiDirectoratesSection();
     else if (tab === 'kpis') sectionHtml = this._renderKpiDefinitionsSection();
     else if (tab === 'results') sectionHtml = this._renderKpiResultsSection();
+    else if (tab === 'kpiReporting') sectionHtml = this._renderKpiReportingSection();
+    else if (tab === 'financialReporting') sectionHtml = this._renderKpiFinancialReportingSection();
     else if (tab === 'preview') sectionHtml = this._renderKpiPreviewSection();
     else if (tab === 'import') sectionHtml = this._renderKpiImportSection();
     else sectionHtml = this._renderKpiUsersSection();
 
     content.innerHTML = `
-        <div class="max-w-7xl mx-auto" style="display:flex;align-items:flex-start;gap:26px;">
+        <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
             <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
                 <div style="padding:0 18px 14px 18px;">
                     <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.25rem;">📊 KPI Planner</h2>
@@ -118,6 +120,8 @@ app.renderKpiPlannerView = function() {
                     ${navItem('overview', '🏠', 'Overview')}
                     ${navItem('kpis', '📈', 'KPIs')}
                     ${navItem('results', '✏️', 'Enter Results')}
+                    ${navItem('kpiReporting', '📊', 'KPI Reporting')}
+                    ${navItem('financialReporting', '💰', 'Financial Reporting')}
                     ${navItem('preview', '👁️', 'Preview Dashboard')}
                     ${navItem('import', '📥', 'Import from Excel')}
                     ${navItem('users', '👥', 'Manage Users')}
@@ -277,6 +281,162 @@ app._renderKpiOverviewSection = function() {
             ${quickAction('import', '📥', 'Import', 'From Excel')}
             ${quickAction('users', '👥', 'Users', 'Directors & access')}
         </div>
+    `;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// KPI Reporting — a company-wide scorecard: every KPI (optionally
+// filtered to one directorate) with its most recent result, Factor
+// Score, Final KPI, and Benchmark status in one table. Distinct from the
+// KPIs tab (definitions/editing) and Preview Dashboard (one directorate
+// at a time, charts) — this is a flat, scannable report across
+// everything at once.
+// ════════════════════════════════════════════════════════════════════
+app._renderKpiReportingSection = function() {
+    const esc = this._escHtml.bind(this);
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
+    const dirIds = new Set(directorates.map(d => d.id));
+    const allDefinitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && dirIds.has(this._kpiEffectiveDirectorateId(k)));
+
+    const filterDirectorateId = this.state._kpiReportingFilterDirectorateId || '';
+    const definitions = filterDirectorateId
+        ? allDefinitions.filter(k => this._kpiEffectiveDirectorateId(k) === parseInt(filterDirectorateId, 10))
+        : allDefinitions;
+
+    const rows = definitions.map(k => {
+        const dir = directorates.find(d => d.id === this._kpiEffectiveDirectorateId(k));
+        const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        const latest = (this.state.kpiResults || [])
+            .filter(r => r.kpi_definition_id === k.id)
+            .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''))[0];
+        const benchmark = latest ? this._kpiBenchmarkLabel(latest.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
+        const benchmarkBadge = {
+            Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
+            Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
+            Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
+        }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
+        return `
+            <tr style="border-top:1px solid #f3f4f6;">
+                <td style="padding:8px 12px;font-weight:600;">${esc(k.name)}</td>
+                <td style="padding:8px 12px;">${dir ? esc(dir.name) : '—'}</td>
+                <td style="padding:8px 12px;">${line ? esc(line.department_name) : '—'}</td>
+                <td style="padding:8px 12px;">${{ monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type}</td>
+                <td style="padding:8px 12px;">${latest ? esc(latest.period_label) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;">${latest ? esc(String(latest.actual_value)) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;color:#6b7280;">${latest && latest.factor_score != null ? Number(latest.factor_score).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;font-weight:600;">${latest && latest.final_kpi != null ? Number(latest.final_kpi).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;margin-bottom:2px;">KPI Reporting</h1>
+        <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">${esc(selectedCompany)} · Every KPI's most recent recorded result</p>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
+            <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
+            <select onchange="app.state._kpiReportingFilterDirectorateId = this.value; app.renderKpiPlannerView();"
+                style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;min-width:220px;">
+                <option value="">All directorates</option>
+                ${directorates.map(d => `<option value="${d.id}" ${String(d.id) === String(filterDirectorateId) ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+            </select>
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            ${definitions.length === 0 ? '<p style="padding:30px;text-align:center;color:#9ca3af;font-size:0.85rem;">No KPIs match this filter.</p>' : `
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                <th style="padding:8px 12px;">KPI</th>
+                                <th style="padding:8px 12px;">Directorate</th>
+                                <th style="padding:8px 12px;">Line</th>
+                                <th style="padding:8px 12px;">Frequency</th>
+                                <th style="padding:8px 12px;">Latest Period</th>
+                                <th style="padding:8px 12px;text-align:right;">Result</th>
+                                <th style="padding:8px 12px;text-align:right;">Factor</th>
+                                <th style="padding:8px 12px;text-align:right;">Final KPI</th>
+                                <th style="padding:8px 12px;">Benchmark</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            `}
+        </div>
+    `;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Financial Reporting — the current period's fee calendar position and
+// company-wide partner (HIT/FS/ALS) allocation totals, built on the
+// Financial Calendar & Partner Allocation data imported earlier.
+// ════════════════════════════════════════════════════════════════════
+app._renderKpiFinancialReportingSection = function() {
+    const esc = this._escHtml.bind(this);
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === selectedCompany);
+    const dirIds = new Set(directorates.map(d => d.id));
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && dirIds.has(this._kpiEffectiveDirectorateId(k)));
+
+    const now = new Date();
+    const feePeriod = this._kpiFeePeriodForCalendarDate(now.getFullYear(), now.getMonth() + 1);
+
+    const lineStatuses = ['L3', 'L4', 'L5', 'L6'].map(line => ({
+        line,
+        status: feePeriod ? this._kpiLineFeeStatus(line, feePeriod.kpi_month_no) : null,
+    }));
+
+    let totalHit = 0, totalFs = 0, totalAls = 0;
+    definitions.forEach(k => {
+        const shares = this._kpiAllocationSharesFromFinalWeight(k);
+        if (shares.hit != null) totalHit += shares.hit;
+        if (shares.fs != null) totalFs += shares.fs;
+        if (shares.als != null) totalAls += shares.als;
+    });
+
+    return `
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;margin-bottom:2px;">Financial Reporting</h1>
+        <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">${esc(selectedCompany)} · Fee periods &amp; partner allocation</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;margin-bottom:10px;">Current Fee Period</p>
+                ${feePeriod ? `
+                    <p style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.3rem;color:#14251C;">${esc(feePeriod.kpi_fiscal_month)} → ${esc(feePeriod.fee_fiscal_month)}</p>
+                    <p style="font-size:0.78rem;color:#6b7280;margin-top:6px;">KPI Month ${esc(feePeriod.kpi_fiscal_month)} (${esc(feePeriod.kpi_month_name || '')} ${esc(String(feePeriod.kpi_year || ''))}) bills against Fixed Fee Month ${esc(feePeriod.fee_fiscal_month)}</p>
+                    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+                        ${lineStatuses.map(l => `
+                            <span style="font-size:0.72rem;font-weight:700;padding:4px 10px;border-radius:999px;background:${l.status === 'Active' ? '#eaf5ef' : l.status === 'Pre-project' ? '#fffbeb' : '#f3f4f6'};color:${l.status === 'Active' ? '#2D6A4F' : l.status === 'Pre-project' ? '#92400e' : '#9ca3af'};">
+                                ${esc(l.line)}: ${esc(l.status || 'No data')}
+                            </span>
+                        `).join('')}
+                    </div>
+                ` : `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet for the current month — run the Financial Calendar import (Import from Excel tab).</p>`}
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;margin-bottom:10px;">Company-Wide Partner Allocation</p>
+                <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">Sum of each KPI's Final Weight × partner share — the static, design-time split, not tied to any one period's results.</p>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.85rem;font-weight:600;">HIT</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#7C3AED;">${(totalHit * 100).toFixed(2)}%</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.85rem;font-weight:600;">FS</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#0891B2;">${(totalFs * 100).toFixed(2)}%</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.85rem;font-weight:600;">ALS</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:#2D6A4F;">${(totalAls * 100).toFixed(2)}%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <p style="font-size:0.75rem;color:#9ca3af;">This is a summary view built on the Financial Calendar &amp; Partner Allocation data — see the Enter Results tab for each KPI's own HIT/FS/ALS Share, and the KPIs tab for per-KPI Final Weight breakdowns.</p>
     `;
 };
 
@@ -2324,7 +2484,7 @@ app.renderKpiDirectorView = function() {
     }
 
     content.innerHTML = `
-        <div class="max-w-7xl mx-auto" style="display:flex;align-items:flex-start;gap:26px;">
+        <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
             <aside style="width:230px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:20px 0;position:sticky;top:20px;">
                 <div style="padding:0 18px 14px 18px;">
                     <h2 style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.15rem;">📈 ${esc(directorate ? directorate.name : 'KPI')}</h2>
