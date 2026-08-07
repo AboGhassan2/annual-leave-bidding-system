@@ -2101,6 +2101,60 @@ test('_kpiParseStationCountRows matches the real Stations sheet format exactly',
     assert.equal(rows[0].station_count, 22);
 });
 
+test('_kpiMgtRatioPerLineAnnual sums (not averages) each month\'s Weighted Contribution across the whole year — identical data in 2 months doubles the total', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.5 },
+            { kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 1.5 },
+        ],
+        kpiFeePeriods: [
+            { kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5, kpi_fiscal_month: 'M31' },
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6, kpi_fiscal_month: 'M32' },
+        ],
+        kpiLineStationCounts: [
+            { kpi_month_no: 31, line: 'L3', station_count: 10 },
+            { kpi_month_no: 32, line: 'L3', station_count: 10 },
+        ],
+    });
+    const singleMonth = app._kpiMgtRatioPerLine(31, 10);
+    const annual = app._kpiMgtRatioPerLineAnnual(2026, 10);
+    // Both months are identical, so the annual sum should be exactly 2x one month's total
+    assert.equal(Math.round(annual.total * 1e8) / 1e8, Math.round(singleMonth.total * 2 * 1e8) / 1e8);
+    assert.equal(annual.rows[0].monthsCounted, 2);
+    assert.equal(annual.monthsInYearCount, 2);
+});
+
+test('_kpiMgtRatioPerLineAnnual only counts months that actually have both a station count and a KPIFt', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.5 },
+            // No result at all for month 32
+        ],
+        kpiFeePeriods: [
+            { kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5, kpi_fiscal_month: 'M31' },
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6, kpi_fiscal_month: 'M32' },
+        ],
+        kpiLineStationCounts: [
+            { kpi_month_no: 31, line: 'L3', station_count: 10 },
+            { kpi_month_no: 32, line: 'L3', station_count: 10 },
+        ],
+    });
+    const annual = app._kpiMgtRatioPerLineAnnual(2026, 10);
+    assert.equal(annual.rows[0].monthsCounted, 1, 'only May counted, June had no KPIFt');
+    assert.equal(annual.monthsInYearCount, 2, 'but the year still has 2 KPI Months in the calendar');
+});
+
+test('_kpiMgtRatioPerLineAnnual returns zero totals with monthsInYearCount 0 for a year with no imported fee calendar', () => {
+    const app = buildKpiApp();
+    const annual = app._kpiMgtRatioPerLineAnnual(2099, 10);
+    assert.equal(annual.total, 0);
+    assert.equal(annual.monthsInYearCount, 0);
+});
+
 // ════════════════════════════════════════════════════════════════════
 // Financial Calendar & Partner Allocation (Master_File.xlsx) — Period
 // KPI vs Fees, Line FFt lag/status schedule, and the HIT/FS/ALS partner
