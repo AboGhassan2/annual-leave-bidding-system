@@ -2918,3 +2918,63 @@ test('importKpiIWFResults fails cleanly with a clear error when the fee calendar
     assert.equal(summary.updated, 0);
     assert.ok(summary.errors[0].includes('99'));
 });
+
+test('_kpiLatestMonthWithMgtData finds the latest month with real MGT data, not just the last row in the full fee calendar', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 1.5 }], // only month 32 (June) has a real result
+        kpiFeePeriods: [
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 },
+            { kpi_month_no: 121, kpi_year: 2033, kpi_cal_month: 11 }, // the far-future last calendar row, no data
+        ],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    // The real bug: naively picking the LAST calendar row would return 121 (empty).
+    // The fix must scan backwards and find 32 instead, since that's the latest month with real data.
+    assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 10), 32);
+});
+
+test('_kpiLatestMonthWithMgtData falls back to the calendar\'s last entry when NOTHING has data anywhere (brand-new tenant)', () => {
+    const app = buildKpiApp({
+        kpiFeePeriods: [{ kpi_month_no: 1, kpi_year: 2023, kpi_cal_month: 11 }, { kpi_month_no: 121, kpi_year: 2033, kpi_cal_month: 11 }],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 10), 121, 'falls back to the last row rather than returning null/crashing');
+});
+
+test('_kpiLatestMonthWithAvailabilityData finds the latest month with real Availability Factor rows, same pattern as MGT data', () => {
+    const app = buildKpiApp({
+        kpiLineAvailability: [{ line: 'L3', kpi_month_no: 32, metric: 'PSA', adjusted_value: 99.9 }],
+        kpiFeePeriods: [
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 },
+            { kpi_month_no: 121, kpi_year: 2033, kpi_cal_month: 11 },
+        ],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    assert.equal(app._kpiLatestMonthWithAvailabilityData(feePeriods), 32);
+});
+
+test('_kpiLatestMonthWithMgtData is directorate-scoped: two directorates with data in different months each get their own correct latest month', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 200, directorate_id: 20, department_name: 'L3' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+            { id: 2, directorate_id: 20, department_id: 200, is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.5 }, // directorate 10 has data in month 31
+            { kpi_definition_id: 2, year: 2026, period_value: '06', factor_score: 1.5 }, // directorate 20 has data in month 32
+        ],
+        kpiFeePeriods: [
+            { kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 },
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 },
+        ],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 10), 31);
+    assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 20), 32);
+});
