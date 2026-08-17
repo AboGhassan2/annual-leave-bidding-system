@@ -2738,3 +2738,115 @@ test('_kpiLineAvailabilityForMonth filters correctly by line and month', () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].adjusted_value, 99.9);
 });
+
+test('_kpiLineCostPool reproduces the real M32 numbers exactly: Management Allocation = Total x Station Ratio, Total Pool = Allocation + Line Cost', () => {
+    const app = buildKpiApp({
+        kpiLineStationCounts: [
+            { kpi_month_no: 32, line: 'L3', station_count: 22 },
+            { kpi_month_no: 32, line: 'L4', station_count: 9 },
+            { kpi_month_no: 32, line: 'L5', station_count: 12 },
+            { kpi_month_no: 32, line: 'L6', station_count: 11 },
+        ],
+        kpiLineMonthlyCosts: [
+            { kpi_month_no: 32, total_management_cost: -61161.91, line_l3_cost: -84299.39, line_l4_cost: -18234.60, line_l5_cost: -26167.68, line_l6_cost: -12645.15 },
+        ],
+    });
+    const l3 = app._kpiLineCostPool('L3', 32);
+    assert.equal(Math.round(l3.managementAllocation * 100) / 100, -24917.82);
+    assert.equal(l3.lineCost, -84299.39);
+    assert.equal(Math.round(l3.totalPool * 100) / 100, -109217.21);
+
+    const l6 = app._kpiLineCostPool('L6', 32);
+    assert.equal(Math.round(l6.managementAllocation * 100) / 100, -12458.91);
+});
+
+test('_kpiLineCostPool returns null when no monthly cost inputs have been entered for that month', () => {
+    const app = buildKpiApp({ kpiLineStationCounts: [{ kpi_month_no: 1, line: 'L3', station_count: 10 }] });
+    assert.equal(app._kpiLineCostPool('L3', 1), null);
+});
+
+test('_kpiPenaltyAllocationForLine only includes KPIs below the max score (Final KPI < 2), excludes ones that hit the cap', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Underperformer', is_active: true, area_pct: 0.5, level1_pct: 1, level2_pct: 1, level3_pct: 1, hit_pct: 0.5, fs_pct: 0.5 },
+            { id: 2, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'Perfect score', is_active: true, area_pct: 0.5, level1_pct: 1, level2_pct: 1, level3_pct: 1, hit_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', final_kpi: 1.5 },
+            { kpi_definition_id: 2, year: 2026, period_value: '05', final_kpi: 2.0 },
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+        kpiLineStationCounts: [{ kpi_month_no: 31, line: 'L3', station_count: 10 }],
+        kpiLineMonthlyCosts: [{ kpi_month_no: 31, total_management_cost: -1000, line_l3_cost: -500 }],
+    });
+    const result = app._kpiPenaltyAllocationForLine('L3', 31, 10);
+    assert.equal(result.rows.length, 1, 'only the underperforming KPI appears');
+    assert.equal(result.rows[0].kpiCode, 'A1');
+    assert.equal(result.rows[0].distribution, 1, 'the only underperformer gets 100% of the penalty pool');
+});
+
+test('_kpiPenaltyAllocationForLine distributes proportionally to Final Weight among multiple underperformers', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'K1', is_active: true, area_pct: 0.6, level1_pct: 1, level2_pct: 1, level3_pct: 1, hit_pct: 0.5, fs_pct: 0.5 },
+            { id: 2, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'K2', is_active: true, area_pct: 0.4, level1_pct: 1, level2_pct: 1, level3_pct: 1, hit_pct: 1 },
+        ],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', final_kpi: 1.0 },
+            { kpi_definition_id: 2, year: 2026, period_value: '05', final_kpi: 1.5 },
+        ],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+        kpiLineStationCounts: [{ kpi_month_no: 31, line: 'L3', station_count: 10 }],
+        kpiLineMonthlyCosts: [{ kpi_month_no: 31, total_management_cost: 0, line_l3_cost: -1000 }],
+    });
+    const result = app._kpiPenaltyAllocationForLine('L3', 31, 10);
+    assert.equal(result.rows.length, 2);
+    const a1 = result.rows.find(r => r.kpiCode === 'A1');
+    const a2 = result.rows.find(r => r.kpiCode === 'A2');
+    assert.equal(a1.distribution, 0.6, 'A1 has 0.6 of the 1.0 combined weight');
+    assert.equal(a2.distribution, 0.4);
+    assert.equal(Math.round(a1.totalCost * 100) / 100, -600, '60% of the -1000 pool');
+    assert.equal(Math.round(a2.totalCost * 100) / 100, -400);
+    // shares should sum back to totalCost for each row
+    assert.equal(Math.round((a1.hit + a1.fs) * 100) / 100, Math.round(a1.totalCost * 100) / 100);
+});
+
+test('_kpiPenaltyAllocationForLine returns no rows when nobody underperformed this month', () => {
+    const app = buildKpiApp({
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', is_active: true, area_pct: 1, level1_pct: 1, level2_pct: 1, level3_pct: 1 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '05', final_kpi: 2.0 }],
+        kpiFeePeriods: [{ kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 }],
+        kpiLineStationCounts: [{ kpi_month_no: 31, line: 'L3', station_count: 10 }],
+        kpiLineMonthlyCosts: [{ kpi_month_no: 31, total_management_cost: 0, line_l3_cost: -1000 }],
+    });
+    const result = app._kpiPenaltyAllocationForLine('L3', 31, 10);
+    assert.equal(result.rows.length, 0);
+    assert.equal(result.totalPool, -1000, 'the pool is still reported even with nothing to distribute it to');
+});
+
+test('saveKpiLineMonthlyCosts upserts by kpi_month_no and updates in-memory state without wiping other months', async () => {
+    const app = buildKpiApp({
+        kpiLineMonthlyCosts: [{ id: 1, kpi_month_no: 31, total_management_cost: -100, line_l3_cost: -50, line_l4_cost: null, line_l5_cost: null, line_l6_cost: null }],
+    });
+    let upsertedRow = null, upsertOptions = null;
+    app.supabase = {
+        from: () => ({
+            upsert: (row, opts) => { upsertedRow = row; upsertOptions = opts; return { select: async () => ({ data: [{ id: 2, ...row }], error: null }) }; },
+        }),
+    };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiLineMonthlyCosts(32, { totalManagementCost: -61161.91, l3Cost: -84299.39, l4Cost: -18234.60, l5Cost: -26167.68, l6Cost: -12645.15 });
+
+    assert.equal(upsertOptions.onConflict, 'tenant_id,kpi_month_no');
+    assert.equal(upsertedRow.kpi_month_no, 32);
+    assert.equal(upsertedRow.total_management_cost, -61161.91);
+    // month 31 must still be present, month 32 added
+    assert.equal(app.state.kpiLineMonthlyCosts.length, 2);
+    assert.ok(app.state.kpiLineMonthlyCosts.find(r => Number(r.kpi_month_no) === 31));
+    assert.ok(app.state.kpiLineMonthlyCosts.find(r => Number(r.kpi_month_no) === 32));
+});
