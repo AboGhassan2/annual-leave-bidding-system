@@ -2850,3 +2850,71 @@ test('saveKpiLineMonthlyCosts upserts by kpi_month_no and updates in-memory stat
     assert.ok(app.state.kpiLineMonthlyCosts.find(r => Number(r.kpi_month_no) === 31));
     assert.ok(app.state.kpiLineMonthlyCosts.find(r => Number(r.kpi_month_no) === 32));
 });
+
+test('_kpiParseIWFResultsRows reproduces the real M32_IWF sheet exactly: 128 rows (32 x 4 lines), skips A1/A6 ("-"), correct per-line frequency for C1', () => {
+    const app = buildKpiApp();
+    const fs = require('fs');
+    const path = require('path');
+    const rawPath = path.join(__dirname, '..', 'm32_iwf_raw.json');
+    if (!fs.existsSync(rawPath)) return; // real-file fixture not present in this environment, skip
+    const rawRows = JSON.parse(fs.readFileSync(rawPath, 'utf8'));
+    const parsed = app._kpiParseIWFResultsRows(rawRows, 32);
+    assert.equal(parsed.length, 128);
+    const byLine = {};
+    parsed.forEach(r => { byLine[r.line] = (byLine[r.line] || 0) + 1; });
+    assert.equal(byLine.L3, 32);
+    assert.equal(byLine.L4, 32);
+    assert.equal(byLine.L5, 32);
+    assert.equal(byLine.L6, 32);
+    assert.equal(parsed.find(r => r.line === 'L3' && r.code === 'A2').actualValue, 0.9987);
+    assert.equal(parsed.find(r => r.line === 'L3' && r.code === 'A3').actualValue, 14.55);
+    assert.equal(parsed.find(r => r.line === 'L3' && r.code === 'A1'), undefined, 'A1 was "-", correctly skipped');
+    assert.equal(parsed.find(r => r.line === 'L3' && r.code === 'A6'), undefined, 'A6 was "-", correctly skipped');
+    assert.equal(parsed.find(r => r.line === 'L3' && r.code === 'C1').periodType, 'monthly');
+    assert.equal(parsed.find(r => r.line === 'L4' && r.code === 'C1').periodType, 'quarterly');
+});
+
+test('_kpiParseIWFResultsRows correctly tracks LINE section boundaries with a small synthetic sheet', () => {
+    const app = buildKpiApp();
+    const rows = [
+        [null, 'LINE 3'],
+        [null, null, null, null, null, null, null, null, null, null, null, null, 'Monthly', 'A1: Test KPI', null, null, null, 5],
+        [null, 'LINE 4'],
+        [null, null, null, null, null, null, null, null, null, null, null, null, 'Quarterly', 'A1: Test KPI', null, null, null, 10],
+    ];
+    const parsed = app._kpiParseIWFResultsRows(rows, 1);
+    assert.equal(parsed.length, 2);
+    assert.equal(parsed[0].line, 'L3');
+    assert.equal(parsed[0].actualValue, 5);
+    assert.equal(parsed[1].line, 'L4');
+    assert.equal(parsed[1].actualValue, 10);
+});
+
+test('importKpiIWFResults resolves each period from the real fee calendar mapping and matches by (code, line)', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'K', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 0.9 }],
+        kpiResults: [],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+    });
+    let nextId = 1;
+    app.supabase = { from: () => ({ upsert: (row) => ({ select: async () => ({ data: [{ id: nextId++, ...row }], error: null }) }) }) };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const summary = await app.importKpiIWFResults([{ line: 'L3', code: 'A2', periodType: 'monthly', actualValue: 0.9987 }], 32, 'OMC');
+    assert.equal(summary.updated, 1);
+    assert.equal(app.state.kpiResults[0].year, 2026);
+    assert.equal(app.state.kpiResults[0].period_value, '06');
+    assert.equal(app.state.kpiResults[0].actual_value, 0.9987);
+});
+
+test('importKpiIWFResults fails cleanly with a clear error when the fee calendar has no entry for that KPI Month', async () => {
+    const app = buildKpiApp({ kpiFeePeriods: [] });
+    app.supabase = {};
+    app.showToast = () => {};
+    const summary = await app.importKpiIWFResults([{ line: 'L3', code: 'A2', periodType: 'monthly', actualValue: 1 }], 99, 'OMC');
+    assert.equal(summary.updated, 0);
+    assert.ok(summary.errors[0].includes('99'));
+});
