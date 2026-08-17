@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -36,6 +36,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_fee_schedule').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_station_counts').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_monthly_costs').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -47,6 +48,7 @@ app.loadKpiData = async function() {
         if (lineFeeSchedule.error) throw lineFeeSchedule.error;
         if (stationCounts.error) throw stationCounts.error;
         if (availability.error) throw availability.error;
+        if (monthlyCosts.error) throw monthlyCosts.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -58,6 +60,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
         this.state.kpiLineStationCounts = stationCounts.data || [];
         this.state.kpiLineAvailability = availability.data || [];
+        this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
     } catch (e) {
@@ -2447,6 +2450,114 @@ app.importKpiLineAvailability = async function(rows, kpiMonthNo) {
 // array if nothing's been imported for that month yet.
 app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
     return (this.state.kpiLineAvailability || []).filter(r => r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo));
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Cost / Penalty Allocation — per AMEEN - V1.xlsx's M32_IWF sheet
+// (rows 5-8 summary table, plus columns W-AG in each Line section).
+// Five figures per KPI Month are genuinely manual inputs (traced back to
+// an external-link chain in M32_WF that's deliberately not reproduced —
+// see AMEEN_V1_Analysis.md): Total Management Cost (company-wide) and
+// Line Cost (one per line). Everything else in the chain — Management
+// Allocation, the Line Cost Pool, Weighted Penalty Distribution, and the
+// final KPI-level HIT/FS/ALS split — is fully computed from data already
+// in the system (Station Ratio, Final Weight, Final KPI, partner %s).
+// ════════════════════════════════════════════════════════════════════
+
+app.saveKpiLineMonthlyCosts = async function(kpiMonthNo, { totalManagementCost, l3Cost, l4Cost, l5Cost, l6Cost }) {
+    if (!this.supabase) { this.showToast('Not connected to Supabase.', 'error'); return null; }
+    try {
+        const tid = this._tid();
+        const row = {
+            tenant_id: tid, kpi_month_no: kpiMonthNo,
+            total_management_cost: totalManagementCost,
+            line_l3_cost: l3Cost, line_l4_cost: l4Cost, line_l5_cost: l5Cost, line_l6_cost: l6Cost,
+        };
+        const { data, error } = await this.supabase
+            .from('kpi_line_monthly_costs')
+            .upsert(row, { onConflict: 'tenant_id,kpi_month_no' })
+            .select();
+        if (error) throw error;
+        const saved = data[0];
+        this.state.kpiLineMonthlyCosts = [
+            ...(this.state.kpiLineMonthlyCosts || []).filter(r => Number(r.kpi_month_no) !== Number(kpiMonthNo)),
+            saved,
+        ];
+        this.showToast(`Monthly cost inputs saved for KPI Month ${kpiMonthNo}.`, 'success');
+        return saved;
+    } catch (e) {
+        console.error('❌ Failed to save monthly cost inputs:', e.message);
+        this.showToast('Could not save monthly cost inputs: ' + e.message, 'error');
+        return null;
+    }
+};
+
+app._kpiMonthlyCostsForMonth = function(kpiMonthNo) {
+    return (this.state.kpiLineMonthlyCosts || []).find(r => Number(r.kpi_month_no) === Number(kpiMonthNo)) || null;
+};
+
+// A line's raw Line Cost input for this month, plus its computed
+// Management Allocation (Total Management Cost x that line's Station
+// Ratio — reuses the already-verified station-count-based ratio, not a
+// new concept), summed into the Line Total Cost Pool.
+app._kpiLineCostPool = function(lineName, kpiMonthNo) {
+    const inputs = this._kpiMonthlyCostsForMonth(kpiMonthNo);
+    if (!inputs) return null;
+    const lineCostKey = { L3: 'line_l3_cost', L4: 'line_l4_cost', L5: 'line_l5_cost', L6: 'line_l6_cost' }[lineName];
+    const lineCost = lineCostKey ? inputs[lineCostKey] : null;
+    const ratio = this._kpiLineStationRatio(lineName, kpiMonthNo);
+    const managementAllocation = (inputs.total_management_cost != null && ratio != null) ? inputs.total_management_cost * ratio : null;
+    if (lineCost == null && managementAllocation == null) return null;
+    const totalPool = (managementAllocation || 0) + (lineCost || 0);
+    return { managementAllocation, lineCost, totalPool };
+};
+
+// Full per-KPI cost/penalty breakdown for one line, one month, scoped to
+// a directorate's own KPIs on that line (matches this app's per-directorate
+// L3-L6 structure, same as MGT Ratio Per Line and Line Factor Score).
+// Underperformance flag: Final KPI < 2 (the max score) — a KPI that hit
+// the cap contributes nothing to, and takes nothing from, the penalty
+// pool. Weighted Penalty Distribution normalizes by the Final Weight of
+// KPIs that are BOTH underperforming AND have an actual result this
+// month, so one late KPI doesn't distort every other KPI's share.
+app._kpiPenaltyAllocationForLine = function(lineName, kpiMonthNo, directorateId) {
+    const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
+    const pool = this._kpiLineCostPool(lineName, kpiMonthNo);
+    if (!feePeriod || !pool || pool.totalPool == null) return { rows: [], totalPool: pool ? pool.totalPool : null };
+
+    const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
+    const deptFilter = directorateId != null
+        ? (d) => d.directorate_id === directorateId && d.department_name === lineName
+        : (d) => d.department_name === lineName;
+    const lineDeptIds = new Set((this.state.kpiDirectorateDepartments || []).filter(deptFilter).map(d => d.id));
+    const lineKpis = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && lineDeptIds.has(k.department_id) && this._kpiFinalWeight(k) != null);
+
+    // First pass: find each underperforming KPI's Final KPI and Final
+    // Weight for this month, and the sum of weights among them.
+    const underperforming = [];
+    let weightSum = 0;
+    lineKpis.forEach(k => {
+        const result = (this.state.kpiResults || []).find(r => r.kpi_definition_id === k.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr);
+        if (!result || result.final_kpi == null) return;
+        const finalKpi = Number(result.final_kpi);
+        if (finalKpi >= 2) return; // hit the cap — contributes nothing, takes nothing
+        const w = this._kpiFinalWeight(k);
+        underperforming.push({ kpiDef: k, finalKpi, weight: w });
+        weightSum += w;
+    });
+
+    const rows = underperforming.map(u => {
+        const distribution = weightSum > 0 ? u.weight / weightSum : 0;
+        const totalCost = distribution * pool.totalPool;
+        const shares = this._kpiPartnerShares(u.kpiDef, totalCost);
+        return {
+            kpiId: u.kpiDef.id, kpiCode: u.kpiDef.kpi_code, kpiName: u.kpiDef.name,
+            finalKpi: u.finalKpi, weight: u.weight, distribution, totalCost,
+            hit: shares.hit, fs: shares.fs, als: shares.als,
+        };
+    });
+
+    return { rows, totalPool: pool.totalPool, managementAllocation: pool.managementAllocation, lineCost: pool.lineCost };
 };
 
 // One-time historical backfill: the "KPI Result" column (N=name, R=value)
