@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -35,6 +35,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_fee_periods').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_fee_schedule').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_station_counts').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_availability').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -45,6 +46,7 @@ app.loadKpiData = async function() {
         if (feePeriods.error) throw feePeriods.error;
         if (lineFeeSchedule.error) throw lineFeeSchedule.error;
         if (stationCounts.error) throw stationCounts.error;
+        if (availability.error) throw availability.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -55,6 +57,7 @@ app.loadKpiData = async function() {
         this.state.kpiFeePeriods = feePeriods.data || [];
         this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
         this.state.kpiLineStationCounts = stationCounts.data || [];
+        this.state.kpiLineAvailability = availability.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
     } catch (e) {
@@ -2362,6 +2365,88 @@ app.importKpiLineStationCounts = async function(rows) {
         this.showToast('Could not import station counts: ' + e.message, 'error');
         return { imported: 0, errors: [e.message] };
     }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Availability Factor — PSA/TSA/FOSA per line, per AMEEN - V1.xlsx's
+// "M{N}_AFctr" sheet. Two genuinely different things from every other
+// Financial Calendar piece:
+//
+// 1. The sheet has NO explicit month column — it's a whole-sheet
+//    snapshot for ONE specific KPI Month, identified only by the sheet's
+//    own NAME (e.g. "M32_AFctr" -> KPI Month 32). Detection/parsing needs
+//    the sheet name itself, not just its headers.
+// 2. It lays out TWO side-by-side mini-tables — Raw values, then
+//    Adjusted values + a remark — using the EXACT SAME column headers
+//    ('Line'/'PSA'/'TSA'/'FOSA') for both. Reading it the normal
+//    header-keyed way would silently collide and lose the Raw half, so
+//    this reads the raw array-of-arrays (header:1) and pulls from fixed
+//    column positions instead: col D=Line/raw anchor, F/G/H=PSA/TSA/FOSA
+//    raw, J=Line/adjusted anchor, L/M/N=PSA/TSA/FOSA adjusted, O=remark
+//    — all read from the SAME row, since the two mini-tables are
+//    row-aligned in the source file.
+// ════════════════════════════════════════════════════════════════════
+app._kpiParseAvailabilityFactorRows = function(rawArrayRows, kpiMonthNo) {
+    const metrics = [
+        { key: 'PSA', rawCol: 5, adjCol: 11 },
+        { key: 'TSA', rawCol: 6, adjCol: 12 },
+        { key: 'FOSA', rawCol: 7, adjCol: 13 },
+    ];
+    const out = [];
+    (rawArrayRows || []).forEach(row => {
+        if (!row) return;
+        const lineLabel = row[3]; // col D
+        if (!lineLabel || !/^line\s*\d/i.test(String(lineLabel).trim())) return;
+        const lineNum = String(lineLabel).replace(/[^\d]/g, '');
+        const lineName = this._kpiMapLineNumberToLineName(lineNum);
+        if (!lineName) return;
+        const remark = row[14] || null; // col O
+        metrics.forEach(m => {
+            const rawCell = row[m.rawCol], adjCell = row[m.adjCol];
+            const rawNum = (rawCell !== '' && rawCell != null) ? Number(rawCell) : null;
+            const adjNum = (adjCell !== '' && adjCell != null) ? Number(adjCell) : null;
+            if (!Number.isFinite(rawNum) && !Number.isFinite(adjNum)) return;
+            out.push({
+                kpi_month_no: kpiMonthNo, line: lineName, metric: m.key,
+                raw_value: Number.isFinite(rawNum) ? rawNum : null,
+                adjusted_value: Number.isFinite(adjNum) ? adjNum : null,
+                remark: remark || null,
+            });
+        });
+    });
+    return out;
+};
+
+// Scoped to just this KPI Month's rows — NOT a wholesale-replace like
+// the other Financial Calendar pieces, since each source file only ever
+// covers one month; blindly replacing the whole table would destroy
+// every previously-imported month's data.
+app.importKpiLineAvailability = async function(rows, kpiMonthNo) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_line_availability').delete().eq('tenant_id', tid).eq('kpi_month_no', kpiMonthNo);
+        if (delError) throw delError;
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase.from('kpi_line_availability').insert(insertRows).select();
+        if (error) throw error;
+        this.state.kpiLineAvailability = [
+            ...(this.state.kpiLineAvailability || []).filter(r => Number(r.kpi_month_no) !== Number(kpiMonthNo)),
+            ...(data || []),
+        ];
+        this.showToast(`Availability Factor imported: ${data.length} rows for KPI Month ${kpiMonthNo}.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import availability factor:', e.message);
+        this.showToast('Could not import availability factor: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
+};
+
+// Every (PSA/TSA/FOSA) row for a given line + KPI Month, or an empty
+// array if nothing's been imported for that month yet.
+app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
+    return (this.state.kpiLineAvailability || []).filter(r => r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo));
 };
 
 // One-time historical backfill: the "KPI Result" column (N=name, R=value)
