@@ -2746,6 +2746,100 @@ app.importM31IWFResults = async function(company) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+// General "M{N}_IWF KPI Results" import — a REAL, reusable parser this
+// time, unlike the earlier M31_IWF backfill (a one-off hardcoded list of
+// 128 values). This exact request — "copy column R for every KPI, every
+// line, into this KPI Month" — has now recurred once already (M31, then
+// M32), so it's worth reading directly from any future M{N}_IWF sheet
+// rather than hand-transcribing again each time.
+//
+// Column layout (verified against the real M32_IWF sheet, row 12
+// headers): B = "LINE N" section marker (only present on each section's
+// own header row — B11/B49/B87/B125 in the real file), M = Frequency,
+// N = "Level 3" (the KPI's own name, prefixed with its Code, e.g. "A2:
+// Complaints resolution" — Level 3 IS the individual KPI in this
+// Area->Level1->Level2->Level3 hierarchy), R = "KPI Results" (the raw
+// entered value, "-" when nothing's been entered for that KPI yet).
+// Read via raw array-of-arrays (header:1), tracking which Line section
+// is currently active as the LINE-marker rows are encountered top to
+// bottom — the sheet stacks 4 near-identical sections vertically with
+// their own repeated header rows, so a normal header-keyed row-object
+// read would misinterpret Line 4/5/6's own header rows as data under
+// Line 3's column meanings.
+app._kpiParseIWFResultsRows = function(rawArrayRows, kpiMonthNo) {
+    const periodTypeMap = { Monthly: 'monthly', Quarterly: 'quarterly', Annual: 'yearly' };
+    const out = [];
+    let currentLine = null;
+    (rawArrayRows || []).forEach(row => {
+        if (!row) return;
+        const bVal = row[1]; // col B
+        if (bVal && /^line\s*\d/i.test(String(bVal).trim())) {
+            currentLine = this._kpiMapLineNumberToLineName(String(bVal).replace(/[^\d]/g, ''));
+            return;
+        }
+        if (!currentLine) return;
+        const nameCell = row[13]; // col N
+        if (!nameCell || typeof nameCell !== 'string') return;
+        const codeMatch = nameCell.match(/^([A-Za-z0-9]+)\s*:/);
+        if (!codeMatch) return;
+        const result = row[17]; // col R
+        if (result == null || result === '' || result === '-') return; // no data entered for this KPI yet
+        const resultNum = Number(result);
+        if (!Number.isFinite(resultNum)) return;
+        const freq = row[12]; // col M
+        out.push({
+            line: currentLine, code: codeMatch[1].trim(),
+            periodType: periodTypeMap[String(freq || '').trim()] || 'monthly',
+            actualValue: resultNum,
+        });
+    });
+    return out;
+};
+
+// Saves parsed IWF results for a given KPI Month, resolving each KPI's
+// actual calendar period from the imported fee calendar (same M-number
+// -> calendar-month mapping used everywhere else) — Monthly rows go to
+// that exact calendar month, Quarterly rows to the quarter it falls in,
+// Annual rows to the plain calendar year. Matched by (KPI Code, Line),
+// updates existing KPIs only.
+app.importKpiIWFResults = async function(rows, kpiMonthNo, company) {
+    if (!this.supabase) { this.showToast('Not connected to Supabase.', 'error'); return { updated: 0, notFound: 0, failed: 0, errors: [] }; }
+    const targetCompany = company || 'OMC';
+    const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
+    if (!feePeriod) {
+        this.showToast(`No fee calendar entry for KPI Month ${kpiMonthNo} — import the Financial Calendar first.`, 'error');
+        return { updated: 0, notFound: 0, failed: 0, errors: [`No fee calendar entry for KPI Month ${kpiMonthNo}`] };
+    }
+    const year = feePeriod.kpi_year;
+    const month = feePeriod.kpi_cal_month;
+    const quarter = `Q${Math.floor((month - 1) / 3) + 1}`;
+
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of rows) {
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.code, row.line, targetCompany);
+        if (!existing) {
+            summary.notFound++;
+            summary.errors.push(`${row.line}/${row.code}: no matching KPI found`);
+            continue;
+        }
+        const periodValue = row.periodType === 'monthly' ? String(month).padStart(2, '0') : row.periodType === 'quarterly' ? quarter : null;
+        try {
+            const saved = await this.saveKpiResult(existing.id, {
+                year, periodType: row.periodType, periodValue,
+                actualValue: row.actualValue, remarks: `Imported from KPI Month ${kpiMonthNo} (IWF)`, source: 'iwf_import',
+            });
+            if (!saved) { summary.failed++; summary.errors.push(`${row.line}/${row.code}: failed to save`); continue; }
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${row.line}/${row.code}: ${e.message}`);
+        }
+    }
+    this.showToast(`KPI Month ${kpiMonthNo} import complete: ${summary.updated} saved, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
+// ════════════════════════════════════════════════════════════════════
 // Directorate Assignment Audit — read-only diagnostic, per explicit
 // request after finding a KPI whose home directorate ("Public
 // Relations") turned out to be leftover bad data from before the
