@@ -335,19 +335,53 @@ app._renderKpiReportingSection = function() {
     // against, unlike Enter Results.
     const filterDirectorateId = this.state._kpiReportingFilterDirectorateId || '';
     const filterDirectorateIdNum = filterDirectorateId ? parseInt(filterDirectorateId, 10) : null;
-    const definitions = filterDirectorateIdNum
+    const filterCode = (this.state._kpiReportingFilterCode || '').trim().toUpperCase();
+    const filterLine = this.state._kpiReportingFilterLine || '';
+    const filterPeriodType = this.state._kpiReportingFilterPeriodType || '';
+
+    let definitions = filterDirectorateIdNum
         ? allDefinitions.filter(k => this._kpiOwnershipWeight(k, filterDirectorateIdNum) > 0)
         : allDefinitions;
+    if (filterCode) definitions = definitions.filter(k => (k.kpi_code || '').toUpperCase().includes(filterCode));
+    if (filterPeriodType) definitions = definitions.filter(k => k.period_type === filterPeriodType);
+    if (filterLine) {
+        definitions = definitions.filter(k => {
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            return line && line.department_name === filterLine;
+        });
+    }
+
+    // Month Number (Excel) filter — M1-M121, built directly from the
+    // imported fee calendar, same convention used on Enter Results/KPI
+    // Detail elsewhere. Only affects Monthly KPIs (a specific calendar
+    // month has no meaning for a Quarterly/Yearly KPI's own result) —
+    // those still show their latest result regardless.
+    const feePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const filterMonthNo = this.state._kpiReportingFilterMonthNo != null ? Number(this.state._kpiReportingFilterMonthNo) : null;
+    const filterFeePeriod = filterMonthNo != null ? feePeriods.find(p => p.kpi_month_no === filterMonthNo) : null;
+
+    const distinctLines = [...new Set(allDefinitions.map(k => {
+        const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        return line ? line.department_name : null;
+    }).filter(Boolean))].sort();
 
     const rows = definitions.map(k => {
         const dir = directorates.find(d => d.id === this._kpiEffectiveDirectorateId(k));
         const viewWeight = filterDirectorateIdNum ? this._kpiOwnershipWeight(k, filterDirectorateIdNum) : 1;
         const isSharedView = viewWeight > 0 && viewWeight < 1;
         const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
-        const latest = (this.state.kpiResults || [])
-            .filter(r => r.kpi_definition_id === k.id)
-            .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''))[0];
-        const benchmark = latest ? this._kpiBenchmarkLabel(latest.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
+
+        let displayResult = null;
+        if (k.period_type === 'monthly' && filterFeePeriod) {
+            const calMonthStr = String(filterFeePeriod.kpi_cal_month).padStart(2, '0');
+            displayResult = (this.state.kpiResults || []).find(r => r.kpi_definition_id === k.id && Number(r.year) === filterFeePeriod.kpi_year && r.period_value === calMonthStr) || null;
+        } else {
+            displayResult = (this.state.kpiResults || [])
+                .filter(r => r.kpi_definition_id === k.id)
+                .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''))[0] || null;
+        }
+
+        const benchmark = displayResult ? this._kpiBenchmarkLabel(displayResult.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
         const benchmarkBadge = {
             Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
             Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
@@ -355,15 +389,16 @@ app._renderKpiReportingSection = function() {
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
         return `
             <tr style="border-top:1px solid #f3f4f6;">
-                <td style="padding:8px 12px;font-weight:600;">${esc(k.name)}${isSharedView ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</td>
+                <td style="padding:8px 12px;font-weight:600;">${k.kpi_code ? `<span style="font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(k.kpi_code)}</span>: ` : ''}${esc(k.name)}${isSharedView ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</td>
                 <td style="padding:8px 12px;">${dir ? esc(dir.name) : '—'}${isSharedView ? ' (home)' : ''}</td>
                 <td style="padding:8px 12px;">${line ? esc(line.department_name) : '—'}</td>
                 <td style="padding:8px 12px;">${{ monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type}</td>
-                <td style="padding:8px 12px;">${latest ? esc(latest.period_label) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;">${latest ? esc(String(latest.actual_value)) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;color:#6b7280;">${latest && latest.factor_score != null ? Number(latest.factor_score).toFixed(2) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;font-weight:600;">${latest && latest.final_kpi != null ? Number(latest.final_kpi).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;">${displayResult ? esc(displayResult.period_label) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;">${displayResult ? esc(String(displayResult.actual_value)) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;color:#6b7280;">${displayResult && displayResult.factor_score != null ? Number(displayResult.factor_score).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;font-weight:600;">${displayResult && displayResult.final_kpi != null ? Number(displayResult.final_kpi).toFixed(2) : '—'}</td>
                 <td style="padding:8px 12px;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;max-width:180px;">${displayResult && displayResult.remarks ? esc(displayResult.remarks) : '—'}</td>
             </tr>
         `;
     }).join('');
@@ -373,12 +408,50 @@ app._renderKpiReportingSection = function() {
         <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">${esc(selectedCompany)} · Every KPI's most recent recorded result</p>
 
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
-            <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
-            <select onchange="app.state._kpiReportingFilterDirectorateId = this.value; app.renderKpiPlannerView();"
-                style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;min-width:220px;">
-                <option value="">All directorates</option>
-                ${directorates.map(d => `<option value="${d.id}" ${String(d.id) === String(filterDirectorateId) ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-            </select>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
+                    <select onchange="app.state._kpiReportingFilterDirectorateId = this.value; app.renderKpiPlannerView();"
+                        style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;min-width:180px;">
+                        <option value="">All directorates</option>
+                        ${directorates.map(d => `<option value="${d.id}" ${String(d.id) === String(filterDirectorateId) ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Code</label>
+                    <input type="text" value="${esc(this.state._kpiReportingFilterCode || '')}" placeholder="e.g. A1"
+                        onchange="app.state._kpiReportingFilterCode = this.value; app.renderKpiPlannerView();"
+                        style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;width:90px;box-sizing:border-box;" />
+                </div>
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Line</label>
+                    <select onchange="app.state._kpiReportingFilterLine = this.value; app.renderKpiPlannerView();"
+                        style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;">
+                        <option value="">All Lines</option>
+                        ${distinctLines.map(l => `<option value="${esc(l)}" ${filterLine === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Period</label>
+                    <select onchange="app.state._kpiReportingFilterPeriodType = this.value; app.renderKpiPlannerView();"
+                        style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;">
+                        <option value="">All</option>
+                        <option value="monthly" ${filterPeriodType === 'monthly' ? 'selected' : ''}>Monthly</option>
+                        <option value="quarterly" ${filterPeriodType === 'quarterly' ? 'selected' : ''}>Quarterly</option>
+                        <option value="yearly" ${filterPeriodType === 'yearly' ? 'selected' : ''}>Yearly</option>
+                    </select>
+                </div>
+                ${feePeriods.length > 0 ? `
+                <div>
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Month Number (Excel)</label>
+                    <select onchange="app.state._kpiReportingFilterMonthNo = this.value ? parseInt(this.value, 10) : null; app.renderKpiPlannerView();"
+                        style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;min-width:170px;">
+                        <option value="">Latest result</option>
+                        ${feePeriods.map(p => `<option value="${p.kpi_month_no}" ${filterMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                    </select>
+                </div>
+                ` : ''}
+            </div>
         </div>
 
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
@@ -391,11 +464,12 @@ app._renderKpiReportingSection = function() {
                                 <th style="padding:8px 12px;">Directorate</th>
                                 <th style="padding:8px 12px;">Line</th>
                                 <th style="padding:8px 12px;">Frequency</th>
-                                <th style="padding:8px 12px;">Latest Period</th>
+                                <th style="padding:8px 12px;">Period</th>
                                 <th style="padding:8px 12px;text-align:right;">Result</th>
                                 <th style="padding:8px 12px;text-align:right;">Factor</th>
                                 <th style="padding:8px 12px;text-align:right;">Final KPI</th>
                                 <th style="padding:8px 12px;">Benchmark</th>
+                                <th style="padding:8px 12px;">Remarks</th>
                             </tr>
                         </thead>
                         <tbody>${rows}</tbody>
@@ -592,6 +666,55 @@ app._renderKpiFinancialReportingSection = function() {
                     </div>
                     ${mgtTable.rows.every(r => r.stations == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:10px;">⚠️ No station counts imported for ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : '')} — run the Stations import.</p>` : ''}
                     ${mgtTable.rows.every(r => r.kpiFt == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:4px;">⚠️ No KPI results recorded yet for this month — enter results for the corresponding calendar month to populate KPIFt.</p>` : ''}
+                `;
+            })()}
+        </div>
+
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
+                <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Availability Factor — All Lines</p>
+                ${(() => {
+                    const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+                    if (availFeePeriods.length === 0) return '';
+                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : availFeePeriods[availFeePeriods.length - 1].kpi_month_no;
+                    return `
+                        <select onchange="app.state._kpiFinReportAvailSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                            ${availFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selected === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        </select>
+                    `;
+                })()}
+            </div>
+            ${(() => {
+                const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+                if (availFeePeriods.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
+                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : availFeePeriods[availFeePeriods.length - 1].kpi_month_no;
+                const rows = ['L3', 'L4', 'L5', 'L6'].flatMap(l => this._kpiLineAvailabilityForMonth(l, availMonthNo));
+                if (rows.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No Availability Factor data imported yet for this month.</p>`;
+                return `
+                    <div style="overflow-x:auto;margin-top:10px;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                            <thead>
+                                <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                    <th style="padding:8px 12px;">Line</th>
+                                    <th style="padding:8px 12px;">Metric</th>
+                                    <th style="padding:8px 12px;text-align:right;">Raw</th>
+                                    <th style="padding:8px 12px;text-align:right;">Adjusted</th>
+                                    <th style="padding:8px 12px;">Remark</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.map(r => `
+                                    <tr style="border-top:1px solid #f3f4f6;">
+                                        <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                        <td style="padding:8px 12px;">${esc(r.metric)}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.adjusted_value != null ? Number(r.adjusted_value).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 `;
             })()}
         </div>
@@ -2111,8 +2234,22 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null;
             workbook.SheetNames.forEach(name => {
+                // Availability Factor is detected by SHEET NAME, not headers —
+                // it has no explicit month column, and its two side-by-side
+                // mini-tables (Raw, then Adjusted) share identical headers, so
+                // it needs the raw array-of-arrays read (header:1), not the
+                // normal header-keyed row objects every other piece uses.
+                const nameMatch = /^M(\d+)_AFctr$/i.exec(name.trim());
+                if (!availability && nameMatch) {
+                    const arrayRows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '' });
+                    const monthNo = parseInt(nameMatch[1], 10);
+                    const parsed = this._kpiParseAvailabilityFactorRows(arrayRows, monthNo);
+                    if (parsed.length > 0) { availability = parsed; availabilityMonthNo = monthNo; }
+                    return;
+                }
+
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { raw: false, defval: '' });
                 if (rows.length === 0) return;
                 const headers = Object.keys(rows[0]);
@@ -2128,12 +2265,12 @@ app._handleKpiFinancialImportFile = function(event) {
                 }
             });
 
-            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts) {
-                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, or Stations.', 'error');
+            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts && !availability) {
+                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, Stations, or a "M{N}_AFctr" Availability sheet.', 'error');
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -2146,7 +2283,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule, stationCounts } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -2165,11 +2302,12 @@ app._renderKpiFinancialImportPreview = function(preview) {
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <h4 style="font-weight:700;margin-bottom:10px;">Detected in this file</h4>
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-4">
                 ${tile('Partner Allocation rows', !!partnerAllocation, partnerAllocation ? partnerAllocation.validRows.length : 0, partnerAllocation && paNotFound > 0 ? `${paNotFound} won't match any existing KPI` : '')}
                 ${tile('Fee period months', !!feePeriods, feePeriods ? feePeriods.length : 0, feePeriods ? 'replaces the whole calendar' : '')}
                 ${tile('Line fee schedule rows', !!lineSchedule, lineSchedule ? lineSchedule.length : 0, lineSchedule ? 'replaces the whole schedule' : '')}
                 ${tile('Station count rows', !!stationCounts, stationCounts ? stationCounts.length : 0, stationCounts ? 'replaces the whole table' : '')}
+                ${tile('Availability Factor rows', !!availability, availability ? availability.length : 0, availability ? `KPI Month ${availabilityMonthNo} only` : '')}
             </div>
             ${partnerAllocation && partnerAllocation.invalidRows.length > 0 ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:160px;overflow-y:auto;">
@@ -2196,6 +2334,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.feePeriods) lines.push(`Fee periods: ${result.feePeriods.imported} imported`);
     if (result.lineSchedule) lines.push(`Line fee schedule: ${result.lineSchedule.imported} imported`);
     if (result.stationCounts) lines.push(`Station counts: ${result.stationCounts.imported} imported`);
+    if (result.availability) lines.push(`Availability Factor: ${result.availability.imported} imported`);
     // Every one of the pieces can carry its own errors — a previous
     // version of this only checked Partner Allocation's, so a real
     // failure saving fee periods/line schedule (e.g. a missing table
@@ -2206,6 +2345,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.feePeriods ? result.feePeriods.errors.map(e => `Fee periods — ${e}`) : []),
         ...(result.lineSchedule ? result.lineSchedule.errors.map(e => `Line fee schedule — ${e}`) : []),
         ...(result.stationCounts ? result.stationCounts.errors.map(e => `Station counts — ${e}`) : []),
+        ...(result.availability ? result.availability.errors.map(e => `Availability Factor — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -2228,6 +2368,7 @@ app._confirmKpiFinancialImport = async function() {
     if (preview.feePeriods) parts.push(`${preview.feePeriods.length} fee period month(s) (replaces the existing calendar)`);
     if (preview.lineSchedule) parts.push(`${preview.lineSchedule.length} line fee schedule row(s) (replaces the existing schedule)`);
     if (preview.stationCounts) parts.push(`${preview.stationCounts.length} station count row(s) (replaces the existing table)`);
+    if (preview.availability) parts.push(`${preview.availability.length} Availability Factor row(s) for KPI Month ${preview.availabilityMonthNo}`);
     const ok = confirm(`Import ${parts.join(', ')}?`);
     if (!ok) return;
 
@@ -2243,6 +2384,9 @@ app._confirmKpiFinancialImport = async function() {
     }
     if (preview.stationCounts) {
         result.stationCounts = await this.importKpiLineStationCounts(preview.stationCounts);
+    }
+    if (preview.availability) {
+        result.availability = await this.importKpiLineAvailability(preview.availability, preview.availabilityMonthNo);
     }
 
     this.state._kpiFinancialImportResult = result;
@@ -2654,7 +2798,58 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
             `)}
         </div>
 
-        <!-- Monthly (single year) -->
+        <!-- Availability Factor -->
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                <div>
+                    <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">Availability Factor</h3>
+                    <p style="font-size:0.72rem;color:#9ca3af;">PSA / TSA / FOSA — raw vs. adjusted, per line</p>
+                </div>
+                ${mgtFeePeriods.length > 0 ? `
+                    <select onchange="app.state._kpiAvailabilitySelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
+                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : mgtSelectedMonthNo) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                    </select>
+                ` : ''}
+            </div>
+            ${(() => {
+                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : mgtSelectedMonthNo;
+                if (availMonthNo == null) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet.</p>`;
+                // Availability Factor is physical network data (like
+                // station counts), not owned by one directorate — a
+                // directorate has all 4 lines as its own departments, so
+                // this shows every line's figures for the selected month,
+                // same shape as the company-wide station/MGT tables.
+                const rows = ['L3', 'L4', 'L5', 'L6'].flatMap(l => this._kpiLineAvailabilityForMonth(l, availMonthNo));
+                if (rows.length === 0) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Availability Factor data imported yet for this month — run the Import from Excel section.</p>`;
+                return `
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                            <thead>
+                                <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                    <th style="padding:8px 12px;">Line</th>
+                                    <th style="padding:8px 12px;">Metric</th>
+                                    <th style="padding:8px 12px;text-align:right;">Raw</th>
+                                    <th style="padding:8px 12px;text-align:right;">Adjusted</th>
+                                    <th style="padding:8px 12px;">Remark</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows.map(r => `
+                                    <tr style="border-top:1px solid #f3f4f6;">
+                                        <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
+                                        <td style="padding:8px 12px;">${esc(r.metric)}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.adjusted_value != null ? Number(r.adjusted_value).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            })()}
+        </div>
+
         ${monthly.length > 0 || monthlyCadenceKpis.length > 0 ? `
             <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
