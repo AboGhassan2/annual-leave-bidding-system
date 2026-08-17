@@ -561,7 +561,7 @@ app._renderKpiFinancialReportingSection = function() {
                     if (mgtFeePeriods.length === 0) return '';
                     const mode = this.state._kpiFinReportMgtMode === 'year' ? 'year' : 'month';
                     const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
-                    const selectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
+                    const selectedMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, null);
                     const yearOptions = [...new Set(mgtFeePeriods.map(p => p.kpi_year))].sort((a, b) => a - b);
                     const rawYear = this.state._kpiFinReportMgtSelectedYear;
                     const selectedYear = rawYear != null ? Number(rawYear) : (yearOptions.length > 0 ? yearOptions[yearOptions.length - 1] : new Date().getFullYear());
@@ -629,7 +629,7 @@ app._renderKpiFinancialReportingSection = function() {
                 }
 
                 const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
-                const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no;
+                const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, null);
                 const mgtSelectedPeriod = mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo);
                 const mgtTable = this._kpiMgtRatioPerLine(mgtSelectedMonthNo, null);
                 return `
@@ -676,7 +676,7 @@ app._renderKpiFinancialReportingSection = function() {
                 ${(() => {
                     const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                     if (availFeePeriods.length === 0) return '';
-                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : availFeePeriods[availFeePeriods.length - 1].kpi_month_no;
+                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods);
                     return `
                         <select onchange="app.state._kpiFinReportAvailSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                             ${availFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selected === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
@@ -687,7 +687,7 @@ app._renderKpiFinancialReportingSection = function() {
             ${(() => {
                 const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                 if (availFeePeriods.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
-                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : availFeePeriods[availFeePeriods.length - 1].kpi_month_no;
+                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods);
                 const rows = ['L3', 'L4', 'L5', 'L6'].flatMap(l => this._kpiLineAvailabilityForMonth(l, availMonthNo));
                 if (rows.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No Availability Factor data imported yet for this month.</p>`;
                 return `
@@ -2792,7 +2792,7 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
     const mgtFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
     const mgtMode = this.state._kpiMgtRatioMode === 'year' ? 'year' : 'month';
     const mgtRawSelected = this.state._kpiMgtRatioSelectedMonthNo;
-    const mgtSelectedMonthNo = mgtRawSelected != null ? Number(mgtRawSelected) : (mgtFeePeriods.length > 0 ? mgtFeePeriods[mgtFeePeriods.length - 1].kpi_month_no : null);
+    const mgtSelectedMonthNo = mgtRawSelected != null ? Number(mgtRawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, directorateId);
     const mgtTable = mgtMode === 'month' && mgtSelectedMonthNo != null ? this._kpiMgtRatioPerLine(mgtSelectedMonthNo, directorateId) : null;
     const mgtSelectedPeriod = mgtSelectedMonthNo != null ? mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo) : null;
     const mgtYearOptions = [...new Set(mgtFeePeriods.map(p => p.kpi_year))].sort((a, b) => a - b);
@@ -2913,12 +2913,12 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                 </div>
                 ${mgtFeePeriods.length > 0 ? `
                     <select onchange="app.state._kpiAvailabilitySelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : mgtSelectedMonthNo) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods)) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
                     </select>
                 ` : ''}
             </div>
             ${(() => {
-                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : mgtSelectedMonthNo;
+                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods);
                 if (availMonthNo == null) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet.</p>`;
                 // Availability Factor is physical network data (like
                 // station counts), not owned by one directorate — a
