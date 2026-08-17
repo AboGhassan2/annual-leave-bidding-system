@@ -2669,11 +2669,72 @@ test('_kpiDashboardCards counts a shared KPI toward BOTH owner directorates\' to
     assert.equal(contractsCards.achieved, 1, 'status is on_target for Contracts too — a ratio, unaffected by the smaller share');
 });
 
+test('_kpiParseAvailabilityFactorRows matches the real M32_AFctr data exactly, including the raw/adjusted duplicate-header split', () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        [null, null, null, 'Line', null, 'PSA', 'TSA', 'FOSA', null, 'Line', null, 'PSA', 'TSA', 'FOSA', null],
+        [null, null, null, 'Line 3', null, 0, 0, 0, null, 'Line 3', null, 99.944, 100, 100, 'PSA Raw 99.822%; PSA QE 99.944%'],
+        [null, null, null, 'Line 4', null, 0, 0, 0, null, 'Line 4', null, 99.994, 99.99, 100, 'PSA Raw 99.98%; PSA QE 99.994%'],
+        [null, null, null, 'Line 5', null, 0, 0, 0, null, 'Line 5', null, 99.909, 100, 100, 'PSA Raw 99.907%; PSA QE 99.909%'],
+        [null, null, null, 'Line 6', null, 0, 0, 0, null, 'Line 6', null, 99.995, 100, 100, 'PSA Raw 99.983%; PSA QE 99.995%'],
+    ];
+    const parsed = app._kpiParseAvailabilityFactorRows(rawRows, 32);
+    assert.equal(parsed.length, 12, '4 lines x 3 metrics (PSA/TSA/FOSA)');
+    const l3psa = parsed.find(r => r.line === 'L3' && r.metric === 'PSA');
+    assert.equal(l3psa.raw_value, 0);
+    assert.equal(l3psa.adjusted_value, 99.944);
+    assert.ok(l3psa.remark.includes('99.822%'));
+    assert.equal(l3psa.kpi_month_no, 32);
+    const l4tsa = parsed.find(r => r.line === 'L4' && r.metric === 'TSA');
+    assert.equal(l4tsa.adjusted_value, 99.99);
+});
 
+test("_kpiParseAvailabilityFactorRows ignores rows that aren't a Line-N row (headers, blank rows, etc.)", () => {
+    const app = buildKpiApp();
+    const rawRows = [
+        [null, null, null, 'Line', null, 'PSA', 'TSA', 'FOSA'],
+        [null, null, null, '', null, '', '', ''],
+        [null, null, null, 'Line 3', null, 1, 2, 3, null, 'Line 3', null, 4, 5, 6],
+        [null, null, null, 'Something Else', null, 99, 99, 99],
+    ];
+    const parsed = app._kpiParseAvailabilityFactorRows(rawRows, 1);
+    assert.equal(parsed.length, 3, 'only the real "Line 3" row produces rows');
+});
 
+test('importKpiLineAvailability is scoped to just the imported month — does NOT wipe out previously-imported months (unlike the wholesale-replace pieces)', async () => {
+    const app = buildKpiApp({
+        kpiLineAvailability: [
+            { id: 1, kpi_month_no: 31, line: 'L3', metric: 'PSA', raw_value: 1, adjusted_value: 1, remark: null },
+        ],
+    });
+    let deleteFilters = [];
+    app.supabase = {
+        from: () => ({
+            delete: () => ({ eq: (col, val) => { deleteFilters.push([col, val]); return { eq: (col2, val2) => { deleteFilters.push([col2, val2]); return { then: (cb) => Promise.resolve({ error: null }).then(cb) }; } }; } }),
+            insert: (rows) => ({ select: async () => ({ data: rows.map((r, i) => ({ id: 100 + i, ...r })), error: null }) }),
+        }),
+    };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
 
+    await app.importKpiLineAvailability([{ kpi_month_no: 32, line: 'L3', metric: 'PSA', raw_value: 0, adjusted_value: 99.944, remark: 'x' }], 32);
 
+    assert.ok(deleteFilters.some(f => f[0] === 'kpi_month_no' && f[1] === 32), 'delete was scoped to kpi_month_no=32');
+    const month31Row = app.state.kpiLineAvailability.find(r => Number(r.kpi_month_no) === 31);
+    assert.ok(month31Row, 'month 31 data was NOT wiped out by importing month 32');
+    const month32Row = app.state.kpiLineAvailability.find(r => Number(r.kpi_month_no) === 32);
+    assert.ok(month32Row, 'month 32 data was added');
+});
 
-
-
-
+test('_kpiLineAvailabilityForMonth filters correctly by line and month', () => {
+    const app = buildKpiApp({
+        kpiLineAvailability: [
+            { line: 'L3', kpi_month_no: 32, metric: 'PSA', adjusted_value: 99.9 },
+            { line: 'L3', kpi_month_no: 31, metric: 'PSA', adjusted_value: 88.8 },
+            { line: 'L4', kpi_month_no: 32, metric: 'PSA', adjusted_value: 77.7 },
+        ],
+    });
+    const rows = app._kpiLineAvailabilityForMonth('L3', 32);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].adjusted_value, 99.9);
+});
