@@ -2452,6 +2452,35 @@ app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
     return (this.state.kpiLineAvailability || []).filter(r => r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo));
 };
 
+// The imported fee calendar spans the WHOLE reference range (e.g. every
+// KPI Month from M1 through M121, years out into the future) regardless
+// of which months actually have real data — so defaulting a Month
+// selector to "the last row in that calendar" almost always lands on a
+// far-future month with nothing in it (M121/Nov 2033, in practice). This
+// scans backwards from the end of the calendar for the LATEST month that
+// actually has data per the given check function, falling back to the
+// calendar's last entry only if nothing has data anywhere (so a
+// genuinely brand-new tenant still gets a sensible, non-crashing
+// default). feePeriods must already be sorted ascending by kpi_month_no.
+app._kpiLatestMonthWithData = function(feePeriods, hasDataFn) {
+    for (let i = feePeriods.length - 1; i >= 0; i--) {
+        if (hasDataFn(feePeriods[i].kpi_month_no)) return feePeriods[i].kpi_month_no;
+    }
+    return feePeriods.length > 0 ? feePeriods[feePeriods.length - 1].kpi_month_no : null;
+};
+
+app._kpiLatestMonthWithMgtData = function(feePeriods, directorateId) {
+    return this._kpiLatestMonthWithData(feePeriods, (monthNo) =>
+        ['L3', 'L4', 'L5', 'L6'].some(line => this._kpiLineFactorScore(line, monthNo, directorateId) != null)
+    );
+};
+
+app._kpiLatestMonthWithAvailabilityData = function(feePeriods) {
+    return this._kpiLatestMonthWithData(feePeriods, (monthNo) =>
+        (this.state.kpiLineAvailability || []).some(r => Number(r.kpi_month_no) === monthNo)
+    );
+};
+
 // ════════════════════════════════════════════════════════════════════
 // Cost / Penalty Allocation — per AMEEN - V1.xlsx's M32_IWF sheet
 // (rows 5-8 summary table, plus columns W-AG in each Line section).
