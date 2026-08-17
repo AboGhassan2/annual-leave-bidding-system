@@ -1194,6 +1194,91 @@ app.confirmDeleteKpiDefinition = async function(id) {
 // ════════════════════════════════════════════════════════════════════
 // Section 3: Enter Results
 // ════════════════════════════════════════════════════════════════════
+// The 5 manual monthly inputs the Cost/Penalty Allocation chain needs
+// (Total Management Cost + one Line Cost per line) — everything else in
+// that chain computes automatically from data already in the system. A
+// separate, independent panel from the KPI results form below it, since
+// these figures aren't tied to any specific KPI or directorate — shown
+// on Enter Results regardless of which KPI/directorate is selected.
+app._renderKpiMonthlyCostInputsPanel = function() {
+    const esc = this._escHtml.bind(this);
+    const feePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    if (feePeriods.length === 0) return '';
+
+    const selectedMonthNo = this.state._kpiCostInputsSelectedMonthNo != null
+        ? Number(this.state._kpiCostInputsSelectedMonthNo)
+        : feePeriods[feePeriods.length - 1].kpi_month_no;
+    const existing = this._kpiMonthlyCostsForMonth(selectedMonthNo);
+    const val = (v) => v != null ? v : '';
+
+    return `
+        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+                <h3 class="text-lg font-bold text-gray-800">Monthly Cost Inputs</h3>
+                <select onchange="app.state._kpiCostInputsSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;">
+                    ${feePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                </select>
+            </div>
+            <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">
+                The only figures that feed the Cost/Penalty Allocation chain that aren't computed from data already in the system —
+                everything downstream (Management Allocation, Weighted Penalty Distribution, per-KPI cost, and the HIT/FS/ALS split)
+                calculates automatically from these once saved.
+            </p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:12px;margin-bottom:14px;">
+                <div>
+                    <label style="font-size:0.75rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Total Management Cost</label>
+                    <input type="number" step="any" id="kpiCostInputMgmt" value="${val(existing ? existing.total_management_cost : null)}"
+                        style="width:100%;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Line 3 Cost</label>
+                    <input type="number" step="any" id="kpiCostInputL3" value="${val(existing ? existing.line_l3_cost : null)}"
+                        style="width:100%;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Line 4 Cost</label>
+                    <input type="number" step="any" id="kpiCostInputL4" value="${val(existing ? existing.line_l4_cost : null)}"
+                        style="width:100%;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Line 5 Cost</label>
+                    <input type="number" step="any" id="kpiCostInputL5" value="${val(existing ? existing.line_l5_cost : null)}"
+                        style="width:100%;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Line 6 Cost</label>
+                    <input type="number" step="any" id="kpiCostInputL6" value="${val(existing ? existing.line_l6_cost : null)}"
+                        style="width:100%;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.85rem;box-sizing:border-box;" />
+                </div>
+            </div>
+            <button onclick="app.saveKpiMonthlyCostInputs(${selectedMonthNo})" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.82rem;">Save Cost Inputs</button>
+            ${existing ? `
+                <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f3f4f6;display:flex;gap:18px;flex-wrap:wrap;">
+                    ${['L3', 'L4', 'L5', 'L6'].map(line => {
+                        const pool = this._kpiLineCostPool(line, selectedMonthNo);
+                        return `<span style="font-size:0.78rem;color:#374151;"><strong>${esc(line)}</strong> pool: ${pool && pool.totalPool != null ? Number(pool.totalPool).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</span>`;
+                    }).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+app.saveKpiMonthlyCostInputs = async function(kpiMonthNo) {
+    const readNum = (id) => {
+        const v = document.getElementById(id).value;
+        return v === '' ? null : Number(v);
+    };
+    const saved = await this.saveKpiLineMonthlyCosts(kpiMonthNo, {
+        totalManagementCost: readNum('kpiCostInputMgmt'),
+        l3Cost: readNum('kpiCostInputL3'),
+        l4Cost: readNum('kpiCostInputL4'),
+        l5Cost: readNum('kpiCostInputL5'),
+        l6Cost: readNum('kpiCostInputL6'),
+    });
+    if (saved) this.renderKpiPlannerView();
+};
+
 app._renderKpiResultsSection = function() {
     const esc = this._escHtml.bind(this);
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
@@ -1202,6 +1287,7 @@ app._renderKpiResultsSection = function() {
 
     if (definitions.length === 0) {
         return `
+            ${this._renderKpiMonthlyCostInputsPanel()}
             <div class="bg-white rounded-xl shadow-md p-5">
                 <p class="text-sm text-gray-400 text-center py-6">Add a ${esc(selectedCompany)} KPI first — results are recorded against a specific KPI.</p>
             </div>
@@ -1338,6 +1424,8 @@ app._renderKpiResultsSection = function() {
     }).join('');
 
     return `
+        ${this._renderKpiMonthlyCostInputsPanel()}
+
         <div class="bg-white rounded-xl shadow-md p-5">
             <h3 class="text-lg font-bold text-gray-800 mb-4">Enter Results</h3>
 
