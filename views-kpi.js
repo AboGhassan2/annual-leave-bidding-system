@@ -185,7 +185,7 @@ app._renderKpiOverviewSection = function() {
     definitions.forEach(k => {
         const kResults = results.filter(r => r.kpi_definition_id === k.id).sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
         if (kResults.length === 0) return;
-        const label = this._kpiBenchmarkLabel(kResults[0].actual_value, k.exceptional_value, k.unacceptable_value, k.direction);
+        const label = this._kpiResultBenchmark(kResults[0], k);
         if (label === 'Exceptional') excCount++;
         else if (label === 'Acceptable') accCount++;
         else if (label === 'Unacceptable') unaccCount++;
@@ -381,7 +381,7 @@ app._renderKpiReportingSection = function() {
                 .sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''))[0] || null;
         }
 
-        const benchmark = displayResult ? this._kpiBenchmarkLabel(displayResult.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
+        const benchmark = displayResult ? this._kpiResultBenchmark(displayResult, k) : null;
         const benchmarkBadge = {
             Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
             Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
@@ -1403,7 +1403,7 @@ app._renderKpiResultsSection = function() {
         // r.status's simpler "—" behavior only when Exceptional or
         // Unacceptable isn't configured for this KPI (benchmark can't be
         // computed), so the column never just goes blank.
-        const benchmark = this._kpiBenchmarkLabel(r.actual_value, selected.exceptional_value, selected.unacceptable_value, selected.direction);
+        const benchmark = this._kpiResultBenchmark(r, selected);
         const benchmarkBadge = {
             Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
             Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
@@ -3401,7 +3401,7 @@ app._buildKpiDetailListBody = function(directorateId, year, kpisInScope) {
             const scoped = this._kpiScopedResults(k.id, k._ownershipWeight).filter(r => Number(r.year) === year).sort((a, b) => (b.entered_at || '').localeCompare(a.entered_at || ''));
             result = scoped[0] || null;
         }
-        const benchmark = result ? this._kpiBenchmarkLabel(result.actual_value, k.exceptional_value, k.unacceptable_value, k.direction) : null;
+        const benchmark = result ? this._kpiResultBenchmark(result, k) : null;
         const benchmarkBadge = {
             Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
             Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
