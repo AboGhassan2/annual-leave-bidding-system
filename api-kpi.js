@@ -518,8 +518,21 @@ app._kpiBenchmarkLabel = function(actual, exceptional, unacceptable, direction) 
     return 'Unacceptable'; // R <= U
 };
 
+// Every display site should call THIS, not _kpiBenchmarkLabel directly —
+// prefers a stored imported_benchmark override (set when a trusted
+// external source, e.g. an Excel import, already computed Benchmark for
+// a KPI whose thresholds were never configured in this system) and only
+// falls back to live threshold-based computation when that's null. A KPI
+// that DOES have real thresholds configured is completely unaffected,
+// since saveKpiResult never sets imported_benchmark for a normal save.
+app._kpiResultBenchmark = function(result, kpiDef) {
+    if (!result) return null;
+    if (result.imported_benchmark) return result.imported_benchmark;
+    return this._kpiBenchmarkLabel(result.actual_value, kpiDef.exceptional_value, kpiDef.unacceptable_value, kpiDef.direction);
+};
 
-app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source }) {
+
+app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark }) {
     if (!this.supabase) return null;
     try {
         const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
@@ -530,7 +543,16 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         // reading the old combined-string format (e.g. "2027-01", "2027-Q1").
         const periodLabel = periodType === 'yearly' ? `${year}` : `${year}-${periodValue}`;
 
-        const factorScore = this._kpiFactorScore(actualValue, kpiDef.exceptional_value, kpiDef.target_value, kpiDef.unacceptable_value, kpiDef.direction);
+        // Normally computed from this KPI's own thresholds. When a
+        // trusted external source (e.g. an Excel import) already
+        // computed Factor Score/Benchmark for a KPI whose thresholds
+        // were never configured here, precomputedFactorScore/
+        // precomputedBenchmark let that value be trusted directly
+        // instead — every other caller leaves these undefined, so
+        // normal saves are completely unaffected.
+        const factorScore = precomputedFactorScore != null ? precomputedFactorScore
+            : this._kpiFactorScore(actualValue, kpiDef.exceptional_value, kpiDef.target_value, kpiDef.unacceptable_value, kpiDef.direction);
+        const importedBenchmark = precomputedBenchmark != null ? precomputedBenchmark : null;
         // Final KPI auto-follows the freshly computed Factor Score UNLESS
         // it was already manually overridden on a previous save of this
         // same result (i.e. its stored value no longer matches its own
@@ -561,6 +583,7 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
             status,
             factor_score: factorScore,
             final_kpi: finalKpi,
+            imported_benchmark: importedBenchmark,
             remarks: remarks || '',
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
@@ -3079,10 +3102,28 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
         if (resultNum == null) continue; // "-" (not yet reported) or blank
         const freq = cellText(`M${r}`);
         const remarks = cellText(`Q${r}`) || null; // MR_Remarks
+        // Pre-computed Factor Score (T = "Final Factor") and Benchmark
+        // (AA) — present for KPIs that already have thresholds
+        // configured somewhere in the source workbook, null for ones
+        // that don't (e.g. PSA, verified directly against the real
+        // file). Trusted directly rather than recomputed here, per
+        // explicit choice — this system's own threshold-based
+        // computation is bypassed for these two fields specifically.
+        // Both-or-neither: when a KPI has no thresholds, Excel's own
+        // formula for Final Factor falls back to a meaningless 0 rather
+        // than a blank, but Benchmark correctly comes back blank in that
+        // same case — so a null Benchmark means the paired Factor Score
+        // isn't trustworthy either, even though it looks like a real
+        // number (verified directly against the real PSA row: Final
+        // Factor=0, Benchmark=blank, no thresholds configured anywhere).
+        const benchmarkText = cellText(`AA${r}`);
+        const finalFactor = benchmarkText ? cellNum(`T${r}`) : null;
         out.push({
             kpi_month_no: Math.trunc(monthNo), line: lineName, code, company,
             periodType: periodTypeMap[freq] || 'monthly',
             actualValue: resultNum, remarks,
+            precomputedFactorScore: finalFactor,
+            precomputedBenchmark: benchmarkText || null,
         });
     }
     return out;
@@ -3121,6 +3162,7 @@ app.importKpiFullResultsHistory = async function(rows) {
             const saved = await this.saveKpiResult(existing.id, {
                 year, periodType: row.periodType, periodValue,
                 actualValue: row.actualValue, remarks: row.remarks || `Imported from KPI Results (M${row.kpi_month_no})`, source: 'kpi_results_history_import',
+                precomputedFactorScore: row.precomputedFactorScore, precomputedBenchmark: row.precomputedBenchmark,
             });
             if (!saved) { summary.failed++; summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): failed to save`); continue; }
             summary.updated++;
