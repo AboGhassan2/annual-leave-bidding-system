@@ -1209,6 +1209,8 @@ app._renderKpiMonthlyCostInputsPanel = function() {
         ? Number(this.state._kpiCostInputsSelectedMonthNo)
         : feePeriods[feePeriods.length - 1].kpi_month_no;
     const existing = this._kpiMonthlyCostsForMonth(selectedMonthNo);
+    const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
+    const anyPoolForMonth = ['L3', 'L4', 'L5', 'L6'].some(line => this._kpiLineCostPool(line, selectedMonthNo, selectedCompany) != null);
     const val = (v) => v != null ? v : '';
 
     return `
@@ -1222,7 +1224,9 @@ app._renderKpiMonthlyCostInputsPanel = function() {
             <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">
                 The only figures that feed the Cost/Penalty Allocation chain that aren't computed from data already in the system —
                 everything downstream (Management Allocation, Weighted Penalty Distribution, per-KPI cost, and the HIT/FS/ALS split)
-                calculates automatically from these once saved.
+                calculates automatically from these once saved. If this month's Management Allocation and Line Cost were already
+                imported directly from an M% sheet (Import from Excel), the import takes precedence and these manual fields are ignored
+                for that month.
             </p>
             <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:12px;margin-bottom:14px;">
                 <div>
@@ -1252,11 +1256,11 @@ app._renderKpiMonthlyCostInputsPanel = function() {
                 </div>
             </div>
             <button onclick="app.saveKpiMonthlyCostInputs(${selectedMonthNo})" style="padding:8px 16px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.82rem;">Save Cost Inputs</button>
-            ${existing ? `
+            ${anyPoolForMonth ? `
                 <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f3f4f6;display:flex;gap:18px;flex-wrap:wrap;">
                     ${['L3', 'L4', 'L5', 'L6'].map(line => {
-                        const pool = this._kpiLineCostPool(line, selectedMonthNo);
-                        return `<span style="font-size:0.78rem;color:#374151;"><strong>${esc(line)}</strong> pool: ${pool && pool.totalPool != null ? Number(pool.totalPool).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</span>`;
+                        const pool = this._kpiLineCostPool(line, selectedMonthNo, selectedCompany);
+                        return `<span style="font-size:0.78rem;color:#374151;"><strong>${esc(line)}</strong> pool: ${pool && pool.totalPool != null ? Number(pool.totalPool).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}${pool && pool.source === 'imported' ? ' <span style="color:#0891b2;font-weight:700;">(from import)</span>' : ''}</span>`;
                     }).join('')}
                 </div>
             ` : ''}
@@ -2322,7 +2326,7 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null;
             workbook.SheetNames.forEach(name => {
                 // Availability Factor and IWF Results are both detected
                 // by SHEET NAME, not headers — neither has an explicit
@@ -2363,15 +2367,22 @@ app._handleKpiFinancialImportFile = function(event) {
                     lineSchedule = this._kpiParseLineFeeScheduleRows(rows);
                 } else if (!stationCounts && headers.includes('Fiscal Month No') && headers.includes('No. of Stations') && headers.includes('Line')) {
                     stationCounts = this._kpiParseStationCountRows(rows);
+                } else if (!costPools && headers.includes('Mngmnt Per Line') && headers.includes('Line Cost')) {
+                    // Reads the RAW worksheet object (not the header-keyed
+                    // `rows` above), since the L/M/N dollar columns use
+                    // accounting format for negatives (e.g. "(29,759.63)"),
+                    // unparseable as text — the parser reads cell.v directly.
+                    const parsed = this._kpiParseMPercentCostRows(workbook.Sheets[name]);
+                    if (parsed.length > 0) costPools = parsed;
                 }
             });
 
-            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts && !availability && !iwfResults) {
-                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, Stations, or a "M{N}_AFctr"/"M{N}_IWF" sheet.', 'error');
+            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts && !availability && !iwfResults && !costPools) {
+                this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, Stations, M% Cost Pools, or a "M{N}_AFctr"/"M{N}_IWF" sheet.', 'error');
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -2384,7 +2395,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -2399,17 +2410,19 @@ app._renderKpiFinancialImportPreview = function(preview) {
     if (partnerAllocation) {
         paNotFound = partnerAllocation.validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line, selectedCompany)).length;
     }
+    const costPoolMonths = costPools ? [...new Set(costPools.map(r => r.kpi_month_no))].sort((a, b) => a - b) : [];
 
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <h4 style="font-weight:700;margin-bottom:10px;">Detected in this file</h4>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-4">
                 ${tile('Partner Allocation rows', !!partnerAllocation, partnerAllocation ? partnerAllocation.validRows.length : 0, partnerAllocation && paNotFound > 0 ? `${paNotFound} won't match any existing KPI` : '')}
                 ${tile('Fee period months', !!feePeriods, feePeriods ? feePeriods.length : 0, feePeriods ? 'replaces the whole calendar' : '')}
                 ${tile('Line fee schedule rows', !!lineSchedule, lineSchedule ? lineSchedule.length : 0, lineSchedule ? 'replaces the whole schedule' : '')}
                 ${tile('Station count rows', !!stationCounts, stationCounts ? stationCounts.length : 0, stationCounts ? 'replaces the whole table' : '')}
                 ${tile('Availability Factor rows', !!availability, availability ? availability.length : 0, availability ? `KPI Month ${availabilityMonthNo} only` : '')}
                 ${tile('KPI Results (IWF)', !!iwfResults, iwfResults ? iwfResults.length : 0, iwfResults ? `KPI Month ${iwfMonthNo}, all lines` : '')}
+                ${tile('Cost Pool rows (M%)', !!costPools, costPools ? costPools.length : 0, costPools ? `KPI Months ${costPoolMonths[0]}\u2013${costPoolMonths[costPoolMonths.length - 1]}` : '')}
             </div>
             ${partnerAllocation && partnerAllocation.invalidRows.length > 0 ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:160px;overflow-y:auto;">
@@ -2438,6 +2451,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.stationCounts) lines.push(`Station counts: ${result.stationCounts.imported} imported`);
     if (result.availability) lines.push(`Availability Factor: ${result.availability.imported} imported`);
     if (result.iwfResults) lines.push(`KPI Results (IWF): ${result.iwfResults.updated} updated, ${result.iwfResults.notFound} not found, ${result.iwfResults.failed} failed`);
+    if (result.costPools) lines.push(`Cost Pools (M%): ${result.costPools.imported} imported`);
     // Every one of the pieces can carry its own errors — a previous
     // version of this only checked Partner Allocation's, so a real
     // failure saving fee periods/line schedule (e.g. a missing table
@@ -2450,6 +2464,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.stationCounts ? result.stationCounts.errors.map(e => `Station counts — ${e}`) : []),
         ...(result.availability ? result.availability.errors.map(e => `Availability Factor — ${e}`) : []),
         ...(result.iwfResults ? result.iwfResults.errors.map(e => `KPI Results (IWF) — ${e}`) : []),
+        ...(result.costPools ? result.costPools.errors.map(e => `Cost Pools (M%) — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -2474,6 +2489,7 @@ app._confirmKpiFinancialImport = async function() {
     if (preview.stationCounts) parts.push(`${preview.stationCounts.length} station count row(s) (replaces the existing table)`);
     if (preview.availability) parts.push(`${preview.availability.length} Availability Factor row(s) for KPI Month ${preview.availabilityMonthNo}`);
     if (preview.iwfResults) parts.push(`${preview.iwfResults.length} KPI Result(s) for KPI Month ${preview.iwfMonthNo}, all lines`);
+    if (preview.costPools) parts.push(`${preview.costPools.length} Cost Pool row(s) (M%)`);
     const ok = confirm(`Import ${parts.join(', ')}?`);
     if (!ok) return;
 
@@ -2495,6 +2511,9 @@ app._confirmKpiFinancialImport = async function() {
     }
     if (preview.iwfResults) {
         result.iwfResults = await this.importKpiIWFResults(preview.iwfResults, preview.iwfMonthNo, this.state._kpiSelectedCompany || 'OMC');
+    }
+    if (preview.costPools) {
+        result.costPools = await this.importKpiLineCostPools(preview.costPools);
     }
 
     this.state._kpiFinancialImportResult = result;
