@@ -3330,3 +3330,62 @@ test('_kpiParseFullKpiResultsSheet does not trust a Final Factor of 0 when Bench
     assert.equal(parsed[0].precomputedFactorScore, null, 'the 0 is NOT trusted since Benchmark is blank');
     assert.equal(parsed[0].precomputedBenchmark, null);
 });
+
+test('_kpiParseWFAvailabilityCostRows finds all 4 lines despite non-uniform row offsets between sections (real bug caught: L6 sits one row later than L3/L4/L5)', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B101': { w: 'LINE 3 MVFt' },
+        'B174': { w: 'PSAAF3t-1 PMAF3t-1' }, 'C174': { w: 'TSAAF3t-1 PMAF3t-1' }, 'D174': { w: 'FOSAAF3t-1 PMAF3t-1' }, 'E174': { w: 'PMAF3t-1 exc AVL' },
+        'B175': { t: 'n', v: 0 }, 'C175': { t: 'n', v: 0 }, 'D175': { t: 'n', v: 0 }, 'E175': { t: 'n', v: -73417.09546773508 },
+        'B181': { w: 'LINE 4 MVFt' },
+        'B341': { w: 'LINE 6 MVFt' },
+        // L6's label sits one row LATER than the L3/L4/L5 pattern (real offset difference)
+        'B415': { w: 'PSAAF6t-1 PMAF6t-1' }, 'C415': { w: 'TSAAF6t-1 PMAF6t-1' }, 'D415': { w: 'FOSAAF6t-1 PMAF6t-1' }, 'E415': { w: 'PMAF6t-1 exc AVL' },
+        'B416': { t: 'n', v: 0 }, 'C416': { t: 'n', v: 0 }, 'D416': { t: 'n', v: 0 }, 'E416': { t: 'n', v: -26484.773929628078 },
+        '!ref': 'A1:E430',
+    };
+    const parsed = app._kpiParseWFAvailabilityCostRows(sheet);
+    const l3 = parsed.find(r => r.line === 'L3');
+    const l6 = parsed.find(r => r.line === 'L6');
+    assert.ok(l3, 'L3 found despite section starting far from its label row');
+    assert.equal(Math.round(l3.remainder * 100) / 100, -73417.10);
+    assert.ok(l6, 'L6 found even though its label sits one row later than L3s pattern');
+    assert.equal(Math.round(l6.remainder * 100) / 100, -26484.77);
+});
+
+test('importKpiLineAvailabilityCost resolves the correct KPI Month automatically by matching against already-imported Cost Pool (M%) data, without any month being stated in the WF sheet itself', async () => {
+    const app = buildKpiApp({
+        kpiLineCostPools: [
+            { kpi_month_no: 25, line: 'L3', company: 'OMC', line_cost: -73417.09546773508 },
+            { kpi_month_no: 26, line: 'L3', company: 'OMC', line_cost: -99999 }, // a different month, must NOT match
+        ],
+    });
+    let upsertedRows = null;
+    app.supabase = { from: () => ({ upsert: (rows) => { upsertedRows = rows; return { select: async () => ({ data: rows.map((r, i) => ({ id: i + 1, ...r })), error: null }) }; } }) };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const summary = await app.importKpiLineAvailabilityCost([{ line: 'L3', psaCost: 0, tsaCost: 0, fosaCost: 0, remainder: -73417.09546773508 }], 'OMC');
+    assert.equal(summary.imported, 1);
+    assert.equal(upsertedRows[0].kpi_month_no, 25, 'correctly resolved to month 25, not the other candidate month 26');
+});
+
+test('importKpiLineAvailabilityCost reports a clear error, not a silent skip, when no matching Cost Pool data exists to resolve the month from', async () => {
+    const app = buildKpiApp({ kpiLineCostPools: [] });
+    app.supabase = {};
+    app.showToast = () => {};
+    const summary = await app.importKpiLineAvailabilityCost([{ line: 'L3', psaCost: 0, tsaCost: 0, fosaCost: 0, remainder: -73417.1 }], 'OMC');
+    assert.equal(summary.imported, 0);
+    assert.ok(summary.errors[0].includes('M% Cost Pool import first'));
+});
+
+test('_kpiAvailabilityMetricCost returns the correct per-metric cost, and null for a month/line with no data', () => {
+    const app = buildKpiApp({
+        kpiLineAvailabilityCost: [
+            { kpi_month_no: 25, line: 'L3', company: 'OMC', psa_cost: 0, tsa_cost: 0, fosa_cost: 0, remainder_cost: -73417.1 },
+        ],
+    });
+    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L3', 25, 'OMC'), 0);
+    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L3', 26, 'OMC'), null, 'no data for month 26');
+    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L4', 25, 'OMC'), null, 'no data for L4');
+});
