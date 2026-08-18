@@ -3379,13 +3379,77 @@ test('importKpiLineAvailabilityCost reports a clear error, not a silent skip, wh
     assert.ok(summary.errors[0].includes('M% Cost Pool import first'));
 });
 
-test('_kpiAvailabilityMetricCost returns the correct per-metric cost, and null for a month/line with no data', () => {
+test('_kpiAvailabilityMetricCost computes KPIF x Base Cost, reproducing the real FOSA/L3 formula exactly (FOSAF x MFOSF)', () => {
     const app = buildKpiApp({
-        kpiLineAvailabilityCost: [
-            { kpi_month_no: 25, line: 'L3', company: 'OMC', psa_cost: 0, tsa_cost: 0, fosa_cost: 0, remainder_cost: -73417.1 },
-        ],
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'FOSA', name: 'FOSA', period_type: 'monthly', direction: 'higher_is_better' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 1.5 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'FOSA', company: 'OMC', base_cost: 3555552.8236633237 }],
     });
-    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L3', 25, 'OMC'), 0);
-    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L3', 26, 'OMC'), null, 'no data for month 26');
-    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L4', 25, 'OMC'), null, 'no data for L4');
+    const cost = app._kpiAvailabilityMetricCost('FOSA', 'L3', 32, 'OMC');
+    assert.equal(Math.round(cost * 100) / 100, Math.round(1.5 * 3555552.8236633237 * 100) / 100);
+});
+
+test('_kpiAvailabilityMetricCost is null when KPIF is null (no thresholds configured yet), even if a Base Cost exists', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: null }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'PSA', company: 'OMC', base_cost: 5961118.38 }],
+    });
+    assert.equal(app._kpiAvailabilityMetricCost('PSA', 'L3', 32, 'OMC'), null, 'no KPIF means no KPI Cost, regardless of Base Cost being present');
+});
+
+test('_kpiAvailabilityMetricCost recalculates automatically as KPIF changes month to month, using the SAME Base Cost figure', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'TSA', name: 'TSA', period_type: 'monthly' }],
+        kpiResults: [
+            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.0 },
+            { kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 2.0 },
+        ],
+        kpiFeePeriods: [
+            { kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 },
+            { kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 },
+        ],
+        kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'TSA', company: 'OMC', base_cost: 1000000 }],
+    });
+    assert.equal(app._kpiAvailabilityMetricCost('TSA', 'L3', 31, 'OMC'), 1000000, 'KPIF 1.0 x base 1,000,000');
+    assert.equal(app._kpiAvailabilityMetricCost('TSA', 'L3', 32, 'OMC'), 2000000, 'KPIF 2.0 (a NEW result, no re-import needed) x the same base');
+});
+
+test('_kpiParseWFBaseCostRows applies the correct combination rule per metric (PSA: D+E, TSA: D-E, FOSA: D alone), matching the real formulas', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B101': { w: 'LINE 3 MVFt' },
+        'B124': { w: 'PSAAF3t-1' }, 'D125': { t: 'n', v: 943667.2799190901 }, 'E125': { t: 'n', v: 5017451.101168305 },
+        'B128': { w: 'TSAAF3t-1' }, 'D129': { t: 'n', v: 14839928.4320413 }, 'E129': { t: 'n', v: 0 },
+        'B132': { w: 'FOSAAF3t-1' }, 'D133': { t: 'n', v: 3555552.8236633237 },
+        'B181': { w: 'LINE 4 MVFt' },
+        '!ref': 'A1:E200',
+    };
+    const parsed = app._kpiParseWFBaseCostRows(sheet);
+    const psa = parsed.find(r => r.line === 'L3' && r.metric === 'PSA');
+    const tsa = parsed.find(r => r.line === 'L3' && r.metric === 'TSA');
+    const fosa = parsed.find(r => r.line === 'L3' && r.metric === 'FOSA');
+    assert.equal(Math.round(psa.baseCost * 100) / 100, 5961118.38, 'PSA = MTOF + MSOF (D+E)');
+    assert.equal(Math.round(tsa.baseCost * 100) / 100, 14839928.43, 'TSA = MTSF - KTVF (D-E)');
+    assert.equal(Math.round(fosa.baseCost * 100) / 100, 3555552.82, 'FOSA = MFOSF (D alone)');
+});
+
+test('_kpiParseWFBaseCostRows treats a "-" placeholder cell (not a real number) as 0 in the combination, matching the real L5 TSA row', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B261': { w: 'LINE 5 MVFt' },
+        'B288': { w: 'TSAAF5t-1' }, 'D289': { t: 'n', v: 4331932.276712662 }, 'E289': { w: '-' }, // real file: E289 is literally "-"
+        '!ref': 'A1:E300',
+    };
+    const parsed = app._kpiParseWFBaseCostRows(sheet);
+    const tsa = parsed.find(r => r.line === 'L5' && r.metric === 'TSA');
+    assert.equal(Math.round(tsa.baseCost * 100) / 100, 4331932.28, '"-" treated as 0, not NaN or a dropped row');
 });
