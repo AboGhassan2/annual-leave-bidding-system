@@ -2389,34 +2389,65 @@ app.importKpiLineStationCounts = async function(rows) {
 //    — all read from the SAME row, since the two mini-tables are
 //    row-aligned in the source file.
 // ════════════════════════════════════════════════════════════════════
-app._kpiParseAvailabilityFactorRows = function(rawArrayRows, kpiMonthNo) {
+// Reads by ABSOLUTE CELL ADDRESS (e.g. sheet['D13']), not array position —
+// deliberately NOT using SheetJS's sheet_to_json(header:1) array output,
+// because that array is relative to the sheet's own USED RANGE, which
+// can start at any column (this real file's M32_AFctr sheet has !ref
+// "B1:AV213" — starting at column B, not A). An array-index-based
+// parser silently reads the wrong column whenever a file's used range
+// doesn't happen to start at A, with no error — exactly what broke this
+// import for a real user's file despite passing every other check.
+// Reading by literal Excel address sidesteps that entirely: "D13" always
+// means column D, row 13, no matter where the sheet's content starts.
+app._kpiParseAvailabilityFactorRows = function(sheet, kpiMonthNo) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    // Prefers the cell's raw value for genuine numbers, not formatted
+    // text — a real file exposed exactly this bug on the IWF sheet's
+    // Result column (percentage-formatted cells show "99.87%" in .w,
+    // unparseable by Number(), while .v correctly holds 0.9987). Applied
+    // here too as a defensive measure, even though this sheet's
+    // raw/adjusted values aren't currently percentage-formatted.
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        const text = cellText(addr);
+        if (text === '') return null;
+        const num = Number(text);
+        return Number.isFinite(num) ? num : null;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 300 } };
+
     const metrics = [
-        { key: 'PSA', rawCol: 5, adjCol: 11 },
-        { key: 'TSA', rawCol: 6, adjCol: 12 },
-        { key: 'FOSA', rawCol: 7, adjCol: 13 },
+        { key: 'PSA', rawCol: 'F', adjCol: 'L' },
+        { key: 'TSA', rawCol: 'G', adjCol: 'M' },
+        { key: 'FOSA', rawCol: 'H', adjCol: 'N' },
     ];
     const out = [];
-    (rawArrayRows || []).forEach(row => {
-        if (!row) return;
-        const lineLabel = row[3]; // col D
-        if (!lineLabel || !/^line\s*\d/i.test(String(lineLabel).trim())) return;
-        const lineNum = String(lineLabel).replace(/[^\d]/g, '');
+    for (let r = range.s.r + 1; r <= range.e.r + 1; r++) {
+        const lineLabel = cellText(`D${r}`);
+        if (!lineLabel || !/^line\s*\d/i.test(lineLabel)) continue;
+        const lineNum = lineLabel.replace(/[^\d]/g, '');
         const lineName = this._kpiMapLineNumberToLineName(lineNum);
-        if (!lineName) return;
-        const remark = row[14] || null; // col O
+        if (!lineName) continue;
+        const remark = cellText(`O${r}`) || null;
         metrics.forEach(m => {
-            const rawCell = row[m.rawCol], adjCell = row[m.adjCol];
-            const rawNum = (rawCell !== '' && rawCell != null) ? Number(rawCell) : null;
-            const adjNum = (adjCell !== '' && adjCell != null) ? Number(adjCell) : null;
-            if (!Number.isFinite(rawNum) && !Number.isFinite(adjNum)) return;
+            const rawNum = cellNum(`${m.rawCol}${r}`);
+            const adjNum = cellNum(`${m.adjCol}${r}`);
+            if (rawNum == null && adjNum == null) return;
             out.push({
                 kpi_month_no: kpiMonthNo, line: lineName, metric: m.key,
-                raw_value: Number.isFinite(rawNum) ? rawNum : null,
-                adjusted_value: Number.isFinite(adjNum) ? adjNum : null,
+                raw_value: rawNum,
+                adjusted_value: adjNum,
                 remark: remark || null,
             });
         });
-    });
+    }
     return out;
 };
 
@@ -2795,33 +2826,62 @@ app.importM31IWFResults = async function(company) {
 // their own repeated header rows, so a normal header-keyed row-object
 // read would misinterpret Line 4/5/6's own header rows as data under
 // Line 3's column meanings.
-app._kpiParseIWFResultsRows = function(rawArrayRows, kpiMonthNo) {
+// Reads by ABSOLUTE CELL ADDRESS, not array position — same reasoning
+// as _kpiParseAvailabilityFactorRows: this sheet's used range also
+// starts at column B (real file: "B2:BD171"), which silently shifted
+// every array-index-based read by one column with no error. LINE-marker
+// rows (col B) are detected the same way, but every field is now read
+// via its literal Excel coordinate.
+app._kpiParseIWFResultsRows = function(sheet, kpiMonthNo) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    // For the numeric Result column specifically: prefer the cell's RAW
+    // value (cell.v) when it's genuinely numeric (cell.t === 'n'), not
+    // the formatted display text — a real file exposed this exactly:
+    // many KPI Results are percentage-formatted, so their .w is "99.87%"
+    // (unparseable by Number()) while .v is the correct underlying 0.9987
+    // that matches the scale everything else in this app already uses.
+    // Falls back to text parsing (via cellText) for anything that isn't
+    // a plain number cell — covers the "-" (no data) placeholder, which
+    // is a string cell, not a number.
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        const text = cellText(addr);
+        if (text === '' || text === '-') return null;
+        const num = Number(text);
+        return Number.isFinite(num) ? num : null;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 300 } };
+
     const periodTypeMap = { Monthly: 'monthly', Quarterly: 'quarterly', Annual: 'yearly' };
     const out = [];
     let currentLine = null;
-    (rawArrayRows || []).forEach(row => {
-        if (!row) return;
-        const bVal = row[1]; // col B
-        if (bVal && /^line\s*\d/i.test(String(bVal).trim())) {
-            currentLine = this._kpiMapLineNumberToLineName(String(bVal).replace(/[^\d]/g, ''));
-            return;
+    for (let r = range.s.r + 1; r <= range.e.r + 1; r++) {
+        const bVal = cellText(`B${r}`);
+        if (bVal && /^line\s*\d/i.test(bVal)) {
+            currentLine = this._kpiMapLineNumberToLineName(bVal.replace(/[^\d]/g, ''));
+            continue;
         }
-        if (!currentLine) return;
-        const nameCell = row[13]; // col N
-        if (!nameCell || typeof nameCell !== 'string') return;
+        if (!currentLine) continue;
+        const nameCell = cellText(`N${r}`);
+        if (!nameCell) continue;
         const codeMatch = nameCell.match(/^([A-Za-z0-9]+)\s*:/);
-        if (!codeMatch) return;
-        const result = row[17]; // col R
-        if (result == null || result === '' || result === '-') return; // no data entered for this KPI yet
-        const resultNum = Number(result);
-        if (!Number.isFinite(resultNum)) return;
-        const freq = row[12]; // col M
+        if (!codeMatch) continue;
+        const resultNum = cellNum(`R${r}`);
+        if (resultNum == null) continue; // no data entered for this KPI yet (blank or "-")
+        const freq = cellText(`M${r}`);
         out.push({
             line: currentLine, code: codeMatch[1].trim(),
-            periodType: periodTypeMap[String(freq || '').trim()] || 'monthly',
+            periodType: periodTypeMap[freq] || 'monthly',
             actualValue: resultNum,
         });
-    });
+    }
     return out;
 };
 
