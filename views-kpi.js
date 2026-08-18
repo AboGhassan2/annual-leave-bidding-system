@@ -632,6 +632,16 @@ app._renderKpiFinancialReportingSection = function() {
                 const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, null);
                 const mgtSelectedPeriod = mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo);
                 const mgtTable = this._kpiMgtRatioPerLine(mgtSelectedMonthNo, null);
+                // Cost per Mgmt / Cost per Line / Total Cost — the M%
+                // sheet's own L/M/N columns, per line, for this same
+                // month. Uses the same _kpiLineCostPool the Cost Inputs
+                // panel and Cost/Penalty Allocation already rely on, so
+                // this is exactly the imported-or-manual figure, never a
+                // separate calculation.
+                const costRows = mgtTable.rows.map(r => this._kpiLineCostPool(r.line, mgtSelectedMonthNo, selectedCompany));
+                const fmtCost = (v) => v != null ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
+                const costTotal = (key) => costRows.reduce((sum, c) => sum + (c && c[key] != null ? c[key] : 0), 0);
+                const anyCostData = costRows.some(c => c != null);
                 return `
                     <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : String(mgtSelectedMonthNo))} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
                     <div style="overflow-x:auto;">
@@ -644,10 +654,15 @@ app._renderKpiFinancialReportingSection = function() {
                                     <th style="padding:8px 12px;text-align:right;">KPIFt</th>
                                     <th style="padding:8px 12px;text-align:right;">M%erc</th>
                                     <th style="padding:8px 12px;text-align:right;">Weighted</th>
+                                    <th style="padding:8px 12px;text-align:right;">Cost per Mgmt</th>
+                                    <th style="padding:8px 12px;text-align:right;">Cost per Line</th>
+                                    <th style="padding:8px 12px;text-align:right;">Total Cost</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${mgtTable.rows.map(r => `
+                                ${mgtTable.rows.map((r, i) => {
+                                    const cost = costRows[i];
+                                    return `
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
@@ -655,17 +670,25 @@ app._renderKpiFinancialReportingSection = function() {
                                         <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${cost ? fmtCost(cost.managementAllocation) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${cost ? fmtCost(cost.lineCost) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;">${cost ? fmtCost(cost.totalPool) : '—'}</td>
                                     </tr>
-                                `).join('')}
+                                `;
+                                }).join('')}
                                 <tr style="border-top:2px solid #e5e7eb;">
                                     <td colspan="5" style="padding:10px 12px;font-weight:700;text-align:right;">Total</td>
                                     <td style="padding:10px 12px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace;color:#B8860B;">${(mgtTable.total * 100).toFixed(4)}%</td>
+                                    <td style="padding:10px 12px;text-align:right;font-weight:700;">${anyCostData ? fmtCost(costTotal('managementAllocation')) : '—'}</td>
+                                    <td style="padding:10px 12px;text-align:right;font-weight:700;">${anyCostData ? fmtCost(costTotal('lineCost')) : '—'}</td>
+                                    <td style="padding:10px 12px;text-align:right;font-weight:800;">${anyCostData ? fmtCost(costTotal('totalPool')) : '—'}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                     ${mgtTable.rows.every(r => r.stations == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:10px;">⚠️ No station counts imported for ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : '')} — run the Stations import.</p>` : ''}
                     ${mgtTable.rows.every(r => r.kpiFt == null) ? `<p style="font-size:0.72rem;color:#92400e;margin-top:4px;">⚠️ No KPI results recorded yet for this month — enter results for the corresponding calendar month to populate KPIFt.</p>` : ''}
+                    ${!anyCostData ? `<p style="font-size:0.72rem;color:#92400e;margin-top:4px;">⚠️ No Cost Pool data (M%) or manual cost inputs for this month — run the M% import or the Cost Inputs panel on Enter Results.</p>` : ''}
                 `;
             })()}
         </div>
