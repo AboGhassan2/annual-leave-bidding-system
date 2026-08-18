@@ -746,7 +746,8 @@ app._renderKpiFinancialReportingSection = function() {
                             </tbody>
                         </table>
                     </div>
-                    <p style="font-size:0.7rem;color:#9ca3af;margin-top:8px;">KPI Cost is only available for whichever single month a WF sheet import covered — most months will correctly show \u2014.</p>                `;
+                    <p style="font-size:0.7rem;color:#9ca3af;margin-top:8px;">KPI Cost = KPIF \u00d7 a fixed Base Cost (imported from the WF sheet) \u2014 recalculates automatically whenever a new KPI Result is entered. Shows \u2014 until this metric has both a Base Cost imported and thresholds configured (so KPIF can compute).</p>
+                `;
             })()}
         </div>
 
@@ -2383,7 +2384,7 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null, resultsHistory = null, availabilityCostRows = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null, resultsHistory = null, availabilityCostRows = null, availabilityBaseCostRows = null;
             workbook.SheetNames.forEach(name => {
                 // Availability Factor and IWF Results are both detected
                 // by SHEET NAME, not headers — neither has an explicit
@@ -2420,13 +2421,16 @@ app._handleKpiFinancialImportFile = function(event) {
                     if (parsed.length > 0) resultsHistory = parsed;
                     return;
                 }
-                // "WF" — each line's PSA/TSA/FOSA cost breakdown, a
-                // single-month snapshot (which month gets resolved at
-                // import time by matching against the M% Cost Pool data,
-                // not from this sheet itself).
+                // "WF" — feeds two pieces: the newer Base Cost figures
+                // per (Line, Metric) that drive the live KPIF x BaseCost
+                // formula, and the older single-month cost breakdown
+                // (kept for backward compatibility, no longer used by
+                // the display).
                 if (!availabilityCostRows && name.trim() === 'WF') {
                     const parsed = this._kpiParseWFAvailabilityCostRows(workbook.Sheets[name]);
                     if (parsed.length > 0) availabilityCostRows = parsed;
+                    const baseCostParsed = this._kpiParseWFBaseCostRows(workbook.Sheets[name]);
+                    if (baseCostParsed.length > 0) availabilityBaseCostRows = baseCostParsed;
                     return;
                 }
 
@@ -2457,7 +2461,7 @@ app._handleKpiFinancialImportFile = function(event) {
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -2470,7 +2474,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -2501,6 +2505,7 @@ app._renderKpiFinancialImportPreview = function(preview) {
                 ${tile('Cost Pool rows (M%)', !!costPools, costPools ? costPools.length : 0, costPools ? `KPI Months ${costPoolMonths[0]}\u2013${costPoolMonths[costPoolMonths.length - 1]}` : '')}
                 ${tile('KPI Results history', !!resultsHistory, resultsHistory ? resultsHistory.length : 0, resultsHistory ? `KPI Months ${historyMonths[0]}\u2013${historyMonths[historyMonths.length - 1]}, both companies` : '')}
                 ${tile('Availability Cost (WF)', !!availabilityCostRows, availabilityCostRows ? availabilityCostRows.length : 0, availabilityCostRows ? 'one month\u2019s snapshot \u2014 month resolved from Cost Pool data' : '')}
+                ${tile('Availability Base Cost (WF)', !!availabilityBaseCostRows, availabilityBaseCostRows ? availabilityBaseCostRows.length : 0, availabilityBaseCostRows ? 'feeds KPI Cost = KPIF \u00d7 this, every month' : '')}
             </div>
             ${!costPools && availabilityCostRows ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;">
@@ -2542,6 +2547,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.costPools) lines.push(`Cost Pools (M%): ${result.costPools.imported} imported`);
     if (result.resultsHistory) lines.push(`KPI Results history: ${result.resultsHistory.updated} updated, ${result.resultsHistory.notFound} not found, ${result.resultsHistory.failed} failed`);
     if (result.availabilityCost) lines.push(`Availability Cost (WF): ${result.availabilityCost.imported} imported`);
+    if (result.availabilityBaseCost) lines.push(`Availability Base Cost (WF): ${result.availabilityBaseCost.imported} imported`);
     // Every one of the pieces can carry its own errors — a previous
     // version of this only checked Partner Allocation's, so a real
     // failure saving fee periods/line schedule (e.g. a missing table
@@ -2557,6 +2563,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.costPools ? result.costPools.errors.map(e => `Cost Pools (M%) — ${e}`) : []),
         ...(result.resultsHistory ? result.resultsHistory.errors.map(e => `KPI Results history — ${e}`) : []),
         ...(result.availabilityCost ? result.availabilityCost.errors.map(e => `Availability Cost (WF) — ${e}`) : []),
+        ...(result.availabilityBaseCost ? result.availabilityBaseCost.errors.map(e => `Availability Base Cost (WF) — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -2618,6 +2625,11 @@ app._confirmKpiFinancialImport = async function() {
         // just populated (or which was already there from an earlier
         // M% import in a previous session).
         result.availabilityCost = await this.importKpiLineAvailabilityCost(preview.availabilityCostRows, this.state._kpiSelectedCompany || 'OMC');
+    }
+    if (preview.availabilityBaseCostRows) {
+        // No ordering dependency on anything else — this is a fixed
+        // dollar figure per (Line, Metric), not month-scoped.
+        result.availabilityBaseCost = await this.importKpiLineAvailabilityBaseCost(preview.availabilityBaseCostRows, this.state._kpiSelectedCompany || 'OMC');
     }
 
     this.state._kpiFinancialImportResult = result;
