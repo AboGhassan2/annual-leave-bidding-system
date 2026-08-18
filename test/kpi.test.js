@@ -16,6 +16,42 @@ function buildKpiApp(stateOverrides = {}) {
     return buildApp(baseState(stateOverrides), ['utils.js', 'api-kpi.js']);
 }
 
+// Builds a minimal object shaped like a real SheetJS worksheet — cells
+// keyed by absolute address (e.g. "D13") with a { w: '<text>' } value,
+// plus a "!ref" used-range string. `rows` is an array of row-arrays;
+// `originCol`/`originRow` place row 0/col 0 of that array at that real
+// sheet address — this is what lets a test reproduce the actual bug
+// (a real file's used range starting at column B, not A) rather than
+// only ever testing the case that happened to already work.
+function colLetterToIndex(letter) {
+    let n = 0;
+    for (const ch of letter) n = n * 26 + (ch.charCodeAt(0) - 64);
+    return n - 1; // 0-based
+}
+function colIndexToLetter(idx) {
+    let n = idx + 1, s = '';
+    while (n > 0) { const rem = (n - 1) % 26; s = String.fromCharCode(65 + rem) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+}
+function mockWorksheet(rows, originCol = 'A', originRow = 1) {
+    const sheet = {};
+    const originColIdx = colLetterToIndex(originCol);
+    let maxColIdx = originColIdx, maxRow = originRow;
+    rows.forEach((row, ri) => {
+        (row || []).forEach((val, ci) => {
+            if (val === null || val === undefined || val === '') return;
+            const colIdx = originColIdx + ci;
+            const rowNum = originRow + ri;
+            const addr = `${colIndexToLetter(colIdx)}${rowNum}`;
+            sheet[addr] = { w: String(val), v: val };
+            if (colIdx > maxColIdx) maxColIdx = colIdx;
+            if (rowNum > maxRow) maxRow = rowNum;
+        });
+    });
+    sheet['!ref'] = `${originCol}${originRow}:${colIndexToLetter(maxColIdx)}${maxRow}`;
+    return sheet;
+}
+
 test('on_target when actual meets or beats target, higher_is_better', () => {
     const app = buildKpiApp();
     assert.equal(app.kpiStatus(95, 90, 'higher_is_better'), 'on_target');
@@ -2671,14 +2707,15 @@ test('_kpiDashboardCards counts a shared KPI toward BOTH owner directorates\' to
 
 test('_kpiParseAvailabilityFactorRows matches the real M32_AFctr data exactly, including the raw/adjusted duplicate-header split', () => {
     const app = buildKpiApp();
-    const rawRows = [
+    const rows = [
         [null, null, null, 'Line', null, 'PSA', 'TSA', 'FOSA', null, 'Line', null, 'PSA', 'TSA', 'FOSA', null],
         [null, null, null, 'Line 3', null, 0, 0, 0, null, 'Line 3', null, 99.944, 100, 100, 'PSA Raw 99.822%; PSA QE 99.944%'],
         [null, null, null, 'Line 4', null, 0, 0, 0, null, 'Line 4', null, 99.994, 99.99, 100, 'PSA Raw 99.98%; PSA QE 99.994%'],
         [null, null, null, 'Line 5', null, 0, 0, 0, null, 'Line 5', null, 99.909, 100, 100, 'PSA Raw 99.907%; PSA QE 99.909%'],
         [null, null, null, 'Line 6', null, 0, 0, 0, null, 'Line 6', null, 99.995, 100, 100, 'PSA Raw 99.983%; PSA QE 99.995%'],
     ];
-    const parsed = app._kpiParseAvailabilityFactorRows(rawRows, 32);
+    const sheet = mockWorksheet(rows, 'A', 1);
+    const parsed = app._kpiParseAvailabilityFactorRows(sheet, 32);
     assert.equal(parsed.length, 12, '4 lines x 3 metrics (PSA/TSA/FOSA)');
     const l3psa = parsed.find(r => r.line === 'L3' && r.metric === 'PSA');
     assert.equal(l3psa.raw_value, 0);
@@ -2691,14 +2728,32 @@ test('_kpiParseAvailabilityFactorRows matches the real M32_AFctr data exactly, i
 
 test("_kpiParseAvailabilityFactorRows ignores rows that aren't a Line-N row (headers, blank rows, etc.)", () => {
     const app = buildKpiApp();
-    const rawRows = [
+    const rows = [
         [null, null, null, 'Line', null, 'PSA', 'TSA', 'FOSA'],
         [null, null, null, '', null, '', '', ''],
         [null, null, null, 'Line 3', null, 1, 2, 3, null, 'Line 3', null, 4, 5, 6],
         [null, null, null, 'Something Else', null, 99, 99, 99],
     ];
-    const parsed = app._kpiParseAvailabilityFactorRows(rawRows, 1);
+    const sheet = mockWorksheet(rows, 'A', 1);
+    const parsed = app._kpiParseAvailabilityFactorRows(sheet, 1);
     assert.equal(parsed.length, 3, 'only the real "Line 3" row produces rows');
+});
+
+test('_kpiParseAvailabilityFactorRows is immune to the used range not starting at column A (real bug: a real file used B1:AV213 as its range, silently shifting array-index reads by one column)', () => {
+    const app = buildKpiApp();
+    // Identical content to the first test, but anchored starting at
+    // column B instead of A — reproducing the exact real-file layout
+    // that broke the old array-index-based parser.
+    const rows = [
+        [null, null, 'Line', null, 'PSA', 'TSA', 'FOSA', null, 'Line', null, 'PSA', 'TSA', 'FOSA', null],
+        [null, null, 'Line 3', null, 0, 0, 0, null, 'Line 3', null, 99.944, 100, 100, 'PSA Raw 99.822%; PSA QE 99.944%'],
+    ];
+    const sheet = mockWorksheet(rows, 'B', 1);
+    assert.equal(sheet['!ref'].split(':')[0], 'B1', 'sanity check: this mock really does start at column B, matching the real file');
+    const parsed = app._kpiParseAvailabilityFactorRows(sheet, 32);
+    assert.equal(parsed.length, 3, 'PSA/TSA/FOSA for the one Line 3 row — same result regardless of which column the sheet happens to start at');
+    const l3psa = parsed.find(r => r.metric === 'PSA');
+    assert.equal(l3psa.adjusted_value, 99.944, 'reads the correct value even with the column-B offset that broke the old parser');
 });
 
 test('importKpiLineAvailability is scoped to just the imported month — does NOT wipe out previously-imported months (unlike the wholesale-replace pieces)', async () => {
@@ -2855,10 +2910,10 @@ test('_kpiParseIWFResultsRows reproduces the real M32_IWF sheet exactly: 128 row
     const app = buildKpiApp();
     const fs = require('fs');
     const path = require('path');
-    const rawPath = path.join(__dirname, '..', 'm32_iwf_raw.json');
-    if (!fs.existsSync(rawPath)) return; // real-file fixture not present in this environment, skip
-    const rawRows = JSON.parse(fs.readFileSync(rawPath, 'utf8'));
-    const parsed = app._kpiParseIWFResultsRows(rawRows, 32);
+    const fixturePath = path.join(__dirname, '..', 'm32_iwf_sheet.json');
+    if (!fs.existsSync(fixturePath)) return; // real-file fixture not present in this environment, skip
+    const sheet = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = app._kpiParseIWFResultsRows(sheet, 32);
     assert.equal(parsed.length, 128);
     const byLine = {};
     parsed.forEach(r => { byLine[r.line] = (byLine[r.line] || 0) + 1; });
@@ -2882,12 +2937,50 @@ test('_kpiParseIWFResultsRows correctly tracks LINE section boundaries with a sm
         [null, 'LINE 4'],
         [null, null, null, null, null, null, null, null, null, null, null, null, 'Quarterly', 'A1: Test KPI', null, null, null, 10],
     ];
-    const parsed = app._kpiParseIWFResultsRows(rows, 1);
+    const sheet = mockWorksheet(rows, 'A', 1);
+    const parsed = app._kpiParseIWFResultsRows(sheet, 1);
     assert.equal(parsed.length, 2);
     assert.equal(parsed[0].line, 'L3');
     assert.equal(parsed[0].actualValue, 5);
     assert.equal(parsed[1].line, 'L4');
     assert.equal(parsed[1].actualValue, 10);
+});
+
+test('_kpiParseIWFResultsRows is immune to the used range NOT starting at column A — same real bug as Availability Factor: the real M32_IWF sheet has !ref "B2:BD171"', () => {
+    const app = buildKpiApp();
+    // Same absolute-column content as the "LINE section boundaries" test
+    // above (LINE marker in col B, Frequency in col M, KPI name in col N,
+    // Result in col R) — but built by slicing off the column-A placeholder
+    // and anchoring at 'B' instead, reproducing a sheet whose used range
+    // genuinely starts at column B, like the real file.
+    const rowsAtA = [
+        [null, 'LINE 3'],
+        [null, null, null, null, null, null, null, null, null, null, null, null, 'Monthly', 'A1: Test KPI', null, null, null, 5],
+    ];
+    const rows = rowsAtA.map(r => r.slice(1));
+    const sheet = mockWorksheet(rows, 'B', 1);
+    assert.equal(sheet['!ref'].split(':')[0], 'B1', 'sanity check: this mock starts at column B, matching the real file');
+    const parsed = app._kpiParseIWFResultsRows(sheet, 1);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].line, 'L3');
+    assert.equal(parsed[0].actualValue, 5, 'reads the correct value even with the column-B offset that broke the old parser');
+});
+
+test('_kpiParseIWFResultsRows reads the raw numeric value, not percentage-formatted display text — the real bug: a real KPI Result cell had .w "99.87%" (unparseable) but .v 0.9987 (correct)', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'LINE 3', v: 'LINE 3' },
+        'M3': { w: 'Monthly', v: 'Monthly' },
+        'N3': { w: 'A2: Test KPI', v: 'A2: Test KPI' },
+        // Percentage-formatted cell: SheetJS gives .w as "99.87%" but the
+        // real underlying number in .v is 0.9987 — this is exactly what
+        // broke every percentage-styled KPI Result in the real file.
+        'R3': { t: 'n', v: 0.9987, w: '99.87%' },
+        '!ref': 'B2:R3',
+    };
+    const parsed = app._kpiParseIWFResultsRows(sheet, 1);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].actualValue, 0.9987, 'reads .v (0.9987), not a failed parse of .w ("99.87%")');
 });
 
 test('importKpiIWFResults resolves each period from the real fee calendar mapping and matches by (code, line)', async () => {
