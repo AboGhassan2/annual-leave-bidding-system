@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -38,6 +38,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_availability').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_monthly_costs').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_cost_pools').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_availability_cost').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -51,6 +52,7 @@ app.loadKpiData = async function() {
         if (availability.error) throw availability.error;
         if (monthlyCosts.error) throw monthlyCosts.error;
         if (costPools.error) throw costPools.error;
+        if (availabilityCost.error) throw availabilityCost.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -63,6 +65,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineStationCounts = stationCounts.data || [];
         this.state.kpiLineAvailability = availability.data || [];
         this.state.kpiLineCostPools = costPools.data || [];
+        this.state.kpiLineAvailabilityCost = availabilityCost.data || [];
         this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
@@ -2507,6 +2510,145 @@ app.importKpiLineAvailability = async function(rows, kpiMonthNo) {
 // array if nothing's been imported for that month yet.
 app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
     return (this.state.kpiLineAvailability || []).filter(r => r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo));
+};
+
+// PSA/TSA/FOSA are ALSO real KPI codes tracked in kpi_definitions/
+// kpi_results, distinct from the raw Availability Factor data imported
+// from the M{N}_AFctr sheet — so each metric has its own genuine Factor
+// Score (KPIF), computed the normal way from its own thresholds and
+// entered result, not derived from the raw/adjusted Availability figures
+// themselves. Returns null if that KPI code/line/month combination has
+// no matching KPI or no result yet.
+app._kpiAvailabilityMetricFactorScore = function(metric, lineName, kpiMonthNo, company) {
+    const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
+    if (!feePeriod) return null;
+    const kpiDef = this._kpiFindExistingKpiByCodeAndLine(metric, lineName, company || 'OMC');
+    if (!kpiDef) return null;
+    const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
+    const result = (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDef.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr);
+    return result && result.factor_score != null ? Number(result.factor_score) : null;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// WF sheet — each line's total cost broken into PSA/TSA/FOSA's own share
+// plus a remainder ("excluding Availability"), from rows like 174-175 in
+// Line 3's section (B101). Genuinely limited to ONE month's snapshot —
+// the WF sheet doesn't repeat this breakdown per month like M%/KPI
+// Results do. Confirmed by cross-referencing against already-verified
+// Line Cost figures rather than assumed: the real file's numbers match
+// KPI Month 25 exactly.
+// ════════════════════════════════════════════════════════════════════
+
+// Row offsets from each line's own section header are NOT uniform
+// (verified directly: L3/L4/L5 sit at header+73/+74, L6 sits one row
+// later at +74/+75) — so this searches for the label text within each
+// section instead of trusting a fixed offset.
+app._kpiParseWFAvailabilityCostRows = function(sheet) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        let text = cellText(addr);
+        if (text === '' || text === '-' || text === '#N/A' || text === '#REF!' || text === '#DIV/0!') return null;
+        const isNegative = /^\(.*\)$/.test(text);
+        text = text.replace(/[(),]/g, '');
+        const num = Number(text);
+        if (!Number.isFinite(num)) return null;
+        return isNegative ? -num : num;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 500 } };
+
+    const lineSections = [
+        { line: 'L3', headerRow: 101, num: 3 },
+        { line: 'L4', headerRow: 181, num: 4 },
+        { line: 'L5', headerRow: 261, num: 5 },
+        { line: 'L6', headerRow: 341, num: 6 },
+    ];
+    const out = [];
+    lineSections.forEach((section, idx) => {
+        const nextHeaderRow = idx < lineSections.length - 1 ? lineSections[idx + 1].headerRow : range.e.r + 1;
+        const labelPattern = new RegExp(`^PSAAF${section.num}t-1\\s+PMAF${section.num}t-1`, 'i');
+        for (let r = section.headerRow; r < nextHeaderRow; r++) {
+            const label = cellText(`B${r}`);
+            if (labelPattern.test(label)) {
+                out.push({
+                    line: section.line,
+                    psaCost: cellNum(`B${r + 1}`),
+                    tsaCost: cellNum(`C${r + 1}`),
+                    fosaCost: cellNum(`D${r + 1}`),
+                    remainder: cellNum(`E${r + 1}`),
+                });
+                break;
+            }
+        }
+    });
+    return out;
+};
+
+// Determines which KPI Month this breakdown belongs to by matching each
+// row's remainder against the already-imported Line Cost figures (from
+// the M% import) — NOT hardcoded, since the WF sheet itself doesn't
+// explicitly label which month its "t" (current) refers to. Requires
+// the M% Cost Pool import to have already run for this to resolve
+// anything; otherwise reports a clear error per line rather than
+// guessing or silently skipping.
+app.importKpiLineAvailabilityCost = async function(rows, company) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
+    const summary = { imported: 0, errors: [] };
+    const toInsert = [];
+    for (const row of rows) {
+        const match = (this.state.kpiLineCostPools || []).find(p =>
+            p.line === row.line && (p.company || 'OMC') === targetCompany &&
+            p.line_cost != null && row.remainder != null && Math.abs(p.line_cost - row.remainder) < 0.01
+        );
+        if (!match) {
+            summary.errors.push(`${row.line}: could not determine which KPI Month this belongs to — run the M% Cost Pool import first, then retry this import.`);
+            continue;
+        }
+        toInsert.push({
+            tenant_id: this._tid(), kpi_month_no: match.kpi_month_no, line: row.line, company: targetCompany,
+            psa_cost: row.psaCost, tsa_cost: row.tsaCost, fosa_cost: row.fosaCost, remainder_cost: row.remainder,
+        });
+    }
+    if (toInsert.length === 0) {
+        if (summary.errors.length > 0) this.showToast('Could not import Availability Cost: ' + summary.errors[0], 'error');
+        return summary;
+    }
+    try {
+        const { data, error } = await this.supabase
+            .from('kpi_line_availability_cost')
+            .upsert(toInsert, { onConflict: 'tenant_id,kpi_month_no,line,company' })
+            .select();
+        if (error) throw error;
+        summary.imported = data.length;
+        const savedKeys = new Set(data.map(r => `${r.kpi_month_no}|${r.line}|${r.company}`));
+        this.state.kpiLineAvailabilityCost = [
+            ...(this.state.kpiLineAvailabilityCost || []).filter(r => !savedKeys.has(`${r.kpi_month_no}|${r.line}|${r.company}`)),
+            ...data,
+        ];
+        this.showToast(`Availability Cost imported: ${data.length} rows.`, 'success');
+    } catch (e) {
+        console.error('❌ Failed to import Availability Cost:', e.message);
+        summary.errors.push(e.message);
+        this.showToast('Could not import Availability Cost: ' + e.message, 'error');
+    }
+    return summary;
+};
+
+app._kpiAvailabilityMetricCost = function(metric, lineName, kpiMonthNo, company) {
+    const row = (this.state.kpiLineAvailabilityCost || []).find(r =>
+        r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo) && (r.company || 'OMC') === (company || 'OMC')
+    );
+    if (!row) return null;
+    const key = { PSA: 'psa_cost', TSA: 'tsa_cost', FOSA: 'fosa_cost' }[metric];
+    return key ? row[key] : null;
 };
 
 // The imported fee calendar spans the WHOLE reference range (e.g. every
