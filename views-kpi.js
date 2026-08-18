@@ -729,16 +729,18 @@ app._renderKpiFinancialReportingSection = function() {
                             </thead>
                             <tbody>
                                 ${rows.map(r => {
+                                    const enteredResult = this._kpiAvailabilityMetricResult(r.metric, r.line, availMonthNo, selectedCompany);
                                     const kpif = this._kpiAvailabilityMetricFactorScore(r.metric, r.line, availMonthNo, selectedCompany);
                                     const kpiCost = this._kpiAvailabilityMetricCost(r.metric, r.line, availMonthNo, selectedCompany);
+                                    const diag = (kpif == null || kpiCost == null) ? this._kpiAvailabilityMetricDiagnostic(r.metric, r.line, availMonthNo, selectedCompany) : null;
                                     return `
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.adjusted_value != null ? Number(r.adjusted_value).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${kpif != null ? kpif.toFixed(4) : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;">${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpif == null && diag ? `title="${esc(diag)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                                         <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
                                     </tr>
                                 `;
@@ -3082,16 +3084,18 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                             </thead>
                             <tbody>
                                 ${rows.map(r => {
+                                    const enteredResult = this._kpiAvailabilityMetricResult(r.metric, r.line, availMonthNo, company);
                                     const kpif = this._kpiAvailabilityMetricFactorScore(r.metric, r.line, availMonthNo, company);
                                     const kpiCost = this._kpiAvailabilityMetricCost(r.metric, r.line, availMonthNo, company);
+                                    const diag = (kpif == null || kpiCost == null) ? this._kpiAvailabilityMetricDiagnostic(r.metric, r.line, availMonthNo, company) : null;
                                     return `
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.adjusted_value != null ? Number(r.adjusted_value).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${kpif != null ? kpif.toFixed(4) : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;">${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpif == null && diag ? `title="${esc(diag)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                                         <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
                                     </tr>
                                 `;
