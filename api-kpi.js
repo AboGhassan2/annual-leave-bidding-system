@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -39,6 +39,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_monthly_costs').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_cost_pools').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability_cost').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_availability_base_cost').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -53,6 +54,7 @@ app.loadKpiData = async function() {
         if (monthlyCosts.error) throw monthlyCosts.error;
         if (costPools.error) throw costPools.error;
         if (availabilityCost.error) throw availabilityCost.error;
+        if (availabilityBaseCost.error) throw availabilityBaseCost.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -66,6 +68,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineAvailability = availability.data || [];
         this.state.kpiLineCostPools = costPools.data || [];
         this.state.kpiLineAvailabilityCost = availabilityCost.data || [];
+        this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
         this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
@@ -2642,13 +2645,110 @@ app.importKpiLineAvailabilityCost = async function(rows, company) {
     return summary;
 };
 
+// KPI Cost = KPIF (this metric's own Factor Score, live-computed the
+// moment a KPI Result is entered — see _kpiAvailabilityMetricFactorScore)
+// x a fixed Base Cost figure per (Line, Metric), extracted from the WF
+// sheet's PSA/TSA/FOSA cost formulas. REPLACES the earlier frozen
+// single-month snapshot approach — this recalculates automatically
+// every time, since only KPIF changes month to month, not the base.
 app._kpiAvailabilityMetricCost = function(metric, lineName, kpiMonthNo, company) {
-    const row = (this.state.kpiLineAvailabilityCost || []).find(r =>
-        r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo) && (r.company || 'OMC') === (company || 'OMC')
+    const kpif = this._kpiAvailabilityMetricFactorScore(metric, lineName, kpiMonthNo, company);
+    if (kpif == null) return null;
+    const row = (this.state.kpiLineAvailabilityBaseCost || []).find(r =>
+        r.line === lineName && r.metric === metric && (r.company || 'OMC') === (company || 'OMC')
     );
-    if (!row) return null;
-    const key = { PSA: 'psa_cost', TSA: 'tsa_cost', FOSA: 'fosa_cost' }[metric];
-    return key ? row[key] : null;
+    if (!row || row.base_cost == null) return null;
+    return kpif * row.base_cost;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// WF sheet — the Base Cost figure feeding each metric's KPI Cost
+// formula, verified arithmetically against the real file (e.g. FOSA/L3:
+// C133(FOSAF, currently 0 in the source since its own Rating/Factor
+// formula is broken) x D133(MFOSF, 3,555,552.82) = F133's real 0 —
+// confirms D IS the base the formula multiplies against). Different
+// combination rule per metric:
+//   PSA:  base = MTOFt + MSOFt   (columns D + E)
+//   TSA:  base = MTSFt - KTVFt   (columns D - E)
+//   FOSA: base = MFOSFt          (column D alone)
+// Found by searching for each metric's label text within each line's
+// section (same robust approach as the earlier WF parser), not a fixed
+// offset — row positions genuinely differ between line sections.
+// ════════════════════════════════════════════════════════════════════
+app._kpiParseWFBaseCostRows = function(sheet) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        let text = cellText(addr);
+        if (text === '' || text === '-' || text === '#N/A' || text === '#REF!' || text === '#DIV/0!') return null;
+        const isNegative = /^\(.*\)$/.test(text);
+        text = text.replace(/[(),]/g, '');
+        const num = Number(text);
+        if (!Number.isFinite(num)) return null;
+        return isNegative ? -num : num;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 500 } };
+
+    const lineSections = [
+        { line: 'L3', headerRow: 101, num: 3 },
+        { line: 'L4', headerRow: 181, num: 4 },
+        { line: 'L5', headerRow: 261, num: 5 },
+        { line: 'L6', headerRow: 341, num: 6 },
+    ];
+    const metrics = [
+        { key: 'PSA', labelPrefix: 'PSAAF', combine: (d, e) => (d || 0) + (e || 0) },
+        { key: 'TSA', labelPrefix: 'TSAAF', combine: (d, e) => (d || 0) - (e || 0) },
+        { key: 'FOSA', labelPrefix: 'FOSAAF', combine: (d) => d || 0 },
+    ];
+    const out = [];
+    lineSections.forEach((section, idx) => {
+        const nextHeaderRow = idx < lineSections.length - 1 ? lineSections[idx + 1].headerRow : range.e.r + 1;
+        metrics.forEach(m => {
+            const labelPattern = new RegExp(`^${m.labelPrefix}${section.num}t-1$`, 'i');
+            for (let r = section.headerRow; r < nextHeaderRow; r++) {
+                if (labelPattern.test(cellText(`B${r}`))) {
+                    const d = cellNum(`D${r + 1}`);
+                    const e = cellNum(`E${r + 1}`);
+                    const baseCost = m.combine(d, e);
+                    out.push({ line: section.line, metric: m.key, baseCost });
+                    break;
+                }
+            }
+        });
+    });
+    return out;
+};
+
+app.importKpiLineAvailabilityBaseCost = async function(rows, company) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    const targetCompany = company || 'OMC';
+    try {
+        const tid = this._tid();
+        const insertRows = rows.map(r => ({ tenant_id: tid, line: r.line, metric: r.metric, company: targetCompany, base_cost: r.baseCost }));
+        const { data, error } = await this.supabase
+            .from('kpi_line_availability_base_cost')
+            .upsert(insertRows, { onConflict: 'tenant_id,line,metric,company' })
+            .select();
+        if (error) throw error;
+        const savedKeys = new Set(data.map(r => `${r.line}|${r.metric}|${r.company}`));
+        this.state.kpiLineAvailabilityBaseCost = [
+            ...(this.state.kpiLineAvailabilityBaseCost || []).filter(r => !savedKeys.has(`${r.line}|${r.metric}|${r.company}`)),
+            ...data,
+        ];
+        this.showToast(`Availability Base Cost imported: ${data.length} rows.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import Availability Base Cost:', e.message);
+        this.showToast('Could not import Availability Base Cost: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
 };
 
 // The imported fee calendar spans the WHOLE reference range (e.g. every
