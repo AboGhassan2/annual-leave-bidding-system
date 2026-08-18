@@ -3071,3 +3071,104 @@ test('_kpiLatestMonthWithMgtData is directorate-scoped: two directorates with da
     assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 10), 31);
     assert.equal(app._kpiLatestMonthWithMgtData(feePeriods, 20), 32);
 });
+
+test('_kpiParseMPercentCostRows reproduces the real M% sheet exactly: 96 rows (12 months x 4 lines x 2 companies), M32/L3/OMC matches the already-verified figures to the cent', () => {
+    const app = buildKpiApp();
+    const fs = require('fs');
+    const path = require('path');
+    const fixturePath = path.join(__dirname, '..', 'mpercent_sheet.json');
+    if (!fs.existsSync(fixturePath)) return; // real-file fixture not present in this environment, skip
+    const sheet = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = app._kpiParseMPercentCostRows(sheet);
+    assert.equal(parsed.length, 96);
+    assert.deepEqual([...new Set(parsed.map(r => r.company))].sort(), ['Audit', 'OMC'], 'ER mapped to Audit');
+    const m32l3 = parsed.find(r => r.kpi_month_no === 32 && r.line === 'L3' && r.company === 'OMC');
+    assert.equal(Math.round(m32l3.management_allocation * 100) / 100, -24917.82);
+    assert.equal(Math.round(m32l3.line_cost * 100) / 100, -84299.39);
+    assert.equal(Math.round(m32l3.total_pool * 100) / 100, -109217.20);
+});
+
+test('_kpiParseMPercentCostRows handles a partial #N/A gracefully: keeps the Line Cost that IS available, leaves Management Allocation and Total null rather than dropping the whole row', () => {
+    const app = buildKpiApp();
+    const fs = require('fs');
+    const path = require('path');
+    const fixturePath = path.join(__dirname, '..', 'mpercent_sheet.json');
+    if (!fs.existsSync(fixturePath)) return;
+    const sheet = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = app._kpiParseMPercentCostRows(sheet);
+    const m27l3 = parsed.find(r => r.kpi_month_no === 27 && r.line === 'L3' && r.company === 'OMC');
+    assert.ok(m27l3, 'row is kept even though Management Allocation is #N/A in the source');
+    assert.equal(m27l3.management_allocation, null);
+    assert.equal(Math.round(m27l3.line_cost * 100) / 100, -72459.52);
+    assert.equal(m27l3.total_pool, null);
+});
+
+test('_kpiParseMPercentCostRows only takes MONTHLY rows, ignoring the Quarterly/Annual duplicates of the same data', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'A1': { w: 'Report Fiscal Month' }, 'B1': { w: 'Report Fiscal Month No' }, 'C1': { w: 'COMPANY' }, 'D1': { w: 'REPORT' }, 'E1': { w: 'Line' },
+        'L1': { w: 'Mngmnt Per Line' }, 'M1': { w: 'Line Cost' }, 'N1': { w: 'Total' },
+        'B2': { t: 'n', v: 25 }, 'C2': { w: 'OMC' }, 'D2': { w: 'MONTHLY' }, 'E2': { t: 'n', v: 3 },
+        'L2': { t: 'n', v: -100 }, 'M2': { t: 'n', v: -200 }, 'N2': { t: 'n', v: -300 },
+        'B3': { t: 'n', v: 25 }, 'C3': { w: 'OMC' }, 'D3': { w: 'QUARTERLY' }, 'E3': { t: 'n', v: 3 },
+        'L3': { t: 'n', v: -999 }, 'M3': { t: 'n', v: -999 }, 'N3': { t: 'n', v: -999 },
+        '!ref': 'A1:N3',
+    };
+    const parsed = app._kpiParseMPercentCostRows(sheet);
+    assert.equal(parsed.length, 1, 'only the Monthly row is included');
+    assert.equal(parsed[0].management_allocation, -100);
+});
+
+test('_kpiLineCostPool prefers imported cost pool data over manual entry when both exist for the same month/line', () => {
+    const app = buildKpiApp({
+        kpiLineCostPools: [
+            { kpi_month_no: 32, line: 'L3', company: 'OMC', management_allocation: -24917.82, line_cost: -84299.39, total_pool: -109217.21 },
+        ],
+        kpiLineMonthlyCosts: [
+            { kpi_month_no: 32, total_management_cost: -999, line_l3_cost: -999 }, // deliberately different, should be ignored
+        ],
+        kpiLineStationCounts: [{ kpi_month_no: 32, line: 'L3', station_count: 22 }],
+    });
+    const pool = app._kpiLineCostPool('L3', 32, 'OMC');
+    assert.equal(pool.source, 'imported');
+    assert.equal(pool.managementAllocation, -24917.82);
+    assert.equal(pool.lineCost, -84299.39);
+});
+
+test('_kpiLineCostPool falls back to manual entry when no imported data covers that month/line', () => {
+    const app = buildKpiApp({
+        kpiLineCostPools: [],
+        kpiLineMonthlyCosts: [{ kpi_month_no: 32, total_management_cost: -61161.91, line_l3_cost: -84299.39 }],
+        kpiLineStationCounts: [
+            { kpi_month_no: 32, line: 'L3', station_count: 22 }, { kpi_month_no: 32, line: 'L4', station_count: 9 },
+            { kpi_month_no: 32, line: 'L5', station_count: 12 }, { kpi_month_no: 32, line: 'L6', station_count: 11 },
+        ],
+    });
+    const pool = app._kpiLineCostPool('L3', 32, 'OMC');
+    assert.equal(pool.source, 'manual');
+    assert.equal(Math.round(pool.managementAllocation * 100) / 100, -24917.82);
+});
+
+test('importKpiLineCostPools upserts by (tenant, month, line, company) without wiping unrelated months', async () => {
+    const app = buildKpiApp({
+        kpiLineCostPools: [{ id: 1, kpi_month_no: 25, line: 'L3', company: 'OMC', management_allocation: -1, line_cost: -1, total_pool: -2 }],
+    });
+    let upsertedRows = null, upsertOptions = null;
+    app.supabase = {
+        from: () => ({
+            upsert: (rows, opts) => {
+                upsertedRows = rows; upsertOptions = opts;
+                return { select: async () => ({ data: rows.map((r, i) => ({ id: 100 + i, ...r })), error: null }) };
+            },
+        }),
+    };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.importKpiLineCostPools([{ kpi_month_no: 32, line: 'L3', company: 'OMC', management_allocation: -24917.82, line_cost: -84299.39, total_pool: -109217.21 }]);
+
+    assert.equal(upsertOptions.onConflict, 'tenant_id,kpi_month_no,line,company');
+    assert.equal(app.state.kpiLineCostPools.length, 2, 'month 25 preserved, month 32 added');
+    assert.ok(app.state.kpiLineCostPools.find(r => Number(r.kpi_month_no) === 25));
+    assert.ok(app.state.kpiLineCostPools.find(r => Number(r.kpi_month_no) === 32));
+});
