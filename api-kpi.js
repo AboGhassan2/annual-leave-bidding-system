@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -37,6 +37,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_station_counts').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_monthly_costs').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_cost_pools').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -49,6 +50,7 @@ app.loadKpiData = async function() {
         if (stationCounts.error) throw stationCounts.error;
         if (availability.error) throw availability.error;
         if (monthlyCosts.error) throw monthlyCosts.error;
+        if (costPools.error) throw costPools.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -60,6 +62,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
         this.state.kpiLineStationCounts = stationCounts.data || [];
         this.state.kpiLineAvailability = availability.data || [];
+        this.state.kpiLineCostPools = costPools.data || [];
         this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
         return true;
@@ -2556,11 +2559,22 @@ app._kpiMonthlyCostsForMonth = function(kpiMonthNo) {
     return (this.state.kpiLineMonthlyCosts || []).find(r => Number(r.kpi_month_no) === Number(kpiMonthNo)) || null;
 };
 
-// A line's raw Line Cost input for this month, plus its computed
-// Management Allocation (Total Management Cost x that line's Station
-// Ratio — reuses the already-verified station-count-based ratio, not a
-// new concept), summed into the Line Total Cost Pool.
-app._kpiLineCostPool = function(lineName, kpiMonthNo) {
+// A line's Management Allocation, Line Cost, and Total Pool for a given
+// month. Checks the IMPORTED cost pool table first (Excel's own already-
+// computed per-line split, from the M% sheet — no re-derivation, so no
+// risk of the app's ratio math ever drifting from Excel's), and only
+// falls back to the older manual-entry-based computation (Total
+// Management Cost x Station Ratio) for a (month, line, company) the
+// import doesn't cover.
+app._kpiLineCostPool = function(lineName, kpiMonthNo, company) {
+    const targetCompany = company || 'OMC';
+    const imported = (this.state.kpiLineCostPools || []).find(r =>
+        r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo) && (r.company || 'OMC') === targetCompany
+    );
+    if (imported) {
+        return { managementAllocation: imported.management_allocation, lineCost: imported.line_cost, totalPool: imported.total_pool, source: 'imported' };
+    }
+
     const inputs = this._kpiMonthlyCostsForMonth(kpiMonthNo);
     if (!inputs) return null;
     const lineCostKey = { L3: 'line_l3_cost', L4: 'line_l4_cost', L5: 'line_l5_cost', L6: 'line_l6_cost' }[lineName];
@@ -2569,7 +2583,93 @@ app._kpiLineCostPool = function(lineName, kpiMonthNo) {
     const managementAllocation = (inputs.total_management_cost != null && ratio != null) ? inputs.total_management_cost * ratio : null;
     if (lineCost == null && managementAllocation == null) return null;
     const totalPool = (managementAllocation || 0) + (lineCost || 0);
-    return { managementAllocation, lineCost, totalPool };
+    return { managementAllocation, lineCost, totalPool, source: 'manual' };
+};
+
+// ════════════════════════════════════════════════════════════════════
+// M% sheet import — the direct source of truth for Management
+// Allocation and Line Cost, from workbooks like
+// "YEAR_3-M25_TO_M36-DATASOURCE". Traced and verified byte-exact
+// against manually-entered figures already confirmed correct (M32:
+// Total Management Cost -61,161.91, Line 3 Cost -84,299.39). Unlike the
+// IWF/AFctr sheets, this one has a normal single header row and its
+// used range starts at column A — no duplicate-header or offset issue —
+// but its L/M/N dollar columns use accounting format for negatives
+// (e.g. "(29,759.63)"), which Number() can't parse, so numeric columns
+// still read via cell.v (raw value) when cell.t is 'n', same discipline
+// as the other parsers.
+// ════════════════════════════════════════════════════════════════════
+app._kpiParseMPercentCostRows = function(sheet) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        let text = cellText(addr);
+        if (text === '' || text === '#N/A' || text === '#DIV/0!') return null;
+        // Accounting format wraps negatives in parentheses, e.g.
+        // "(29,759.63)" — this is the .v-fallback path only (normally
+        // unreachable, since numeric cells return via .t/.v above), but
+        // kept correct in case a cell genuinely has no .v to fall back on.
+        const isNegative = /^\(.*\)$/.test(text);
+        text = text.replace(/[(),]/g, '');
+        const num = Number(text);
+        if (!Number.isFinite(num)) return null;
+        return isNegative ? -num : num;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 5000 } };
+
+    const out = [];
+    for (let r = range.s.r + 2; r <= range.e.r + 1; r++) {
+        const reportType = cellText(`D${r}`).toUpperCase();
+        if (reportType !== 'MONTHLY') continue; // this sheet repeats the same data at Monthly/Quarterly/Annual granularity — only want Monthly, matching the KPI Month convention used everywhere else
+        const monthNo = cellNum(`B${r}`);
+        if (monthNo == null) continue;
+        const companyRaw = cellText(`C${r}`).toUpperCase();
+        const company = companyRaw === 'ER' ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
+        if (!company) continue;
+        const lineLabel = cellText(`E${r}`);
+        const lineName = this._kpiMapLineNumberToLineName(lineLabel);
+        if (!lineName) continue;
+        const managementAllocation = cellNum(`L${r}`);
+        const lineCost = cellNum(`M${r}`);
+        const totalPool = cellNum(`N${r}`);
+        if (managementAllocation == null && lineCost == null) continue; // e.g. the real file's #N/A rows for M27
+        out.push({
+            kpi_month_no: Math.trunc(monthNo), line: lineName, company,
+            management_allocation: managementAllocation, line_cost: lineCost, total_pool: totalPool,
+        });
+    }
+    return out;
+};
+
+app.importKpiLineCostPools = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase
+            .from('kpi_line_cost_pools')
+            .upsert(insertRows, { onConflict: 'tenant_id,kpi_month_no,line,company' })
+            .select();
+        if (error) throw error;
+        const savedKeys = new Set((data || []).map(r => `${r.kpi_month_no}|${r.line}|${r.company}`));
+        this.state.kpiLineCostPools = [
+            ...(this.state.kpiLineCostPools || []).filter(r => !savedKeys.has(`${r.kpi_month_no}|${r.line}|${r.company}`)),
+            ...(data || []),
+        ];
+        this.showToast(`Cost pools imported: ${data.length} rows.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import cost pools:', e.message);
+        this.showToast('Could not import cost pools: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
 };
 
 // Full per-KPI cost/penalty breakdown for one line, one month, scoped to
@@ -2580,9 +2680,9 @@ app._kpiLineCostPool = function(lineName, kpiMonthNo) {
 // pool. Weighted Penalty Distribution normalizes by the Final Weight of
 // KPIs that are BOTH underperforming AND have an actual result this
 // month, so one late KPI doesn't distort every other KPI's share.
-app._kpiPenaltyAllocationForLine = function(lineName, kpiMonthNo, directorateId) {
+app._kpiPenaltyAllocationForLine = function(lineName, kpiMonthNo, directorateId, company) {
     const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
-    const pool = this._kpiLineCostPool(lineName, kpiMonthNo);
+    const pool = this._kpiLineCostPool(lineName, kpiMonthNo, company);
     if (!feePeriod || !pool || pool.totalPool == null) return { rows: [], totalPool: pool ? pool.totalPool : null };
 
     const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
