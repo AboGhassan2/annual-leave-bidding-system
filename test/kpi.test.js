@@ -3242,3 +3242,91 @@ test('importKpiFullResultsHistory resolves each row\'s own calendar period indep
     assert.equal(r25.actual_value, 0.97);
     assert.equal(r26.actual_value, 0.98);
 });
+
+test('_kpiParseFullKpiResultsSheet extracts precomputed Factor Score (T) and Benchmark (AA) when present', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'M25' }, 'C2': { t: 'n', v: 25 }, 'G2': { t: 'n', v: 3 }, 'H2': { w: 'A2' },
+        'J2': { w: 'OMC' }, 'K2': { w: 'MONTHLY' }, 'M2': { w: 'Monthly' }, 'P2': { t: 'n', v: 0.9769, w: '97.69%' },
+        'Q2': { w: 'note' }, 'T2': { t: 'n', v: 1.8641176470588237 }, 'AA2': { w: 'Acceptable' },
+        '!ref': 'A1:AA2',
+    };
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].precomputedFactorScore, 1.8641176470588237);
+    assert.equal(parsed[0].precomputedBenchmark, 'Acceptable');
+});
+
+test('_kpiParseFullKpiResultsSheet leaves precomputed fields null for a KPI with no thresholds configured (e.g. real PSA row)', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'M25' }, 'C2': { t: 'n', v: 25 }, 'G2': { t: 'n', v: 3 }, 'H2': { w: 'PSA' },
+        'J2': { w: 'OMC' }, 'K2': { w: 'MONTHLY' }, 'M2': { w: 'Monthly' }, 'P2': { t: 'n', v: 99.539 },
+        // T and AA both genuinely blank, matching the real file
+        '!ref': 'A1:AA2',
+    };
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].precomputedFactorScore, null);
+    assert.equal(parsed[0].precomputedBenchmark, null);
+});
+
+test('saveKpiResult stores a precomputed Factor Score/Benchmark directly, bypassing this system\'s own threshold-based calculation', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        // No thresholds configured for this KPI, per the real PSA scenario
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', direction: 'higher_is_better' }],
+        kpiResults: [],
+    });
+    let savedRow = null;
+    app.supabase = { from: () => ({ upsert: (row) => { savedRow = row; return { select: async () => ({ data: [{ id: 1, ...row }], error: null }) }; } }) };
+    app._tid = () => 'tenant1';
+
+    const saved = await app.saveKpiResult(1, {
+        year: 2026, periodType: 'monthly', periodValue: '05', actualValue: 99.539,
+        precomputedFactorScore: 1.8641176470588237, precomputedBenchmark: 'Acceptable',
+    });
+    assert.equal(saved.factor_score, 1.8641176470588237, 'trusts the precomputed value, not a recomputation from (missing) thresholds');
+    assert.equal(saved.imported_benchmark, 'Acceptable');
+    assert.equal(saved.final_kpi, 1.8641176470588237, 'Final KPI auto-follows the precomputed Factor Score, same as a normal save');
+});
+
+test('saveKpiResult behaves exactly as before for every normal caller that doesn\'t pass precomputed values', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'K', period_type: 'monthly', direction: 'higher_is_better', target_value: 90, exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [],
+    });
+    let savedRow = null;
+    app.supabase = { from: () => ({ upsert: (row) => { savedRow = row; return { select: async () => ({ data: [{ id: 1, ...row }], error: null }) }; } }) };
+    app._tid = () => 'tenant1';
+
+    await app.saveKpiResult(1, { year: 2026, periodType: 'monthly', periodValue: '05', actualValue: 95 });
+    assert.equal(savedRow.imported_benchmark, null, 'a normal save never sets an imported_benchmark override');
+    assert.ok(savedRow.factor_score != null, 'factor_score is still computed normally from real thresholds');
+});
+
+test('_kpiResultBenchmark prefers a stored imported_benchmark override, falls back to live threshold computation when null', () => {
+    const app = buildKpiApp();
+    const kpiDef = { exceptional_value: 100, unacceptable_value: 80, direction: 'higher_is_better' };
+    const overriddenResult = { actual_value: 50, imported_benchmark: 'Acceptable' }; // would compute to Unacceptable live
+    assert.equal(app._kpiResultBenchmark(overriddenResult, kpiDef), 'Acceptable', 'trusts the override, not the live computation');
+    const normalResult = { actual_value: 90, imported_benchmark: null };
+    assert.equal(app._kpiResultBenchmark(normalResult, kpiDef), 'Acceptable', 'falls back to live computation when no override is stored');
+});
+
+test('_kpiParseFullKpiResultsSheet does not trust a Final Factor of 0 when Benchmark is blank — Excel\'s own formula falls back to 0 for a KPI with no thresholds, matching the real PSA row exactly', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'M25' }, 'C2': { t: 'n', v: 25 }, 'G2': { t: 'n', v: 3 }, 'H2': { w: 'PSA' },
+        'J2': { w: 'OMC' }, 'K2': { w: 'MONTHLY' }, 'M2': { w: 'Monthly' }, 'P2': { t: 'n', v: 99.539 },
+        'T2': { t: 'n', v: 0 }, // Excel's own meaningless fallback, exactly like the real file
+        // AA2 (Benchmark) genuinely absent, exactly like the real file
+        '!ref': 'A1:AA2',
+    };
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.equal(parsed[0].precomputedFactorScore, null, 'the 0 is NOT trusted since Benchmark is blank');
+    assert.equal(parsed[0].precomputedBenchmark, null);
+});
