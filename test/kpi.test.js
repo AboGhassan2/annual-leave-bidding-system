@@ -3453,3 +3453,83 @@ test('_kpiParseWFBaseCostRows treats a "-" placeholder cell (not a real number) 
     const tsa = parsed.find(r => r.line === 'L5' && r.metric === 'TSA');
     assert.equal(Math.round(tsa.baseCost * 100) / 100, 4331932.28, '"-" treated as 0, not NaN or a dropped row');
 });
+
+test('_kpiAvailabilityMetricResult reads the live Enter Results value, not the imported static Availability Factor figure', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.944 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+    });
+    assert.equal(app._kpiAvailabilityMetricResult('PSA', 'L3', 32, 'OMC'), 99.944);
+    assert.equal(app._kpiAvailabilityMetricResult('PSA', 'L3', 31, 'OMC'), null, 'no result entered for month 31');
+});
+
+test('_kpiAvailabilityMetricFactorScore and _kpiAvailabilityMetricResult read from the SAME underlying result row, staying consistent with each other', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'TSA', name: 'TSA', period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 100, factor_score: 1.75 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+    });
+    assert.equal(app._kpiAvailabilityMetricResult('TSA', 'L3', 32, 'OMC'), 100);
+    assert.equal(app._kpiAvailabilityMetricFactorScore('TSA', 'L3', 32, 'OMC'), 1.75);
+});
+
+test('_kpiAvailabilityMetricDiagnostic identifies "no thresholds configured" as the specific reason, matching the real PSA/TSA/FOSA scenario', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly' }], // no exceptional/unacceptable set
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.5 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+    });
+    const diag = app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC');
+    assert.ok(diag.includes('thresholds'), 'correctly identifies the missing thresholds, matching the real diagnosed cause');
+});
+
+test('_kpiAvailabilityMetricDiagnostic identifies "no KPI configured" when the metric isn\'t even set up as a KPI for that line', () => {
+    const app = buildKpiApp({ kpiDirectorateDepartments: [], kpiDefinitions: [] });
+    const diag = app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC');
+    assert.ok(diag.includes("isn't configured"));
+});
+
+test('_kpiAvailabilityMetricDiagnostic identifies "no result entered" when the KPI exists but nothing was entered this month', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+    });
+    const diag = app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC');
+    assert.ok(diag.includes('No result entered'));
+});
+
+test('_kpiAvailabilityMetricDiagnostic identifies "no Base Cost imported" as the last-mile reason when KPIF is genuinely already computed', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.5, factor_score: 1.9 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiLineAvailabilityBaseCost: [],
+    });
+    const diag = app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC');
+    assert.ok(diag.includes('Base Cost'));
+    assert.ok(diag.includes('1.9000'), 'shows the real computed KPIF value in the message, not just a generic complaint');
+});
+
+test('_kpiAvailabilityMetricDiagnostic returns null when everything is genuinely present (nothing to diagnose)', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.5, factor_score: 1.9 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'PSA', company: 'OMC', base_cost: 1000000 }],
+    });
+    assert.equal(app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC'), null);
+});
