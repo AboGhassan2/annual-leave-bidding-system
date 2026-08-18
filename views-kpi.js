@@ -2326,25 +2326,27 @@ app._handleKpiFinancialImportFile = function(event) {
             workbook.SheetNames.forEach(name => {
                 // Availability Factor and IWF Results are both detected
                 // by SHEET NAME, not headers — neither has an explicit
-                // month column, and both need the raw array-of-arrays
-                // read (header:1) rather than the normal header-keyed
-                // row objects every other piece uses (Availability
-                // because its two mini-tables share identical headers;
-                // IWF because it stacks 4 near-identical sections with
-                // their own repeated header rows).
+                // month column. Both parsers now read the raw worksheet
+                // object directly (by absolute cell address, e.g.
+                // sheet['D13']), NOT a pre-converted array-of-arrays —
+                // a real file exposed a bug where sheet_to_json's
+                // header:1 array is relative to the sheet's own USED
+                // RANGE, which can start at any column (both real
+                // M32_IWF and M32_AFctr sheets start at column B, not
+                // A), silently shifting every array-index-based read by
+                // one column with no error. Reading by literal address
+                // sidesteps that entirely.
                 const afctrMatch = /^M(\d+)_AFctr$/i.exec(name.trim());
                 if (!availability && afctrMatch) {
-                    const arrayRows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '' });
                     const monthNo = parseInt(afctrMatch[1], 10);
-                    const parsed = this._kpiParseAvailabilityFactorRows(arrayRows, monthNo);
+                    const parsed = this._kpiParseAvailabilityFactorRows(workbook.Sheets[name], monthNo);
                     if (parsed.length > 0) { availability = parsed; availabilityMonthNo = monthNo; }
                     return;
                 }
                 const iwfMatch = /^M(\d+)_IWF$/i.exec(name.trim());
                 if (!iwfResults && iwfMatch) {
-                    const arrayRows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, raw: false, defval: '' });
                     const monthNo = parseInt(iwfMatch[1], 10);
-                    const parsed = this._kpiParseIWFResultsRows(arrayRows, monthNo);
+                    const parsed = this._kpiParseIWFResultsRows(workbook.Sheets[name], monthNo);
                     if (parsed.length > 0) { iwfResults = parsed; iwfMonthNo = monthNo; }
                     return;
                 }
