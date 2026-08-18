@@ -3172,3 +3172,73 @@ test('importKpiLineCostPools upserts by (tenant, month, line, company) without w
     assert.ok(app.state.kpiLineCostPools.find(r => Number(r.kpi_month_no) === 25));
     assert.ok(app.state.kpiLineCostPools.find(r => Number(r.kpi_month_no) === 32));
 });
+
+test('_kpiParseFullKpiResultsSheet matches the real "KPI Results" sheet exactly: only MONTHLY rows, correct value + remark, both companies', () => {
+    const app = buildKpiApp();
+    const fs = require('fs');
+    const path = require('path');
+    const fixturePath = path.join(__dirname, '..', 'kpi_results_history_sample.json');
+    if (!fs.existsSync(fixturePath)) return; // real-file fixture not present in this environment, skip
+    const sheet = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.ok(parsed.length > 0);
+    const m25l3a2 = parsed.find(r => r.kpi_month_no === 25 && r.line === 'L3' && r.code === 'A2' && r.company === 'OMC');
+    assert.ok(m25l3a2, 'the real A2 row is present');
+    assert.equal(m25l3a2.actualValue, 0.9769, 'reads .v (0.9769), not the % formatted .w text');
+    assert.ok(m25l3a2.remarks.includes('C2: 97.69%'));
+    assert.equal(m25l3a2.periodType, 'monthly');
+    // A1 in the real sample is "-" (not yet reported) — must be excluded
+    assert.equal(parsed.find(r => r.kpi_month_no === 25 && r.line === 'L3' && r.code === 'A1' && r.company === 'OMC'), undefined);
+});
+
+test('_kpiParseFullKpiResultsSheet only takes MONTHLY rows, skipping the QUARTERLY/ANNUAL duplicates of the same underlying data', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'M25' }, 'C2': { t: 'n', v: 25 }, 'G2': { t: 'n', v: 3 }, 'H2': { w: 'A2' },
+        'J2': { w: 'OMC' }, 'K2': { w: 'MONTHLY' }, 'M2': { w: 'Monthly' }, 'P2': { t: 'n', v: 0.5, w: '50%' }, 'Q2': { w: 'note' },
+        'B3': { w: 'M25' }, 'C3': { t: 'n', v: 25 }, 'G3': { t: 'n', v: 3 }, 'H3': { w: 'A2' },
+        'J3': { w: 'OMC' }, 'K3': { w: 'QUARTERLY' }, 'M3': { w: 'Monthly' }, 'P3': { t: 'n', v: 0.5, w: '50%' }, 'Q3': { w: 'note' },
+        '!ref': 'A1:Q3',
+    };
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.equal(parsed.length, 1, 'only the MONTHLY row is included');
+});
+
+test('_kpiParseFullKpiResultsSheet maps company ER -> Audit, same convention as the M% importer', () => {
+    const app = buildKpiApp();
+    const sheet = {
+        'B2': { w: 'M25' }, 'C2': { t: 'n', v: 25 }, 'G2': { t: 'n', v: 3 }, 'H2': { w: 'A2' },
+        'J2': { w: 'ER' }, 'K2': { w: 'MONTHLY' }, 'M2': { w: 'Monthly' }, 'P2': { t: 'n', v: 1 }, 'Q2': { w: '' },
+        '!ref': 'A1:Q2',
+    };
+    const parsed = app._kpiParseFullKpiResultsSheet(sheet);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].company, 'Audit');
+});
+
+test('importKpiFullResultsHistory resolves each row\'s own calendar period independently, unlike importKpiIWFResults which is anchored to one month for the whole call', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'K', category: '', unit: '', direction: 'higher_is_better', period_type: 'monthly', target_value: 0.9 }],
+        kpiResults: [],
+        kpiFeePeriods: [
+            { kpi_month_no: 25, kpi_year: 2025, kpi_cal_month: 11 },
+            { kpi_month_no: 26, kpi_year: 2025, kpi_cal_month: 12 },
+        ],
+    });
+    let nextId = 1;
+    app.supabase = { from: () => ({ upsert: (row) => ({ select: async () => ({ data: [{ id: nextId++, ...row }], error: null }) }) }) };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const summary = await app.importKpiFullResultsHistory([
+        { kpi_month_no: 25, line: 'L3', code: 'A2', company: 'OMC', periodType: 'monthly', actualValue: 0.97, remarks: 'r1' },
+        { kpi_month_no: 26, line: 'L3', code: 'A2', company: 'OMC', periodType: 'monthly', actualValue: 0.98, remarks: 'r2' },
+    ]);
+    assert.equal(summary.updated, 2);
+    const r25 = app.state.kpiResults.find(r => r.period_value === '11');
+    const r26 = app.state.kpiResults.find(r => r.period_value === '12');
+    assert.equal(r25.actual_value, 0.97);
+    assert.equal(r26.actual_value, 0.98);
+});
