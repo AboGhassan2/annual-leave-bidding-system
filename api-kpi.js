@@ -2522,14 +2522,35 @@ app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
 // entered result, not derived from the raw/adjusted Availability figures
 // themselves. Returns null if that KPI code/line/month combination has
 // no matching KPI or no result yet.
-app._kpiAvailabilityMetricFactorScore = function(metric, lineName, kpiMonthNo, company) {
+// Shared lookup: the actual kpi_results row for this Availability metric
+// (PSA/TSA/FOSA, which are also real KPI codes), this line, this KPI
+// Month, and company — or null if no matching KPI or no result entered
+// yet. Both _kpiAvailabilityMetricFactorScore and
+// _kpiAvailabilityMetricResult read from this same row, so Factor Score
+// and the Adjusted-column display always agree with each other and with
+// whatever's actually in Enter Results — never two different sources.
+app._kpiAvailabilityMetricResultRow = function(metric, lineName, kpiMonthNo, company) {
     const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
     if (!feePeriod) return null;
     const kpiDef = this._kpiFindExistingKpiByCodeAndLine(metric, lineName, company || 'OMC');
     if (!kpiDef) return null;
     const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
-    const result = (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDef.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr);
+    return (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDef.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr) || null;
+};
+
+app._kpiAvailabilityMetricFactorScore = function(metric, lineName, kpiMonthNo, company) {
+    const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
     return result && result.factor_score != null ? Number(result.factor_score) : null;
+};
+
+// The raw value entered via Enter Results for this metric — this is
+// what the Availability Factor table's "Adjusted" column should show,
+// per explicit request: the imported M{N}_AFctr figure is a one-time
+// snapshot from Excel, but the Enter Results entry is the live, editable
+// source of truth for this KPI going forward, same as every other KPI.
+app._kpiAvailabilityMetricResult = function(metric, lineName, kpiMonthNo, company) {
+    const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
+    return result && result.actual_value != null ? Number(result.actual_value) : null;
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -2659,6 +2680,28 @@ app._kpiAvailabilityMetricCost = function(metric, lineName, kpiMonthNo, company)
     );
     if (!row || row.base_cost == null) return null;
     return kpif * row.base_cost;
+};
+
+// Explains exactly why KPIF and/or KPI Cost are blank for a given cell,
+// checking each real prerequisite in order — surfaced as a hover
+// tooltip on the dash, so a blank cell answers "why" on its own instead
+// of requiring a screenshot-and-diagnose round trip every time.
+app._kpiAvailabilityMetricDiagnostic = function(metric, lineName, kpiMonthNo, company) {
+    const kpiDef = this._kpiFindExistingKpiByCodeAndLine(metric, lineName, company || 'OMC');
+    if (!kpiDef) return `${metric} isn't configured as a KPI for ${lineName}/${company || 'OMC'} yet.`;
+    const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
+    if (!result) return `No result entered yet for ${metric} this month — enter one in Enter Results.`;
+    if (kpiDef.exceptional_value == null || kpiDef.unacceptable_value == null) {
+        return `${metric} has no Exceptional/Unacceptable thresholds configured — KPIF can't be calculated until it does (edit this KPI in the KPIs tab).`;
+    }
+    if (result.factor_score == null) return `Factor Score hasn't been computed for this result yet.`;
+    const baseCostRow = (this.state.kpiLineAvailabilityBaseCost || []).find(r =>
+        r.line === lineName && r.metric === metric && (r.company || 'OMC') === (company || 'OMC')
+    );
+    if (!baseCostRow || baseCostRow.base_cost == null) {
+        return `KPIF is ${Number(result.factor_score).toFixed(4)}, but no Base Cost is imported for ${metric}/${lineName} yet — re-run the WF sheet import.`;
+    }
+    return null; // everything present — this cell should be showing real values
 };
 
 // ════════════════════════════════════════════════════════════════════
