@@ -3029,6 +3029,111 @@ app.importKpiIWFResults = async function(rows, kpiMonthNo, company) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+// "KPI Results" sheet — a full historical backfill, distinct from the
+// single-month M{N}_IWF importer above. This sheet (found in the
+// YEAR_3-M25_TO_M36 style DATASOURCE workbooks) is a clean flat table
+// spanning MANY KPI Months and BOTH companies at once — not one sheet
+// per month. Same MR_Result percentage-formatting gotcha as everywhere
+// else (e.g. "97.69%" in .w vs the correct 0.9769 in .v), read via the
+// same cell-address + cellNum discipline. Also same REPORT
+// Monthly/Quarterly/Annual triplication as the M% sheet — only MONTHLY
+// rows are taken, using each row's own Frequency to decide whether that
+// KPI's result is ultimately saved as monthly/quarterly/yearly.
+// ════════════════════════════════════════════════════════════════════
+app._kpiParseFullKpiResultsSheet = function(sheet) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        let text = cellText(addr);
+        if (text === '' || text === '-' || text === '#N/A' || text === '#DIV/0!') return null;
+        const isNegative = /^\(.*\)$/.test(text);
+        text = text.replace(/[(),]/g, '');
+        const num = Number(text);
+        if (!Number.isFinite(num)) return null;
+        return isNegative ? -num : num;
+    };
+    const range = XLSXLib && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 20000 } };
+
+    const periodTypeMap = { Monthly: 'monthly', Quarterly: 'quarterly', Annual: 'yearly' };
+    const out = [];
+    for (let r = range.s.r + 2; r <= range.e.r + 1; r++) {
+        const reportType = cellText(`K${r}`).toUpperCase();
+        if (reportType !== 'MONTHLY') continue; // skip the Quarterly/Annual duplicates of the same underlying row
+        const monthNo = cellNum(`C${r}`);
+        if (monthNo == null) continue;
+        const lineName = this._kpiMapLineNumberToLineName(cellText(`G${r}`));
+        if (!lineName) continue;
+        const code = cellText(`H${r}`);
+        if (!code) continue;
+        const companyRaw = cellText(`J${r}`).toUpperCase();
+        const company = companyRaw === 'ER' ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
+        if (!company) continue;
+        const resultNum = cellNum(`P${r}`); // MR_Result
+        if (resultNum == null) continue; // "-" (not yet reported) or blank
+        const freq = cellText(`M${r}`);
+        const remarks = cellText(`Q${r}`) || null; // MR_Remarks
+        out.push({
+            kpi_month_no: Math.trunc(monthNo), line: lineName, code, company,
+            periodType: periodTypeMap[freq] || 'monthly',
+            actualValue: resultNum, remarks,
+        });
+    }
+    return out;
+};
+
+// Saves a multi-month history in one pass — each row resolves its OWN
+// calendar period from the imported fee calendar (unlike
+// importKpiIWFResults, which is anchored to a single month for the
+// whole call). Matched by (KPI Code, Line, Company), updates existing
+// KPIs only. Sequential, same reasoning as every other bulk-save in this
+// app: saveKpiResult reads current state to decide whether a prior Final
+// KPI override survives a re-save, and this dataset can be large (real
+// file: ~1,200 rows), so running it concurrently risks races on that
+// logic across many rows at once.
+app.importKpiFullResultsHistory = async function(rows) {
+    if (!this.supabase) { this.showToast('Not connected to Supabase.', 'error'); return { updated: 0, notFound: 0, failed: 0, errors: [] }; }
+    const summary = { updated: 0, notFound: 0, failed: 0, errors: [] };
+    for (const row of rows) {
+        const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === row.kpi_month_no);
+        if (!feePeriod) {
+            summary.notFound++;
+            summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): no fee calendar entry for this KPI Month`);
+            continue;
+        }
+        const existing = this._kpiFindExistingKpiByCodeAndLine(row.code, row.line, row.company);
+        if (!existing) {
+            summary.notFound++;
+            summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): no matching KPI found`);
+            continue;
+        }
+        const year = feePeriod.kpi_year;
+        const month = feePeriod.kpi_cal_month;
+        const quarter = `Q${Math.floor((month - 1) / 3) + 1}`;
+        const periodValue = row.periodType === 'monthly' ? String(month).padStart(2, '0') : row.periodType === 'quarterly' ? quarter : null;
+        try {
+            const saved = await this.saveKpiResult(existing.id, {
+                year, periodType: row.periodType, periodValue,
+                actualValue: row.actualValue, remarks: row.remarks || `Imported from KPI Results (M${row.kpi_month_no})`, source: 'kpi_results_history_import',
+            });
+            if (!saved) { summary.failed++; summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): failed to save`); continue; }
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): ${e.message}`);
+        }
+    }
+    this.showToast(`KPI Results history import complete: ${summary.updated} saved, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
+    return summary;
+};
+
+// ════════════════════════════════════════════════════════════════════
 // Directorate Assignment Audit — read-only diagnostic, per explicit
 // request after finding a KPI whose home directorate ("Public
 // Relations") turned out to be leftover bad data from before the
