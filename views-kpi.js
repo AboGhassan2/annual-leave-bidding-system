@@ -2326,7 +2326,7 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null, resultsHistory = null;
             workbook.SheetNames.forEach(name => {
                 // Availability Factor and IWF Results are both detected
                 // by SHEET NAME, not headers — neither has an explicit
@@ -2354,6 +2354,15 @@ app._handleKpiFinancialImportFile = function(event) {
                     if (parsed.length > 0) { iwfResults = parsed; iwfMonthNo = monthNo; }
                     return;
                 }
+                // "KPI Results" — a full multi-month historical backfill,
+                // distinct from the single-month M{N}_IWF sheets. Exact
+                // name match to avoid colliding with "KPI Results TLR &
+                // TSR", a different sheet in the same workbook.
+                if (!resultsHistory && name.trim() === 'KPI Results') {
+                    const parsed = this._kpiParseFullKpiResultsSheet(workbook.Sheets[name]);
+                    if (parsed.length > 0) resultsHistory = parsed;
+                    return;
+                }
 
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { raw: false, defval: '' });
                 if (rows.length === 0) return;
@@ -2377,12 +2386,12 @@ app._handleKpiFinancialImportFile = function(event) {
                 }
             });
 
-            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts && !availability && !iwfResults && !costPools) {
+            if (!partnerAllocation && !feePeriods && !lineSchedule && !stationCounts && !availability && !iwfResults && !costPools && !resultsHistory) {
                 this.showToast('No matching sheets found — expected columns for Partner Allocation, Period KPI vs Fees, Line FFt, Stations, M% Cost Pools, or a "M{N}_AFctr"/"M{N}_IWF" sheet.', 'error');
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -2395,7 +2404,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -2411,6 +2420,7 @@ app._renderKpiFinancialImportPreview = function(preview) {
         paNotFound = partnerAllocation.validRows.filter(r => !this._kpiFindExistingKpiByCodeAndLine(r.kpiCode, r.line, selectedCompany)).length;
     }
     const costPoolMonths = costPools ? [...new Set(costPools.map(r => r.kpi_month_no))].sort((a, b) => a - b) : [];
+    const historyMonths = resultsHistory ? [...new Set(resultsHistory.map(r => r.kpi_month_no))].sort((a, b) => a - b) : [];
 
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;">
@@ -2423,11 +2433,17 @@ app._renderKpiFinancialImportPreview = function(preview) {
                 ${tile('Availability Factor rows', !!availability, availability ? availability.length : 0, availability ? `KPI Month ${availabilityMonthNo} only` : '')}
                 ${tile('KPI Results (IWF)', !!iwfResults, iwfResults ? iwfResults.length : 0, iwfResults ? `KPI Month ${iwfMonthNo}, all lines` : '')}
                 ${tile('Cost Pool rows (M%)', !!costPools, costPools ? costPools.length : 0, costPools ? `KPI Months ${costPoolMonths[0]}\u2013${costPoolMonths[costPoolMonths.length - 1]}` : '')}
+                ${tile('KPI Results history', !!resultsHistory, resultsHistory ? resultsHistory.length : 0, resultsHistory ? `KPI Months ${historyMonths[0]}\u2013${historyMonths[historyMonths.length - 1]}, both companies` : '')}
             </div>
             ${partnerAllocation && partnerAllocation.invalidRows.length > 0 ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;max-height:160px;overflow-y:auto;">
                     <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Partner Allocation rows that will be skipped:</p>
                     ${partnerAllocation.invalidRows.map(r => `<p style="font-size:0.75rem;color:#991b1b;">Row ${r.rowNumber}: ${esc(r.errors.join('; '))}</p>`).join('')}
+                </div>
+            ` : ''}
+            ${resultsHistory && resultsHistory.length > 200 ? `
+                <div style="background:#fffbeb;border-radius:8px;padding:12px;margin-bottom:16px;">
+                    <p style="font-size:0.8rem;color:#92400e;">⚠️ ${resultsHistory.length} KPI Results will be saved one at a time — this may take several minutes. Stay on this page until it finishes.</p>
                 </div>
             ` : ''}
             <div style="display:flex;gap:10px;">
@@ -2452,6 +2468,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.availability) lines.push(`Availability Factor: ${result.availability.imported} imported`);
     if (result.iwfResults) lines.push(`KPI Results (IWF): ${result.iwfResults.updated} updated, ${result.iwfResults.notFound} not found, ${result.iwfResults.failed} failed`);
     if (result.costPools) lines.push(`Cost Pools (M%): ${result.costPools.imported} imported`);
+    if (result.resultsHistory) lines.push(`KPI Results history: ${result.resultsHistory.updated} updated, ${result.resultsHistory.notFound} not found, ${result.resultsHistory.failed} failed`);
     // Every one of the pieces can carry its own errors — a previous
     // version of this only checked Partner Allocation's, so a real
     // failure saving fee periods/line schedule (e.g. a missing table
@@ -2465,6 +2482,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.availability ? result.availability.errors.map(e => `Availability Factor — ${e}`) : []),
         ...(result.iwfResults ? result.iwfResults.errors.map(e => `KPI Results (IWF) — ${e}`) : []),
         ...(result.costPools ? result.costPools.errors.map(e => `Cost Pools (M%) — ${e}`) : []),
+        ...(result.resultsHistory ? result.resultsHistory.errors.map(e => `KPI Results history — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -2490,6 +2508,7 @@ app._confirmKpiFinancialImport = async function() {
     if (preview.availability) parts.push(`${preview.availability.length} Availability Factor row(s) for KPI Month ${preview.availabilityMonthNo}`);
     if (preview.iwfResults) parts.push(`${preview.iwfResults.length} KPI Result(s) for KPI Month ${preview.iwfMonthNo}, all lines`);
     if (preview.costPools) parts.push(`${preview.costPools.length} Cost Pool row(s) (M%)`);
+    if (preview.resultsHistory) parts.push(`${preview.resultsHistory.length} historical KPI Result(s), both companies`);
     const ok = confirm(`Import ${parts.join(', ')}?`);
     if (!ok) return;
 
@@ -2514,6 +2533,9 @@ app._confirmKpiFinancialImport = async function() {
     }
     if (preview.costPools) {
         result.costPools = await this.importKpiLineCostPools(preview.costPools);
+    }
+    if (preview.resultsHistory) {
+        result.resultsHistory = await this.importKpiFullResultsHistory(preview.resultsHistory);
     }
 
     this.state._kpiFinancialImportResult = result;
