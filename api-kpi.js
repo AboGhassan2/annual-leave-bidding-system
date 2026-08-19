@@ -3222,10 +3222,22 @@ app._kpiLatestMonthWithMgtData = function(feePeriods, directorateId) {
     );
 };
 
-app._kpiLatestMonthWithAvailabilityData = function(feePeriods) {
-    return this._kpiLatestMonthWithData(feePeriods, (monthNo) =>
-        (this.state.kpiLineAvailability || []).some(r => Number(r.kpi_month_no) === monthNo)
-    );
+// A month "has Availability Factor data" if EITHER the raw M{N}_AFctr
+// import covers it OR a real result was entered for any (Line, Metric)
+// combo — Enter Result/KPIF/KPI Cost are independent of that raw import
+// entirely (see _kpiAvailabilityAllRowsForMonth), so checking only the
+// import here (as this used to) could default the table to an empty
+// month that merely HAS a raw import, skipping right past an earlier
+// month with real entered results and nothing else. Company defaults to
+// OMC — matches every other caller's convention when not specified.
+app._kpiLatestMonthWithAvailabilityData = function(feePeriods, company) {
+    const targetCompany = company || 'OMC';
+    const lines = ['L3', 'L4', 'L5', 'L6'];
+    const metrics = ['PSA', 'TSA', 'FOSA'];
+    return this._kpiLatestMonthWithData(feePeriods, (monthNo) => {
+        if ((this.state.kpiLineAvailability || []).some(r => Number(r.kpi_month_no) === monthNo)) return true;
+        return lines.some(line => metrics.some(metric => this._kpiAvailabilityMetricResultRow(metric, line, monthNo, targetCompany) != null));
+    });
 };
 
 // ════════════════════════════════════════════════════════════════════
