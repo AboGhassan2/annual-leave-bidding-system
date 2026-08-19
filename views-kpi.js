@@ -365,6 +365,21 @@ app._renderKpiReportingSection = function() {
         return line ? line.department_name : null;
     }).filter(Boolean))].sort();
 
+    // Sort by KPI Code in logical order (A1, A2 ... A10, B1 ...), not
+    // whatever order the database happens to return them in. Numeric
+    // option handles a code like "A10" correctly sorting after "A9",
+    // not between "A1" and "A2" the way a plain string sort would.
+    // Codes without a numeric suffix (PSA, TSA, etc.) sort naturally by
+    // letter; KPIs with no code at all sort to the end, not first.
+    definitions = [...definitions].sort((a, b) => {
+        const codeA = a.kpi_code || '';
+        const codeB = b.kpi_code || '';
+        if (!codeA && !codeB) return 0;
+        if (!codeA) return 1;
+        if (!codeB) return -1;
+        return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
     const rows = definitions.map(k => {
         const dir = directorates.find(d => d.id === this._kpiEffectiveDirectorateId(k));
         const viewWeight = filterDirectorateIdNum ? this._kpiOwnershipWeight(k, filterDirectorateIdNum) : 1;
