@@ -4006,3 +4006,65 @@ test('mergeDuplicateKpis refuses to merge a KPI into itself', async () => {
     const result = await app.mergeDuplicateKpis(1, 1);
     assert.equal(result.success, false);
 });
+
+test('Enter Results KPI filter includes an "All KPIs" option and defaults to a specific KPI (not All KPIs) when never touched', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', is_active: true, target_value: 90 }],
+        kpiResults: [],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiResultsSection();
+    assert.ok(html.includes('>All KPIs<'), 'the option exists');
+    assert.ok(html.includes('id="kpiResultValue"'), 'but the default (untouched) state still shows the single-KPI entry form');
+});
+
+test('Enter Results "All KPIs" mode shows a summary table with each KPI\'s latest result, instead of the single-KPI entry form', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', is_active: true, target_value: 90 },
+            { id: 2, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'Complaints resolution', period_type: 'monthly', is_active: true, target_value: 95 },
+        ],
+        kpiResults: [
+            { id: 500, kpi_definition_id: 1, year: 2026, period_value: '05', period_label: '2026-05', actual_value: 88, factor_score: 1.0 },
+            { id: 501, kpi_definition_id: 1, year: 2026, period_value: '06', period_label: '2026-06', actual_value: 92, factor_score: 1.5 },
+        ],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiResultsSelectedId = null;
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiResultsSection();
+    assert.ok(!html.includes('id="kpiResultValue"'), 'entry form hidden in All KPIs mode');
+    assert.ok(html.includes('92') && !html.includes('>88<'), 'shows the MOST RECENT result (92, June) not an older one (88, May)');
+    assert.ok(html.includes('Complaints resolution'), 'shows KPIs with no results too, not just ones with data');
+});
+
+test('Enter Results: explicit null selection (All KPIs) is preserved across renders, not reset back to the first KPI', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', is_active: true, target_value: 90 }],
+        kpiResults: [],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiResultsSelectedId = null;
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    app._renderKpiResultsSection();
+    assert.equal(app.state._kpiResultsSelectedId, null, 'stays null, not silently reset to a real KPI id');
+});
