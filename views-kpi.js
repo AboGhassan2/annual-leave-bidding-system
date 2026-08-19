@@ -721,7 +721,7 @@ app._renderKpiFinancialReportingSection = function() {
                                     <th style="padding:8px 12px;">Line</th>
                                     <th style="padding:8px 12px;">Metric</th>
                                     <th style="padding:8px 12px;text-align:right;">Raw</th>
-                                    <th style="padding:8px 12px;text-align:right;">Adjusted</th>
+                                    <th style="padding:8px 12px;text-align:right;">Enter Result</th>
                                     <th style="padding:8px 12px;text-align:right;">KPIF</th>
                                     <th style="padding:8px 12px;text-align:right;">KPI Cost</th>
                                     <th style="padding:8px 12px;">Remark</th>
@@ -733,13 +733,15 @@ app._renderKpiFinancialReportingSection = function() {
                                     const kpif = this._kpiAvailabilityMetricFactorScore(r.metric, r.line, availMonthNo, selectedCompany);
                                     const kpiCost = this._kpiAvailabilityMetricCost(r.metric, r.line, availMonthNo, selectedCompany);
                                     const diag = (kpif == null || kpiCost == null) ? this._kpiAvailabilityMetricDiagnostic(r.metric, r.line, availMonthNo, selectedCompany) : null;
+                                    const bracket = kpif != null && enteredResult != null ? this._kpiAvailabilityFactorBracketDetail(r.metric, r.line, enteredResult) : null;
+                                    const kpifTitle = kpif == null ? diag : (bracket ? `Result ${enteredResult} falls in the ${bracket.lo}\u2013${bracket.hi} bracket \u2192 Factor ${kpif.toFixed(4)}. This is a genuine computed value, not an error.` : null);
                                     return `
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpif == null && diag ? `title="${esc(diag)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpifTitle ? `title="${esc(kpifTitle)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                                         <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
                                     </tr>
@@ -3100,7 +3102,7 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                                     <th style="padding:8px 12px;">Line</th>
                                     <th style="padding:8px 12px;">Metric</th>
                                     <th style="padding:8px 12px;text-align:right;">Raw</th>
-                                    <th style="padding:8px 12px;text-align:right;">Adjusted</th>
+                                    <th style="padding:8px 12px;text-align:right;">Enter Result</th>
                                     <th style="padding:8px 12px;text-align:right;">KPIF</th>
                                     <th style="padding:8px 12px;text-align:right;">KPI Cost</th>
                                     <th style="padding:8px 12px;">Remark</th>
@@ -3112,13 +3114,15 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                                     const kpif = this._kpiAvailabilityMetricFactorScore(r.metric, r.line, availMonthNo, company);
                                     const kpiCost = this._kpiAvailabilityMetricCost(r.metric, r.line, availMonthNo, company);
                                     const diag = (kpif == null || kpiCost == null) ? this._kpiAvailabilityMetricDiagnostic(r.metric, r.line, availMonthNo, company) : null;
+                                    const bracket = kpif != null && enteredResult != null ? this._kpiAvailabilityFactorBracketDetail(r.metric, r.line, enteredResult) : null;
+                                    const kpifTitle = kpif == null ? diag : (bracket ? `Result ${enteredResult} falls in the ${bracket.lo}\u2013${bracket.hi} bracket \u2192 Factor ${kpif.toFixed(4)}. This is a genuine computed value, not an error.` : null);
                                     return `
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpif == null && diag ? `title="${esc(diag)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpifTitle ? `title="${esc(kpifTitle)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                                         <td style="padding:8px 12px;font-size:0.75rem;color:#6b7280;">${r.remark ? esc(r.remark) : '—'}</td>
                                     </tr>
