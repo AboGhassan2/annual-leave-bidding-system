@@ -2015,7 +2015,42 @@ app._renderKpiImportSection = function() {
                 </div>
             ` : ''}
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">8. One-Time: KPI Owner Backfill (Hardcoded)</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                A full 180-row KPI Owner reference (KPI_Owner_01.xlsx), embedded directly — no file upload needed. Creates any
+                missing KPIs and updates existing ones (matched by KPI Code + Line), same as a live Owner Import upload. Safe
+                to re-run — idempotent by KPI Code + Line.
+            </p>
+            <button onclick="app._runKpiOwnerHardcodedBackfill()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Run Backfill (OMC)</button>
+            ${this.state._kpiOwnerHardcodedResult ? `
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+                    <p style="font-size:0.82rem;color:#374151;">
+                        ${this.state._kpiOwnerHardcodedResult.created} created, ${this.state._kpiOwnerHardcodedResult.updated} updated, ${this.state._kpiOwnerHardcodedResult.failed} failed.
+                    </p>
+                    ${this.state._kpiOwnerHardcodedResult.conflicts && this.state._kpiOwnerHardcodedResult.conflicts.length > 0 ? `
+                        <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-top:10px;">
+                            <p style="font-size:0.8rem;font-weight:700;color:#991b1b;margin-bottom:6px;">Conflicts (same Line+Code, different names — skipped):</p>
+                            ${this.state._kpiOwnerHardcodedResult.conflicts.map(c => `<p style="font-size:0.75rem;color:#991b1b;">${this._escHtml(c.line)}/${this._escHtml(c.kpiCode)}: ${c.names.map(n => this._escHtml(n)).join(' vs ')}</p>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${this.state._kpiOwnerHardcodedResult.errors && this.state._kpiOwnerHardcodedResult.errors.length > 0 ? `
+                        <div style="background:#fffbeb;border-radius:8px;padding:12px;margin-top:10px;max-height:200px;overflow-y:auto;">
+                            ${this.state._kpiOwnerHardcodedResult.errors.map(e => `<p style="font-size:0.75rem;color:#92400e;">${this._escHtml(e)}</p>`).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            ` : ''}
+        </div>
     `;
+};
+
+app._runKpiOwnerHardcodedBackfill = async function() {
+    const ok = confirm('Import 180 hardcoded KPI Owner rows for OMC? This creates missing KPIs and updates existing ones matched by Code + Line.');
+    if (!ok) return;
+    this.state._kpiOwnerHardcodedResult = await this.importKpiOwnerHardcoded('OMC');
+    this.renderKpiPlannerView();
 };
 
 app._runKpiDirectorateAudit = function() {
