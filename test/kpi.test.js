@@ -3726,3 +3726,44 @@ test('applyKpiCodeMatches writes the proposed code and updates in-memory state, 
     assert.equal(updatedRow.kpi_code, 'A1');
     assert.equal(app.state.kpiDefinitions[0].kpi_code, 'A1', 'in-memory state updated too, not just the DB');
 });
+
+test('_kpiMatchReferenceCode now matches the verified PSA/TSA/FOSA full names, confirmed directly against the real KPI Results sheet data', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMatchReferenceCode('Passenger Service Availability'), 'PSA');
+    assert.equal(app._kpiMatchReferenceCode('Transit System Availability'), 'TSA', 'real KPI found missing this exact mapping');
+    assert.equal(app._kpiMatchReferenceCode('Facilities and Other System Availability'), 'FOSA');
+});
+
+test('auditKpiMissingCodes scans ALL companies at once, not scoped to whichever one happens to be selected — a real gap that could hide a KPI like the reported "Complaints per boarding" under a different company than expected', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Public Relations', company: 'Audit' },
+        ],
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 200, directorate_id: 20, department_name: 'L3' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, name: 'L3-Passenger satisfaction', is_active: true, kpi_code: null },
+            { id: 2, directorate_id: 20, department_id: 200, name: 'Complaints per boarding', is_active: true, kpi_code: null },
+        ],
+    });
+    const audit = app.auditKpiMissingCodes();
+    assert.equal(audit.matches.length, 2, 'both KPIs found, regardless of which company each belongs to');
+    const audit2 = audit.matches.find(m => m.kpiId === 2);
+    assert.equal(audit2.proposedCode, 'A3');
+    assert.equal(audit2.company, 'Audit');
+});
+
+test('applyKpiCodeMatches accepts a manually-typed code for an unmatched KPI, same write path as a proposed match', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, name: 'Some Custom KPI With No Reference Match', kpi_code: null }],
+    });
+    let updatedRow = null;
+    app.supabase = { from: () => ({ update: (row) => { updatedRow = row; return { eq: async () => ({ error: null }) }; } }) };
+    app.showToast = () => {};
+    const summary = await app.applyKpiCodeMatches([{ kpiId: 1, kpiName: 'Some Custom KPI With No Reference Match', proposedCode: 'Z9' }]);
+    assert.equal(summary.updated, 1);
+    assert.equal(updatedRow.kpi_code, 'Z9');
+});
