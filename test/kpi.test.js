@@ -3912,3 +3912,75 @@ test('KPI Reporting sorts rows by KPI Code in natural/numeric order (A1, A2, A10
     assert.ok(order.every((v, i) => i === 0 || v > order[i - 1]), 'A1 < A2 < A10 < B1, numeric-aware not lexical');
     assert.ok(html.indexOf('K-Uncoded') > html.indexOf('K-B1'), 'uncoded KPI sorts to the end, not the beginning');
 });
+
+test('_kpiLatestMonthWithAvailabilityData: a later month with only a raw M{N}_AFctr import (no real result) still correctly wins over an earlier month with a real entered result \u2014 the import genuinely does count as "has data"', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L5' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '07', actual_value: 75 }], // real result, at M33
+        kpiFeePeriods: [
+            { kpi_month_no: 33, kpi_year: 2026, kpi_cal_month: 7 },
+            { kpi_month_no: 35, kpi_year: 2026, kpi_cal_month: 9 },
+        ],
+        // A raw import exists for M35 specifically, but nothing was ever entered there
+        kpiLineAvailability: [{ line: 'L3', kpi_month_no: 35, metric: 'PSA', raw_value: 0, adjusted_value: null, remark: null }],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const latest = app._kpiLatestMonthWithAvailabilityData(feePeriods, 'OMC');
+    assert.equal(latest, 35, 'the raw import still counts, so M35 (the later month) correctly wins over M33');
+});
+
+test('_kpiLatestMonthWithAvailabilityData picks a month with only a real entered result (no raw import at all) over a later, completely empty month \u2014 this IS the exact real reported scenario: results entered through M33, nothing at all (not even a raw import) exists for the later M35', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L5' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly' }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '07', actual_value: 75 }],
+        kpiFeePeriods: [
+            { kpi_month_no: 33, kpi_year: 2026, kpi_cal_month: 7 }, // real result here, no raw import
+            { kpi_month_no: 35, kpi_year: 2026, kpi_cal_month: 9 }, // genuinely nothing here at all
+        ],
+        kpiLineAvailability: [],
+    });
+    const feePeriods = [...app.state.kpiFeePeriods].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
+    const latest = app._kpiLatestMonthWithAvailabilityData(feePeriods, 'OMC');
+    assert.equal(latest, 33, 'a real entered result alone is enough to count as "has data" and correctly wins over a later, genuinely empty month');
+});
+
+test("Full end-to-end: Financial Reporting's Availability Factor table defaults to M33 (real entered result) instead of the empty M35, and shows the real value \u2014 the exact real reported scenario, reproduced through the actual render path", () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L5' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', direction: 'higher_is_better', target_value: 99.299, exceptional_value: 99.3, unacceptable_value: 89.9 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '07', actual_value: 75, factor_score: 0.0 }],
+        kpiFeePeriods: [
+            { kpi_month_no: 33, kpi_year: 2026, kpi_cal_month: 7, kpi_fiscal_month: 'M33' },
+            { kpi_month_no: 35, kpi_year: 2026, kpi_cal_month: 9, kpi_fiscal_month: 'M35' },
+        ],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiFinancialReportingSection();
+    assert.ok(html.includes('value="33" selected'), 'the Month selector defaults to M33, not the empty M35');
+    assert.ok(html.includes('75.000%'), 'shows the real entered result');
+});
+
+test('Availability Factor tables no longer show a Raw column, per explicit request', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6, kpi_fiscal_month: 'M32' }],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiFinancialReportingSection();
+    assert.ok(!html.includes('>Raw<'), 'Raw column header removed');
+    assert.ok(html.includes('>Enter Result<'), 'Enter Result column still present');
+});
