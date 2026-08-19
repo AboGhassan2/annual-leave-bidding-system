@@ -1060,6 +1060,10 @@ app._renderKpiDefinitionsSection = function() {
                 <input type="text" id="kpiDefName" placeholder="e.g. On-Time Performance"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
 
+                <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Code (required)</label>
+                <input type="text" id="kpiDefCode" placeholder="e.g. A1, PSA"
+                    style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
+
                 <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Category (optional)</label>
                 <input type="text" id="kpiDefCategory" placeholder="e.g. Safety, Punctuality, Incidents"
                     style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;" />
@@ -1150,6 +1154,7 @@ app.openKpiDefinitionModal = function(kpiId) {
     document.getElementById('kpiDefinitionEditId').value = kpiId || '';
     document.getElementById('kpiDefDirectorate').value = existing ? existing.directorate_id : (this.state._kpiDefFilterDirectorateId || this.state.kpiDirectorates[0]?.id || '');
     document.getElementById('kpiDefName').value = existing ? existing.name : '';
+    document.getElementById('kpiDefCode').value = existing ? (existing.kpi_code || '') : '';
     document.getElementById('kpiDefCategory').value = existing ? (existing.category || '') : '';
     document.getElementById('kpiDefExceptional').value = existing && existing.exceptional_value != null ? existing.exceptional_value : '';
     document.getElementById('kpiDefTarget').value = existing ? existing.target_value : '';
@@ -1175,6 +1180,8 @@ app.closeKpiDefinitionModal = function() {
 app.saveKpiDefinitionModal = async function() {
     const name = (document.getElementById('kpiDefName').value || '').trim();
     if (!name) { this.showToast('Please enter a KPI name.', 'error'); return; }
+    const code = (document.getElementById('kpiDefCode').value || '').trim();
+    if (!code) { this.showToast('Please enter a Code — every KPI in the system is required to have one.', 'error'); return; }
     const targetValue = document.getElementById('kpiDefTarget').value;
     if (targetValue === '') { this.showToast('Please enter an Acceptable (target) value.', 'error'); return; }
     const lineIdRaw = document.getElementById('kpiDefLine').value;
@@ -1205,6 +1212,7 @@ app.saveKpiDefinitionModal = async function() {
         directorateId: parseInt(document.getElementById('kpiDefDirectorate').value, 10),
         departmentId: parseInt(lineIdRaw, 10),
         name,
+        kpiCode: code,
         category: document.getElementById('kpiDefCategory').value.trim(),
         unit: document.getElementById('kpiDefUnit').value.trim(),
         targetValue: Number(targetValue),
@@ -1931,23 +1939,27 @@ app._renderKpiImportSection = function() {
         <div class="bg-white rounded-xl shadow-md p-5 mt-6">
             <h3 class="text-lg font-bold text-gray-800 mb-2">7. KPI Code Assignment</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
-                Finds active KPIs with no Code set, and proposes one by matching the KPI's name against the original A1–I1
-                reference names. Nothing is written until you review and confirm — untick any row you don't want applied.
+                Every KPI in the system is required to have a Code. Scans ALL active KPIs, across both companies — not just the
+                one currently selected — and proposes a match by name against the reference list. Anything left unmatched can be
+                given a code manually right here. Nothing is written until you review and confirm.
             </p>
             <button onclick="app._runKpiCodeAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Find Missing Codes</button>
             ${this.state._kpiCodeAudit ? `
                 <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
                     <p style="font-size:0.82rem;color:#374151;margin-bottom:10px;">
                         <strong style="color:${this.state._kpiCodeAudit.matches.length > 0 ? '#166534' : '#6b7280'};">${this.state._kpiCodeAudit.matches.length} proposed match(es)</strong>
-                        ${this.state._kpiCodeAudit.unmatched.length > 0 ? ` — ${this.state._kpiCodeAudit.unmatched.length} KPI(s) with no Code and no name match in the reference (left as-is)` : ''}.
+                        ${this.state._kpiCodeAudit.unmatched.length > 0 ? ` — ${this.state._kpiCodeAudit.unmatched.length} KPI(s) need a code entered manually below` : ''}.
                     </p>
                     ${this.state._kpiCodeAudit.matches.length > 0 ? `
+                        <p style="font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:6px;">Proposed matches</p>
                         <div style="overflow-x:auto;margin-bottom:14px;">
                             <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                                 <thead>
                                     <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
                                         <th style="padding:8px 12px;"></th>
                                         <th style="padding:8px 12px;">KPI Name</th>
+                                        <th style="padding:8px 12px;">Company</th>
+                                        <th style="padding:8px 12px;">Directorate</th>
                                         <th style="padding:8px 12px;">Line</th>
                                         <th style="padding:8px 12px;">Proposed Code</th>
                                     </tr>
@@ -1957,6 +1969,8 @@ app._renderKpiImportSection = function() {
                                         <tr style="border-top:1px solid #f3f4f6;">
                                             <td style="padding:8px 12px;"><input type="checkbox" id="kpiCodeMatch_${i}" checked /></td>
                                             <td style="padding:8px 12px;">${this._escHtml(m.kpiName)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.company)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.directorate)}</td>
                                             <td style="padding:8px 12px;">${this._escHtml(m.line)}</td>
                                             <td style="padding:8px 12px;font-weight:700;color:#166534;">${this._escHtml(m.proposedCode)}</td>
                                         </tr>
@@ -1964,7 +1978,36 @@ app._renderKpiImportSection = function() {
                                 </tbody>
                             </table>
                         </div>
-                        <button onclick="app._confirmKpiCodeMatches()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#0891b2;color:#fff;">Apply Checked Codes</button>
+                    ` : ''}
+                    ${this.state._kpiCodeAudit.unmatched.length > 0 ? `
+                        <p style="font-size:0.75rem;font-weight:700;color:#374151;margin-bottom:6px;">No reference match — enter a code manually</p>
+                        <div style="overflow-x:auto;margin-bottom:14px;">
+                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                        <th style="padding:8px 12px;">KPI Name</th>
+                                        <th style="padding:8px 12px;">Company</th>
+                                        <th style="padding:8px 12px;">Directorate</th>
+                                        <th style="padding:8px 12px;">Line</th>
+                                        <th style="padding:8px 12px;">Code</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.state._kpiCodeAudit.unmatched.map((m, i) => `
+                                        <tr style="border-top:1px solid #f3f4f6;">
+                                            <td style="padding:8px 12px;">${this._escHtml(m.kpiName)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.company)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.directorate)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.line)}</td>
+                                            <td style="padding:8px 12px;"><input type="text" id="kpiCodeManual_${i}" placeholder="e.g. A7" style="width:90px;padding:5px 8px;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.82rem;box-sizing:border-box;" /></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
+                    ${this.state._kpiCodeAudit.matches.length > 0 || this.state._kpiCodeAudit.unmatched.length > 0 ? `
+                        <button onclick="app._confirmKpiCodeMatches()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#0891b2;color:#fff;">Apply Codes</button>
                     ` : ''}
                     ${this.state._kpiCodeAuditResult ? `
                         <p style="font-size:0.82rem;color:#374151;margin-top:14px;">${this.state._kpiCodeAuditResult.updated} code(s) assigned${this.state._kpiCodeAuditResult.failed > 0 ? `, ${this.state._kpiCodeAuditResult.failed} failed` : ''}.</p>
@@ -1981,7 +2024,7 @@ app._runKpiDirectorateAudit = function() {
 };
 
 app._runKpiCodeAudit = function() {
-    this.state._kpiCodeAudit = this.auditKpiMissingCodes(this.state._kpiSelectedCompany || 'OMC');
+    this.state._kpiCodeAudit = this.auditKpiMissingCodes();
     this.state._kpiCodeAuditResult = null;
     this.renderKpiPlannerView();
 };
@@ -1989,13 +2032,19 @@ app._runKpiCodeAudit = function() {
 app._confirmKpiCodeMatches = async function() {
     const audit = this.state._kpiCodeAudit;
     if (!audit) return;
-    const checked = audit.matches.filter((m, i) => {
+    const toApply = [];
+    audit.matches.forEach((m, i) => {
         const el = document.getElementById(`kpiCodeMatch_${i}`);
-        return el ? el.checked : false;
+        if (el && el.checked) toApply.push(m);
     });
-    if (checked.length === 0) return;
-    this.state._kpiCodeAuditResult = await this.applyKpiCodeMatches(checked);
-    this.state._kpiCodeAudit = this.auditKpiMissingCodes(this.state._kpiSelectedCompany || 'OMC');
+    audit.unmatched.forEach((m, i) => {
+        const el = document.getElementById(`kpiCodeManual_${i}`);
+        const code = el ? el.value.trim() : '';
+        if (code) toApply.push({ ...m, proposedCode: code });
+    });
+    if (toApply.length === 0) return;
+    this.state._kpiCodeAuditResult = await this.applyKpiCodeMatches(toApply);
+    this.state._kpiCodeAudit = this.auditKpiMissingCodes();
     this.renderKpiPlannerView();
 };
 
