@@ -3626,3 +3626,17 @@ test('KPIs tab "All Directorates" filter shows KPIs from every directorate at on
     assert.ok(html.includes('Ops KPI') && html.includes('Maint KPI'), 'both directorates KPIs show at once');
     assert.ok(html.includes('All Directorates'));
 });
+
+test('_kpiAvailabilityFactorBracketDetail returns the full matched bracket (not just the factor), for the positive-confirmation tooltip on a genuine 0 value', () => {
+    const app = buildKpiApp({
+        kpiAvailabilityFactorBrackets: [
+            { line: 'L3', metric: 'PSA', lo: 99.3, hi: 100, factor: 0 },
+            { line: 'L3', metric: 'PSA', lo: 99.2, hi: 99.29, factor: -0.01 },
+        ],
+    });
+    const detail = app._kpiAvailabilityFactorBracketDetail('PSA', 'L3', 99.944);
+    assert.equal(detail.lo, 99.3);
+    assert.equal(detail.hi, 100);
+    assert.equal(detail.factor, 0);
+    assert.equal(app._kpiAvailabilityFactorBracketDetail('PSA', 'L3', 50), null, 'no bracket covers this value');
+});
