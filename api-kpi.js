@@ -2574,8 +2574,18 @@ app._kpiAvailabilityFactorFromBracket = function(metric, lineName, resultValue) 
     return match ? Number(match.factor) : null;
 };
 
+// Full details of whichever bracket matched — powers a positive-
+// confirmation tooltip on a real (including zero) KPIF value, so a
+// computed 0 doesn't read as "nothing happened" the way a blank does.
+app._kpiAvailabilityFactorBracketDetail = function(metric, lineName, resultValue) {
+    if (resultValue == null) return null;
+    const brackets = (this.state.kpiAvailabilityFactorBrackets || []).filter(b => b.line === lineName && b.metric === metric);
+    if (brackets.length === 0) return null;
+    return brackets.find(b => resultValue >= Math.min(b.lo, b.hi) && resultValue <= Math.max(b.lo, b.hi)) || null;
+};
+
 // The raw value entered via Enter Results for this metric — this is
-// what the Availability Factor table's "Adjusted" column should show,
+// what the Availability Factor table's "Enter Result" column shows,
 // per explicit request: the imported M{N}_AFctr figure is a one-time
 // snapshot from Excel, but the Enter Results entry is the live, editable
 // source of truth for this KPI going forward, same as every other KPI.
