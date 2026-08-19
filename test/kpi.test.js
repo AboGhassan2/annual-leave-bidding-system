@@ -3640,3 +3640,89 @@ test('_kpiAvailabilityFactorBracketDetail returns the full matched bracket (not 
     assert.equal(detail.factor, 0);
     assert.equal(app._kpiAvailabilityFactorBracketDetail('PSA', 'L3', 50), null, 'no bracket covers this value');
 });
+
+test('_kpiAvailabilityAllRowsForMonth always returns all 12 (Line,Metric) rows, even when NO raw M{N}_AFctr import exists for that month — reproduces the real reported bug: a genuine entered result + working bracket table for a month with no raw import', () => {
+    const app = buildKpiApp({ kpiLineAvailability: [] }); // no raw import at all for any month
+    const rows = app._kpiAvailabilityAllRowsForMonth(33);
+    assert.equal(rows.length, 12, '4 lines x 3 metrics, regardless of the missing raw import');
+    const l5psa = rows.find(r => r.line === 'L5' && r.metric === 'PSA');
+    assert.equal(l5psa.raw_value, null, 'raw is null since no import exists for this month, but the row itself is still present');
+});
+
+test('_kpiAvailabilityAllRowsForMonth merges in real Raw/Remark data where the import DOES exist, leaving other months/lines as null placeholders', () => {
+    const app = buildKpiApp({
+        kpiLineAvailability: [{ line: 'L3', kpi_month_no: 32, metric: 'PSA', raw_value: 0, adjusted_value: 99.944, remark: 'note' }],
+    });
+    const rows32 = app._kpiAvailabilityAllRowsForMonth(32);
+    assert.equal(rows32.length, 12);
+    const l3psa = rows32.find(r => r.line === 'L3' && r.metric === 'PSA');
+    assert.equal(l3psa.adjusted_value, 99.944);
+    assert.equal(l3psa.remark, 'note');
+    const l4psa = rows32.find(r => r.line === 'L4' && r.metric === 'PSA');
+    assert.equal(l4psa.raw_value, null, 'no import for L4/PSA this month, correctly null, but still present as a row');
+
+    const rows33 = app._kpiAvailabilityAllRowsForMonth(33);
+    assert.equal(rows33.length, 12, 'month 33 still returns all 12 rows even with zero raw import rows for it');
+});
+
+test('Availability Factor table shows real KPIF/Cost for a month with a genuine entered result and bracket data but NO raw M{N}_AFctr import — the exact real reported scenario', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L5' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', direction: 'higher_is_better', exceptional_value: 99.3, target_value: 99.299, unacceptable_value: 89.9 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '07', actual_value: 95.01, factor_score: 0.54 }],
+        kpiFeePeriods: [{ kpi_month_no: 33, kpi_year: 2026, kpi_cal_month: 7, kpi_fiscal_month: 'M33' }],
+        kpiLineAvailability: [], // NO raw import for this month at all, matching the real report
+        kpiAvailabilityFactorBrackets: [{ line: 'L5', metric: 'PSA', lo: 90, hi: 96, factor: 0.54 }],
+        kpiLineAvailabilityBaseCost: [{ line: 'L5', metric: 'PSA', company: 'OMC', base_cost: 1000000 }],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiFinancialReportingSection();
+    assert.ok(!html.includes('No Availability Factor data imported yet'), 'table no longer bails out just because the raw import is missing');
+    assert.ok(html.includes('95.010%'), 'shows the real entered result');
+    assert.ok(html.includes('0.5400'), 'shows the real computed KPIF');
+});
+
+test('_kpiMatchReferenceCode matches a KPI name against the original A1-I1 reference, stripping a leading Line prefix and normalizing case', () => {
+    const app = buildKpiApp();
+    assert.equal(app._kpiMatchReferenceCode('L3-Passenger satisfaction'), 'A1');
+    assert.equal(app._kpiMatchReferenceCode('L5-Public Announcements'), 'B3');
+    assert.equal(app._kpiMatchReferenceCode('Reporting'), 'I1');
+    assert.equal(app._kpiMatchReferenceCode('Something not in the list'), null);
+    assert.equal(app._kpiMatchReferenceCode(null), null);
+});
+
+test('auditKpiMissingCodes finds KPIs with no code, proposes a match where the name matches the reference, and leaves genuinely unmatched ones separate', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, name: 'L3-Passenger satisfaction', is_active: true, kpi_code: null },
+            { id: 2, directorate_id: 10, department_id: 100, name: 'L3-Some Custom KPI', is_active: true, kpi_code: null },
+            { id: 3, directorate_id: 10, department_id: 100, name: 'L3-Complaints resolution', is_active: true, kpi_code: 'A2' }, // already has a code, should be skipped entirely
+        ],
+    });
+    const audit = app.auditKpiMissingCodes('OMC');
+    assert.equal(audit.matches.length, 1);
+    assert.equal(audit.matches[0].proposedCode, 'A1');
+    assert.equal(audit.unmatched.length, 1);
+    assert.equal(audit.unmatched[0].kpiName, 'L3-Some Custom KPI');
+});
+
+test('applyKpiCodeMatches writes the proposed code and updates in-memory state, only for the rows actually passed (simulating unchecked rows being excluded)', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, name: 'L3-Passenger satisfaction', kpi_code: null }],
+    });
+    let updatedRow = null;
+    app.supabase = { from: () => ({ update: (row) => { updatedRow = row; return { eq: async () => ({ error: null }) }; } }) };
+    app.showToast = () => {};
+
+    const summary = await app.applyKpiCodeMatches([{ kpiId: 1, kpiName: 'L3-Passenger satisfaction', proposedCode: 'A1' }]);
+    assert.equal(summary.updated, 1);
+    assert.equal(updatedRow.kpi_code, 'A1');
+    assert.equal(app.state.kpiDefinitions[0].kpi_code, 'A1', 'in-memory state updated too, not just the DB');
+});
