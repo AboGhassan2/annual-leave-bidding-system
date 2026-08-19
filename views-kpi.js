@@ -108,7 +108,8 @@ app.renderKpiPlannerView = function() {
 
     content.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:26px;width:100%;">
-            <aside style="width:248px;flex-shrink:0;background:#1B4332;border-radius:14px;padding:24px 0;position:sticky;top:calc(var(--topbar-h, 0px) + 20px);display:flex;flex-direction:column;">
+            <button class="app-mobile-toggle" id="kpiMobileNavToggle" onclick="app.toggleKpiMobileSidebar()" title="Menu" aria-label="Open menu" style="position:fixed;top:14px;left:14px;z-index:1101;background:#1B4332;">☰</button>
+            <aside id="kpiPlannerSidebar" class="app-sidebar kpi-sidebar" style="flex-shrink:0;display:flex;flex-direction:column;">
                 <div style="padding:0 22px 22px 22px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:20px;">
                     <div style="color:#fff;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.5rem;letter-spacing:0.02em;">FLOW <span style="color:#D4A017;">◆</span> KPI</div>
                     <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;">Riyadh Metro Operator</div>
@@ -140,6 +141,7 @@ app.renderKpiPlannerView = function() {
                     </div>
                 </div>
             </aside>
+            <div id="kpiSidebarBackdrop" class="app-sidebar-backdrop" onclick="app.toggleKpiMobileSidebar(false)"></div>
             <main style="flex:1;min-width:0;">
                 ${sectionHtml}
             </main>
@@ -153,6 +155,22 @@ app.renderKpiPlannerView = function() {
     if (tab === 'preview' && this.state._kpiPreviewDirectorateId) {
         this._drawKpiDashboardCharts(this.state._kpiPreviewDirectorateId, this.state._kpiPreviewYear || new Date().getFullYear());
     }
+};
+
+// Mobile slide-out sidebar control for the KPI Planner shell — mirrors
+// app.js's toggleMobileSidebar exactly, but targets this shell's own
+// sidebar/backdrop ids so it doesn't collide with the leave-bidding
+// planner's #plannerSidebar toggle. renderKpiPlannerView rebuilds the
+// whole sidebar element on every render (including on nav clicks), so
+// a fresh <aside> without the "mobile-open" class is enough to close it
+// automatically — no separate auto-close call needed on navigation.
+app.toggleKpiMobileSidebar = function(force) {
+    const sb = document.getElementById('kpiPlannerSidebar');
+    const bd = document.getElementById('kpiSidebarBackdrop');
+    if (!sb || !bd) return;
+    const open = typeof force === 'boolean' ? force : !sb.classList.contains('mobile-open');
+    sb.classList.toggle('mobile-open', open);
+    bd.classList.toggle('show', open);
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -1445,21 +1463,27 @@ app._renderKpiResultsSection = function() {
         `;
     }
 
-    const selectedId = (this.state._kpiResultsSelectedId && scopedDefinitions.some(k => k.id === this.state._kpiResultsSelectedId))
-        ? this.state._kpiResultsSelectedId
-        : scopedDefinitions[0].id;
-    this.state._kpiResultsSelectedId = selectedId;
-    const selected = scopedDefinitions.find(k => k.id === selectedId) || scopedDefinitions[0];
+    // undefined = not yet touched this session, defaults to the first
+    // real KPI (existing behavior). Explicit null = the user picked
+    // "All KPIs" and should stay that way, not be forced back to a
+    // single KPI.
+    let selectedId = this.state._kpiResultsSelectedId;
+    if (selectedId === undefined || (selectedId !== null && !scopedDefinitions.some(k => k.id === selectedId))) {
+        selectedId = scopedDefinitions[0].id;
+        this.state._kpiResultsSelectedId = selectedId;
+    }
+    const selected = selectedId != null ? (scopedDefinitions.find(k => k.id === selectedId) || scopedDefinitions[0]) : null;
     const selectedYear = this.state._kpiResultsSelectedYear || this.state.biddingYear || new Date().getFullYear();
     // selected.period_type always equals filterPeriod (scopedDefinitions is
     // pre-filtered by it above) — using it directly here is equivalent and
     // keeps this line self-contained if that invariant ever changes.
-    const periodOptions = this.kpiPeriodOptions(selected.period_type, selectedYear);
-    const existingResults = (this.state.kpiResults || [])
+    const periodOptions = selected ? this.kpiPeriodOptions(selected.period_type, selectedYear) : [];
+    const existingResults = selected ? (this.state.kpiResults || [])
         .filter(r => r.kpi_definition_id === selected.id)
-        .sort((a, b) => a.period_label.localeCompare(b.period_label));
+        .sort((a, b) => a.period_label.localeCompare(b.period_label)) : [];
 
-    const kpiOptions = scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selected.id ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k.kpi_code ? ` (${esc(k.kpi_code)})` : ''}</option>`).join('');
+    const kpiOptions = `<option value="" ${selectedId == null ? 'selected' : ''}>All KPIs</option>` +
+        scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selectedId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k.kpi_code ? ` (${esc(k.kpi_code)})` : ''}</option>`).join('');
     const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
@@ -1528,10 +1552,52 @@ app._renderKpiResultsSection = function() {
             ${lineSelectHtml}
 
             <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI</label>
-            <select id="kpiResultsKpiSelect" onchange="app.state._kpiResultsSelectedId = parseInt(this.value, 10); app.renderKpiPlannerView();"
+            <select id="kpiResultsKpiSelect" onchange="app.state._kpiResultsSelectedId = this.value ? parseInt(this.value, 10) : null; app.renderKpiPlannerView();"
                 style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;">
                 ${kpiOptions}
             </select>
+
+            ${!selected ? (() => {
+                // "All KPIs" — no single KPI to enter a result against, so
+                // show a browse/summary table across every KPI in the
+                // current scope instead of the entry form: each row's
+                // OWN most recent result, for quickly scanning many KPIs
+                // without clicking through each one individually.
+                const summaryRows = scopedDefinitions.map(k => {
+                    const kResults = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id).sort((a, b) => a.period_label.localeCompare(b.period_label));
+                    const latest = kResults.length > 0 ? kResults[kResults.length - 1] : null;
+                    const benchmark = latest ? this._kpiResultBenchmark(latest, k) : null;
+                    const benchmarkBadge = {
+                        Exceptional: ['Exceptional', '#d1fae5', '#065f46'],
+                        Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
+                        Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
+                    }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
+                    return `
+                        <tr style="border-top:1px solid #f3f4f6;cursor:pointer;" onclick="app.state._kpiResultsSelectedId=${k.id};app.renderKpiPlannerView();">
+                            <td style="padding:8px 12px;">${esc(this._kpiDisplayNameWithLine(k))}${k.kpi_code ? ` <span style="color:#9ca3af;">(${esc(k.kpi_code)})</span>` : ''}</td>
+                            <td style="padding:8px 12px;color:#6b7280;">${latest ? esc(latest.period_label) : '—'}</td>
+                            <td style="padding:8px 12px;">${latest ? esc(String(latest.actual_value)) : '—'}</td>
+                            <td style="padding:8px 12px;">${latest ? `<span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span>` : '—'}</td>
+                            <td style="padding:8px 12px;color:#6b7280;">${latest && latest.factor_score != null ? esc(Number(latest.factor_score).toFixed(2)) : '—'}</td>
+                        </tr>
+                    `;
+                }).join('');
+                return `
+                    <p style="font-size:0.75rem;color:#6b7280;margin-bottom:14px;">${scopedDefinitions.length} KPI(s) in this scope — click a row to enter a result for it.</p>
+                    <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                        <thead>
+                            <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;background:#f9fafb;">
+                                <th style="padding:8px 12px;">KPI</th>
+                                <th style="padding:8px 12px;">Latest Period</th>
+                                <th style="padding:8px 12px;">Latest Result</th>
+                                <th style="padding:8px 12px;">Status</th>
+                                <th style="padding:8px 12px;">Factor</th>
+                            </tr>
+                        </thead>
+                        <tbody>${summaryRows}</tbody>
+                    </table>
+                `;
+            })() : `
             <p style="font-size:0.75rem;color:#6b7280;margin-bottom:16px;">
                 ${esc(selected.period_type)} · ${selected.direction === 'lower_is_better' ? 'Lower is better' : 'Higher is better'}${selected.unit ? ' · ' + esc(selected.unit) : ''}<br/>
                 <span style="color:#059669;font-weight:600;">Exceptional: ${selected.exceptional_value != null ? esc(String(selected.exceptional_value)) : '—'}</span>
@@ -1596,6 +1662,7 @@ app._renderKpiResultsSection = function() {
                     </thead>
                     <tbody>${resultsRows}</tbody>
                 </table>
+            `}
             `}
         </div>
     `;
