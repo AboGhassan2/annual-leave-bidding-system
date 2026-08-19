@@ -3379,12 +3379,12 @@ test('importKpiLineAvailabilityCost reports a clear error, not a silent skip, wh
     assert.ok(summary.errors[0].includes('M% Cost Pool import first'));
 });
 
-test('_kpiAvailabilityMetricCost computes KPIF x Base Cost, reproducing the real FOSA/L3 formula exactly (FOSAF x MFOSF)', () => {
+test('_kpiAvailabilityMetricCost computes KPIF x Base Cost, reproducing the real FOSA/L3 formula exactly (FOSAF x MFOSF) — falls back to threshold-based Factor Score when no bracket table is imported', () => {
     const app = buildKpiApp({
         kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
         kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
         kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'FOSA', name: 'FOSA', period_type: 'monthly', direction: 'higher_is_better' }],
-        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 1.5 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.9, factor_score: 1.5 }],
         kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
         kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'FOSA', company: 'OMC', base_cost: 3555552.8236633237 }],
     });
@@ -3410,8 +3410,8 @@ test('_kpiAvailabilityMetricCost recalculates automatically as KPIF changes mont
         kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
         kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'TSA', name: 'TSA', period_type: 'monthly' }],
         kpiResults: [
-            { kpi_definition_id: 1, year: 2026, period_value: '05', factor_score: 1.0 },
-            { kpi_definition_id: 1, year: 2026, period_value: '06', factor_score: 2.0 },
+            { kpi_definition_id: 1, year: 2026, period_value: '05', actual_value: 90, factor_score: 1.0 },
+            { kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 95, factor_score: 2.0 },
         ],
         kpiFeePeriods: [
             { kpi_month_no: 31, kpi_year: 2026, kpi_cal_month: 5 },
@@ -3532,4 +3532,97 @@ test('_kpiAvailabilityMetricDiagnostic returns null when everything is genuinely
         kpiLineAvailabilityBaseCost: [{ line: 'L3', metric: 'PSA', company: 'OMC', base_cost: 1000000 }],
     });
     assert.equal(app._kpiAvailabilityMetricDiagnostic('PSA', 'L3', 32, 'OMC'), null);
+});
+
+test('_kpiParseAvailabilityFactorBrackets reproduces the real "Availability Factor" sheet exactly: 12 (Line x Metric) tables found, correct bracket values', () => {
+    const app = buildKpiApp();
+    const fs = require('fs');
+    const path = require('path');
+    const fixturePath = path.join(__dirname, '..', 'avail_factor_sheet.json');
+    if (!fs.existsSync(fixturePath)) return; // real-file fixture not present in this environment, skip
+    const sheet = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = app._kpiParseAvailabilityFactorBrackets(sheet);
+    assert.equal(parsed.length, 2376);
+    const combos = new Set(parsed.map(r => r.line + '/' + r.metric));
+    assert.equal(combos.size, 12, 'all 4 lines x 3 metrics found');
+    const psaL3Top = parsed.find(r => r.line === 'L3' && r.metric === 'PSA' && r.lo === 99.3 && r.hi === 100);
+    assert.equal(psaL3Top.factor, 0, 'the top bracket (99.3-100) gives Factor 0, matching the real sheet');
+});
+
+test('_kpiParseAvailabilityFactorBrackets uses a self-contained column-letter converter, not a dependency on the XLSX global being present (real bug caught: only worked in the browser, silently returned 0 rows in a plain Node context)', () => {
+    const app = buildKpiApp();
+    // Minimal synthetic sheet with no XLSX global needed
+    const sheet = {
+        'B3': { w: 'PSA (Line 3)' },
+        'B6': { t: 'n', v: 99.3 }, 'C6': { t: 'n', v: 100 }, 'D6': { t: 'n', v: 0 },
+        'B7': { t: 'n', v: 99.2 }, 'C7': { t: 'n', v: 99.29 }, 'D7': { t: 'n', v: -0.01 },
+        '!ref': 'B1:D10',
+    };
+    const parsed = app._kpiParseAvailabilityFactorBrackets(sheet);
+    assert.equal(parsed.length, 2, 'correctly parses without any XLSX global in scope');
+    assert.equal(parsed[0].line, 'L3');
+    assert.equal(parsed[0].metric, 'PSA');
+});
+
+test('_kpiAvailabilityFactorFromBracket finds the correct bracket via range match, normalizing regardless of whether the row is listed ascending or descending', () => {
+    const app = buildKpiApp({
+        kpiAvailabilityFactorBrackets: [
+            { line: 'L3', metric: 'PSA', lo: 99.3, hi: 100, factor: 0 },
+            { line: 'L3', metric: 'PSA', lo: 99.2, hi: 99.29, factor: -0.01 },
+        ],
+    });
+    assert.equal(app._kpiAvailabilityFactorFromBracket('PSA', 'L3', 99.944), 0);
+    assert.equal(app._kpiAvailabilityFactorFromBracket('PSA', 'L3', 99.25), -0.01);
+    assert.equal(app._kpiAvailabilityFactorFromBracket('PSA', 'L3', 50), null, 'no bracket covers this value');
+});
+
+test('_kpiAvailabilityMetricFactorScore prefers the bracket-based lookup over the standard threshold-based Factor Score when both are available', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.944, factor_score: 1.9 }], // standard computation would give 1.9
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiAvailabilityFactorBrackets: [{ line: 'L3', metric: 'PSA', lo: 99.3, hi: 100, factor: 0 }], // real bracket gives 0
+    });
+    assert.equal(app._kpiAvailabilityMetricFactorScore('PSA', 'L3', 32, 'OMC'), 0, 'bracket-based Factor (0) wins over the standard threshold-based Factor Score (1.9)');
+});
+
+test('_kpiAvailabilityMetricFactorScore falls back to the standard threshold-based Factor Score when no bracket table is imported', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', period_type: 'monthly', exceptional_value: 100, unacceptable_value: 80 }],
+        kpiResults: [{ kpi_definition_id: 1, year: 2026, period_value: '06', actual_value: 99.944, factor_score: 1.9 }],
+        kpiFeePeriods: [{ kpi_month_no: 32, kpi_year: 2026, kpi_cal_month: 6 }],
+        kpiAvailabilityFactorBrackets: [],
+    });
+    assert.equal(app._kpiAvailabilityMetricFactorScore('PSA', 'L3', 32, 'OMC'), 1.9);
+});
+
+test('KPIs tab "All Directorates" filter shows KPIs from every directorate at once, and does not crash the ownership-weight calculation', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Maintenance', company: 'OMC' },
+        ],
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L3' },
+            { id: 200, directorate_id: 20, department_name: 'L4' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Ops KPI', period_type: 'monthly', is_active: true },
+            { id: 2, directorate_id: 20, department_id: 200, kpi_code: 'A2', name: 'Maint KPI', period_type: 'monthly', is_active: true },
+        ],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiDefFilterDirectorateId = null;
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiDefinitionsSection();
+    assert.ok(html.includes('Ops KPI') && html.includes('Maint KPI'), 'both directorates KPIs show at once');
+    assert.ok(html.includes('All Directorates'));
 });
