@@ -2057,6 +2057,58 @@ app._renderKpiImportSection = function() {
                 </div>
             ` : ''}
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">9. Duplicate KPI Detection &amp; Merge</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Finds KPIs sharing the same Code + Line (grouped by company) that ended up as two separate records — a real
+                symptom: one record has real thresholds, the other shows blank/null. Nothing is merged automatically — pick
+                which record to keep for each duplicate found; results and owners from the other are moved onto it, then the
+                other is deleted.
+            </p>
+            <button onclick="app._runKpiDuplicateAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Find Duplicates</button>
+            ${this.state._kpiDuplicateAudit ? `
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+                    <p style="font-size:0.82rem;color:#374151;margin-bottom:10px;">
+                        <strong style="color:${this.state._kpiDuplicateAudit.length > 0 ? '#991b1b' : '#166534'};">${this.state._kpiDuplicateAudit.length} duplicate group(s) found</strong>.
+                    </p>
+                    ${this.state._kpiDuplicateAudit.map((g, gi) => `
+                        <div style="background:#fef2f2;border-radius:8px;padding:14px;margin-bottom:12px;">
+                            <p style="font-size:0.85rem;font-weight:700;color:#991b1b;margin-bottom:10px;">${this._escHtml(g.company)} \u00b7 ${this._escHtml(g.line)} \u00b7 ${this._escHtml(g.code)}</p>
+                            <div style="overflow-x:auto;margin-bottom:10px;">
+                                <table style="width:100%;border-collapse:collapse;font-size:0.8rem;background:#fff;border-radius:6px;">
+                                    <thead>
+                                        <tr style="text-align:left;color:#6b7280;font-size:0.68rem;text-transform:uppercase;background:#f9fafb;">
+                                            <th style="padding:6px 10px;"></th>
+                                            <th style="padding:6px 10px;">KPI Name</th>
+                                            <th style="padding:6px 10px;">Directorate</th>
+                                            <th style="padding:6px 10px;text-align:right;">Exceptional</th>
+                                            <th style="padding:6px 10px;text-align:right;">Target</th>
+                                            <th style="padding:6px 10px;text-align:right;">Unacceptable</th>
+                                            <th style="padding:6px 10px;text-align:right;">Results</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${g.records.map((r, ri) => `
+                                            <tr style="border-top:1px solid #f3f4f6;">
+                                                <td style="padding:6px 10px;"><input type="radio" name="kpiDupKeep_${gi}" id="kpiDupKeep_${gi}_${ri}" value="${r.id}" ${ri === 0 ? 'checked' : ''} /></td>
+                                                <td style="padding:6px 10px;">${this._escHtml(r.name)} <span style="color:#9ca3af;">(id ${r.id})</span></td>
+                                                <td style="padding:6px 10px;">${this._escHtml(r.directorateName)}</td>
+                                                <td style="padding:6px 10px;text-align:right;color:${r.exceptionalValue != null ? '#059669' : '#d1d5db'};">${r.exceptionalValue != null ? this._escHtml(String(r.exceptionalValue)) : '—'}</td>
+                                                <td style="padding:6px 10px;text-align:right;color:${r.targetValue != null ? '#1d4ed8' : '#d1d5db'};">${r.targetValue != null ? this._escHtml(String(r.targetValue)) : '—'}</td>
+                                                <td style="padding:6px 10px;text-align:right;color:${r.unacceptableValue != null ? '#dc2626' : '#d1d5db'};">${r.unacceptableValue != null ? this._escHtml(String(r.unacceptableValue)) : '—'}</td>
+                                                <td style="padding:6px 10px;text-align:right;">${r.resultsCount}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button onclick="app._confirmKpiMerge(${gi})" style="padding:7px 14px;border-radius:6px;font-weight:700;font-size:0.8rem;border:none;background:#0891b2;color:#fff;">Merge \u2014 keep selected, move results/owners, delete the other(s)</button>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
     `;
 };
 
@@ -2064,6 +2116,33 @@ app._runKpiOwnerHardcodedBackfill = async function() {
     const ok = confirm('Import 180 hardcoded KPI Owner rows for OMC? This creates missing KPIs and updates existing ones matched by Code + Line.');
     if (!ok) return;
     this.state._kpiOwnerHardcodedResult = await this.importKpiOwnerHardcoded('OMC');
+    this.renderKpiPlannerView();
+};
+
+app._runKpiDuplicateAudit = function() {
+    this.state._kpiDuplicateAudit = this.auditDuplicateKpis();
+    this.renderKpiPlannerView();
+};
+
+app._confirmKpiMerge = async function(groupIndex) {
+    const group = this.state._kpiDuplicateAudit ? this.state._kpiDuplicateAudit[groupIndex] : null;
+    if (!group) return;
+    const checkedEl = group.records
+        .map((r, ri) => document.getElementById(`kpiDupKeep_${groupIndex}_${ri}`))
+        .find(el => el && el.checked);
+    if (!checkedEl) return;
+    const keepId = parseInt(checkedEl.value, 10);
+    const keepRecord = group.records.find(r => r.id === keepId);
+    const toDiscard = group.records.filter(r => r.id !== keepId);
+    if (toDiscard.length === 0) return;
+
+    const ok = confirm(`Merge ${toDiscard.length} duplicate(s) into "${keepRecord.name}" (id ${keepId})? Results and owners from the other record(s) move onto this one, then the other(s) are deleted. This cannot be undone.`);
+    if (!ok) return;
+
+    for (const discard of toDiscard) {
+        await this.mergeDuplicateKpis(keepId, discard.id);
+    }
+    this.state._kpiDuplicateAudit = this.auditDuplicateKpis();
     this.renderKpiPlannerView();
 };
 
