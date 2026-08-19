@@ -861,6 +861,18 @@
             max-height: calc(100vh - var(--topbar-h, 0px) - 36px);
             overflow-y: auto;
         }
+        /* KPI Planner's own dark-green theme, reusing .app-sidebar's
+           positioning/mobile-slide behavior — desktop-only overrides,
+           deliberately placed BEFORE .app-sidebar's own mobile media
+           query below so that query (later in source order, same
+           specificity) correctly wins on mobile and this rule's
+           desktop width/padding don't leak through to small screens. */
+        .kpi-sidebar {
+            width: 248px;
+            background: #1B4332;
+            border: none;
+            padding: 24px 0;
+        }
         @media (max-width: 1000px) {
             .app-sidebar {
                 position: fixed;
