@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost, availabilityFactorBrackets] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -40,6 +40,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_cost_pools').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability_cost').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability_base_cost').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_availability_factor_brackets').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -55,6 +56,7 @@ app.loadKpiData = async function() {
         if (costPools.error) throw costPools.error;
         if (availabilityCost.error) throw availabilityCost.error;
         if (availabilityBaseCost.error) throw availabilityBaseCost.error;
+        if (availabilityFactorBrackets.error) throw availabilityFactorBrackets.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -68,6 +70,8 @@ app.loadKpiData = async function() {
         this.state.kpiLineAvailability = availability.data || [];
         this.state.kpiLineCostPools = costPools.data || [];
         this.state.kpiLineAvailabilityCost = availabilityCost.data || [];
+        this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
+        this.state.kpiAvailabilityFactorBrackets = availabilityFactorBrackets.data || [];
         this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
         this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
@@ -2538,9 +2542,36 @@ app._kpiAvailabilityMetricResultRow = function(metric, lineName, kpiMonthNo, com
     return (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDef.id && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr) || null;
 };
 
+// KPIF for PSA/TSA/FOSA comes from a DIFFERENT mechanism than every
+// other KPI: a piecewise (From, To, Factor) lookup table in the
+// "Availability Factor" sheet — 12 mini-tables (one per Line x Metric),
+// each ~200 rows, found by the user pointing to the real sheet
+// directly. Given the live entered result, KPIF = whichever bracket's
+// range contains it — a genuinely different scale than the standard
+// 0-2 threshold-based Factor Score (this one is 0 at the top, going
+// negative as the result drops), so it's looked up first and only
+// falls back to the standard computation if no bracket table has been
+// imported yet.
 app._kpiAvailabilityMetricFactorScore = function(metric, lineName, kpiMonthNo, company) {
     const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
-    return result && result.factor_score != null ? Number(result.factor_score) : null;
+    if (!result || result.actual_value == null) return null;
+    const bracketFactor = this._kpiAvailabilityFactorFromBracket(metric, lineName, Number(result.actual_value));
+    if (bracketFactor != null) return bracketFactor;
+    return result.factor_score != null ? Number(result.factor_score) : null;
+};
+
+// Finds the bracket row whose [From,To] range contains the given
+// result. The sheet stores both a descending AND a mirrored ascending
+// copy of the same brackets (likely for VLOOKUP sort-order reasons on
+// the Excel side) — this normalizes each row to [lo,hi] regardless of
+// which direction it was originally listed, so either copy matches
+// correctly.
+app._kpiAvailabilityFactorFromBracket = function(metric, lineName, resultValue) {
+    if (resultValue == null) return null;
+    const brackets = (this.state.kpiAvailabilityFactorBrackets || []).filter(b => b.line === lineName && b.metric === metric);
+    if (brackets.length === 0) return null;
+    const match = brackets.find(b => resultValue >= Math.min(b.lo, b.hi) && resultValue <= Math.max(b.lo, b.hi));
+    return match ? Number(match.factor) : null;
 };
 
 // The raw value entered via Enter Results for this metric — this is
@@ -2551,6 +2582,99 @@ app._kpiAvailabilityMetricFactorScore = function(metric, lineName, kpiMonthNo, c
 app._kpiAvailabilityMetricResult = function(metric, lineName, kpiMonthNo, company) {
     const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
     return result && result.actual_value != null ? Number(result.actual_value) : null;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// "Availability Factor" sheet — the real KPIF source for PSA/TSA/FOSA,
+// a distinct sheet from M{N}_AFctr (raw/adjusted %) and WF (Base Cost).
+// 12 mini-tables laid out side by side, one per (Line, Metric), each a
+// literal (From, To, Factor) lookup table starting at row 6. Read by
+// absolute cell address (not sheet_to_json), same discipline as every
+// other Excel-sourced parser in this app.
+// ════════════════════════════════════════════════════════════════════
+app._kpiParseAvailabilityFactorBrackets = function(sheet) {
+    const XLSXLib = (typeof XLSX !== 'undefined') ? XLSX : null;
+    const cellText = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return '';
+        return cell.w != null ? String(cell.w).trim() : (cell.v != null ? String(cell.v).trim() : '');
+    };
+    const cellNum = (addr) => {
+        const cell = sheet[addr];
+        if (!cell) return null;
+        if (cell.t === 'n' && typeof cell.v === 'number') return cell.v;
+        let text = cellText(addr);
+        if (text === '' || text === '-' || text === '#N/A' || text === '#REF!' || text === '#DIV/0!') return null;
+        const isNegative = /^\(.*\)$/.test(text);
+        text = text.replace(/[(),]/g, '');
+        const num = Number(text);
+        if (!Number.isFinite(num)) return null;
+        return isNegative ? -num : num;
+    };
+    // Self-contained column-index-to-letter conversion — this parser is
+    // the first one needing DYNAMIC column letters (every other parser
+    // only ever used fixed literal letters), so it doesn't depend on
+    // XLSX.utils.encode_col being available (that global is only
+    // guaranteed in the real browser environment, not in every context
+    // this function might be called from, e.g. direct testing).
+    const colLetter = (idx) => {
+        let n = idx + 1, s = '';
+        while (n > 0) { const rem = (n - 1) % 26; s = String.fromCharCode(65 + rem) + s; n = Math.floor((n - 1) / 26); }
+        return s;
+    };
+    const range = XLSXLib && XLSXLib.utils && sheet['!ref'] ? XLSXLib.utils.decode_range(sheet['!ref']) : { s: { r: 0 }, e: { r: 300 } };
+
+    // 12 mini-tables, each 3 columns wide (From/To/Factor), starting at
+    // these column indices (0-based: B=1, F=5, J=9, N=13, R=17, V=21,
+    // Z=25, AD=29, AH=33, AL=37, AP=41, AT=45).
+    const startCols = [1, 5, 9, 13, 17, 21, 25, 29, 33, 37, 41, 45];
+    const out = [];
+    startCols.forEach(startCol => {
+        const nameAddr = `${colLetter(startCol)}3`;
+        const name = cellText(nameAddr);
+        const nameMatch = name.match(/^(PSA|TSA|FOSA)\s*\(Line\s*(\d+)\)/i);
+        if (!nameMatch) return;
+        const metric = nameMatch[1].toUpperCase();
+        const lineName = this._kpiMapLineNumberToLineName(nameMatch[2]);
+        if (!lineName) return;
+        const fromCol = colLetter(startCol);
+        const toCol = colLetter(startCol + 1);
+        const factorCol = colLetter(startCol + 2);
+        for (let r = 6; r <= range.e.r + 1; r++) {
+            const from = cellNum(`${fromCol}${r}`);
+            const to = cellNum(`${toCol}${r}`);
+            const factor = cellNum(`${factorCol}${r}`);
+            if (from == null || to == null || factor == null) continue;
+            out.push({ line: lineName, metric, lo: Math.min(from, to), hi: Math.max(from, to), factor });
+        }
+    });
+    return out;
+};
+
+app.importKpiAvailabilityFactorBrackets = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_availability_factor_brackets').delete().eq('tenant_id', tid);
+        if (delError) throw delError;
+        // Large table (~2,400 rows across 12 metrics/lines) — insert in
+        // chunks to stay well under any single-request payload limit.
+        const chunkSize = 500;
+        let allData = [];
+        for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunk = rows.slice(i, i + chunkSize).map(r => ({ tenant_id: tid, ...r }));
+            const { data, error } = await this.supabase.from('kpi_availability_factor_brackets').insert(chunk).select();
+            if (error) throw error;
+            allData = allData.concat(data || []);
+        }
+        this.state.kpiAvailabilityFactorBrackets = allData;
+        this.showToast(`Availability Factor brackets imported: ${allData.length} rows.`, 'success');
+        return { imported: allData.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import Availability Factor brackets:', e.message);
+        this.showToast('Could not import Availability Factor brackets: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -2690,16 +2814,26 @@ app._kpiAvailabilityMetricDiagnostic = function(metric, lineName, kpiMonthNo, co
     const kpiDef = this._kpiFindExistingKpiByCodeAndLine(metric, lineName, company || 'OMC');
     if (!kpiDef) return `${metric} isn't configured as a KPI for ${lineName}/${company || 'OMC'} yet.`;
     const result = this._kpiAvailabilityMetricResultRow(metric, lineName, kpiMonthNo, company);
-    if (!result) return `No result entered yet for ${metric} this month — enter one in Enter Results.`;
-    if (kpiDef.exceptional_value == null || kpiDef.unacceptable_value == null) {
-        return `${metric} has no Exceptional/Unacceptable thresholds configured — KPIF can't be calculated until it does (edit this KPI in the KPIs tab).`;
+    if (!result || result.actual_value == null) return `No result entered yet for ${metric} this month — enter one in Enter Results.`;
+
+    // KPIF's real source is the "Availability Factor" sheet's piecewise
+    // bracket lookup — check that FIRST, since it's the primary path.
+    const hasBrackets = (this.state.kpiAvailabilityFactorBrackets || []).some(b => b.line === lineName && b.metric === metric);
+    const bracketFactor = hasBrackets ? this._kpiAvailabilityFactorFromBracket(metric, lineName, Number(result.actual_value)) : null;
+    if (!hasBrackets && (kpiDef.exceptional_value == null || kpiDef.unacceptable_value == null)) {
+        return `No Availability Factor bracket table imported for ${metric}/${lineName} yet, and no Exceptional/Unacceptable thresholds are configured either — import the "Availability Factor" sheet, or configure thresholds manually (KPIs tab).`;
     }
-    if (result.factor_score == null) return `Factor Score hasn't been computed for this result yet.`;
+    if (hasBrackets && bracketFactor == null) {
+        return `${metric}'s entered result (${Number(result.actual_value)}) doesn't fall into any imported bracket for ${lineName} — check the Availability Factor sheet's range coverage for this value.`;
+    }
+    const kpif = bracketFactor != null ? bracketFactor : (result.factor_score != null ? Number(result.factor_score) : null);
+    if (kpif == null) return `Factor Score hasn't been computed for this result yet.`;
+
     const baseCostRow = (this.state.kpiLineAvailabilityBaseCost || []).find(r =>
         r.line === lineName && r.metric === metric && (r.company || 'OMC') === (company || 'OMC')
     );
     if (!baseCostRow || baseCostRow.base_cost == null) {
-        return `KPIF is ${Number(result.factor_score).toFixed(4)}, but no Base Cost is imported for ${metric}/${lineName} yet — re-run the WF sheet import.`;
+        return `KPIF is ${kpif.toFixed(4)}, but no Base Cost is imported for ${metric}/${lineName} yet — re-run the WF sheet import.`;
     }
     return null; // everything present — this cell should be showing real values
 };
