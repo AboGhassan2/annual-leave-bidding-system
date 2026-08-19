@@ -3768,58 +3768,6 @@ test('applyKpiCodeMatches accepts a manually-typed code for an unmatched KPI, sa
     assert.equal(updatedRow.kpi_code, 'Z9');
 });
 
-test('_kpiOwnerHardcodedRows contains all 180 rows from the real KPI_Owner_01.xlsx, with Code deliberately blank and no leftover non-breaking-space directorate names', () => {
-    const app = buildKpiApp();
-    assert.equal(app._kpiOwnerHardcodedRows.length, 180);
-    assert.ok(app._kpiOwnerHardcodedRows.every(r => r.code === ''), 'the shorthand Code column is disregarded on every row, per explicit instruction');
-    assert.ok(!app._kpiOwnerHardcodedRows.some(r => r.ownerDept.includes('\u00a0')), 'the real "Maintenance\u00a0" non-breaking-space variant was normalized');
-    const distinctCodes = new Set(app._kpiOwnerHardcodedRows.map(r => r.kpiCode));
-    assert.equal(distinctCodes.size, 39);
-});
-
-test('_kpiOwnerHardcodedRows groups cleanly through the existing pipeline with zero conflicts, and specifically resolves the real reported gaps (PSA/L3, TSA/L3, TSR/L3, D1/L4)', () => {
-    const app = buildKpiApp();
-    const { groups, conflicts } = app._kpiGroupImportRowsByLineAndCode(app._kpiOwnerHardcodedRows);
-    assert.equal(conflicts.length, 0);
-    assert.equal(groups.length, 156, '39 codes x 4 lines');
-    ['PSA', 'TSA', 'TSR'].forEach(code => {
-        const g = groups.find(x => x.line === 'L3' && x.kpiCode === code);
-        assert.ok(g, `${code}/L3 present in the hardcoded backfill, resolving the real reported gap`);
-    });
-    const d1l4 = groups.find(x => x.line === 'L4' && x.kpiCode === 'D1');
-    assert.ok(d1l4);
-    assert.equal(d1l4.owners.length, 2, 'D1 has its real split ownership preserved (95% Operations / 5% Contract)');
-});
-
-test('importKpiOwnerHardcoded reuses the existing importKpiOwnerData pipeline unchanged \u2014 same create-or-update behavior as a live Owner Import upload', async () => {
-    const app = buildKpiApp({ kpiDirectorates: [], kpiDirectorateDepartments: [], kpiDefinitions: [], kpiOwners: [] });
-    let createdDirectorates = [];
-    app.saveKpiDirectorate = async (name, x, company) => {
-        const d = { id: createdDirectorates.length + 1, name, company };
-        createdDirectorates.push(d);
-        app.state.kpiDirectorates.push(d);
-        return d;
-    };
-    app.ensureKpiLinesForDirectorate = async (directorateId) => {
-        ['L3', 'L4', 'L5', 'L6'].forEach((l, i) => {
-            app.state.kpiDirectorateDepartments.push({ id: directorateId * 100 + i, directorate_id: directorateId, department_name: l });
-        });
-    };
-    let nextKpiId = 1;
-    app.saveKpiDefinition = async (def) => {
-        const k = { id: nextKpiId++, directorate_id: def.directorateId, department_id: def.departmentId, kpi_code: def.kpiCode, name: def.name };
-        app.state.kpiDefinitions.push(k);
-        return k;
-    };
-    app.supabase = { from: () => ({ delete: () => ({ eq: async () => ({ error: null }) }), insert: (rows) => ({ select: async () => ({ data: rows.map((r, i) => ({ id: i + 1, ...r })), error: null }) }) }) };
-    app._tid = () => 'tenant1';
-    app.showToast = () => {};
-
-    const result = await app.importKpiOwnerHardcoded('OMC');
-    assert.equal(result.created, 156, 'all 156 unique (line,code) combos created for a brand-new tenant');
-    assert.equal(result.conflicts.length, 0);
-});
-
 test('importKpiOwnerData adopts an existing UNCODED KPI by name instead of creating a duplicate — reproduces the exact real reported bug: "Complaints resolution" existed under Operations with no code, the owner import says it belongs to Public Relations as A2', async () => {
     const app = buildKpiApp({
         kpiDirectorates: [
