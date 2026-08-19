@@ -2519,6 +2519,34 @@ app._kpiLineAvailabilityForMonth = function(lineName, kpiMonthNo) {
     return (this.state.kpiLineAvailability || []).filter(r => r.line === lineName && Number(r.kpi_month_no) === Number(kpiMonthNo));
 };
 
+// Always returns all 12 (Line, Metric) combinations for a given month,
+// merging in Raw/Adjusted/Remark from the M{N}_AFctr import where it
+// exists — NOT gated by whether that import covers this month. Enter
+// Result/KPIF/KPI Cost are independent of the raw Excel import entirely
+// (they come from Enter Results + the bracket table + Base Cost), so a
+// month with a real entered result but no matching M{N}_AFctr sheet
+// must still show a row, not vanish entirely — a real bug found when a
+// user had genuine results and a working bracket table for a month with
+// no raw import, and the whole table incorrectly showed nothing.
+app._kpiAvailabilityAllRowsForMonth = function(kpiMonthNo) {
+    const lines = ['L3', 'L4', 'L5', 'L6'];
+    const metrics = ['PSA', 'TSA', 'FOSA'];
+    const out = [];
+    lines.forEach(line => {
+        const imported = this._kpiLineAvailabilityForMonth(line, kpiMonthNo);
+        metrics.forEach(metric => {
+            const match = imported.find(r => r.metric === metric);
+            out.push({
+                line, metric,
+                raw_value: match ? match.raw_value : null,
+                adjusted_value: match ? match.adjusted_value : null,
+                remark: match ? match.remark : null,
+            });
+        });
+    });
+    return out;
+};
+
 // PSA/TSA/FOSA are ALSO real KPI codes tracked in kpi_definitions/
 // kpi_results, distinct from the raw Availability Factor data imported
 // from the M{N}_AFctr sheet — so each metric has its own genuine Factor
@@ -3657,6 +3685,78 @@ app.auditKpiDirectorateAssignments = function(company) {
     });
 
     return { checked, noReference, mismatches };
+};
+
+// ════════════════════════════════════════════════════════════════════
+// KPI Code Assignment — same review-before-apply pattern as the
+// Directorate Assignment Audit above, per explicit request: some KPIs
+// were created without a Code, using the original A1-I1 name-to-code
+// reference the user provided directly. Matches by NAME (stripping a
+// leading "L{N}-" line prefix and normalizing case/whitespace), not
+// auto-applied — a name-based match can be wrong in ways a human
+// reviewer would catch immediately but a blind bulk-write wouldn't, so
+// this only proposes matches for review; applyKpiCodeMatches writes
+// only the ones actually confirmed.
+// ════════════════════════════════════════════════════════════════════
+app._kpiReferenceCodeByName = {
+    'passenger satisfaction': 'A1', 'complaints resolution': 'A2', 'complaints per boarding': 'A3',
+    'train environment': 'A4', 'station environment': 'A5', 'ticket office': 'A6',
+    'permanent passenger information at stations': 'B1', 'permanent passenger information on trains': 'B2',
+    'public announcements': 'B3', 'information on planned disruption of services': 'B4',
+    'incident information at stations': 'B5', 'incident information on trains': 'B6',
+    'cleanliness of trains': 'C1', 'train external wash': 'C2', 'cleanliness of stations and public facilities': 'C3',
+    'condition of trains': 'D1',
+    'transit system preventive maintenance work orders completed as scheduled': 'D2',
+    'transit system corrective maintenance efficiency': 'D3', 'transit system maintenance quality': 'D4',
+    'stations and public facilities inspection': 'E1', 'escalators and elevators availability': 'E2',
+    'civil structures inspection': 'E3', 'facilities preventive maintenance work orders completed as scheduled': 'E4',
+    'facilities corrective maintenance efficiency': 'E5', 'facilities maintenance quality': 'E6',
+    'injury frequency rate (omc employee and sub-contractors)': 'F1',
+    'rolling injury frequency rate (omc employees and sub-contractors)': 'F2',
+    'injury frequency rate (public and passengers)': 'F3', 'rolling injury frequency rate (public and passengers)': 'F4',
+    'revenue security (fare evasion)': 'F5', 'staffing levels': 'G1', 'training hours': 'G2',
+    'achieve annual performance of environmental plan': 'H1', 'reporting': 'I1',
+};
+
+app._kpiMatchReferenceCode = function(kpiName) {
+    if (!kpiName) return null;
+    const stripped = String(kpiName).replace(/^L\d+[\s-]*/i, '').trim().toLowerCase();
+    return this._kpiReferenceCodeByName[stripped] || null;
+};
+
+app.auditKpiMissingCodes = function(company) {
+    const targetCompany = company || 'OMC';
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany);
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && directorates.some(d => d.id === k.directorate_id) && !k.kpi_code);
+
+    const matches = [], unmatched = [];
+    definitions.forEach(k => {
+        const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        const proposedCode = this._kpiMatchReferenceCode(k.name);
+        const row = { kpiId: k.id, kpiName: k.name, line: line ? line.department_name : '?' };
+        if (proposedCode) matches.push({ ...row, proposedCode });
+        else unmatched.push(row);
+    });
+    return { matches, unmatched };
+};
+
+app.applyKpiCodeMatches = async function(matches) {
+    if (!this.supabase) return { updated: 0, failed: 0, errors: [] };
+    const summary = { updated: 0, failed: 0, errors: [] };
+    for (const m of matches) {
+        try {
+            const { error } = await this.supabase.from('kpi_definitions').update({ kpi_code: m.proposedCode }).eq('id', m.kpiId);
+            if (error) throw error;
+            const def = (this.state.kpiDefinitions || []).find(k => k.id === m.kpiId);
+            if (def) def.kpi_code = m.proposedCode;
+            summary.updated++;
+        } catch (e) {
+            summary.failed++;
+            summary.errors.push(`${m.kpiName}: ${e.message}`);
+        }
+    }
+    this.showToast(`KPI codes assigned: ${summary.updated} updated, ${summary.failed} failed.`, summary.failed > 0 ? 'error' : 'success');
+    return summary;
 };
 
 // M%erc — converts a line's overall Factor Score (KPIFt, 0-2 scale)
