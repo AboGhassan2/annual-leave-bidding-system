@@ -711,8 +711,7 @@ app._renderKpiFinancialReportingSection = function() {
                 const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                 if (availFeePeriods.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
                 const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods);
-                const rows = ['L3', 'L4', 'L5', 'L6'].flatMap(l => this._kpiLineAvailabilityForMonth(l, availMonthNo));
-                if (rows.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No Availability Factor data imported yet for this month.</p>`;
+                const rows = this._kpiAvailabilityAllRowsForMonth(availMonthNo);
                 return `
                     <div style="overflow-x:auto;margin-top:10px;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
@@ -1928,11 +1927,75 @@ app._renderKpiImportSection = function() {
                 </div>
             ` : ''}
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">7. KPI Code Assignment</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Finds active KPIs with no Code set, and proposes one by matching the KPI's name against the original A1–I1
+                reference names. Nothing is written until you review and confirm — untick any row you don't want applied.
+            </p>
+            <button onclick="app._runKpiCodeAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Find Missing Codes</button>
+            ${this.state._kpiCodeAudit ? `
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+                    <p style="font-size:0.82rem;color:#374151;margin-bottom:10px;">
+                        <strong style="color:${this.state._kpiCodeAudit.matches.length > 0 ? '#166534' : '#6b7280'};">${this.state._kpiCodeAudit.matches.length} proposed match(es)</strong>
+                        ${this.state._kpiCodeAudit.unmatched.length > 0 ? ` — ${this.state._kpiCodeAudit.unmatched.length} KPI(s) with no Code and no name match in the reference (left as-is)` : ''}.
+                    </p>
+                    ${this.state._kpiCodeAudit.matches.length > 0 ? `
+                        <div style="overflow-x:auto;margin-bottom:14px;">
+                            <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
+                                        <th style="padding:8px 12px;"></th>
+                                        <th style="padding:8px 12px;">KPI Name</th>
+                                        <th style="padding:8px 12px;">Line</th>
+                                        <th style="padding:8px 12px;">Proposed Code</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.state._kpiCodeAudit.matches.map((m, i) => `
+                                        <tr style="border-top:1px solid #f3f4f6;">
+                                            <td style="padding:8px 12px;"><input type="checkbox" id="kpiCodeMatch_${i}" checked /></td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.kpiName)}</td>
+                                            <td style="padding:8px 12px;">${this._escHtml(m.line)}</td>
+                                            <td style="padding:8px 12px;font-weight:700;color:#166534;">${this._escHtml(m.proposedCode)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        <button onclick="app._confirmKpiCodeMatches()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#0891b2;color:#fff;">Apply Checked Codes</button>
+                    ` : ''}
+                    ${this.state._kpiCodeAuditResult ? `
+                        <p style="font-size:0.82rem;color:#374151;margin-top:14px;">${this.state._kpiCodeAuditResult.updated} code(s) assigned${this.state._kpiCodeAuditResult.failed > 0 ? `, ${this.state._kpiCodeAuditResult.failed} failed` : ''}.</p>
+                    ` : ''}
+                </div>
+            ` : ''}
+        </div>
     `;
 };
 
 app._runKpiDirectorateAudit = function() {
     this.state._kpiDirectorateAudit = this.auditKpiDirectorateAssignments(this.state._kpiSelectedCompany || 'OMC');
+    this.renderKpiPlannerView();
+};
+
+app._runKpiCodeAudit = function() {
+    this.state._kpiCodeAudit = this.auditKpiMissingCodes(this.state._kpiSelectedCompany || 'OMC');
+    this.state._kpiCodeAuditResult = null;
+    this.renderKpiPlannerView();
+};
+
+app._confirmKpiCodeMatches = async function() {
+    const audit = this.state._kpiCodeAudit;
+    if (!audit) return;
+    const checked = audit.matches.filter((m, i) => {
+        const el = document.getElementById(`kpiCodeMatch_${i}`);
+        return el ? el.checked : false;
+    });
+    if (checked.length === 0) return;
+    this.state._kpiCodeAuditResult = await this.applyKpiCodeMatches(checked);
+    this.state._kpiCodeAudit = this.auditKpiMissingCodes(this.state._kpiSelectedCompany || 'OMC');
     this.renderKpiPlannerView();
 };
 
@@ -3090,8 +3153,7 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                 // directorate has all 4 lines as its own departments, so
                 // this shows every line's figures for the selected month,
                 // same shape as the company-wide station/MGT tables.
-                const rows = ['L3', 'L4', 'L5', 'L6'].flatMap(l => this._kpiLineAvailabilityForMonth(l, availMonthNo));
-                if (rows.length === 0) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Availability Factor data imported yet for this month — run the Import from Excel section.</p>`;
+                const rows = this._kpiAvailabilityAllRowsForMonth(availMonthNo);
                 const dirForCompany = (this.state.kpiDirectorates || []).find(d => d.id === directorateId);
                 const company = dirForCompany ? (dirForCompany.company || 'OMC') : 'OMC';
                 return `
