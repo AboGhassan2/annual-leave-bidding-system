@@ -1992,7 +1992,35 @@ app.importKpiOwnerData = async function(groupedRows, company) {
             const lineRow = (this.state.kpiDirectorateDepartments || []).find(d => d.directorate_id === directorate.id && d.department_name === group.line);
             if (!lineRow) { summary.failed++; summary.errors.push(`${group.kpiCode} (${group.line}): line "${group.line}" not found under "${primaryDept}"`); continue; }
 
-            const existing = (this.state.kpiDefinitions || []).find(k => k.kpi_code === group.kpiCode && k.directorate_id === directorate.id && k.department_id === lineRow.id);
+            // Match by (code, directorate, line) first — the normal
+            // case for a KPI that's already been through this import
+            // before. If nothing matches, fall back to an existing
+            // UNCODED KPI with the same name (ignoring a leading
+            // "L{N}-" line prefix), scoped to this company + line —
+            // catches a real bug: a KPI created before this import ever
+            // ran has no code and may sit under the wrong directorate
+            // (e.g. "Complaints resolution" under Operations when the
+            // owner file says Public Relations). Without this fallback,
+            // re-running the owner import silently created a DUPLICATE
+            // coded KPI instead of fixing the original, leaving the old
+            // uncoded one permanently orphaned — exactly what a real
+            // user reported. Never adopts an ALREADY-coded KPI this way
+            // (kpi_code check below), so a genuine code mismatch between
+            // two real, distinct KPIs never gets silently merged.
+            let existing = (this.state.kpiDefinitions || []).find(k => k.kpi_code === group.kpiCode && k.directorate_id === directorate.id && k.department_id === lineRow.id);
+            if (!existing) {
+                const normalizedGroupName = group.kpiName.trim().toLowerCase();
+                const targetCompany = directorate.company || 'OMC';
+                existing = (this.state.kpiDefinitions || []).find(k => {
+                    if (k.kpi_code) return false;
+                    const kDir = (this.state.kpiDirectorates || []).find(d => d.id === k.directorate_id);
+                    if (!kDir || (kDir.company || 'OMC') !== targetCompany) return false;
+                    const kLine = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+                    if (!kLine || kLine.department_name !== group.line) return false;
+                    const kNameNormalized = String(k.name || '').replace(/^L\d+[\s-]*/i, '').trim().toLowerCase();
+                    return kNameNormalized === normalizedGroupName;
+                });
+            }
             const saved = await this.saveKpiDefinition({
                 directorateId: directorate.id, departmentId: lineRow.id,
                 name: group.kpiName, category: group.code, kpiCode: group.kpiCode,
