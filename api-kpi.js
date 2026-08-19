@@ -4022,6 +4022,69 @@ app.applyKpiCodeMatches = async function(matches) {
     return summary;
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Duplicate KPI detection — read-only, per a real user report: a KPI
+// showed real thresholds in the KPIs tab but Enter Results showed
+// blank/null, meaning two SEPARATE records existed for the same
+// (Code, Line) — most likely from the owner-import duplicate-creation
+// bug fixed earlier this session (any owner import or hardcoded
+// backfill run BEFORE that fix landed could have created one).
+// Groups by (company, line, code) rather than directorate_id directly,
+// since two records can share the SAME directorate NAME while actually
+// pointing at two different directorate_id rows (e.g. a duplicate
+// "Operations" directorate) — grouping by the visible line name catches
+// that case too, not just an exact directorate_id match.
+// ════════════════════════════════════════════════════════════════════
+app.auditDuplicateKpis = function() {
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && k.kpi_code);
+    const groups = {};
+    definitions.forEach(k => {
+        const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        const lineName = line ? line.department_name : '?';
+        const dir = (this.state.kpiDirectorates || []).find(d => d.id === k.directorate_id);
+        const company = dir ? (dir.company || 'OMC') : 'OMC';
+        const key = `${company}::${lineName}::${k.kpi_code}`;
+        if (!groups[key]) groups[key] = { company, line: lineName, code: k.kpi_code, records: [] };
+        groups[key].records.push({
+            id: k.id, name: k.name,
+            directorateId: k.directorate_id, directorateName: dir ? dir.name : '(unknown)',
+            targetValue: k.target_value, exceptionalValue: k.exceptional_value, unacceptableValue: k.unacceptable_value,
+            resultsCount: (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id).length,
+        });
+    });
+    return Object.values(groups).filter(g => g.records.length > 1);
+};
+
+// Merges two duplicate KPI records: re-points every kpi_results and
+// kpi_owners row from the discarded record to the kept one, then
+// deletes the discarded record. The planner picks which to keep — never
+// auto-decided, since "more results" or "has thresholds" aren't always
+// the right call (e.g. the kept one might need the OTHER's remarks
+// preserved too, which this doesn't attempt to merge, just relocate).
+app.mergeDuplicateKpis = async function(keepId, discardId) {
+    if (!this.supabase) return { success: false, error: 'Not connected to Supabase.' };
+    if (keepId === discardId) return { success: false, error: 'Cannot merge a KPI into itself.' };
+    try {
+        const { error: resultsError } = await this.supabase.from('kpi_results').update({ kpi_definition_id: keepId }).eq('kpi_definition_id', discardId);
+        if (resultsError) throw resultsError;
+        const { error: ownersError } = await this.supabase.from('kpi_owners').update({ kpi_definition_id: keepId }).eq('kpi_definition_id', discardId);
+        if (ownersError) throw ownersError;
+        const { error: deleteError } = await this.supabase.from('kpi_definitions').delete().eq('id', discardId);
+        if (deleteError) throw deleteError;
+
+        this.state.kpiResults = (this.state.kpiResults || []).map(r => r.kpi_definition_id === discardId ? { ...r, kpi_definition_id: keepId } : r);
+        this.state.kpiOwners = (this.state.kpiOwners || []).map(o => o.kpi_definition_id === discardId ? { ...o, kpi_definition_id: keepId } : o);
+        this.state.kpiDefinitions = (this.state.kpiDefinitions || []).filter(k => k.id !== discardId);
+
+        this.showToast('KPIs merged.', 'success');
+        return { success: true };
+    } catch (e) {
+        console.error('❌ Failed to merge duplicate KPIs:', e.message);
+        this.showToast('Could not merge KPIs: ' + e.message, 'error');
+        return { success: false, error: e.message };
+    }
+};
+
 // M%erc — converts a line's overall Factor Score (KPIFt, 0-2 scale)
 // into a management bonus percentage. Exact piecewise formula from
 // M31_IWF, verified byte-exact: G5=1.6839 -> H5=0.066839.
