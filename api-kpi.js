@@ -3716,6 +3716,12 @@ app._kpiReferenceCodeByName = {
     'injury frequency rate (public and passengers)': 'F3', 'rolling injury frequency rate (public and passengers)': 'F4',
     'revenue security (fare evasion)': 'F5', 'staffing levels': 'G1', 'training hours': 'G2',
     'achieve annual performance of environmental plan': 'H1', 'reporting': 'I1',
+    // Availability Factor metrics — full names verified directly against
+    // the real "KPI Results" sheet (KPI Name column for code PSA/TSA/
+    // FOSA), not guessed. A real KPI named exactly "Transit System
+    // Availability" with no code was found missing this mapping.
+    'passenger service availability': 'PSA', 'transit system availability': 'TSA',
+    'facilities and other system availability': 'FOSA',
 };
 
 app._kpiMatchReferenceCode = function(kpiName) {
@@ -3724,16 +3730,28 @@ app._kpiMatchReferenceCode = function(kpiName) {
     return this._kpiReferenceCodeByName[stripped] || null;
 };
 
-app.auditKpiMissingCodes = function(company) {
-    const targetCompany = company || 'OMC';
-    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany);
-    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && directorates.some(d => d.id === k.directorate_id) && !k.kpi_code);
+// Scans EVERY active KPI in the system, not scoped to the currently
+// selected company — per explicit requirement that every KPI needs a
+// code, across all tabs and filters. A prior version scoped to one
+// company at a time, meaning a KPI under the other company could be
+// missed entirely if the audit was only ever run while OMC was selected
+// (a real gap: "Complaints per boarding" under a Public Relations
+// directorate was still uncoded despite being in the reference list,
+// and company-scoping was one plausible reason it was never offered).
+app.auditKpiMissingCodes = function() {
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && !k.kpi_code);
 
     const matches = [], unmatched = [];
     definitions.forEach(k => {
         const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        const dir = (this.state.kpiDirectorates || []).find(d => d.id === k.directorate_id);
         const proposedCode = this._kpiMatchReferenceCode(k.name);
-        const row = { kpiId: k.id, kpiName: k.name, line: line ? line.department_name : '?' };
+        const row = {
+            kpiId: k.id, kpiName: k.name,
+            line: line ? line.department_name : '?',
+            directorate: dir ? dir.name : '?',
+            company: dir ? (dir.company || 'OMC') : 'OMC',
+        };
         if (proposedCode) matches.push({ ...row, proposedCode });
         else unmatched.push(row);
     });
