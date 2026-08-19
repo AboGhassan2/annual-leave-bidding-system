@@ -898,7 +898,10 @@ app._renderKpiDefinitionsSection = function() {
     }
 
     let filterDirectorateId = this.state._kpiDefFilterDirectorateId;
-    if (filterDirectorateId == null || !directorates.some(d => d.id === filterDirectorateId)) {
+    // undefined means "not yet touched this session" — default to the
+    // first directorate, same as before. null (distinct from undefined)
+    // means the user explicitly picked "All Directorates".
+    if (filterDirectorateId === undefined || (filterDirectorateId != null && !directorates.some(d => d.id === filterDirectorateId))) {
         filterDirectorateId = directorates[0].id;
         this.state._kpiDefFilterDirectorateId = filterDirectorateId;
     }
@@ -909,8 +912,12 @@ app._renderKpiDefinitionsSection = function() {
     // dashboard. Editing/deleting still always acts on the one real
     // record (openKpiDefinitionModal reads the KPI's actual
     // directorate_id, never the filter), so this is purely a visibility
-    // fix, not a duplication of the underlying data.
-    const kpisInDirPeriod = definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
+    // fix, not a duplication of the underlying data. "All Directorates"
+    // (filterDirectorateId === null) skips the ownership-weight check
+    // entirely — every KPI in this period, regardless of directorate.
+    const kpisInDirPeriod = filterDirectorateId == null
+        ? definitions.filter(k => k.period_type === filterPeriod)
+        : definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
 
     let filterKpiId = this.state._kpiDefFilterKpiId; // null/undefined = "All KPIs"
     if (filterKpiId != null && !kpisInDirPeriod.some(k => k.id === filterKpiId)) {
@@ -921,10 +928,11 @@ app._renderKpiDefinitionsSection = function() {
     const visibleDefinitions = filterKpiId != null ? kpisInDirPeriod.filter(k => k.id === filterKpiId) : kpisInDirPeriod;
 
     const periodFilterOptions = periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
-    const directorateFilterOptions = directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+    const directorateFilterOptions = `<option value="" ${filterDirectorateId == null ? 'selected' : ''}>All Directorates</option>` +
+        directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
     const kpiNameFilterOptions = `<option value="">All KPIs</option>` + kpisInDirPeriod.map(k => {
-        const w = this._kpiOwnershipWeight(k, filterDirectorateId);
-        return `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${w < 1 ? ` (${Math.round(w * 100)}% share)` : ''}</option>`;
+        const w = filterDirectorateId != null ? this._kpiOwnershipWeight(k, filterDirectorateId) : 1;
+        return `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${filterDirectorateId != null && w < 1 ? ` (${Math.round(w * 100)}% share)` : ''}</option>`;
     }).join('');
 
     const rows = visibleDefinitions.map(k => {
@@ -990,7 +998,7 @@ app._renderKpiDefinitionsSection = function() {
                 </div>
                 <div style="flex:1;min-width:180px;">
                     <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Directorate</label>
-                    <select onchange="app.state._kpiDefFilterDirectorateId=parseInt(this.value,10); app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                    <select onchange="app.state._kpiDefFilterDirectorateId=this.value?parseInt(this.value,10):null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
                         style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
                         ${directorateFilterOptions}
                     </select>
@@ -2386,7 +2394,7 @@ app._handleKpiFinancialImportFile = function(event) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null, resultsHistory = null, availabilityCostRows = null, availabilityBaseCostRows = null;
+            let partnerAllocation = null, feePeriods = null, lineSchedule = null, stationCounts = null, availability = null, availabilityMonthNo = null, iwfResults = null, iwfMonthNo = null, costPools = null, resultsHistory = null, availabilityCostRows = null, availabilityBaseCostRows = null, availabilityFactorBrackets = null;
             workbook.SheetNames.forEach(name => {
                 // Availability Factor and IWF Results are both detected
                 // by SHEET NAME, not headers — neither has an explicit
@@ -2435,6 +2443,14 @@ app._handleKpiFinancialImportFile = function(event) {
                     if (baseCostParsed.length > 0) availabilityBaseCostRows = baseCostParsed;
                     return;
                 }
+                // "Availability Factor" — the REAL KPIF source for
+                // PSA/TSA/FOSA: 12 piecewise lookup tables (Line x
+                // Metric), a distinct sheet from M{N}_AFctr and WF.
+                if (!availabilityFactorBrackets && name.trim() === 'Availability Factor') {
+                    const parsed = this._kpiParseAvailabilityFactorBrackets(workbook.Sheets[name]);
+                    if (parsed.length > 0) availabilityFactorBrackets = parsed;
+                    return;
+                }
 
                 const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { raw: false, defval: '' });
                 if (rows.length === 0) return;
@@ -2463,7 +2479,7 @@ app._handleKpiFinancialImportFile = function(event) {
                 return;
             }
 
-            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows };
+            this.state._kpiFinancialImportPreview = { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows, availabilityFactorBrackets };
             this.renderKpiPlannerView();
         } catch (err) {
             console.error('❌ Failed to parse financial import file:', err.message);
@@ -2476,7 +2492,7 @@ app._handleKpiFinancialImportFile = function(event) {
 
 app._renderKpiFinancialImportPreview = function(preview) {
     const esc = this._escHtml.bind(this);
-    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows } = preview;
+    const { partnerAllocation, feePeriods, lineSchedule, stationCounts, availability, availabilityMonthNo, iwfResults, iwfMonthNo, costPools, resultsHistory, availabilityCostRows, availabilityBaseCostRows, availabilityFactorBrackets } = preview;
     const selectedCompany = this.state._kpiSelectedCompany || 'OMC';
 
     const tile = (label, found, count, extra) => `
@@ -2508,6 +2524,7 @@ app._renderKpiFinancialImportPreview = function(preview) {
                 ${tile('KPI Results history', !!resultsHistory, resultsHistory ? resultsHistory.length : 0, resultsHistory ? `KPI Months ${historyMonths[0]}\u2013${historyMonths[historyMonths.length - 1]}, both companies` : '')}
                 ${tile('Availability Cost (WF)', !!availabilityCostRows, availabilityCostRows ? availabilityCostRows.length : 0, availabilityCostRows ? 'one month\u2019s snapshot \u2014 month resolved from Cost Pool data' : '')}
                 ${tile('Availability Base Cost (WF)', !!availabilityBaseCostRows, availabilityBaseCostRows ? availabilityBaseCostRows.length : 0, availabilityBaseCostRows ? 'feeds KPI Cost = KPIF \u00d7 this, every month' : '')}
+                ${tile('Availability Factor brackets', !!availabilityFactorBrackets, availabilityFactorBrackets ? availabilityFactorBrackets.length : 0, availabilityFactorBrackets ? 'the REAL KPIF lookup for PSA/TSA/FOSA' : '')}
             </div>
             ${!costPools && availabilityCostRows ? `
                 <div style="background:#fef2f2;border-radius:8px;padding:12px;margin-bottom:16px;">
@@ -2550,6 +2567,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.resultsHistory) lines.push(`KPI Results history: ${result.resultsHistory.updated} updated, ${result.resultsHistory.notFound} not found, ${result.resultsHistory.failed} failed`);
     if (result.availabilityCost) lines.push(`Availability Cost (WF): ${result.availabilityCost.imported} imported`);
     if (result.availabilityBaseCost) lines.push(`Availability Base Cost (WF): ${result.availabilityBaseCost.imported} imported`);
+    if (result.availabilityFactorBrackets) lines.push(`Availability Factor brackets: ${result.availabilityFactorBrackets.imported} imported`);
     // Every one of the pieces can carry its own errors — a previous
     // version of this only checked Partner Allocation's, so a real
     // failure saving fee periods/line schedule (e.g. a missing table
@@ -2566,6 +2584,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.resultsHistory ? result.resultsHistory.errors.map(e => `KPI Results history — ${e}`) : []),
         ...(result.availabilityCost ? result.availabilityCost.errors.map(e => `Availability Cost (WF) — ${e}`) : []),
         ...(result.availabilityBaseCost ? result.availabilityBaseCost.errors.map(e => `Availability Base Cost (WF) — ${e}`) : []),
+        ...(result.availabilityFactorBrackets ? result.availabilityFactorBrackets.errors.map(e => `Availability Factor brackets — ${e}`) : []),
     ];
     return `
         <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
@@ -2632,6 +2651,11 @@ app._confirmKpiFinancialImport = async function() {
         // No ordering dependency on anything else — this is a fixed
         // dollar figure per (Line, Metric), not month-scoped.
         result.availabilityBaseCost = await this.importKpiLineAvailabilityBaseCost(preview.availabilityBaseCostRows, this.state._kpiSelectedCompany || 'OMC');
+    }
+    if (preview.availabilityFactorBrackets) {
+        // No company/month scoping — this is a fixed reference table
+        // (the piecewise lookup itself), wholesale-replaced.
+        result.availabilityFactorBrackets = await this.importKpiAvailabilityFactorBrackets(preview.availabilityFactorBrackets);
     }
 
     this.state._kpiFinancialImportResult = result;
