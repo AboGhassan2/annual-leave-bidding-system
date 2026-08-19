@@ -714,7 +714,7 @@ app._renderKpiFinancialReportingSection = function() {
                 ${(() => {
                     const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                     if (availFeePeriods.length === 0) return '';
-                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods);
+                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods, selectedCompany);
                     return `
                         <select onchange="app.state._kpiFinReportAvailSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                             ${availFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selected === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
@@ -725,7 +725,7 @@ app._renderKpiFinancialReportingSection = function() {
             ${(() => {
                 const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                 if (availFeePeriods.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
-                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods);
+                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods, selectedCompany);
                 const rows = this._kpiAvailabilityAllRowsForMonth(availMonthNo);
                 return `
                     <div style="overflow-x:auto;margin-top:10px;">
@@ -734,7 +734,7 @@ app._renderKpiFinancialReportingSection = function() {
                                 <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
                                     <th style="padding:8px 12px;">Line</th>
                                     <th style="padding:8px 12px;">Metric</th>
-                                    <th style="padding:8px 12px;text-align:right;">Raw</th>
+                                    
                                     <th style="padding:8px 12px;text-align:right;">Enter Result</th>
                                     <th style="padding:8px 12px;text-align:right;">KPIF</th>
                                     <th style="padding:8px 12px;text-align:right;">KPI Cost</th>
@@ -753,7 +753,6 @@ app._renderKpiFinancialReportingSection = function() {
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
-                                        <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpifTitle ? `title="${esc(kpifTitle)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
@@ -3232,20 +3231,24 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
         </div>
 
         <!-- Availability Factor -->
+        ${(() => {
+            const dirForAvailCompany = (this.state.kpiDirectorates || []).find(d => d.id === directorateId);
+            const availCompany = dirForAvailCompany ? (dirForAvailCompany.company || 'OMC') : 'OMC';
+            return `
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
                 <div>
                     <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">Availability Factor</h3>
-                    <p style="font-size:0.72rem;color:#9ca3af;">PSA / TSA / FOSA — raw vs. adjusted, per line</p>
+                    <p style="font-size:0.72rem;color:#9ca3af;">PSA / TSA / FOSA, per line</p>
                 </div>
                 ${mgtFeePeriods.length > 0 ? `
                     <select onchange="app.state._kpiAvailabilitySelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods)) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods, availCompany)) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
                     </select>
                 ` : ''}
             </div>
             ${(() => {
-                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods);
+                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods, availCompany);
                 if (availMonthNo == null) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet.</p>`;
                 // Availability Factor is physical network data (like
                 // station counts), not owned by one directorate — a
@@ -3262,7 +3265,7 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                                 <tr style="text-align:left;color:#6b7280;font-size:0.7rem;text-transform:uppercase;background:#f9fafb;">
                                     <th style="padding:8px 12px;">Line</th>
                                     <th style="padding:8px 12px;">Metric</th>
-                                    <th style="padding:8px 12px;text-align:right;">Raw</th>
+                                    
                                     <th style="padding:8px 12px;text-align:right;">Enter Result</th>
                                     <th style="padding:8px 12px;text-align:right;">KPIF</th>
                                     <th style="padding:8px 12px;text-align:right;">KPI Cost</th>
@@ -3281,7 +3284,6 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                                     <tr style="border-top:1px solid #f3f4f6;">
                                         <td style="padding:8px 12px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:8px 12px;">${esc(r.metric)}</td>
-                                        <td style="padding:8px 12px;text-align:right;">${r.raw_value != null ? Number(r.raw_value).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${enteredResult != null ? Number(enteredResult).toFixed(3) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;" ${kpifTitle ? `title="${esc(kpifTitle)}"` : ''}>${kpif != null ? kpif.toFixed(4) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;" ${kpiCost == null && diag ? `title="${esc(diag)}"` : ''}>${kpiCost != null ? Number(kpiCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
@@ -3295,6 +3297,8 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                 `;
             })()}
         </div>
+            `;
+        })()}
 
         ${monthly.length > 0 || monthlyCadenceKpis.length > 0 ? `
             <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
