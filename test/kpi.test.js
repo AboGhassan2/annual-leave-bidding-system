@@ -3819,3 +3819,96 @@ test('importKpiOwnerHardcoded reuses the existing importKpiOwnerData pipeline un
     assert.equal(result.created, 156, 'all 156 unique (line,code) combos created for a brand-new tenant');
     assert.equal(result.conflicts.length, 0);
 });
+
+test('importKpiOwnerData adopts an existing UNCODED KPI by name instead of creating a duplicate — reproduces the exact real reported bug: "Complaints resolution" existed under Operations with no code, the owner import says it belongs to Public Relations as A2', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Public Relations', company: 'OMC' },
+        ],
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L4' },
+            { id: 200, directorate_id: 20, department_name: 'L4' },
+        ],
+        // The real pre-existing, uncoded KPI, sitting under the WRONG directorate
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, name: 'Complaints resolution', kpi_code: null, target_value: 5 },
+        ],
+        kpiOwners: [],
+    });
+    app.saveKpiDirectorate = async (name, x, company) => {
+        const existing = app.state.kpiDirectorates.find(d => d.name === name && (d.company || 'OMC') === company);
+        return existing || null;
+    };
+    app.ensureKpiLinesForDirectorate = async () => {};
+    app.supabase = {
+        from: () => ({
+            update: (row) => ({ eq: (col, id) => ({ select: async () => ({ data: [{ id, ...row }], error: null }) }) }),
+            insert: (row) => ({ select: async () => ({ data: [{ id: 999, ...row }], error: null }) }),
+            delete: () => ({ eq: async () => ({ error: null }) }),
+        }),
+    };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const groups = [{
+        line: 'L4', code: '', kpiCode: 'A2', kpiName: 'Complaints resolution', periodType: 'monthly', weight: 0.2,
+        owners: [{ dept: 'Public Relations', name: 'HANI ALHARBI', email: 'hani@x.com', pct: 1 }],
+    }];
+    const summary = await app.importKpiOwnerData(groups, 'OMC');
+
+    assert.equal(summary.updated, 1, 'the existing KPI was UPDATED, not a new one created');
+    assert.equal(summary.created, 0, 'no duplicate created');
+    assert.equal(app.state.kpiDefinitions.length, 1, 'still exactly one KPI record, not two');
+    const kpi = app.state.kpiDefinitions[0];
+    assert.equal(kpi.kpi_code, 'A2', 'the original record now has its code');
+    assert.equal(kpi.directorate_id, 20, 'reassigned to the correct directorate (Public Relations)');
+});
+
+test('importKpiOwnerData never adopts an ALREADY-coded KPI via the name fallback \u2014 a genuine code mismatch between two distinct real KPIs is never silently merged', async () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L4' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, name: 'Complaints resolution', kpi_code: 'X9', target_value: 5 }],
+        kpiOwners: [],
+    });
+    app.saveKpiDirectorate = async () => ({ id: 10, name: 'Operations', company: 'OMC' });
+    app.ensureKpiLinesForDirectorate = async () => {};
+    app.supabase = {
+        from: () => ({
+            insert: (row) => ({ select: async () => ({ data: [{ id: 999, ...row }], error: null }) }),
+            delete: () => ({ eq: async () => ({ error: null }) }),
+        }),
+    };
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const groups = [{ line: 'L4', code: '', kpiCode: 'A2', kpiName: 'Complaints resolution', periodType: 'monthly', weight: 0.2, owners: [{ dept: 'Operations', name: 'X', email: 'x@x.com', pct: 1 }] }];
+    const summary = await app.importKpiOwnerData(groups, 'OMC');
+    assert.equal(summary.created, 1, 'a genuinely different KPI (already coded X9) is left alone, a new A2 record is created instead');
+    assert.equal(app.state.kpiDefinitions.find(k => k.kpi_code === 'X9').name, 'Complaints resolution', 'the original coded KPI is untouched');
+});
+
+test('KPI Reporting sorts rows by KPI Code in natural/numeric order (A1, A2, A10, B1 - not lexical A1, A10, A2, B1), uncoded KPIs sort last', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A10', name: 'K-A10', period_type: 'monthly', is_active: true },
+            { id: 2, directorate_id: 10, department_id: 100, kpi_code: 'A2', name: 'K-A2', period_type: 'monthly', is_active: true },
+            { id: 3, directorate_id: 10, department_id: 100, kpi_code: 'B1', name: 'K-B1', period_type: 'monthly', is_active: true },
+            { id: 4, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'K-A1', period_type: 'monthly', is_active: true },
+            { id: 5, directorate_id: 10, department_id: 100, kpi_code: null, name: 'K-Uncoded', period_type: 'monthly', is_active: true },
+        ],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiReportingSection();
+    const order = ['A1', 'A2', 'A10', 'B1'].map(c => html.indexOf('>' + c + '<'));
+    assert.ok(order.every((v, i) => i === 0 || v > order[i - 1]), 'A1 < A2 < A10 < B1, numeric-aware not lexical');
+    assert.ok(html.indexOf('K-Uncoded') > html.indexOf('K-B1'), 'uncoded KPI sorts to the end, not the beginning');
+});
