@@ -3984,3 +3984,77 @@ test('Availability Factor tables no longer show a Raw column, per explicit reque
     assert.ok(!html.includes('>Raw<'), 'Raw column header removed');
     assert.ok(html.includes('>Enter Result<'), 'Enter Result column still present');
 });
+
+test('auditDuplicateKpis finds duplicate KPI records sharing the same Code + Line \u2014 reproduces the exact real scenario: "L4-Passenger Service Availability" has real thresholds in one record, blank in the other', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L4' }],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'L4-Passenger Service Availability', is_active: true, target_value: 99.299, exceptional_value: 99.3, unacceptable_value: 89.9 },
+            { id: 2, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'L4-Passenger Service Availability', is_active: true, target_value: null, exceptional_value: null, unacceptable_value: null },
+        ],
+        kpiResults: [{ id: 500, kpi_definition_id: 2, year: 2026, period_value: '01', actual_value: 95 }],
+    });
+    const duplicates = app.auditDuplicateKpis();
+    assert.equal(duplicates.length, 1);
+    const group = duplicates[0];
+    assert.equal(group.code, 'PSA');
+    assert.equal(group.line, 'L4');
+    assert.equal(group.records.length, 2);
+    const withThresholds = group.records.find(r => r.id === 1);
+    const withoutThresholds = group.records.find(r => r.id === 2);
+    assert.equal(withThresholds.targetValue, 99.299);
+    assert.equal(withoutThresholds.targetValue, null);
+    assert.equal(withoutThresholds.resultsCount, 1);
+});
+
+test('auditDuplicateKpis groups by line NAME (not directorate_id), catching duplicates even when they sit under two different directorate_id rows sharing the same visible name', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [
+            { id: 10, name: 'Operations', company: 'OMC' },
+            { id: 20, name: 'Operations', company: 'OMC' }, // a genuine duplicate directorate row, same name
+        ],
+        kpiDirectorateDepartments: [
+            { id: 100, directorate_id: 10, department_name: 'L4' },
+            { id: 200, directorate_id: 20, department_name: 'L4' },
+        ],
+        kpiDefinitions: [
+            { id: 1, directorate_id: 10, department_id: 100, kpi_code: 'PSA', name: 'PSA', is_active: true, target_value: 99.299 },
+            { id: 2, directorate_id: 20, department_id: 200, kpi_code: 'PSA', name: 'PSA', is_active: true, target_value: null },
+        ],
+        kpiResults: [],
+    });
+    const duplicates = app.auditDuplicateKpis();
+    assert.equal(duplicates.length, 1, 'caught despite the two records having different directorate_id values');
+});
+
+test('mergeDuplicateKpis moves results and owners onto the kept record, then deletes the discarded one', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [
+            { id: 1, name: 'PSA (with thresholds)', target_value: 99.299 },
+            { id: 2, name: 'PSA (blank)', target_value: null },
+        ],
+        kpiResults: [{ id: 500, kpi_definition_id: 2, year: 2026, period_value: '01', actual_value: 95 }],
+        kpiOwners: [{ id: 900, kpi_definition_id: 2, owner_dept: 'Operations', owner_percentage: 1 }],
+    });
+    app.supabase = {
+        from: (table) => ({
+            update: (row) => ({ eq: async () => ({ error: null }) }),
+            delete: () => ({ eq: async () => ({ error: null }) }),
+        }),
+    };
+    app.showToast = () => {};
+
+    const result = await app.mergeDuplicateKpis(1, 2);
+    assert.equal(result.success, true);
+    assert.equal(app.state.kpiDefinitions.length, 1, 'the discarded record is removed');
+    assert.equal(app.state.kpiDefinitions[0].id, 1, 'the kept record remains');
+    assert.equal(app.state.kpiResults[0].kpi_definition_id, 1, 'result re-pointed to the kept record');
+    assert.equal(app.state.kpiOwners[0].kpi_definition_id, 1, 'owner re-pointed to the kept record');
+});
+
+test('mergeDuplicateKpis refuses to merge a KPI into itself', async () => {
+    const app = buildKpiApp();
+    const result = await app.mergeDuplicateKpis(1, 1);
+    assert.equal(result.success, false);
+});
