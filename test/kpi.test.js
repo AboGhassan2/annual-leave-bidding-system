@@ -4114,6 +4114,20 @@ function mockSupabaseForResults() {
                             },
                         };
                     },
+                    update(row) {
+                        return {
+                            eq: (col, id) => ({
+                                select: async () => {
+                                    const idx = revisionsTable.findIndex(r => r.id === id);
+                                    if (idx >= 0) {
+                                        revisionsTable[idx] = { ...revisionsTable[idx], ...row };
+                                        return { data: [revisionsTable[idx]], error: null };
+                                    }
+                                    return { data: [], error: { message: 'not found' } };
+                                },
+                            }),
+                        };
+                    },
                 };
             }
             return { upsert: () => ({ select: async () => ({ data: [], error: null }) }) };
@@ -4409,4 +4423,31 @@ test('Enter Results History toggle shows the full revision audit trail for a per
     assert.ok(html.includes('Revision history'));
     assert.ok(html.includes('Alice') && html.includes('Bob'), 'shows who made each revision');
     assert.ok(html.includes('>80<') && html.includes('>95<'), 'shows previous and new values across revisions');
+});
+
+test('Revision history is capped at exactly 2 entries (baseline + latest) \\u2014 reproduces the exact real reported scenario: entering 26, then 90, then 99 for the same period must NOT accumulate 3 revision rows', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase, revisionsTable } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 26, remarks: '', source: 'manual' });
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 90, remarks: '', source: 'manual' });
+    const third = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 99, remarks: '', source: 'manual' });
+
+    const revisions = revisionsTable.filter(r => r.period_label === '2027-01');
+    assert.equal(revisions.length, 2, 'exactly 2 revision rows total, not 3, no matter how many times the value is revised');
+
+    const entry1 = revisions.find(r => r.revision_number === 1);
+    const entry2 = revisions.find(r => r.revision_number === 2);
+    assert.equal(entry1.new_value, 26, 'entry 1 is the fixed baseline (26), unchanged since the first save');
+    assert.equal(entry2.new_value, 99, 'entry 2 was overwritten in place and now holds the LATEST revision (99), not 90');
+    assert.equal(entry2.previous_value, 90, "entry 2's previous_value reflects the value right before this latest overwrite");
+
+    assert.equal(third.baseline_value, 26, 'baseline on the result row itself also stays fixed at 26');
+    assert.equal(third.actual_value, 99, 'current value is the latest, 99');
 });
