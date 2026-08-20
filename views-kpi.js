@@ -1474,17 +1474,36 @@ app._renderKpiResultsSection = function() {
     }
     const selected = selectedId != null ? (scopedDefinitions.find(k => k.id === selectedId) || scopedDefinitions[0]) : null;
     const selectedYear = this.state._kpiResultsSelectedYear || this.state.biddingYear || new Date().getFullYear();
-    // selected.period_type always equals filterPeriod (scopedDefinitions is
-    // pre-filtered by it above) — using it directly here is equivalent and
-    // keeps this line self-contained if that invariant ever changes.
-    const periodOptions = selected ? this.kpiPeriodOptions(selected.period_type, selectedYear) : [];
+
+    // The "Level" the user is currently viewing/entering at for the
+    // selected KPI — deliberately independent of the KPI's own
+    // configured period_type, per explicit requirement that EVERY KPI
+    // gets all three levels (Monthly entries + auto-derived Quarterly +
+    // auto-derived Yearly), regardless of its own cadence.
+    const levelTypes = ['monthly', 'quarterly', 'yearly'];
+    const levelLabels = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+    let resultsLevel = this.state._kpiResultsLevel;
+    if (!levelTypes.includes(resultsLevel)) {
+        resultsLevel = 'monthly';
+        this.state._kpiResultsLevel = resultsLevel;
+    }
+
+    const periodOptions = selected ? this.kpiPeriodOptions(resultsLevel, selectedYear) : [];
     const existingResults = selected ? (this.state.kpiResults || [])
-        .filter(r => r.kpi_definition_id === selected.id)
+        .filter(r => r.kpi_definition_id === selected.id && r.period_type === resultsLevel)
         .sort((a, b) => a.period_label.localeCompare(b.period_label)) : [];
+
+    // Which specific period (e.g. "2027-Q1") is being viewed right now —
+    // drives the Quarterly/Yearly underlying-breakdown display below.
+    let selectedPeriodValue = this.state._kpiResultsSelectedPeriodValue;
+    if (!selectedPeriodValue || !periodOptions.some(p => p.value === selectedPeriodValue)) {
+        selectedPeriodValue = periodOptions.length > 0 ? periodOptions[0].value : null;
+        this.state._kpiResultsSelectedPeriodValue = selectedPeriodValue;
+    }
 
     const kpiOptions = `<option value="" ${selectedId == null ? 'selected' : ''}>All KPIs</option>` +
         scopedDefinitions.map(k => `<option value="${k.id}" ${k.id === selectedId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${k.kpi_code ? ` (${esc(k.kpi_code)})` : ''}</option>`).join('');
-    const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}">${esc(p.label)}</option>`).join('');
+    const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}" ${p.value === selectedPeriodValue ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
     const resultsRows = existingResults.map(r => {
@@ -1518,7 +1537,9 @@ app._renderKpiResultsSection = function() {
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(r.period_label)}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${feePeriod ? esc(feePeriod.kpi_fiscal_month) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${feePeriod ? esc(feePeriod.fee_fiscal_month) : '—'}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${esc(String(r.actual_value))}${r.is_manual_override ? ' <span title="Manually overridden — not auto-calculated" style="font-size:0.7rem;">⚠️</span>' : ''}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;">${r.baseline_value != null ? esc(String(r.baseline_value)) : '—'}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;color:#6b7280;">${r.revision_number || 1}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.target_value != null ? esc(String(r.target_value)) : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;">${r.achievement != null ? esc(String(r.achievement)) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
@@ -1534,10 +1555,52 @@ app._renderKpiResultsSection = function() {
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.fs != null ? (shares.fs * 100).toFixed(3) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">${shares.als != null ? (shares.als * 100).toFixed(3) + '%' : '—'}</td>
                 <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-size:0.78rem;color:#6b7280;max-width:160px;">${esc(r.remarks || '—')}</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;">
+                <td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;white-space:nowrap;">
+                    <button onclick="app.state._kpiResultsHistoryPeriodLabel = app.state._kpiResultsHistoryPeriodLabel === '${r.period_label}' ? null : '${r.period_label}'; app.renderKpiPlannerView();" style="color:#0891b2;background:none;border:none;font-size:0.75rem;cursor:pointer;text-decoration:underline;margin-right:10px;">${this.state._kpiResultsHistoryPeriodLabel === r.period_label ? 'Hide History' : 'History'}</button>
                     <button onclick="app.confirmDeleteKpiResultEntry(${r.id})" style="color:#991b1b;background:none;border:none;font-size:0.75rem;cursor:pointer;text-decoration:underline;">Delete</button>
                 </td>
             </tr>
+            ${this.state._kpiResultsHistoryPeriodLabel === r.period_label ? (() => {
+                // Full revision audit trail for this specific period —
+                // every save (automatic rollup or manual entry) gets its
+                // own permanent row, per the revision-history spec.
+                const revisions = (this.state.kpiResultRevisions || [])
+                    .filter(rev => rev.kpi_definition_id === selected.id && rev.period_label === r.period_label)
+                    .sort((a, b) => (a.revision_number || 0) - (b.revision_number || 0));
+                if (revisions.length === 0) {
+                    return `<tr><td colspan="15" style="padding:10px 24px;background:#f9fafb;color:#9ca3af;font-size:0.78rem;">No revision history recorded for this period yet.</td></tr>`;
+                }
+                const revRows = revisions.map(rev => `
+                    <tr style="border-top:1px solid #e5e7eb;">
+                        <td style="padding:5px 10px;text-align:right;">${rev.revision_number}</td>
+                        <td style="padding:5px 10px;"><span style="padding:1px 8px;border-radius:999px;font-size:0.68rem;font-weight:700;background:${rev.revision_type === 'manual' ? '#dbeafe' : '#f3f4f6'};color:${rev.revision_type === 'manual' ? '#1e40af' : '#6b7280'};">${esc(rev.revision_type)}</span></td>
+                        <td style="padding:5px 10px;color:#6b7280;">${rev.previous_value != null ? esc(String(rev.previous_value)) : '—'}</td>
+                        <td style="padding:5px 10px;font-weight:600;">${esc(String(rev.new_value))}</td>
+                        <td style="padding:5px 10px;color:#6b7280;">${rev.revised_at ? esc(new Date(rev.revised_at).toLocaleString()) : '—'}</td>
+                        <td style="padding:5px 10px;color:#6b7280;">${esc(rev.revised_by || '—')}</td>
+                    </tr>
+                `).join('');
+                return `
+                    <tr>
+                        <td colspan="15" style="padding:10px 24px;background:#f9fafb;">
+                            <p style="font-size:0.72rem;font-weight:700;color:#374151;text-transform:uppercase;margin-bottom:6px;">Revision history — ${esc(r.period_label)}</p>
+                            <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+                                <thead>
+                                    <tr style="text-align:left;color:#9ca3af;font-size:0.68rem;text-transform:uppercase;">
+                                        <th style="padding:5px 10px;text-align:right;">Rev #</th>
+                                        <th style="padding:5px 10px;">Type</th>
+                                        <th style="padding:5px 10px;">Previous</th>
+                                        <th style="padding:5px 10px;">New</th>
+                                        <th style="padding:5px 10px;">Date</th>
+                                        <th style="padding:5px 10px;">By</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${revRows}</tbody>
+                            </table>
+                        </td>
+                    </tr>
+                `;
+            })() : ''}
         `;
     }).join('');
 
@@ -1607,6 +1670,66 @@ app._renderKpiResultsSection = function() {
                 ${(selected.hit_pct != null || selected.fs_pct != null || selected.als_pct != null) ? `<br/><span style="color:#0891b2;">Partner split: HIT ${selected.hit_pct != null ? Math.round(selected.hit_pct * 100) + '%' : '—'} · FS ${selected.fs_pct != null ? Math.round(selected.fs_pct * 100) + '%' : '—'} · ALS ${selected.als_pct != null ? Math.round(selected.als_pct * 100) + '%' : '—'}</span>` : ''}
             </p>
 
+            <div style="display:flex;gap:6px;margin-bottom:14px;">
+                ${levelTypes.map(lvl => `
+                    <button onclick="app.state._kpiResultsLevel='${lvl}';app.state._kpiResultsSelectedPeriodValue=null;app.renderKpiPlannerView();"
+                        style="padding:6px 16px;border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;border:1.5px solid ${lvl === resultsLevel ? '#1B4332' : '#e5e7eb'};background:${lvl === resultsLevel ? '#1B4332' : '#fff'};color:${lvl === resultsLevel ? '#fff' : '#374151'};">
+                        ${levelLabels[lvl]}
+                    </button>
+                `).join('')}
+            </div>
+
+            ${(() => {
+                // Quarterly/Yearly show their underlying breakdown as
+                // read-only context (the 3 months feeding this quarter,
+                // or the 4 quarters feeding this year), plus a manual-
+                // override notice and reset control when applicable —
+                // per the baseline/revision spec's own quarterly/yearly
+                // view requirements.
+                if (resultsLevel === 'quarterly' && selectedPeriodValue) {
+                    const quarter = parseInt(selectedPeriodValue.split('-Q')[1], 10);
+                    const monthsInQuarter = { 1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12] }[quarter] || [];
+                    const monthNames = this.state.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    const monthRowsHtml = monthsInQuarter.map(m => {
+                        const row = this._kpiMonthlyResultRow(selected.id, selectedYear, m);
+                        return `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:0.8rem;"><span style="color:#6b7280;">${esc(monthNames[m - 1] || String(m))}</span><span style="font-weight:600;">${row ? esc(String(row.actual_value)) : '—'}</span></div>`;
+                    }).join('');
+                    const qRow = this._kpiQuarterlyResultRow(selected.id, selectedYear, quarter);
+                    return `
+                        <div style="background:#f9fafb;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+                            <p style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:6px;">Underlying months (Q${quarter} — auto-source is the 3rd month)</p>
+                            ${monthRowsHtml}
+                            ${qRow && qRow.is_manual_override ? `
+                                <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                                    <span style="font-size:0.72rem;color:#92400e;font-weight:700;">⚠️ Manually overridden — no longer auto-calculated from March</span>
+                                    <button onclick="app._resetKpiResultToAuto(${selected.id}, ${selectedYear}, 'quarterly', ${quarter})" style="padding:4px 12px;font-size:0.72rem;border-radius:6px;border:1px solid #d97706;background:#fff;color:#d97706;cursor:pointer;font-weight:700;">Reset to Auto</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                if (resultsLevel === 'yearly') {
+                    const quarterRowsHtml = [1, 2, 3, 4].map(q => {
+                        const row = this._kpiQuarterlyResultRow(selected.id, selectedYear, q);
+                        return `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:0.8rem;"><span style="color:#6b7280;">Q${q}${row && row.is_manual_override ? ' ⚠️' : ''}</span><span style="font-weight:600;">${row ? esc(String(row.actual_value)) : '—'}</span></div>`;
+                    }).join('');
+                    const yRow = this._kpiYearlyResultRow(selected.id, selectedYear);
+                    return `
+                        <div style="background:#f9fafb;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+                            <p style="font-size:0.7rem;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:6px;">Underlying quarters (auto-source is Q1+Q2+Q3+Q4)</p>
+                            ${quarterRowsHtml}
+                            ${yRow && yRow.is_manual_override ? `
+                                <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                                    <span style="font-size:0.72rem;color:#92400e;font-weight:700;">⚠️ Manually overridden — no longer auto-calculated from the 4 quarters</span>
+                                    <button onclick="app._resetKpiResultToAuto(${selected.id}, ${selectedYear}, 'yearly', null)" style="padding:4px 12px;font-size:0.72rem;border-radius:6px;border:1px solid #d97706;background:#fff;color:#d97706;cursor:pointer;font-weight:700;">Reset to Auto</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }
+                return '';
+            })()}
+
             <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
                 <div style="min-width:100px;">
                     <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Year</label>
@@ -1617,7 +1740,7 @@ app._renderKpiResultsSection = function() {
                 </div>
                 <div style="flex:1;min-width:160px;">
                     <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Period</label>
-                    <select id="kpiResultPeriod" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
+                    <select id="kpiResultPeriod" onchange="app.state._kpiResultsSelectedPeriodValue=this.value;app.renderKpiPlannerView();" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;">
                         ${periodSelectOptions}
                     </select>
                 </div>
@@ -1631,12 +1754,12 @@ app._renderKpiResultsSection = function() {
             <textarea id="kpiResultRemarks" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.85rem;box-sizing:border-box;margin-bottom:14px;"></textarea>
             <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
                 <button onclick="app.saveKpiResultEntry(${selected.id})" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Save Result</button>
-                ${selected.period_type === 'monthly' ? `
+                ${resultsLevel === 'monthly' ? `
                     <button onclick="app.state._kpiBulkInsertOpen = !app.state._kpiBulkInsertOpen; app.renderKpiPlannerView();" style="padding:9px 18px;background:#fff;border:1.5px solid #1B4332;color:#1B4332;border-radius:8px;font-weight:700;font-size:0.85rem;">📅 ${this.state._kpiBulkInsertOpen ? 'Close Bulk Insert' : 'Bulk Insert (Whole Year)'}</button>
                 ` : ''}
             </div>
 
-            ${(selected.period_type === 'monthly' && this.state._kpiBulkInsertOpen) ? this._renderKpiBulkInsertPanel(selected, selectedYear) : ''}
+            ${(resultsLevel === 'monthly' && this.state._kpiBulkInsertOpen) ? this._renderKpiBulkInsertPanel(selected, selectedYear) : ''}
 
             <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(this._kpiDisplayNameWithLine(selected))}</h4>
             ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
@@ -1647,6 +1770,8 @@ app._renderKpiResultsSection = function() {
                             <th style="padding:8px 12px;">KPI Month</th>
                             <th style="padding:8px 12px;">Fee Month</th>
                             <th style="padding:8px 12px;">KPI Result</th>
+                            <th style="padding:8px 12px;">Baseline</th>
+                            <th style="padding:8px 12px;text-align:right;">Rev #</th>
                             <th style="padding:8px 12px;">Target</th>
                             <th style="padding:8px 12px;">Achievement</th>
                             <th style="padding:8px 12px;">Status</th>
@@ -1674,8 +1799,11 @@ app.saveKpiResultEntry = async function(kpiDefinitionId) {
     const remarks = document.getElementById('kpiResultRemarks').value;
     if (value === '') { this.showToast('Please enter a value.', 'error'); return; }
 
-    const def = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
-    const periodType = def ? def.period_type : 'monthly';
+    // The Level tab the user is currently viewing/entering at — kept
+    // independent of the KPI's own configured period_type, per explicit
+    // requirement that every KPI gets all three levels regardless of
+    // its own cadence.
+    const periodType = ['monthly', 'quarterly', 'yearly'].includes(this.state._kpiResultsLevel) ? this.state._kpiResultsLevel : 'monthly';
     // Parse the combined "year-value" string back into its parts — the
     // dropdown's own value already encodes exactly what kpiPeriodOptions
     // generated, so this just reverses that same format.
@@ -1683,11 +1811,21 @@ app.saveKpiResultEntry = async function(kpiDefinitionId) {
     const year = hyphenIdx >= 0 ? parseInt(periodRaw.slice(0, hyphenIdx), 10) : parseInt(periodRaw, 10);
     const periodValue = hyphenIdx >= 0 ? periodRaw.slice(hyphenIdx + 1) : null;
 
-    const saved = await this.saveKpiResult(kpiDefinitionId, { year, periodType, periodValue, actualValue: Number(value), remarks, source: 'manual' });
+    const saved = await this.saveKpiResult(kpiDefinitionId, { year, periodType, periodValue, actualValue: Number(value), remarks, source: 'manual', revisionType: 'manual' });
     if (saved) {
         this.showToast('Result saved.', 'success');
         this.renderKpiPlannerView();
     }
+};
+
+app._resetKpiResultToAuto = async function(kpiDefinitionId, year, periodType, quarterOrNull) {
+    const saved = await this._kpiResetToAutoValue(kpiDefinitionId, year, periodType, quarterOrNull);
+    if (saved) {
+        this.showToast('Reverted to the auto-calculated value.', 'success');
+    } else {
+        this.showToast('Could not reset — the level below doesn\'t have a complete value to recalculate from yet.', 'error');
+    }
+    this.renderKpiPlannerView();
 };
 
 // Bulk Insert (Whole Year) — a second way to enter results alongside the
