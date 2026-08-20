@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost, availabilityFactorBrackets] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost, availabilityFactorBrackets, resultRevisions] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -41,6 +41,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_availability_cost').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_line_availability_base_cost').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_availability_factor_brackets').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_result_revisions').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -57,6 +58,7 @@ app.loadKpiData = async function() {
         if (availabilityCost.error) throw availabilityCost.error;
         if (availabilityBaseCost.error) throw availabilityBaseCost.error;
         if (availabilityFactorBrackets.error) throw availabilityFactorBrackets.error;
+        if (resultRevisions.error) throw resultRevisions.error;
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -72,6 +74,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineAvailabilityCost = availabilityCost.data || [];
         this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
         this.state.kpiAvailabilityFactorBrackets = availabilityFactorBrackets.data || [];
+        this.state.kpiResultRevisions = resultRevisions.data || [];
         this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
         this.state.kpiLineMonthlyCosts = monthlyCosts.data || [];
         console.log(`✅ Loaded KPI data: ${this.state.kpiDirectorates.length} directorates, ${this.state.kpiDefinitions.length} KPIs, ${this.state.kpiResults.length} results, ${this.state.kpiOwners.length} owner records`);
@@ -542,7 +545,7 @@ app._kpiResultBenchmark = function(result, kpiDef) {
 };
 
 
-app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark }) {
+app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark, revisionType }) {
     if (!this.supabase) return null;
     try {
         const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
@@ -574,6 +577,20 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         const wasOverridden = existing && existing.final_kpi != null && existing.factor_score != null && Math.abs(existing.final_kpi - existing.factor_score) > 1e-9;
         const finalKpi = wasOverridden ? existing.final_kpi : factorScore;
 
+        // Baseline/revision tracking, per the baseline-and-revision spec:
+        // the FIRST submitted value for a (KPI, period) is permanently
+        // preserved as baseline_value and never touched again on later
+        // saves. is_manual_override marks a Quarterly/Yearly value that
+        // was entered directly at that level rather than derived from
+        // the level below — Monthly has no lower level, so it's never
+        // marked as an override (every monthly entry IS the direct
+        // source). Every save — automatic rollup or manual entry — gets
+        // its own row in kpi_result_revisions, never overwritten.
+        const effectiveRevisionType = revisionType || 'manual';
+        const baselineValue = existing && existing.baseline_value != null ? existing.baseline_value : actualValue;
+        const revisionNumber = existing ? (existing.revision_number || 1) + 1 : 1;
+        const isManualOverride = periodType === 'monthly' ? false : effectiveRevisionType === 'manual';
+
         const row = {
             tenant_id: this._tid(),
             kpi_definition_id: kpiDefinitionId,
@@ -598,6 +615,9 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
             entered_at: new Date().toISOString(),
+            baseline_value: baselineValue,
+            is_manual_override: isManualOverride,
+            revision_number: revisionNumber,
         };
         const { data, error } = await this.supabase
             .from('kpi_results')
@@ -611,12 +631,168 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         } else {
             this.state.kpiResults = [...this.state.kpiResults, saved];
         }
+
+        // Best-effort: a failure logging the revision shouldn't undo or
+        // fail the result save itself — the result row is the source of
+        // truth, the revision log is a secondary audit trail.
+        try {
+            const { data: revData, error: revError } = await this.supabase.from('kpi_result_revisions').insert({
+                tenant_id: this._tid(),
+                kpi_definition_id: kpiDefinitionId,
+                year, period_type: periodType, period_value: row.period_value, period_label: periodLabel,
+                baseline_value: baselineValue,
+                previous_value: existing ? existing.actual_value : null,
+                new_value: actualValue,
+                revision_number: revisionNumber,
+                revision_type: effectiveRevisionType,
+                revised_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
+            }).select();
+            if (revError) throw revError;
+            this.state.kpiResultRevisions = [...(this.state.kpiResultRevisions || []), revData[0]];
+        } catch (revErr) {
+            console.error('⚠️ Failed to log KPI result revision (result itself was saved successfully):', revErr.message);
+        }
+
+        // Auto-rollup: a Monthly save (3rd month of a quarter) or a
+        // Quarterly save recalculates the level above, UNLESS that level
+        // has been manually overridden — that check lives inside
+        // _kpiPropagateRollup itself, so this always attempts it
+        // regardless of whether THIS save was manual or automatic (a
+        // quarter's value propagating to Yearly doesn't care whether the
+        // quarter itself came from a rollup or a direct edit).
+        if (periodType === 'monthly' || periodType === 'quarterly') {
+            await this._kpiPropagateRollup(kpiDefinitionId, year, periodType, row.period_value);
+        }
+
         return saved;
     } catch (e) {
         console.error('❌ Failed to save KPI result:', e.message);
         this.showToast('Could not save result: ' + e.message, 'error');
         return null;
+
     }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Baseline/Revision — Monthly -> Quarterly -> Yearly auto-rollup, per
+// the "KPI Period Entry, Baseline, Revision, and Manual Editing Logic"
+// spec. Applies uniformly to every KPI regardless of its own configured
+// period_type (explicit choice) — Monthly entries always exist as the
+// direct source; Quarterly = the 3rd month's current result; Yearly =
+// the sum of the 4 quarters' current results. Either level can be
+// manually overridden, and an override is preserved (never silently
+// recalculated over) until the user explicitly reverts it.
+// ════════════════════════════════════════════════════════════════════
+
+// Q1=Mar(3), Q2=Jun(6), Q3=Sep(9), Q4=Dec(12) — the ONLY month in each
+// quarter that feeds the auto-rollup; Jan/Feb (etc.) are still entered
+// and shown for context but don't themselves change the quarter's value.
+app._kpiThirdMonthOfQuarter = { 1: 3, 2: 6, 3: 9, 4: 12 };
+
+app._kpiQuarterForThirdMonth = function(monthNum) {
+    const entry = Object.entries(this._kpiThirdMonthOfQuarter).find(([, m]) => m === monthNum);
+    return entry ? Number(entry[0]) : null;
+};
+
+app._kpiMonthlyResultRow = function(kpiDefinitionId, year, monthNum) {
+    const periodLabel = `${year}-${String(monthNum).padStart(2, '0')}`;
+    return (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDefinitionId && r.period_label === periodLabel && r.period_type === 'monthly') || null;
+};
+
+app._kpiQuarterlyResultRow = function(kpiDefinitionId, year, quarter) {
+    const periodLabel = `${year}-Q${quarter}`;
+    return (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDefinitionId && r.period_label === periodLabel && r.period_type === 'quarterly') || null;
+};
+
+app._kpiYearlyResultRow = function(kpiDefinitionId, year) {
+    const periodLabel = `${year}`;
+    return (this.state.kpiResults || []).find(r => r.kpi_definition_id === kpiDefinitionId && r.period_label === periodLabel && r.period_type === 'yearly') || null;
+};
+
+// Auto value for a quarter = its 3rd month's CURRENT result. Returns
+// null if that month has no result yet (nothing to roll up).
+app._kpiComputeQuarterlyAutoValue = function(kpiDefinitionId, year, quarter) {
+    const thirdMonth = this._kpiThirdMonthOfQuarter[quarter];
+    if (!thirdMonth) return null;
+    const monthRow = this._kpiMonthlyResultRow(kpiDefinitionId, year, thirdMonth);
+    return monthRow ? monthRow.actual_value : null;
+};
+
+// Auto value for the year = sum of all 4 quarters' CURRENT results
+// ("Yearly Result = Q1+Q2+Q3+Q4", per spec). Returns null if any
+// quarter doesn't have a value yet — an incomplete year has nothing
+// meaningful to roll up.
+app._kpiComputeYearlyAutoValue = function(kpiDefinitionId, year) {
+    const quarterValues = [1, 2, 3, 4].map(q => {
+        const qRow = this._kpiQuarterlyResultRow(kpiDefinitionId, year, q);
+        return qRow ? qRow.actual_value : null;
+    });
+    if (quarterValues.some(v => v == null)) return null;
+    return quarterValues.reduce((sum, v) => sum + v, 0);
+};
+
+// After a Monthly save (only when it's the 3rd month of a quarter) or a
+// Quarterly save, recalculates and saves the level above — UNLESS that
+// level has already been manually overridden, in which case the
+// override is left untouched and propagation stops there (a manually
+// overridden Yearly value, for instance, is never silently recalculated
+// just because a quarter changed underneath it).
+app._kpiPropagateRollup = async function(kpiDefinitionId, year, sourcePeriodType, sourcePeriodValue) {
+    if (sourcePeriodType === 'monthly') {
+        const monthNum = parseInt(sourcePeriodValue, 10);
+        const quarter = this._kpiQuarterForThirdMonth(monthNum);
+        if (!quarter) return; // not the 3rd month of a quarter — no rollup triggered
+        const existingQ = this._kpiQuarterlyResultRow(kpiDefinitionId, year, quarter);
+        if (existingQ && existingQ.is_manual_override) return; // preserved, not recalculated
+        const autoValue = this._kpiComputeQuarterlyAutoValue(kpiDefinitionId, year, quarter);
+        if (autoValue == null) return;
+        await this.saveKpiResult(kpiDefinitionId, {
+            year, periodType: 'quarterly', periodValue: `Q${quarter}`, actualValue: autoValue,
+            remarks: existingQ ? existingQ.remarks : '', source: 'auto-rollup', revisionType: 'automatic',
+        });
+        // saveKpiResult's own call above already continues the
+        // propagation up to Yearly (quarterly -> yearly), so nothing
+        // further needed here.
+    } else if (sourcePeriodType === 'quarterly') {
+        const existingY = this._kpiYearlyResultRow(kpiDefinitionId, year);
+        if (existingY && existingY.is_manual_override) return;
+        const autoValue = this._kpiComputeYearlyAutoValue(kpiDefinitionId, year);
+        if (autoValue == null) return;
+        await this.saveKpiResult(kpiDefinitionId, {
+            year, periodType: 'yearly', periodValue: null, actualValue: autoValue,
+            remarks: existingY ? existingY.remarks : '', source: 'auto-rollup', revisionType: 'automatic',
+        });
+    }
+};
+
+// Clears a manual override at the Quarterly or Yearly level and
+// recomputes it fresh from the level below — the "revert to automatic"
+// counterpart to a manual edit. Returns null (no-op) if there's nothing
+// to reset, or if the level below doesn't have a complete value yet to
+// recompute from.
+app._kpiResetToAutoValue = async function(kpiDefinitionId, year, periodType, periodValueOrQuarter) {
+    if (periodType === 'quarterly') {
+        const quarter = periodValueOrQuarter;
+        const autoValue = this._kpiComputeQuarterlyAutoValue(kpiDefinitionId, year, quarter);
+        if (autoValue == null) return null;
+        const existing = this._kpiQuarterlyResultRow(kpiDefinitionId, year, quarter);
+        const saved = await this.saveKpiResult(kpiDefinitionId, {
+            year, periodType: 'quarterly', periodValue: `Q${quarter}`, actualValue: autoValue,
+            remarks: existing ? existing.remarks : '', source: 'auto-rollup', revisionType: 'automatic',
+        });
+        return saved;
+    }
+    if (periodType === 'yearly') {
+        const autoValue = this._kpiComputeYearlyAutoValue(kpiDefinitionId, year);
+        if (autoValue == null) return null;
+        const existing = this._kpiYearlyResultRow(kpiDefinitionId, year);
+        const saved = await this.saveKpiResult(kpiDefinitionId, {
+            year, periodType: 'yearly', periodValue: null, actualValue: autoValue,
+            remarks: existing ? existing.remarks : '', source: 'auto-rollup', revisionType: 'automatic',
+        });
+        return saved;
+    }
+    return null;
 };
 
 // Manually overrides ONLY the Final KPI value on an already-saved
