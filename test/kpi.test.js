@@ -4068,3 +4068,345 @@ test('Enter Results: explicit null selection (All KPIs) is preserved across rend
     app._renderKpiResultsSection();
     assert.equal(app.state._kpiResultsSelectedId, null, 'stays null, not silently reset to a real KPI id');
 });
+
+// ════════════════════════════════════════════════════════════════════
+// Baseline/Revision/Auto-Rollup — "KPI Period Entry, Baseline,
+// Revision, and Manual Editing Logic" spec
+// ════════════════════════════════════════════════════════════════════
+
+// Reusable mock supabase supporting both kpi_results (upsert, keyed by
+// kpi_definition_id+period_label) and kpi_result_revisions (insert-only
+// audit trail) — real behavior, not a stub, so saveKpiResult's actual
+// upsert/select/insert flow runs exactly as it would against a real DB.
+function mockSupabaseForResults() {
+    let nextResultId = 1;
+    let nextRevisionId = 1;
+    const resultsTable = [];
+    const revisionsTable = [];
+    const supabase = {
+        from(table) {
+            if (table === 'kpi_results') {
+                return {
+                    upsert(row) {
+                        return {
+                            select: async () => {
+                                const idx = resultsTable.findIndex(r => r.kpi_definition_id === row.kpi_definition_id && r.period_label === row.period_label);
+                                if (idx >= 0) {
+                                    resultsTable[idx] = { ...resultsTable[idx], ...row };
+                                    return { data: [resultsTable[idx]], error: null };
+                                }
+                                const saved = { id: nextResultId++, ...row };
+                                resultsTable.push(saved);
+                                return { data: [saved], error: null };
+                            },
+                        };
+                    },
+                };
+            }
+            if (table === 'kpi_result_revisions') {
+                return {
+                    insert(row) {
+                        return {
+                            select: async () => {
+                                const saved = { id: nextRevisionId++, ...row };
+                                revisionsTable.push(saved);
+                                return { data: [saved], error: null };
+                            },
+                        };
+                    },
+                };
+            }
+            return { upsert: () => ({ select: async () => ({ data: [], error: null }) }) };
+        },
+    };
+    return { supabase, resultsTable, revisionsTable };
+}
+
+test('saveKpiResult sets baseline_value on first insert and preserves it unchanged across later saves of the same period', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const first = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 80, remarks: '', source: 'manual' });
+    assert.equal(first.baseline_value, 80, 'baseline set on first submission');
+    assert.equal(first.revision_number, 1);
+
+    const second = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 95, remarks: '', source: 'manual' });
+    assert.equal(second.baseline_value, 80, 'baseline UNCHANGED even though the value was revised');
+    assert.equal(second.actual_value, 95, 'current value IS the new one');
+    assert.equal(second.revision_number, 2, 'revision number incremented');
+});
+
+test('saveKpiResult logs a revision row on every save, with correct previous/new values and revision_type', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase, revisionsTable } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 80, remarks: '', source: 'manual' });
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 95, remarks: '', source: 'manual' });
+
+    const monthRevisions = revisionsTable.filter(r => r.period_label === '2027-03');
+    assert.equal(monthRevisions.length, 2);
+    assert.equal(monthRevisions[0].previous_value, null, 'first revision has no previous value');
+    assert.equal(monthRevisions[0].new_value, 80);
+    assert.equal(monthRevisions[0].revision_type, 'manual');
+    assert.equal(monthRevisions[1].previous_value, 80, 'second revision correctly shows the prior value');
+    assert.equal(monthRevisions[1].new_value, 95);
+});
+
+test('saveKpiResult auto-rolls up the 3rd month of a quarter into the Quarterly result (Q1 = March, per spec example)', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 90, remarks: '', source: 'manual' });
+
+    const q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.ok(q1, 'Q1 auto-created from March');
+    assert.equal(q1.actual_value, 90, "Q1 = March exactly, per the spec's own example");
+    assert.equal(q1.is_manual_override, false);
+});
+
+test('saveKpiResult does NOT trigger a rollup when a non-3rd month of a quarter is saved (January/February have no direct effect on Q1)', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 70, remarks: '', source: 'manual' });
+    assert.equal(app._kpiQuarterlyResultRow(1, 2027, 1), null, 'no Q1 record created just from January');
+});
+
+test('saveKpiResult auto-rolls up a Quarterly save into the Yearly result once ALL 4 quarters have values (sum, per spec)', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    // Q1-Q3 via their 3rd months
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 90, remarks: '', source: 'manual' });
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '06', actualValue: 92, remarks: '', source: 'manual' });
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '09', actualValue: 88, remarks: '', source: 'manual' });
+    // Not complete yet — no yearly value should exist
+    assert.equal(app._kpiYearlyResultRow(1, 2027), null, 'incomplete year (only 3 quarters) has no yearly rollup yet');
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '12', actualValue: 94, remarks: '', source: 'manual' });
+    const yearly = app._kpiYearlyResultRow(1, 2027);
+    assert.ok(yearly, 'yearly auto-created once all 4 quarters are present');
+    assert.equal(yearly.actual_value, 90 + 92 + 88 + 94);
+    assert.equal(yearly.is_manual_override, false);
+});
+
+test("A manual Quarterly override is preserved when the underlying month later changes \u2014 reproduces the spec's own worked example exactly (March 90 -> Q1 auto 90, user revises Q1 to 95, March stays 90, Q1 baseline stays original)", async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 90, remarks: '', source: 'manual' });
+    let q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.equal(q1.actual_value, 90, 'Q1 auto-becomes 90, matching March');
+    const q1Baseline = q1.baseline_value;
+
+    // User manually revises Q1 to 95
+    await app.saveKpiResult(1, { year: 2027, periodType: 'quarterly', periodValue: 'Q1', actualValue: 95, remarks: '', source: 'manual', revisionType: 'manual' });
+    q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.equal(q1.actual_value, 95, 'Q1 Current Result becomes 95');
+    assert.equal(q1.baseline_value, q1Baseline, 'Q1 baseline remains the ORIGINAL Q1 value, unchanged by the manual revision');
+    assert.equal(q1.is_manual_override, true, 'system records that Q1 was manually revised');
+
+    // Now change March again \\u2014 Q1's manual override must NOT be silently recalculated
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 70, remarks: '', source: 'manual' });
+    const march = app._kpiMonthlyResultRow(1, 2027, 3);
+    assert.equal(march.actual_value, 70, 'March correctly updated');
+    q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.equal(q1.actual_value, 95, 'Q1 STAYS at the manually-overridden 95, not silently recalculated back to 70');
+});
+
+test('A manual Yearly override is preserved when a quarter later changes underneath it', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    for (const [m, v] of [['03', 90], ['06', 92], ['09', 88], ['12', 94]]) {
+        await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: m, actualValue: v, remarks: '', source: 'manual' });
+    }
+    let yearly = app._kpiYearlyResultRow(1, 2027);
+    assert.equal(yearly.actual_value, 90 + 92 + 88 + 94);
+
+    // Manually override the yearly result
+    await app.saveKpiResult(1, { year: 2027, periodType: 'yearly', periodValue: null, actualValue: 400, remarks: '', source: 'manual', revisionType: 'manual' });
+    yearly = app._kpiYearlyResultRow(1, 2027);
+    assert.equal(yearly.actual_value, 400);
+    assert.equal(yearly.is_manual_override, true);
+
+    // Change Q1 (via March) \\u2014 yearly override must be preserved
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 50, remarks: '', source: 'manual' });
+    yearly = app._kpiYearlyResultRow(1, 2027);
+    assert.equal(yearly.actual_value, 400, 'yearly override preserved, not silently recalculated');
+});
+
+test('Monthly results are NEVER marked as a manual override \\u2014 there is no lower level to override, every monthly entry IS the direct source', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    const saved = await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '01', actualValue: 80, remarks: '', source: 'manual', revisionType: 'manual' });
+    assert.equal(saved.is_manual_override, false);
+});
+
+test('_kpiResetToAutoValue clears a manual Quarterly override and recomputes from the 3rd month', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: '03', actualValue: 90, remarks: '', source: 'manual' });
+    await app.saveKpiResult(1, { year: 2027, periodType: 'quarterly', periodValue: 'Q1', actualValue: 95, remarks: '', source: 'manual', revisionType: 'manual' });
+    let q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.equal(q1.actual_value, 95);
+    assert.equal(q1.is_manual_override, true);
+
+    await app._kpiResetToAutoValue(1, 2027, 'quarterly', 1);
+    q1 = app._kpiQuarterlyResultRow(1, 2027, 1);
+    assert.equal(q1.actual_value, 90, 'reset back to the auto value (March)');
+    assert.equal(q1.is_manual_override, false, 'no longer flagged as a manual override');
+});
+
+test('_kpiResetToAutoValue clears a manual Yearly override and recomputes as the sum of the 4 quarters', async () => {
+    const app = buildKpiApp({
+        kpiDefinitions: [{ id: 1, kpi_code: 'A1', name: 'Test KPI', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [],
+    });
+    const { supabase } = mockSupabaseForResults();
+    app.supabase = supabase;
+    app._tid = () => 'tenant1';
+    app.showToast = () => {};
+
+    for (const [m, v] of [['03', 90], ['06', 92], ['09', 88], ['12', 94]]) {
+        await app.saveKpiResult(1, { year: 2027, periodType: 'monthly', periodValue: m, actualValue: v, remarks: '', source: 'manual' });
+    }
+    await app.saveKpiResult(1, { year: 2027, periodType: 'yearly', periodValue: null, actualValue: 400, remarks: '', source: 'manual', revisionType: 'manual' });
+
+    await app._kpiResetToAutoValue(1, 2027, 'yearly', null);
+    const yearly = app._kpiYearlyResultRow(1, 2027);
+    assert.equal(yearly.actual_value, 90 + 92 + 88 + 94);
+    assert.equal(yearly.is_manual_override, false);
+});
+
+test("Enter Results shows Level tabs (Monthly/Quarterly/Yearly) independent of the KPI's own configured period_type, and Baseline/Rev columns in the results table", () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [{ id: 500, kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', period_label: '2027-03', actual_value: 90, baseline_value: 80, revision_number: 2, is_manual_override: false, remarks: '' }],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiResultsSelectedDirectorateId = 10;
+    app.state._kpiResultsSelectedId = 1;
+    app.state._kpiResultsSelectedYear = 2027;
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiResultsSection();
+    assert.ok(html.includes('>Monthly<') && html.includes('>Quarterly<') && html.includes('>Yearly<'), 'all three level tabs present');
+    assert.ok(html.includes('>Baseline<'), 'Baseline column present');
+    assert.ok(html.includes('>80<'), 'shows the real baseline value');
+});
+
+test('Enter Results Quarterly level shows the 3 underlying months as read-only context, and a manual-override warning with a Reset button when overridden', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [
+            { id: 500, kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', period_label: '2027-03', actual_value: 90, baseline_value: 90, revision_number: 1, is_manual_override: false, remarks: '' },
+            { id: 501, kpi_definition_id: 1, year: 2027, period_type: 'quarterly', period_value: 'Q1', period_label: '2027-Q1', actual_value: 95, baseline_value: 90, revision_number: 2, is_manual_override: true, remarks: '' },
+        ],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiResultsSelectedDirectorateId = 10;
+    app.state._kpiResultsSelectedId = 1;
+    app.state._kpiResultsSelectedYear = 2027;
+    app.state._kpiResultsLevel = 'quarterly';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiResultsSection();
+    assert.ok(html.includes('Underlying months'));
+    assert.ok(html.includes('90'), "shows March's real value");
+    assert.ok(html.includes('Manually overridden'));
+    assert.ok(html.includes('Reset to Auto'));
+});
+
+test('Enter Results History toggle shows the full revision audit trail for a period, with previous/new values, type, date, and user', () => {
+    const app = buildKpiApp({
+        kpiDirectorates: [{ id: 10, name: 'Operations', company: 'OMC' }],
+        kpiDirectorateDepartments: [{ id: 100, directorate_id: 10, department_name: 'L3' }],
+        kpiDefinitions: [{ id: 1, directorate_id: 10, department_id: 100, kpi_code: 'A1', name: 'Passenger satisfaction', period_type: 'monthly', direction: 'higher_is_better', target_value: 90 }],
+        kpiResults: [{ id: 500, kpi_definition_id: 1, year: 2027, period_type: 'monthly', period_value: '03', period_label: '2027-03', actual_value: 95, baseline_value: 80, revision_number: 2, is_manual_override: false, remarks: '' }],
+        kpiResultRevisions: [
+            { id: 1, kpi_definition_id: 1, period_label: '2027-03', revision_number: 1, revision_type: 'manual', previous_value: null, new_value: 80, revised_at: '2027-03-05T10:00:00Z', revised_by: 'Alice' },
+            { id: 2, kpi_definition_id: 1, period_label: '2027-03', revision_number: 2, revision_type: 'manual', previous_value: 80, new_value: 95, revised_at: '2027-03-06T14:30:00Z', revised_by: 'Bob' },
+        ],
+        kpiOwners: [],
+    });
+    app._escHtml = (s) => String(s == null ? '' : s);
+    app.state._kpiSelectedCompany = 'OMC';
+    app.state._kpiResultsSelectedDirectorateId = 10;
+    app.state._kpiResultsSelectedId = 1;
+    app.state._kpiResultsSelectedYear = 2027;
+    app.state._kpiResultsHistoryPeriodLabel = '2027-03';
+    const fs = require('fs');
+    const vm = require('vm');
+    vm.runInThisContext('(function(app){' + fs.readFileSync(require('path').join(__dirname, '..', 'views-kpi.js'), 'utf8') + '})')(app);
+    const html = app._renderKpiResultsSection();
+    assert.ok(html.includes('Revision history'));
+    assert.ok(html.includes('Alice') && html.includes('Bob'), 'shows who made each revision');
+    assert.ok(html.includes('>80<') && html.includes('>95<'), 'shows previous and new values across revisions');
+});
