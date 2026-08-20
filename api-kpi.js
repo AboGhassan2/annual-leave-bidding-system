@@ -577,18 +577,21 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         const wasOverridden = existing && existing.final_kpi != null && existing.factor_score != null && Math.abs(existing.final_kpi - existing.factor_score) > 1e-9;
         const finalKpi = wasOverridden ? existing.final_kpi : factorScore;
 
-        // Baseline/revision tracking, per the baseline-and-revision spec:
-        // the FIRST submitted value for a (KPI, period) is permanently
-        // preserved as baseline_value and never touched again on later
-        // saves. is_manual_override marks a Quarterly/Yearly value that
-        // was entered directly at that level rather than derived from
-        // the level below — Monthly has no lower level, so it's never
+        // Baseline/revision tracking, per explicit correction: the FIRST
+        // submitted value for a (KPI, period) is permanently preserved
+        // as baseline_value and never touched again. Revision tracking
+        // is capped at exactly TWO entries — entry 1 is the fixed
+        // baseline, entry 2 is the latest/current revision, and every
+        // subsequent save OVERWRITES entry 2 in place rather than
+        // growing an unbounded list of every change ever made.
+        // is_manual_override marks a Quarterly/Yearly value that was
+        // entered directly at that level rather than derived from the
+        // level below — Monthly has no lower level, so it's never
         // marked as an override (every monthly entry IS the direct
-        // source). Every save — automatic rollup or manual entry — gets
-        // its own row in kpi_result_revisions, never overwritten.
+        // source).
         const effectiveRevisionType = revisionType || 'manual';
         const baselineValue = existing && existing.baseline_value != null ? existing.baseline_value : actualValue;
-        const revisionNumber = existing ? (existing.revision_number || 1) + 1 : 1;
+        const revisionNumber = existing ? 2 : 1;
         const isManualOverride = periodType === 'monthly' ? false : effectiveRevisionType === 'manual';
 
         const row = {
@@ -636,7 +639,7 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         // fail the result save itself — the result row is the source of
         // truth, the revision log is a secondary audit trail.
         try {
-            const { data: revData, error: revError } = await this.supabase.from('kpi_result_revisions').insert({
+            const revPayload = {
                 tenant_id: this._tid(),
                 kpi_definition_id: kpiDefinitionId,
                 year, period_type: periodType, period_value: row.period_value, period_label: periodLabel,
@@ -646,9 +649,32 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
                 revision_number: revisionNumber,
                 revision_type: effectiveRevisionType,
                 revised_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
-            }).select();
-            if (revError) throw revError;
-            this.state.kpiResultRevisions = [...(this.state.kpiResultRevisions || []), revData[0]];
+                revised_at: new Date().toISOString(),
+            };
+            // Entry 2 (the "latest revision" slot) gets overwritten in
+            // place on every subsequent save — find it by (kpi, period,
+            // revision_number=2) rather than always inserting, which is
+            // what previously let the audit trail grow unbounded.
+            const existingRevRow = revisionNumber === 2
+                ? (this.state.kpiResultRevisions || []).find(rev => rev.kpi_definition_id === kpiDefinitionId && rev.period_label === periodLabel && rev.revision_number === 2)
+                : null;
+            let revData;
+            if (existingRevRow) {
+                const { data, error: revError } = await this.supabase.from('kpi_result_revisions').update(revPayload).eq('id', existingRevRow.id).select();
+                if (revError) throw revError;
+                revData = data;
+            } else {
+                const { data, error: revError } = await this.supabase.from('kpi_result_revisions').insert(revPayload).select();
+                if (revError) throw revError;
+                revData = data;
+            }
+            const savedRev = revData[0];
+            const alreadyLogged = (this.state.kpiResultRevisions || []).find(rev => rev.id === savedRev.id);
+            if (alreadyLogged) {
+                this.state.kpiResultRevisions = this.state.kpiResultRevisions.map(rev => rev.id === savedRev.id ? savedRev : rev);
+            } else {
+                this.state.kpiResultRevisions = [...(this.state.kpiResultRevisions || []), savedRev];
+            }
         } catch (revErr) {
             console.error('⚠️ Failed to log KPI result revision (result itself was saved successfully):', revErr.message);
         }
