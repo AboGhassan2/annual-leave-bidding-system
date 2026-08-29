@@ -71,7 +71,26 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targ
     if (this.isTradingClosed()) { this.showToast('The trading window is closed. New trade offers can no longer be created.', 'error'); return null; }
     if (!desiredSlotType || !desiredMonth) { this.showToast('Please select which slot you want in return.', 'error'); return null; }
 
+    // ── Ownership guard ──────────────────────────────────────────────────────
+    // Verify that the slot being offered actually belongs to the logged-in user
+    // in the processed results. Prevents a staff member from offering a slot
+    // they were never awarded — whether by accident or deliberate manipulation.
     const isMaint = this.state.userType === 'maintenancestaff';
+    const resultsPool = isMaint ? (this.state.maintResults || []) : (this.state.results || []);
+    const ownsSlot = resultsPool.some(r =>
+        r.employeeId === user.id &&
+        r.slotType   === mySlot.slotType &&
+        r.startDate  === mySlot.startDate &&
+        r.endDate    === mySlot.endDate &&
+        r.type       === 'Bid Awarded'
+    );
+    if (!ownsSlot) {
+        this.showToast('⛔ You cannot offer a slot that was not awarded to you.', 'error');
+        console.warn(`⛔ Swap ownership check failed: ${user.id} tried to offer ${mySlot.slotType} ${mySlot.startDate}→${mySlot.endDate} which is not in their awarded results.`);
+        return null;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const staffCategory = isMaint ? 'maintenance' : 'ops';
 
     const row = {
@@ -135,6 +154,24 @@ app.acceptSwapOffer = async function(requestId, theirSlot) {
         this.showToast('You cannot accept your own trade offer.', 'error');
         return false;
     }
+
+    // ── Ownership guard ──────────────────────────────────────────────────────
+    // Verify the slot the responder is offering actually belongs to them.
+    const isMaint = this.state.userType === 'maintenancestaff';
+    const resultsPool = isMaint ? (this.state.maintResults || []) : (this.state.results || []);
+    const ownsSlot = resultsPool.some(r =>
+        r.employeeId === user.id &&
+        r.slotType   === theirSlot.slotType &&
+        r.startDate  === theirSlot.startDate &&
+        r.endDate    === theirSlot.endDate &&
+        r.type       === 'Bid Awarded'
+    );
+    if (!ownsSlot) {
+        this.showToast('⛔ You cannot offer a slot that was not awarded to you.', 'error');
+        console.warn(`⛔ Accept-swap ownership check failed: ${user.id} tried to offer ${theirSlot.slotType} ${theirSlot.startDate}→${theirSlot.endDate}`);
+        return false;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     const updates = {
         responder_id: user.id,
