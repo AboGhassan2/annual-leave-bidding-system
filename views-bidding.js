@@ -1916,7 +1916,8 @@
                             <div>
                                 <p style="font-weight:600;font-size:0.85rem;">${slotLine(r.requester_slot_type.slice(-1), r.requester_start_date, r.requester_end_date)} — ${wants(r)}</p>
                                 <p style="font-size:0.75rem;color:#6b7280;">${r.target_id ? `Requested to ${esc(r.target_name || r.target_id)}` : 'Open offer'}${r.responder_name ? ` · Matched with ${esc(r.responder_name)}` : ''}</p>
-                                ${r.validation_notes ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">${esc(r.validation_notes)}</p>` : ''}
+                                ${r.validation_notes ? `<p style="font-size:0.72rem;color:#9ca3af;margin-top:4px;">📋 ${esc(r.validation_notes)}</p>` : ''}
+                                ${r.planner_notes && (r.status === 'denied_by_planner' || r.status === 'approved') ? `<p style="font-size:0.72rem;color:${r.status === 'denied_by_planner' ? '#991b1b' : '#065f46'};margin-top:4px;font-weight:600;">💬 Planner: ${esc(r.planner_notes)}</p>` : ''}
                             </div>
                             ${statusBadge(r.status)}
                         </div>
