@@ -596,3 +596,73 @@ app.denySwapRequest = async function(requestId, plannerNotes) {
     this.showToast('Trade denied.', 'success');
     return true;
 };
+
+// Re-applies all previously approved trades against the current results pool.
+// Useful when approved trades were not reflected in results due to a prior
+// sync bug (reference equality issue). Processes trades in chronological
+// order so chained trades (A→B→C) resolve correctly.
+app.reapplyAllApprovedTrades = async function() {
+    const log = document.getElementById('reapplyTradesLog');
+    if (log) log.innerHTML = '⏳ Processing...';
+
+    const approved = (this.state.swapRequests || [])
+        .filter(r => r.status === 'approved')
+        .sort((a, b) => new Date(a.resolved_at || 0) - new Date(b.resolved_at || 0));
+
+    if (approved.length === 0) {
+        if (log) log.innerHTML = 'ℹ️ No approved trades found.';
+        return;
+    }
+
+    const matches = (r, award) =>
+        r.employeeId === award.employeeId &&
+        r.slotType   === award.slotType &&
+        r.startDate  === award.startDate &&
+        r.endDate    === award.endDate;
+
+    let applied = 0, skipped = 0, lines = [];
+
+    for (const req of approved) {
+        const isMaint = req.staff_category === 'maintenance';
+        const pool = isMaint ? (this.state.maintResults || []) : (this.state.results || []);
+        const update = this._computeSwapResultUpdate(req, pool);
+
+        if (!update.ok) {
+            skipped++;
+            lines.push(`⚠️ Skipped: ${req.requester_name} ⇄ ${req.responder_name} — ${update.reason}`);
+            continue;
+        }
+
+        // Check if the swap is already reflected — if both employees already
+        // hold each other's slots, skip to avoid double-swapping.
+        const reqHasNewSlot = pool.some(r =>
+            r.employeeId === req.requester_id &&
+            r.slotType   === req.responder_slot_type &&
+            r.startDate  === req.responder_start_date &&
+            r.endDate    === req.responder_end_date
+        );
+        if (reqHasNewSlot) {
+            lines.push(`✅ Already applied: ${req.requester_name} ⇄ ${req.responder_name}`);
+            continue;
+        }
+
+        const newPool = pool.map(r => {
+            if (matches(r, update.requesterAward)) return update.newRequesterAward;
+            if (matches(r, update.responderAward)) return update.newResponderAward;
+            return r;
+        });
+        if (isMaint) this.state.maintResults = newPool; else this.state.results = newPool;
+        applied++;
+        lines.push(`🔁 Applied: ${req.requester_name} ⇄ ${req.responder_name}`);
+    }
+
+    if (applied > 0) {
+        await this.saveConfigToSupabase();
+        lines.push(`<strong>✅ Done — ${applied} trade(s) applied and saved.</strong>`);
+    } else {
+        lines.push(`<strong>ℹ️ No changes needed — all trades were already reflected.</strong>`);
+    }
+
+    if (log) log.innerHTML = lines.join('<br>');
+    if (applied > 0) this.showToast(`${applied} approved trade(s) re-applied and saved.`, 'success');
+};
