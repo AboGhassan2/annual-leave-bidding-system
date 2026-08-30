@@ -1910,7 +1910,43 @@
                 const slotLine = (letter, start, end) => `Slot ${esc(letter)} · ${esc(start)} → ${esc(end)}`;
                 const wants = (r) => `<span style="color:#4338ca;">wants Slot ${esc(String(r.desired_slot_type || '').slice(-1))} in ${esc(r.desired_month || '(unspecified block)')}</span>`;
 
-                const myOffersHtml = mine.length === 0 ? '<p class="text-sm text-gray-500">You have not made any trade offers.</p>' : mine.map(r => `
+                // Approved trades where the user was either the requester or the responder
+                const approvedTrades = all.filter(r =>
+                    r.status === 'approved' &&
+                    (r.requester_id === user.id || r.responder_id === user.id)
+                );
+
+                const approvedTradesHtml = approvedTrades.length === 0 ? '' : `
+                    <h4 style="font-size:0.85rem;font-weight:700;margin:16px 0 8px;">✅ Recently Approved Trades</h4>
+                    ${approvedTrades.map(r => {
+                        const iAmRequester = r.requester_id === user.id;
+                        const iGave    = iAmRequester
+                            ? `Slot ${esc(String(r.requester_slot_type || '').slice(-1))} · ${esc(r.requester_start_date)} → ${esc(r.requester_end_date)}`
+                            : `Slot ${esc(String(r.responder_slot_type || '').slice(-1))} · ${esc(r.responder_start_date)} → ${esc(r.responder_end_date)}`;
+                        const iReceived = iAmRequester
+                            ? `Slot ${esc(String(r.responder_slot_type || '').slice(-1))} · ${esc(r.responder_start_date)} → ${esc(r.responder_end_date)}`
+                            : `Slot ${esc(String(r.requester_slot_type || '').slice(-1))} · ${esc(r.requester_start_date)} → ${esc(r.requester_end_date)}`;
+                        const tradedWith = iAmRequester
+                            ? (r.responder_name || r.responder_id || '—')
+                            : (r.requester_name || r.requester_id || '—');
+                        return `
+                        <div style="border:1.5px solid #6ee7b7;background:#f0fdf4;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                                <span style="font-weight:700;font-size:0.82rem;color:#065f46;">✅ Approved Trade</span>
+                                ${r.planner_notes ? `<span style="font-size:0.7rem;color:#065f46;">💬 ${esc(r.planner_notes)}</span>` : ''}
+                            </div>
+                            <p style="font-size:0.82rem;color:#374151;margin-bottom:2px;">🔁 Traded with <strong>${esc(tradedWith)}</strong></p>
+                            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:1px;">↑ You gave: <span style="color:#b45309;font-weight:600;">${iGave}</span></p>
+                            <p style="font-size:0.8rem;color:#6b7280;">↓ You received: <span style="color:#065f46;font-weight:600;">${iReceived}</span></p>
+                        </div>`;
+                    }).join('')}
+                `;
+
+                const myOffersHtml = mine.filter(r => r.status !== 'approved').length === 0 && mine.some(r => r.status === 'approved')
+                    ? '<p class="text-sm text-gray-500">No pending trade offers.</p>'
+                    : mine.filter(r => r.status !== 'approved').length === 0
+                        ? '<p class="text-sm text-gray-500">You have not made any trade offers.</p>'
+                        : mine.filter(r => r.status !== 'approved').map(r => `
                     <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:8px;">
                         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                             <div>
@@ -1961,6 +1997,7 @@
                                 🔒 The trading window is currently closed. New offers cannot be created or accepted — you can still reject or withdraw existing ones.
                             </div>
                         ` : ''}
+                        ${approvedTradesHtml}
                         <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Your Offers</h4>
                         ${myOffersHtml}
                         ${sentToMeHtml}
