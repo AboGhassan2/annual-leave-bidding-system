@@ -531,6 +531,7 @@
                         ];
                     }
                     this._liveUpdateAdminPanel();
+                    this._lastRealtimeEvent = Date.now();
                     this._setAdminStatus('live');
                 };
 
@@ -665,11 +666,15 @@
             app._startAdminLive = function() {
                 this.stopAdminPolling();
                 this.startAdminRealtime();
-                // Fallback poll every 30s while realtime is active — only fires if
-                // realtime events stop arriving for any reason (network drop, server hiccup).
+                // Fallback poll every 30s — only fires if realtime has been silent
+                // for more than 60 seconds (network drop, server hiccup, etc.)
                 if (this._adminFallbackTimer) clearInterval(this._adminFallbackTimer);
                 this._adminFallbackTimer = setInterval(() => {
-                    if (this.state.activeView === 'admin' && this.state.userType === 'planner') {
+                    const realtimeSilentFor = Date.now() - (this._lastRealtimeEvent || 0);
+                    const realtimeDown = realtimeSilentFor > 60000;
+                    if (realtimeDown && this.state.activeView === 'admin' && this.state.userType === 'planner') {
+                        console.warn('⚠️ Realtime silent for >60s — falling back to poll');
+                        this._setAdminStatus('reconnecting');
                         this.refreshBidsFromSupabase(true);
                     }
                 }, 30000);
@@ -1757,9 +1762,26 @@
                 `).join('');
 
                 const approvedHtml = approved.length === 0 ? '<p class="text-sm text-gray-500">None yet.</p>' : approved.map(r => `
-                    <div style="border:1px solid #bbf7d0;border-radius:10px;padding:10px 14px;margin-bottom:6px;font-size:0.78rem;">
-                        <p style="font-weight:600;">${esc(r.requester_name)} ⇄ ${esc(r.responder_name)}</p>
-                        <p style="color:#6b7280;margin-top:2px;">Approved ${r.resolved_at ? new Date(r.resolved_at).toLocaleString() : ''}${r.planner_notes ? ' — ' + esc(r.planner_notes) : ''}</p>
+                    <div style="border:1.5px solid #bbf7d0;background:#f0fdf4;border-radius:10px;padding:12px 14px;margin-bottom:8px;font-size:0.82rem;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;">
+                            <p style="font-weight:700;color:#065f46;">✅ ${esc(r.requester_name)} ⇄ ${esc(r.responder_name || '—')}</p>
+                            <span style="font-size:0.7rem;color:#6b7280;">${r.resolved_at ? new Date(r.resolved_at).toLocaleString() : ''}</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+                            <div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:8px 10px;">
+                                <p style="font-size:0.7rem;color:#6b7280;margin-bottom:2px;">📤 ${esc(r.requester_name)} gave</p>
+                                <p style="font-weight:600;color:#b45309;">Slot ${esc(String(r.requester_slot_type || '').slice(-1))}</p>
+                                <p style="color:#374151;">${esc(r.requester_start_date)} → ${esc(r.requester_end_date)}</p>
+                                <p style="font-size:0.7rem;color:#6b7280;">${esc(r.requester_month || '')} · ${esc(r.requester_department || '')}</p>
+                            </div>
+                            <div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:8px 10px;">
+                                <p style="font-size:0.7rem;color:#6b7280;margin-bottom:2px;">📤 ${esc(r.responder_name || '—')} gave</p>
+                                <p style="font-weight:600;color:#b45309;">Slot ${esc(String(r.responder_slot_type || '').slice(-1))}</p>
+                                <p style="color:#374151;">${esc(r.responder_start_date || '—')} → ${esc(r.responder_end_date || '—')}</p>
+                                <p style="font-size:0.7rem;color:#6b7280;">${esc(r.responder_month || '')} · ${esc(r.responder_department || '')}</p>
+                            </div>
+                        </div>
+                        ${r.planner_notes ? `<p style="font-size:0.75rem;color:#065f46;font-weight:600;">💬 Note: ${esc(r.planner_notes)}</p>` : ''}
                     </div>
                 `).join('');
 
