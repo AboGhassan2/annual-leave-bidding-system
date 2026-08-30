@@ -1812,6 +1812,16 @@
                         </div>
 
                         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
+                            <h3 class="text-base font-bold text-gray-800 mb-1">🔁 Re-apply Approved Trades</h3>
+                            <p class="text-xs text-gray-500 mb-3">If previously approved trades are not reflected in staff results (e.g. due to a sync issue), use this to re-apply all approved trades against the current results and save.</p>
+                            <button onclick="app.reapplyAllApprovedTrades()"
+                                style="padding:8px 18px;background:#065f46;color:#fff;border:none;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                                🔁 Re-apply All Approved Trades
+                            </button>
+                            <div id="reapplyTradesLog" style="margin-top:10px;font-size:0.78rem;color:#374151;"></div>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-md p-5 mb-6">
                             <h3 class="text-lg font-bold text-gray-800 mb-3">Awaiting Your Approval (${pending.length})</h3>
                             ${pendingHtml}
                         </div>
