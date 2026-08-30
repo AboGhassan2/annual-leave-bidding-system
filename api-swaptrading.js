@@ -511,10 +511,18 @@ app.approveSwapRequest = async function(requestId, plannerNotes) {
         return false;
     }
 
-    // Replace the two records in place, in the correct pool.
+    // Replace the two records by value-matching (employeeId + slotType + dates),
+    // NOT by object reference (=== fails if state.results was re-assigned by a
+    // background poll between when resultsPool was captured and when map runs).
+    const matches = (r, award) =>
+        r.employeeId === award.employeeId &&
+        r.slotType   === award.slotType &&
+        r.startDate  === award.startDate &&
+        r.endDate    === award.endDate;
+
     const newPool = resultsPool.map(r => {
-        if (r === update.requesterAward) return update.newRequesterAward;
-        if (r === update.responderAward) return update.newResponderAward;
+        if (matches(r, update.requesterAward)) return update.newRequesterAward;
+        if (matches(r, update.responderAward)) return update.newResponderAward;
         return r;
     });
     if (isMaint) this.state.maintResults = newPool; else this.state.results = newPool;
