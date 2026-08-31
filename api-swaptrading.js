@@ -502,6 +502,26 @@ app.approveSwapRequest = async function(requestId, plannerNotes) {
         return false;
     }
 
+    // ── Trade limit enforcement ───────────────────────────────────────────────
+    const maxTrades = this.state.maxApprovedTrades ?? 2;
+    if (maxTrades > 0) {
+        const allApproved = (this.state.swapRequests || []).filter(r => r.status === 'approved');
+        const countFor = (empId) => allApproved.filter(r =>
+            r.requester_id === empId || r.responder_id === empId
+        ).length;
+        const requesterCount = countFor(req.requester_id);
+        const responderCount = countFor(req.responder_id);
+        if (requesterCount >= maxTrades) {
+            this.showToast(`⛔ ${req.requester_name} has already reached the approved trade limit (${maxTrades}).`, 'error');
+            return false;
+        }
+        if (responderCount >= maxTrades) {
+            this.showToast(`⛔ ${req.responder_name} has already reached the approved trade limit (${maxTrades}).`, 'error');
+            return false;
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const isMaint = req.staff_category === 'maintenance';
     const resultsPool = isMaint ? (this.state.maintResults || []) : (this.state.results || []);
     const update = this._computeSwapResultUpdate(req, resultsPool);
