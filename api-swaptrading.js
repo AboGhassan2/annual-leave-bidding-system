@@ -82,7 +82,7 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targ
         r.slotType   === mySlot.slotType &&
         r.startDate  === mySlot.startDate &&
         r.endDate    === mySlot.endDate &&
-        r.type       === 'Bid Awarded'
+        (r.type === 'Bid Awarded' || r.type === 'Auto-Assigned')
     );
     if (!ownsSlot) {
         this.showToast('⛔ You cannot offer a slot that was not awarded to you.', 'error');
@@ -164,7 +164,7 @@ app.acceptSwapOffer = async function(requestId, theirSlot) {
         r.slotType   === theirSlot.slotType &&
         r.startDate  === theirSlot.startDate &&
         r.endDate    === theirSlot.endDate &&
-        r.type       === 'Bid Awarded'
+        (r.type === 'Bid Awarded' || r.type === 'Auto-Assigned')
     );
     if (!ownsSlot) {
         this.showToast('⛔ You cannot offer a slot that was not awarded to you.', 'error');
