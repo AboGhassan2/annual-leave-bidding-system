@@ -1812,13 +1812,18 @@
                         </div>
 
                         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
-                            <h3 class="text-base font-bold text-gray-800 mb-1">🔁 Re-apply Approved Trades</h3>
-                            <p class="text-xs text-gray-500 mb-3">If previously approved trades are not reflected in staff results (e.g. due to a sync issue), use this to re-apply all approved trades against the current results and save.</p>
-                            <button onclick="app.reapplyAllApprovedTrades()"
-                                style="padding:8px 18px;background:#065f46;color:#fff;border:none;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">
-                                🔁 Re-apply All Approved Trades
-                            </button>
-                            <div id="reapplyTradesLog" style="margin-top:10px;font-size:0.78rem;color:#374151;"></div>
+                            <h3 class="text-base font-bold text-gray-800 mb-1">Approved Trade Limit Per Staff</h3>
+                            <p class="text-xs text-gray-500 mb-3">Maximum number of trades that can be approved for any single staff member. Once a staff member reaches this limit, the planner cannot approve further trades involving them. Set to 0 for no limit.</p>
+                            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                                <input type="number" min="0" max="10"
+                                    value="${this.state.maxApprovedTrades ?? 2}"
+                                    onchange="app.state.maxApprovedTrades = parseInt(this.value) || 0; app.saveConfigToSupabase();"
+                                    style="width:80px;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.95rem;font-weight:700;text-align:center;" />
+                                <span style="font-size:0.82rem;color:#374151;">approved trade(s) per staff member</span>
+                                <span style="background:#f0fdf4;color:#065f46;border:1px solid #bbf7d0;padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:700;">
+                                    Currently: ${this.state.maxApprovedTrades ?? 2} trade(s) max
+                                </span>
+                            </div>
                         </div>
 
                         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
