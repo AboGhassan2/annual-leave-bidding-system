@@ -246,7 +246,8 @@
                         this.state.maintResults     = config.maint_results || [];
                         this.state.isMaintProcessed = config.is_maint_processed || false;
                         this.state.results = config.results || [];
-                        this.state.tradingDeadline = config.trading_deadline || '';
+                        this.state.tradingDeadline    = config.trading_deadline || '';
+                        this.state.maxApprovedTrades  = config.max_approved_trades ?? 2;
                         if (config.ejs_service)  { this.state.ejsServiceId  = config.ejs_service;  localStorage.setItem('ejs_service',        config.ejs_service); }
                         if (config.ejs_template) { this.state.ejsTemplateId = config.ejs_template; localStorage.setItem('ejs_template',       config.ejs_template); }
                         if (config.ejs_pubkey)   { this.state.ejsPublicKey  = config.ejs_pubkey;   localStorage.setItem('ejs_pubkey',         config.ejs_pubkey); }
@@ -524,6 +525,10 @@
                 }
                 if (!silent) this.updateSystemStatus('Refreshing bids...');
                 try {
+                    // Only fetch columns actually used by _mapRemoteBid — avoids pulling
+                    // large unused fields on every poll cycle
+                    const BID_COLUMNS = 'id,tenant_id,employee_id,employee_name,slot_type,start_date,end_date,duration,priority,status,notes,submitted_at,department,rank,seniority';
+
                     // Helper: paginate-fetch all rows from a given table
                     const fetchAllFromTable = async (tableName) => {
                         let rows = [], from = 0;
@@ -531,7 +536,7 @@
                         while (true) {
                             const { data: batch, error } = await this.supabase
                                 .from(tableName)
-                                .select('*')
+                                .select(BID_COLUMNS)
                                 .eq('tenant_id', this._tid())
                                 .range(from, from + batchSize - 1);
                             if (error) { console.error(`❌ Bids fetch error [${tableName}]:`, error.message); break; }
@@ -824,7 +829,8 @@
                         maint_results: this.state.maintResults || [],
                         is_maint_processed: this.state.isMaintProcessed || false,
                         results: this.state.results,
-                        trading_deadline: this.state.tradingDeadline || '',
+                        trading_deadline:    this.state.tradingDeadline || '',
+                        max_approved_trades: this.state.maxApprovedTrades ?? 2,
                         last_updated: new Date().toISOString()
                     };
                     // Try UPDATE first (row already exists for this tenant)
