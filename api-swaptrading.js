@@ -110,6 +110,24 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targ
         status: targetId ? 'pending' : 'open',
     };
 
+    // ── Duplicate guard ───────────────────────────────────────────────────────
+    // Prevents inserting a new request if an identical active one already
+    // exists — covers accidental double-taps on mobile or slow-network re-submits.
+    const activeStatuses = ['open', 'pending', 'accepted', 'validated'];
+    const duplicate = (this.state.swapRequests || []).find(r =>
+        r.requester_id         === user.id &&
+        r.requester_slot_type  === mySlot.slotType &&
+        r.requester_start_date === mySlot.startDate &&
+        r.requester_end_date   === mySlot.endDate &&
+        r.desired_slot_type    === desiredSlotType &&
+        activeStatuses.includes(r.status)
+    );
+    if (duplicate) {
+        this.showToast('⚠️ You already have an active trade offer for this slot.', 'error');
+        return null;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     try {
         const { data, error } = await this.supabase
             .from('leave_swap_requests')
