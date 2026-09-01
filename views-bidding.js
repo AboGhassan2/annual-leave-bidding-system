@@ -2044,9 +2044,15 @@
             app.submitTradeOffer = async function() {
                 const slot = this._tradeOfferSlot;
                 if (!slot) return;
+
+                // Disable button immediately to prevent double-tap on mobile
+                const btn = document.getElementById('postOfferBtn');
+                if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
+
                 const rawValue = document.getElementById('tradeOfferDesiredSlot').value;
                 if (!rawValue) {
                     this.showToast('Please select which slot you want in return.', 'error');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Post Offer'; }
                     return;
                 }
                 const [desiredLetter, desiredMonth] = rawValue.split('|');
@@ -2059,6 +2065,7 @@
                     const targetUser = pool.find(e => e.id === targetId);
                     if (!targetUser) {
                         this.showToast('No staff member found with that ID.', 'error');
+                        if (btn) { btn.disabled = false; btn.textContent = 'Post Offer'; }
                         return;
                     }
                     targetName = targetUser.name;
@@ -2070,6 +2077,8 @@
                 if (result) {
                     this.closeTradeOfferModal();
                     this.renderMyResultsView();
+                } else {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Post Offer'; }
                 }
             };
 
