@@ -488,23 +488,23 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     
-    <script src="config.js"></script>
-    <script src="app.js"></script>
-    <script src="utils.js"></script>
-    <script src="allocation.js"></script>
-    <script src="api-supabase.js"></script>
-    <script src="api-email.js"></script>
-    <script src="api-swaptrading.js"></script>
-    <script src="api-kpi.js"></script>
-    <script src="views-kpi.js"></script>
-    <script src="views-auth.js"></script>
-    <script src="views-configure.js"></script>
-    <script src="views-oncall.js"></script>
-    <script src="views-users.js"></script>
-    <script src="views-bidding.js"></script>
-    <script src="views-admin.js"></script>
-    <script src="views-dashboard.js"></script>
-    <script src="views-reports.js"></script>
+    <script defer src="config.js"></script>
+    <script defer src="app.js"></script>
+    <script defer src="utils.js"></script>
+    <script defer src="allocation.js"></script>
+    <script defer src="api-supabase.js"></script>
+    <script defer src="api-email.js"></script>
+    <script defer src="api-swaptrading.js"></script>
+    <script defer src="api-kpi.js"></script>
+    <script defer src="views-kpi.js"></script>
+    <script defer src="views-auth.js"></script>
+    <script defer src="views-configure.js"></script>
+    <script defer src="views-oncall.js"></script>
+    <script defer src="views-users.js"></script>
+    <script defer src="views-bidding.js"></script>
+    <script defer src="views-admin.js"></script>
+    <script defer src="views-dashboard.js"></script>
+    <script defer src="views-reports.js"></script>
     <!-- Email Notification Modal -->
     <div id="emailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:16px;padding:32px;max-width:500px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -638,7 +638,7 @@
             </p>
             <div style="display:flex;gap:10px;justify-content:flex-end;">
                 <button onclick="app.closeTradeOfferModal()" style="padding:9px 18px;border-radius:8px;font-weight:600;font-size:0.85rem;border:1.5px solid #e5e7eb;background:#fff;color:#374151;cursor:pointer;">Cancel</button>
-                <button onclick="app.submitTradeOffer()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#4338ca;color:#fff;cursor:pointer;">Post Offer</button>
+                <button id="postOfferBtn" onclick="app.submitTradeOffer()" style="padding:9px 18px;border-radius:8px;font-weight:700;font-size:0.85rem;border:none;background:#4338ca;color:#fff;cursor:pointer;">Post Offer</button>
             </div>
         </div>
     </div>
