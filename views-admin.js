@@ -546,6 +546,12 @@
                     .on('postgres_changes',
                         { event: '*', schema: 'public', table: 'corporate_leave_request' },
                         payload => applyChange(payload, 'corporate_leave_request'))
+                    .on('postgres_changes',
+                        { event: '*', schema: 'public', table: 'leave_swap_requests' },
+                        async () => {
+                            await this.loadSwapRequests();
+                            if (this.state.activeView === 'leaveTrades') this.renderLeaveTradesView();
+                        })
                     .subscribe(status => {
                         console.log('🔌 Admin Realtime status:', status);
                         if (status === 'SUBSCRIBED') this._setAdminStatus('live');
@@ -1724,12 +1730,18 @@
             // award records) — this file is purely the view layer on top of that.
             // ════════════════════════════════════════════════════════════════════
 
-            app.renderLeaveTradesView = function() {
+            app.renderLeaveTradesView = async function() {
                 const content = document.getElementById('contentArea');
+                // Always reload fresh from Supabase so previously approved trades
+                // that may not be in local state are included.
+                if (this.supabase) await this.loadSwapRequests();
                 const all = this.state.swapRequests || [];
                 const pending = all.filter(r => r.status === 'validated');
                 const rejected = all.filter(r => r.status === 'rejected_validation').slice(0, 20);
-                const approved = all.filter(r => r.status === 'approved').slice(0, 20);
+                const approvedAll = all.filter(r => r.status === 'approved')
+                    .sort((a, b) => new Date(b.resolved_at || 0) - new Date(a.resolved_at || 0));
+                const approvedLimit = this._approvedTradesLimit || 20;
+                const approved = approvedAll.slice(0, approvedLimit);
                 const esc = this._escHtml.bind(this);
 
                 const slotLine = (letter, month, start, end) => `Slot ${esc(letter)} · ${esc(month || '')} · ${esc(start)} → ${esc(end)}`;
@@ -1838,8 +1850,13 @@
                         </div>
 
                         <div class="bg-white rounded-xl shadow-md p-5">
-                            <h3 class="text-base font-bold text-gray-800 mb-3">Recently Approved</h3>
+                            <h3 class="text-base font-bold text-gray-800 mb-3">Recently Approved (${approvedAll.length} total)</h3>
                             ${approvedHtml}
+                            ${approvedAll.length > approvedLimit ? `
+                                <button onclick="app._approvedTradesLimit = ${approvedLimit + 20}; app.renderLeaveTradesView();"
+                                    style="margin-top:8px;width:100%;padding:8px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;font-size:0.82rem;color:#065f46;font-weight:600;cursor:pointer;">
+                                    ⬇ Show More (${approvedAll.length - approvedLimit} remaining)
+                                </button>` : ''}
                         </div>
                     </div>
                 `;
