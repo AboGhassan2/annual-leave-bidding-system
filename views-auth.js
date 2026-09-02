@@ -106,7 +106,7 @@
                         document.getElementById('plannerNav').classList.remove('hidden');
                         document.getElementById('plannerSidebar').classList.remove('hidden');
                         document.getElementById('headerSaveBtn').classList.remove('hidden');
-                        document.getElementById('currentUserName').textContent = 'Planner Admin';
+                        document.getElementById('currentUserName').textContent = 'Planner Admin'; document.getElementById('currentUserPosition').textContent = '';
                         document.getElementById('userTypeBadge').textContent = 'Planner';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-purple-100 text-purple-800';
                         
@@ -157,7 +157,7 @@
                     const ui = document.getElementById('userInfo');
                     ui.style.display = 'flex'; ui.classList.remove('hidden');
                     document.getElementById('goldenCommandNav').classList.remove('hidden');
-                    document.getElementById('currentUserName').textContent = gcUser.name;
+                    document.getElementById('currentUserName').textContent = gcUser.name; document.getElementById('currentUserPosition').textContent = gcUser.position ? '· ' + gcUser.position : '';
                     document.getElementById('userTypeBadge').textContent = '⭐ Golden Command';
                     document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800';
                     
@@ -212,7 +212,7 @@
                         uiEl.style.display = 'flex'; uiEl.classList.remove('hidden');
                         document.getElementById(cfg.nav).classList.remove('hidden');
                         document.getElementById('currentUserName').textContent = user.name;
-                        document.getElementById('userTypeBadge').textContent = cfg.badge;
+                        document.getElementById('currentUserPosition').textContent = user.position ? '· ' + user.position : '';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded ' + cfg.badgeClass;
                         // Close the header modal (kpi_director has none — it logs
                         // in via a full grid card, not a modal, so cfg.modal is
@@ -272,7 +272,7 @@
                     const csUi = document.getElementById('userInfo');
                     csUi.style.display = 'flex'; csUi.classList.remove('hidden');
                     document.getElementById('corporateStaffNav').classList.remove('hidden');
-                    document.getElementById('currentUserName').textContent = csUser.name;
+                    document.getElementById('currentUserName').textContent = csUser.name; document.getElementById('currentUserPosition').textContent = csUser.position ? '· ' + csUser.position : '';
                     document.getElementById('userTypeBadge').textContent = '🏢 Corporate Staff';
                     document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
 
@@ -321,7 +321,7 @@
                     const maintUi = document.getElementById('userInfo');
                     maintUi.style.display = 'flex'; maintUi.classList.remove('hidden');
                     document.getElementById('employeeNav').classList.remove('hidden');
-                    document.getElementById('currentUserName').textContent = maintUser.name;
+                    document.getElementById('currentUserName').textContent = maintUser.name; document.getElementById('currentUserPosition').textContent = maintUser.position ? '· ' + maintUser.position : '';
                     document.getElementById('userTypeBadge').textContent = '🔧 Maintenance Staff';
                     document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-red-100 text-red-800';
 
@@ -359,7 +359,7 @@
                         const ui2 = document.getElementById('userInfo');
                         ui2.style.display = 'flex'; ui2.classList.remove('hidden');
                         document.getElementById('employeeNav').classList.remove('hidden');
-                        document.getElementById('currentUserName').textContent = employee.name;
+                        document.getElementById('currentUserName').textContent = employee.name; document.getElementById('currentUserPosition').textContent = employee.position ? '· ' + employee.position : '';
                         document.getElementById('userTypeBadge').textContent = 'Operation Staff';
                         document.getElementById('userTypeBadge').className = 'ml-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-800';
                         
@@ -412,6 +412,8 @@
                 this.state.activeView = 'login';
                 
                 document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('currentUserName').textContent = '';
+                document.getElementById('currentUserPosition').textContent = '';
                 document.getElementById('plannerSidebar').classList.add('hidden');
                 document.getElementById('headerSaveBtn').classList.add('hidden');
                 document.getElementById('plannerNav').classList.add('hidden');
