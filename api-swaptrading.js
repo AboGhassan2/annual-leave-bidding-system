@@ -110,6 +110,25 @@ app.createSwapOffer = async function(mySlot, desiredSlotType, desiredMonth, targ
         status: targetId ? 'pending' : 'open',
     };
 
+    // ── Slot-already-traded guard ─────────────────────────────────────────────
+    const alreadyTradedAway = (this.state.swapRequests || []).some(r =>
+        r.status === 'approved' && (
+            (r.requester_id === user.id &&
+             r.requester_slot_type  === mySlot.slotType &&
+             r.requester_start_date === mySlot.startDate &&
+             r.requester_end_date   === mySlot.endDate) ||
+            (r.responder_id === user.id &&
+             r.responder_slot_type  === mySlot.slotType &&
+             r.responder_start_date === mySlot.startDate &&
+             r.responder_end_date   === mySlot.endDate)
+        )
+    );
+    if (alreadyTradedAway) {
+        this.showToast('⛔ This slot has already been traded away in a previous approved trade.', 'error');
+        return null;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // ── Duplicate guard ───────────────────────────────────────────────────────
     // Prevents inserting a new request if an identical active one already
     // exists — covers accidental double-taps on mobile or slow-network re-submits.
@@ -520,7 +539,34 @@ app.approveSwapRequest = async function(requestId, plannerNotes) {
         return false;
     }
 
-    // ── Trade limit enforcement ───────────────────────────────────────────────
+    // ── Slot-already-traded guard ─────────────────────────────────────────────
+    // A slot can only be traded once. Check that neither person's offered slot
+    // has already been given away in a previous approved trade.
+    const alreadyApproved = (this.state.swapRequests || []).filter(r =>
+        r.status === 'approved' && r.id !== requestId
+    );
+
+    const slotAlreadyTraded = (empId, slotType, startDate, endDate) =>
+        alreadyApproved.some(r =>
+            (r.requester_id === empId &&
+             r.requester_slot_type  === slotType &&
+             r.requester_start_date === startDate &&
+             r.requester_end_date   === endDate) ||
+            (r.responder_id === empId &&
+             r.responder_slot_type  === slotType &&
+             r.responder_start_date === startDate &&
+             r.responder_end_date   === endDate)
+        );
+
+    if (slotAlreadyTraded(req.requester_id, req.requester_slot_type, req.requester_start_date, req.requester_end_date)) {
+        this.showToast(`⛔ ${req.requester_name}'s slot (${req.requester_slot_type} ${req.requester_start_date}) has already been traded away in a previous approved trade.`, 'error');
+        return false;
+    }
+    if (slotAlreadyTraded(req.responder_id, req.responder_slot_type, req.responder_start_date, req.responder_end_date)) {
+        this.showToast(`⛔ ${req.responder_name}'s slot (${req.responder_slot_type} ${req.responder_start_date}) has already been traded away in a previous approved trade.`, 'error');
+        return false;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
     const maxTrades = this.state.maxApprovedTrades ?? 2;
     if (maxTrades > 0) {
         const allApproved = (this.state.swapRequests || []).filter(r => r.status === 'approved');
