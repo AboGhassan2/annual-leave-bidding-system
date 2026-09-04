@@ -1696,9 +1696,23 @@
                 this.writeAuditLog('BID_REMOVED', { employee_id: employeeId, slot_type: slotType, start_date: startDate });
             };
 
-            app.renderMyResultsView = function() {
+            app.renderMyResultsView = async function() {
                 const content = document.getElementById('contentArea');
                 const user = this.state.verifiedEmployee;
+
+                // Always reload config (results) and swap requests fresh from Supabase
+                // so the ownership check and alreadyTradedAway guard work against
+                // current data — not a stale in-memory snapshot from login time.
+                if (this.supabase) {
+                    try {
+                        await Promise.all([
+                            this.loadFromSupabase ? this.loadFromSupabase() : Promise.resolve(),
+                            this.loadSwapRequests ? this.loadSwapRequests() : Promise.resolve()
+                        ]);
+                    } catch(e) {
+                        console.warn('⚠️ Could not refresh results from Supabase:', e.message);
+                    }
+                }
                 // Route to the correct results store based on user type — Maintenance
                 // staff's awarded slots live entirely in maintResults/isMaintProcessed,
                 // completely separate from Ops's results/isProcessed. Without this check,
@@ -2146,9 +2160,11 @@
                 if (ok) this.renderMyResultsView();
             };
 
-            app.renderResultsView = function() {
+            app.renderResultsView = function(searchQuery) {
                 const content = document.getElementById('contentArea');
-                
+                const query = (searchQuery || this._resultsSearchQuery || '').toLowerCase().trim();
+                this._resultsSearchQuery = query;
+
                 // Group results by employee
                 const employeeResults = {};
                 this.state.results.forEach(result => {
@@ -2157,22 +2173,50 @@
                     }
                     employeeResults[result.employeeId].push(result);
                 });
-                
+
+                // Filter by search query
+                const filteredEntries = Object.entries(employeeResults).filter(([empId, slots]) => {
+                    if (!query) return true;
+                    const employee = this.state.employees.find(e => e.id === empId);
+                    const name = (employee?.name || '').toLowerCase();
+                    const id = empId.toLowerCase();
+                    return name.includes(query) || id.includes(query);
+                });
+
                 content.innerHTML = `
                     <div class="max-w-7xl mx-auto">
                         <div class="bg-white rounded-xl shadow-xl p-6">
-                            <h2 class="text-2xl font-bold mb-6">Leave Assignments for ${this.state.biddingYear}</h2>
-                            <p class="text-gray-600 mb-6">
-                                Each employee receives exactly 2 slots. Senior employees (5+ years) get 35 days total,
-                                others get 30 days total.
+                            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+                                <h2 class="text-2xl font-bold">Leave Assignments for ${this.state.biddingYear}</h2>
+                                <div style="display:flex;align-items:center;gap:8px;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:10px;padding:6px 12px;min-width:220px;">
+                                    <span style="font-size:1rem;">🔍</span>
+                                    <input
+                                        id="resultsSearchInput"
+                                        type="text"
+                                        placeholder="Search by name or ID..."
+                                        value="${query}"
+                                        oninput="app.renderResultsView(this.value)"
+                                        style="border:none;outline:none;background:transparent;font-size:0.85rem;width:100%;color:#111827;"
+                                    />
+                                    ${query ? `<span onclick="app.renderResultsView('')" style="cursor:pointer;color:#9ca3af;font-size:1rem;">✕</span>` : ''}
+                                </div>
+                            </div>
+                            <p class="text-gray-600 mb-4 text-sm">
+                                ${filteredEntries.length} of ${Object.keys(employeeResults).length} staff shown
+                                ${query ? `— filtered by "<strong>${query}</strong>"` : ''}
                             </p>
-                            
+
                             ${this.state.results.length === 0 ? `
                                 <div class="text-center py-8">
                                     <p class="text-gray-600">No results yet. Process bids first.</p>
                                     <button onclick="app.setActiveView('admin')" class="mt-4 px-4 py-2 rounded-lg" style="background:#3b82f6; color:#ffffff;">
                                         Go to Admin Panel
                                     </button>
+                                </div>
+                            ` : filteredEntries.length === 0 ? `
+                                <div class="text-center py-8">
+                                    <p class="text-gray-500">No staff found matching "<strong>${query}</strong>".</p>
+                                    <button onclick="app.renderResultsView('')" class="mt-3 px-4 py-2 rounded-lg text-sm" style="background:#f3f4f6;border:1px solid #e5e7eb;">Clear Search</button>
                                 </div>
                             ` : `
                                 <div class="overflow-x-auto">
@@ -2190,7 +2234,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            ${Object.entries(employeeResults).map(([empId, slots]) => {
+                                            ${filteredEntries.map(([empId, slots]) => {
                                                 const employee = this.state.employees.find(e => e.id === empId);
                                                 const slot1 = slots.find(s => s.slotOrder === 1);
                                                 const slot2 = slots.find(s => s.slotOrder === 2);
