@@ -2195,7 +2195,7 @@
                                         type="text"
                                         placeholder="Search by name or ID..."
                                         value="${query}"
-                                        oninput="app.renderResultsView(this.value)"
+                                        oninput="clearTimeout(app._resultsSearchTimer); app._resultsSearchTimer = setTimeout(() => app.renderResultsView(document.getElementById('resultsSearchInput')?.value), 300)"
                                         style="border:none;outline:none;background:transparent;font-size:0.85rem;width:100%;color:#111827;"
                                     />
                                     ${query ? `<span onclick="app.renderResultsView('')" style="cursor:pointer;color:#9ca3af;font-size:1rem;">✕</span>` : ''}
@@ -2299,5 +2299,11 @@
                         </div>
                     </div>
                 `;
+
+                // Restore focus and cursor to search box after re-render
+                if (query) {
+                    const input = document.getElementById('resultsSearchInput');
+                    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+                }
             };
 
