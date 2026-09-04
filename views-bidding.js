@@ -2195,7 +2195,7 @@
                                         type="text"
                                         placeholder="Search by name or ID..."
                                         value="${query}"
-                                        oninput="clearTimeout(app._resultsSearchTimer); app._resultsSearchTimer = setTimeout(() => app.renderResultsView(document.getElementById('resultsSearchInput')?.value), 300)"
+                                        oninput="clearTimeout(app._resultsSearchTimer); const v = document.getElementById('resultsSearchInput')?.value || ''; if (!v) { app._resultsSearchQuery = ''; app.renderResultsView(''); } else { app._resultsSearchTimer = setTimeout(() => app.renderResultsView(document.getElementById('resultsSearchInput')?.value), 300); }"
                                         style="border:none;outline:none;background:transparent;font-size:0.85rem;width:100%;color:#111827;"
                                     />
                                     ${query ? `<span onclick="app.renderResultsView('')" style="cursor:pointer;color:#9ca3af;font-size:1rem;">✕</span>` : ''}
