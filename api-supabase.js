@@ -526,8 +526,18 @@
                 if (!silent) this.updateSystemStatus('Refreshing bids...');
                 try {
                     // Only fetch columns actually used by _mapRemoteBid — avoids pulling
-                    // large unused fields on every poll cycle
-                    const BID_COLUMNS = 'id,tenant_id,employee_id,employee_name,slot_type,start_date,end_date,duration,priority,status,notes,submitted_at,department,rank,seniority';
+                    // large unused fields on every poll cycle. IMPORTANT: this list must
+                    // match the real columns the app writes on every bid insert/upsert
+                    // (see the batch-save block above: tenant_id, employee_id,
+                    // employee_name, department, start_date, end_date, days_requested,
+                    // status, slot_type, created_at). The previous version of this list
+                    // included invented/legacy names (duration, priority, notes,
+                    // submitted_at, rank, seniority) that don't exist on every table —
+                    // corporate_leave_request in particular has no `duration` column,
+                    // which made this fetch fail for it on every single refresh — and it
+                    // was missing days_requested/created_at, the columns _mapRemoteBid
+                    // actually reads for a bid's day count and timestamp.
+                    const BID_COLUMNS = 'id,tenant_id,employee_id,employee_name,slot_type,start_date,end_date,days_requested,status,department,created_at';
 
                     // Helper: paginate-fetch all rows from a given table.
                     // Returns { rows, ok } — ok=false means the fetch itself
