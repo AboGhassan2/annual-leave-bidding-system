@@ -1838,6 +1838,18 @@
                             </div>
                         </div>
 
+                        <div class="bg-white rounded-xl shadow-md p-5 mb-6" style="border:1.5px solid #fde68a;background:#fffbeb;">
+                            <h3 class="text-base font-bold text-gray-800 mb-1">🔁 Re-Sync Approved Trades</h3>
+                            <p class="text-xs text-gray-500 mb-3">
+                                If a staff member has an approved trade that isn't showing on their results page or in the bid results table, use this to re-apply every approved trade against the current results pool. Safe to run any time — trades already reflected in results are detected and skipped automatically, and chained trades are processed in the order they were approved.
+                            </p>
+                            <button onclick="app.reapplyAllApprovedTrades()"
+                                style="padding:8px 16px;background:#b45309;color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer;">
+                                Re-apply All Approved Trades
+                            </button>
+                            <div id="reapplyTradesLog" style="margin-top:10px;font-size:0.78rem;color:#374151;line-height:1.6;"></div>
+                        </div>
+
                         <div class="bg-white rounded-xl shadow-md p-5 mb-6">
                             <h3 class="text-lg font-bold text-gray-800 mb-3">Awaiting Your Approval (${pending.length})</h3>
                             ${pendingHtml}
