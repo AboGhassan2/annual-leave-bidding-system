@@ -529,9 +529,14 @@
                     // large unused fields on every poll cycle
                     const BID_COLUMNS = 'id,tenant_id,employee_id,employee_name,slot_type,start_date,end_date,duration,priority,status,notes,submitted_at,department,rank,seniority';
 
-                    // Helper: paginate-fetch all rows from a given table
+                    // Helper: paginate-fetch all rows from a given table.
+                    // Returns { rows, ok } — ok=false means the fetch itself
+                    // failed partway through (network blip, session/token not
+                    // yet warm right after login, transient RLS hiccup, etc.),
+                    // as distinct from a table that is genuinely empty. Callers
+                    // must NOT treat a failed fetch the same as "no bids".
                     const fetchAllFromTable = async (tableName) => {
-                        let rows = [], from = 0;
+                        let rows = [], from = 0, ok = true;
                         const batchSize = 1000;
                         while (true) {
                             const { data: batch, error } = await this.supabase
@@ -539,33 +544,61 @@
                                 .select(BID_COLUMNS)
                                 .eq('tenant_id', this._tid())
                                 .range(from, from + batchSize - 1);
-                            if (error) { console.error(`❌ Bids fetch error [${tableName}]:`, error.message); break; }
+                            if (error) {
+                                console.error(`❌ Bids fetch error [${tableName}]:`, error.message);
+                                ok = false;
+                                break;
+                            }
                             if (!batch || batch.length === 0) break;
                             rows = [...rows, ...batch];
                             if (batch.length < batchSize) break;
                             from += batchSize;
                         }
-                        return rows;
+                        return { rows, ok };
                     };
 
                     // Fetch regular, maintenance, AND corporate (GC/CS) bids in parallel
-                    const [regularRows, maintRows, corporateRows] = await Promise.all([
+                    const [regular, maint, corporate] = await Promise.all([
                         fetchAllFromTable('leave_requests'),
                         fetchAllFromTable('maint_leave_requests'),
                         fetchAllFromTable('corporate_leave_request')
                     ]);
 
-                    const allBids = [...regularRows, ...maintRows, ...corporateRows];
-                    console.log(`✅ Fetched ${regularRows.length} regular + ${maintRows.length} maintenance + ${corporateRows.length} corporate bids from Supabase`);
-
-                    this.state.bids = [
-                        ...regularRows.map(b => this._mapRemoteBid(b, 'leave_requests')),
-                        ...maintRows.map(b => this._mapRemoteBid(b, 'maint_leave_requests')),
-                        ...corporateRows.map(b => this._mapRemoteBid(b, 'corporate_leave_request'))
+                    // ── Partial-failure safety net ─────────────────────────────────────
+                    // A transient error on ANY one of the three tables must not wipe out
+                    // bids we already had loaded for it. Only replace a table's slice of
+                    // state.bids when that table's fetch genuinely succeeded; otherwise
+                    // keep whatever was already in state.bids for it (tagged via
+                    // _sourceTable by _mapRemoteBid) so nothing visibly disappears.
+                    const sources = [
+                        { table: 'leave_requests', result: regular },
+                        { table: 'maint_leave_requests', result: maint },
+                        { table: 'corporate_leave_request', result: corporate },
                     ];
+                    const failedTables = sources.filter(s => !s.result.ok).map(s => s.table);
+
+                    const newBids = [];
+                    for (const { table, result } of sources) {
+                        if (result.ok) {
+                            newBids.push(...result.rows.map(b => this._mapRemoteBid(b, table)));
+                        } else {
+                            newBids.push(...(this.state.bids || []).filter(b => b._sourceTable === table));
+                        }
+                    }
+                    this.state.bids = newBids;
+                    // ────────────────────────────────────────────────────────────────
+
+                    console.log(`✅ Fetched ${regular.rows.length} regular + ${maint.rows.length} maintenance + ${corporate.rows.length} corporate bids from Supabase`
+                        + (failedTables.length ? ` — ⚠️ kept previous data for: ${failedTables.join(', ')}` : ''));
 
                     this.saveState();
-                    this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
+
+                    if (failedTables.length > 0) {
+                        this.updateSystemStatus(`⚠️ Partial refresh — couldn't reach: ${failedTables.join(', ')}. Showing last known data for those.`);
+                        if (!silent) this.showToast(`⚠️ Some bid data couldn't be refreshed (${failedTables.join(', ')}) — showing the last known data instead of clearing it. Try refreshing again.`, 'error');
+                    } else {
+                        this.updateSystemStatus(`✅ ${this.state.bids.length} bid${this.state.bids.length !== 1 ? 's' : ''} loaded`);
+                    }
 
                     if (silent) {
                         // Silent auto-poll: update only the live elements without full re-render
