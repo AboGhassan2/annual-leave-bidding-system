@@ -939,6 +939,17 @@ app._renderKpiDefinitionsSection = function() {
         this.state._kpiDefFilterDirectorateId = filterDirectorateId;
     }
 
+    // Line filter — same convention as KPI Reporting: distinct Line
+    // names are gathered from the FULL company-wide definitions list
+    // (not the period/directorate-narrowed one), so the dropdown's
+    // options don't shrink/disappear as other filters are changed.
+    // '' = All Lines.
+    const filterLine = this.state._kpiDefFilterLine || '';
+    const distinctLines = [...new Set(definitions.map(k => {
+        const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+        return line ? line.department_name : null;
+    }).filter(Boolean))].sort();
+
     // Membership here is by OWNERSHIP SHARE, not just home directorate_id
     // — a KPI defined under Operations but 5%-owned by Finance should
     // still show up when browsing Finance, same as it does on Finance's
@@ -948,9 +959,15 @@ app._renderKpiDefinitionsSection = function() {
     // fix, not a duplication of the underlying data. "All Directorates"
     // (filterDirectorateId === null) skips the ownership-weight check
     // entirely — every KPI in this period, regardless of directorate.
-    const kpisInDirPeriod = filterDirectorateId == null
+    let kpisInDirPeriod = filterDirectorateId == null
         ? definitions.filter(k => k.period_type === filterPeriod)
         : definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
+    if (filterLine) {
+        kpisInDirPeriod = kpisInDirPeriod.filter(k => {
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            return line && line.department_name === filterLine;
+        });
+    }
 
     let filterKpiId = this.state._kpiDefFilterKpiId; // null/undefined = "All KPIs"
     if (filterKpiId != null && !kpisInDirPeriod.some(k => k.id === filterKpiId)) {
@@ -963,6 +980,8 @@ app._renderKpiDefinitionsSection = function() {
     const periodFilterOptions = periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
     const directorateFilterOptions = `<option value="" ${filterDirectorateId == null ? 'selected' : ''}>All Directorates</option>` +
         directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+    const lineFilterOptions = `<option value="" ${!filterLine ? 'selected' : ''}>All Lines</option>` +
+        distinctLines.map(l => `<option value="${esc(l)}" ${filterLine === l ? 'selected' : ''}>${esc(l)}</option>`).join('');
     const kpiNameFilterOptions = `<option value="">All KPIs</option>` + kpisInDirPeriod.map(k => {
         const w = filterDirectorateId != null ? this._kpiOwnershipWeight(k, filterDirectorateId) : 1;
         return `<option value="${k.id}" ${k.id === filterKpiId ? 'selected' : ''}>${esc(this._kpiDisplayNameWithLine(k))}${filterDirectorateId != null && w < 1 ? ` (${Math.round(w * 100)}% share)` : ''}</option>`;
@@ -1034,6 +1053,13 @@ app._renderKpiDefinitionsSection = function() {
                     <select onchange="app.state._kpiDefFilterDirectorateId=this.value?parseInt(this.value,10):null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
                         style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
                         ${directorateFilterOptions}
+                    </select>
+                </div>
+                <div style="min-width:140px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Line</label>
+                    <select onchange="app.state._kpiDefFilterLine=this.value; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                        style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
+                        ${lineFilterOptions}
                     </select>
                 </div>
                 <div style="flex:1;min-width:180px;">
