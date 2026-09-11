@@ -3964,12 +3964,103 @@ app._kpiReferenceCodeByName = {
     // Availability" with no code was found missing this mapping.
     'passenger service availability': 'PSA', 'transit system availability': 'TSA',
     'facilities and other system availability': 'FOSA',
+    // TLR/TSR — verified directly against the "KPI Partner Split" sheet
+    // of the source workbook (39 KPI codes total per Line, A1 through
+    // I1 plus PSA/TSA/FOSA/TLR/TSR). These two were missing here even
+    // though _kpiCorrectPrimaryOwnerByCode (the Directorate Assignment
+    // Audit's reference dict, a separate list) already knew about them
+    // — meaning an uncoded KPI literally named "Localisation Performance
+    // Measure" or "Saudisation Performance Measure" could never be
+    // matched to a code by this tool, only by manual entry.
+    'localisation performance measure': 'TLR', 'saudisation performance measure': 'TSR',
 };
 
 app._kpiMatchReferenceCode = function(kpiName) {
     if (!kpiName) return null;
     const stripped = String(kpiName).replace(/^L\d+[\s-]*/i, '').trim().toLowerCase();
     return this._kpiReferenceCodeByName[stripped] || null;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// KPI Master List Completeness Check — verified directly against the
+// "KPI Partner Split" sheet of the OMC source workbook (rows 2-168):
+// EXACTLY 39 distinct KPI codes (A1-I1, PSA/TSA/FOSA, TLR/TSR), and the
+// same 39 repeated identically for every one of the 4 Lines (L3, L4,
+// L5, L6) — confirmed by diffing all 4 blocks against each other, not
+// assumed. So the true, correct total for OMC is 39 x 4 = 156 KPI
+// definitions, not a flat 39 and not whatever inflated count duplicate
+// rows may have produced. This lets a planner compare what's actually
+// in the database, per Line, against that exact reference — showing
+// which codes are genuinely MISSING for a Line (not just duplicated),
+// which are duplicated (co-reported by auditDuplicateKpis already, but
+// surfaced here too for a single complete picture), and which codes
+// exist in the database but aren't part of the reference 39 at all
+// (typos or genuinely extra KPIs that need a human decision, not an
+// auto-fix). Company defaults to OMC since that's what this reference
+// list was verified against — Audit/ER's correct master list, if
+// different, isn't derived from this sheet.
+// ════════════════════════════════════════════════════════════════════
+app._kpiMasterCodeList = [
+    ['A1', 'Passenger satisfaction'], ['A2', 'Complaints resolution'], ['A3', 'Complaints per boarding'],
+    ['A4', 'Train environment'], ['A5', 'Station environment'], ['A6', 'Ticket office'],
+    ['B1', 'Permanent passenger information at Stations'], ['B2', 'Permanent passenger information on Trains'],
+    ['B3', 'Public announcements'], ['B4', 'Information on planned disruption of services'],
+    ['B5', 'Incident information at Stations'], ['B6', 'Incident information on Trains'],
+    ['C1', 'Cleanliness of Trains'], ['C2', 'Train External Wash'], ['C3', 'Cleanliness of Stations and public facilities'],
+    ['D1', 'Condition of Trains'], ['D2', 'Transit System Preventive Maintenance Work Orders completed as scheduled'],
+    ['D3', 'Transit System corrective maintenance efficiency'], ['D4', 'Transit System maintenance quality'],
+    ['E1', 'Stations and public facilities inspection'], ['E2', 'Escalators and Elevators availability'],
+    ['E3', 'Civil structures inspection'], ['E4', 'Facilities Preventive Maintenance Work Orders completed as scheduled'],
+    ['E5', 'Facilities corrective maintenance efficiency'], ['E6', 'Facilities maintenance quality'],
+    ['F1', 'Injury Frequency Rate (OMC Employee and Sub-contractors)'],
+    ['F2', 'Rolling Injury Frequency Rate (OMC Employees and Sub-contractors)'],
+    ['F3', 'Injury Frequency Rate (Public and Passengers)'], ['F4', 'Rolling Injury Frequency Rate (Public and Passengers)'],
+    ['F5', 'Revenue security (fare evasion)'], ['G1', 'Staffing levels'], ['G2', 'Training hours'],
+    ['H1', 'Achieve Annual Performance of Environmental Plan'], ['I1', 'Reporting'],
+    ['PSA', 'Passenger Service Availability'], ['TSA', 'Transit System Availability'],
+    ['FOSA', 'Facilities and Other System Availability'],
+    ['TLR', 'Localisation Performance Measure'], ['TSR', 'Saudisation Performance Measure'],
+];
+
+app.auditKpiMasterCompleteness = function(company) {
+    const targetCompany = company || 'OMC';
+    const lines = ['L3', 'L4', 'L5', 'L6'];
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany);
+    const dirIds = new Set(directorates.map(d => d.id));
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && dirIds.has(k.directorate_id));
+    const referenceCodes = new Set(this._kpiMasterCodeList.map(([code]) => code));
+
+    const perLine = lines.map(lineName => {
+        const lineDefs = definitions.filter(k => {
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
+            return line && line.department_name === lineName;
+        });
+        const codeCounts = {};
+        lineDefs.forEach(k => {
+            const code = k.kpi_code || '(no code)';
+            if (!codeCounts[code]) codeCounts[code] = [];
+            codeCounts[code].push({ id: k.id, name: k.name });
+        });
+        const missing = this._kpiMasterCodeList.filter(([code]) => !codeCounts[code]).map(([code, name]) => ({ code, name }));
+        const duplicated = Object.entries(codeCounts).filter(([code, recs]) => code !== '(no code)' && recs.length > 1)
+            .map(([code, recs]) => ({ code, records: recs }));
+        const unexpected = Object.entries(codeCounts).filter(([code]) => code !== '(no code)' && !referenceCodes.has(code))
+            .map(([code, recs]) => ({ code, records: recs }));
+        const uncoded = codeCounts['(no code)'] || [];
+        return {
+            line: lineName,
+            actualCount: lineDefs.length,
+            expectedCount: this._kpiMasterCodeList.length,
+            missing, duplicated, unexpected, uncoded,
+        };
+    });
+
+    return {
+        company: targetCompany,
+        expectedTotal: this._kpiMasterCodeList.length * lines.length,
+        actualTotal: definitions.length,
+        perLine,
+    };
 };
 
 // Scans EVERY active KPI in the system, not scoped to the currently
