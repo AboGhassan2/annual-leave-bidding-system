@@ -2264,10 +2264,11 @@ app._renderKpiImportSection = function() {
         <div class="bg-white rounded-xl shadow-md p-5 mt-6">
             <h3 class="text-lg font-bold text-gray-800 mb-2">8. Duplicate KPI Detection &amp; Merge</h3>
             <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
-                Finds KPIs sharing the same Code + Line (grouped by company) that ended up as two separate records — a real
+                Finds KPIs that ended up as two separate records for the same thing — grouped by Code + Line where a Code
+                exists, and by Name + Line for uncoded KPIs (which the Code-only check used to miss entirely). A real
                 symptom: one record has real thresholds, the other shows blank/null. Nothing is merged automatically — pick
-                which record to keep for each duplicate found; results and owners from the other are moved onto it, then the
-                other is deleted.
+                which record to keep for each duplicate found; results and owners from the other(s) are moved onto it, then
+                the other(s) are deleted.
             </p>
             <button onclick="app._runKpiDuplicateAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Find Duplicates</button>
             ${this.state._kpiDuplicateAudit ? `
@@ -2277,7 +2278,7 @@ app._renderKpiImportSection = function() {
                     </p>
                     ${this.state._kpiDuplicateAudit.map((g, gi) => `
                         <div style="background:#fef2f2;border-radius:8px;padding:14px;margin-bottom:12px;">
-                            <p style="font-size:0.85rem;font-weight:700;color:#991b1b;margin-bottom:10px;">${this._escHtml(g.company)} \u00b7 ${this._escHtml(g.line)} \u00b7 ${this._escHtml(g.code)}</p>
+                            <p style="font-size:0.85rem;font-weight:700;color:#991b1b;margin-bottom:10px;">${this._escHtml(g.company)} \u00b7 ${this._escHtml(g.line)} \u00b7 ${g.code ? this._escHtml(g.code) : '(no code)'}</p>
                             <div style="overflow-x:auto;margin-bottom:10px;">
                                 <table style="width:100%;border-collapse:collapse;font-size:0.8rem;background:#fff;border-radius:6px;">
                                     <thead>
