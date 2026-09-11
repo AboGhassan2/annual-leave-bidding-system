@@ -4031,17 +4031,29 @@ app.applyKpiCodeMatches = async function(matches) {
 // pointing at two different directorate_id rows (e.g. a duplicate
 // "Operations" directorate) — grouping by the visible line name catches
 // that case too, not just an exact directorate_id match.
+//
+// WIDENED: the original version only ever looked at CODED KPIs
+// (`k.kpi_code` truthy), so any duplicate created by the same bug
+// BEFORE a code was assigned — which is exactly how the old hardcoded
+// backfill's duplicates were created, since that bug is precisely what
+// left so many KPIs uncoded in the first place — was invisible to this
+// audit and never showed up for merging. Uncoded KPIs are now ALSO
+// grouped, by (company, line, normalized name) as a fallback key, so
+// those duplicates surface too. `group.code` is null for a
+// name-matched group; the UI shows "(no code)" for it.
 // ════════════════════════════════════════════════════════════════════
 app.auditDuplicateKpis = function() {
-    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false && k.kpi_code);
+    const definitions = (this.state.kpiDefinitions || []).filter(k => k.is_active !== false);
     const groups = {};
     definitions.forEach(k => {
         const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
         const lineName = line ? line.department_name : '?';
         const dir = (this.state.kpiDirectorates || []).find(d => d.id === k.directorate_id);
         const company = dir ? (dir.company || 'OMC') : 'OMC';
-        const key = `${company}::${lineName}::${k.kpi_code}`;
-        if (!groups[key]) groups[key] = { company, line: lineName, code: k.kpi_code, records: [] };
+        const normalizedName = (k.name || '').trim().toLowerCase().replace(/^l\d+-/, '');
+        const hasCode = !!k.kpi_code;
+        const key = hasCode ? `${company}::${lineName}::code::${k.kpi_code}` : `${company}::${lineName}::name::${normalizedName}`;
+        if (!groups[key]) groups[key] = { company, line: lineName, code: hasCode ? k.kpi_code : null, records: [] };
         groups[key].records.push({
             id: k.id, name: k.name,
             directorateId: k.directorate_id, directorateName: dir ? dir.name : '(unknown)',
