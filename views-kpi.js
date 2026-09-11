@@ -2313,7 +2313,45 @@ app._renderKpiImportSection = function() {
                 </div>
             ` : ''}
         </div>
+
+        <div class="bg-white rounded-xl shadow-md p-5 mt-6">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">9. KPI Master List Completeness Check</h3>
+            <p style="font-size:0.8rem;color:#6b7280;margin-bottom:16px;">
+                Compares every Line's KPIs against the confirmed 39-code reference list (A1\u2013I1, PSA/TSA/FOSA, TLR/TSR) from
+                the source workbook's KPI Partner Split sheet \u2014 all 4 Lines (L3\u2013L6) should carry the same 39 codes, for a
+                true total of 156. Read-only: shows exactly which codes are missing, duplicated, unexpected, or still
+                uncoded per Line \u2014 use the tools above to fix what it finds.
+            </p>
+            <button onclick="app._runKpiMasterCompletenessAudit()" style="padding:9px 18px;background:linear-gradient(135deg, #8b6914 0%, #b8860b 50%, #d4a017 100%);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:0.85rem;">Check Completeness</button>
+            ${this.state._kpiMasterCompletenessAudit ? `
+                <div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:16px;">
+                    <p style="font-size:0.82rem;color:#374151;margin-bottom:14px;">
+                        <strong>${this._escHtml(this.state._kpiMasterCompletenessAudit.company)}</strong>: expected
+                        <strong>${this.state._kpiMasterCompletenessAudit.expectedTotal}</strong>, actually has
+                        <strong style="color:${this.state._kpiMasterCompletenessAudit.actualTotal === this.state._kpiMasterCompletenessAudit.expectedTotal ? '#166534' : '#991b1b'};">${this.state._kpiMasterCompletenessAudit.actualTotal}</strong>.
+                    </p>
+                    ${this.state._kpiMasterCompletenessAudit.perLine.map(pl => {
+                        const isClean = pl.missing.length === 0 && pl.duplicated.length === 0 && pl.unexpected.length === 0 && pl.uncoded.length === 0;
+                        return `
+                        <div style="background:${isClean ? '#f0fdf4' : '#fffbeb'};border-radius:8px;padding:14px;margin-bottom:10px;">
+                            <p style="font-size:0.85rem;font-weight:700;color:${isClean ? '#166534' : '#92400e'};margin-bottom:8px;">
+                                ${this._escHtml(pl.line)} \u2014 ${pl.actualCount} / ${pl.expectedCount} ${isClean ? '\u2705 complete' : ''}
+                            </p>
+                            ${pl.missing.length > 0 ? `<p style="font-size:0.78rem;color:#991b1b;margin-bottom:4px;"><strong>Missing (${pl.missing.length}):</strong> ${pl.missing.map(m => `${this._escHtml(m.code)} \u2013 ${this._escHtml(m.name)}`).join(', ')}</p>` : ''}
+                            ${pl.duplicated.length > 0 ? `<p style="font-size:0.78rem;color:#b45309;margin-bottom:4px;"><strong>Duplicated (${pl.duplicated.length}):</strong> ${pl.duplicated.map(d => `${this._escHtml(d.code)} (${d.records.length}\u00d7, ids ${d.records.map(r => r.id).join('/')})`).join(', ')}</p>` : ''}
+                            ${pl.unexpected.length > 0 ? `<p style="font-size:0.78rem;color:#7c3aed;margin-bottom:4px;"><strong>Unexpected codes (${pl.unexpected.length}):</strong> ${pl.unexpected.map(u => `${this._escHtml(u.code)} (id ${u.records.map(r => r.id).join('/')}: "${this._escHtml(u.records[0].name)}")`).join(', ')}</p>` : ''}
+                            ${pl.uncoded.length > 0 ? `<p style="font-size:0.78rem;color:#6b7280;"><strong>Still uncoded (${pl.uncoded.length}):</strong> ${pl.uncoded.map(u => `"${this._escHtml(u.name)}" (id ${u.id})`).join(', ')}</p>` : ''}
+                        </div>
+                    `; }).join('')}
+                </div>
+            ` : ''}
+        </div>
     `;
+};
+
+app._runKpiMasterCompletenessAudit = function() {
+    this.state._kpiMasterCompletenessAudit = this.auditKpiMasterCompleteness(this.state._kpiSelectedCompany || 'OMC');
+    this.renderKpiPlannerView();
 };
 
 app._runKpiDuplicateAudit = function() {
