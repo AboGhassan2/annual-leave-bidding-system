@@ -513,6 +513,30 @@ app._renderKpiReportingSection = function() {
     `;
 };
 
+// Shared option-label builder for the Financial Reporting tab's Month
+// Number dropdowns (MGT Ratio Per Line's own selector, and the one that
+// also drives Availability Factor — see the note on those selects).
+// Verified directly against the Periods sheet of the source workbook:
+// each row carries TWO separate, correctly-distinct period definitions
+// — the KPI Month (kpi_fiscal_month/kpi_month_name/kpi_year, e.g.
+// "M1 — Nov 2023") used for KPI performance measurement, and the
+// Fixed Fee Month (fee_fiscal_month/fee_month_name/fee_year, e.g.
+// "M2 — Dec 2023") used for billing, genuinely offset by one period in
+// this contract. The KPI Reporting table (a different screen) is about
+// KPI performance itself, so it correctly shows the KPI Month alone —
+// that "M1 — Nov 2023" label there is NOT a bug, it matches the source
+// data exactly. Financial Reporting is about cost/billing, so its
+// dropdown options show BOTH: the KPI Month being measured (which
+// KPIFt/cost-pool figures are still keyed by — that calculation logic
+// is unchanged), followed by the Fixed Fee Month it bills against, so a
+// finance user isn't left assuming the label is the billing month when
+// it wasn't previously shown at all.
+app._kpiFeePeriodOptionLabel = function(p, esc) {
+    const kpiLabel = `${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}`;
+    const feeLabel = p.fee_fiscal_month ? ` → Fee ${esc(p.fee_fiscal_month)}${p.fee_month_name ? ' (' + esc(p.fee_month_name) + ' ' + esc(String(p.fee_year)) + ')' : ''}` : '';
+    return kpiLabel + feeLabel;
+};
+
 // ════════════════════════════════════════════════════════════════════
 // Financial Reporting — the current period's fee calendar position and
 // company-wide partner (HIT/FS/ALS) allocation totals, built on the
@@ -606,14 +630,14 @@ app._renderKpiFinancialReportingSection = function() {
                             </div>
                             ${mode === 'month' ? `
                                 <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${this._kpiFeePeriodOptionLabel(p, esc)}</option>`).join('')}
                                 </select>
                             ` : `
                                 <select onchange="app.state._kpiFinReportMgtSelectedYear=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                                     ${yearOptions.map(y => `<option value="${y}" ${selectedYear === y ? 'selected' : ''}>${y}</option>`).join('')}
                                 </select>
                                 <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" title="Month Number for the Availability Factor table below (MGT Ratio is showing Year (Sum) above)" style="padding:6px 10px;border:1.5px dashed #d1d5db;border-radius:8px;font-size:0.8rem;color:#6b7280;">
-                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${this._kpiFeePeriodOptionLabel(p, esc)}</option>`).join('')}
                                 </select>
                             `}
                         </div>
@@ -679,7 +703,7 @@ app._renderKpiFinancialReportingSection = function() {
                 const costTotal = (key) => costRows.reduce((sum, c) => sum + (c && c[key] != null ? c[key] : 0), 0);
                 const anyCostData = costRows.some(c => c != null);
                 return `
-                    <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : String(mgtSelectedMonthNo))} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
+                    <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:14px;">KPI Month ${esc(mgtSelectedPeriod ? mgtSelectedPeriod.kpi_fiscal_month : String(mgtSelectedMonthNo))}${mgtSelectedPeriod && mgtSelectedPeriod.kpi_month_name ? ' (' + esc(mgtSelectedPeriod.kpi_month_name) + ' ' + esc(String(mgtSelectedPeriod.kpi_year)) + ')' : ''}${mgtSelectedPeriod && mgtSelectedPeriod.fee_fiscal_month ? ' — bills against Fixed Fee Month ' + esc(mgtSelectedPeriod.fee_fiscal_month) + (mgtSelectedPeriod.fee_month_name ? ' (' + esc(mgtSelectedPeriod.fee_month_name) + ' ' + esc(String(mgtSelectedPeriod.fee_year)) + ')' : '') : ''} — every ${esc(selectedCompany)} directorate's KPIs on each line, weighted by station count</p>
                     <div style="overflow-x:auto;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                             <thead>
