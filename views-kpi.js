@@ -1580,7 +1580,21 @@ app._renderKpiResultsSection = function() {
     const periodSelectOptions = periodOptions.map(p => `<option value="${esc(p.value)}" ${p.value === selectedPeriodValue ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
     const yearOptions = [selectedYear - 1, selectedYear, selectedYear + 1].map(y => `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}</option>`).join('');
 
-    const resultsRows = existingResults.map(r => {
+    // Filtered view for the Recorded Results table — see the Month
+    // Number filter control rendered just above that table. Only ever
+    // applies on the Monthly level tab; a leftover selection from
+    // Monthly must not silently empty out the Quarterly/Yearly tables
+    // when the user switches level tabs.
+    const filterMonthNoForResults = resultsLevel === 'monthly' ? (this.state._kpiResultsFilterMonthNo || '') : '';
+    const visibleResults = filterMonthNoForResults
+        ? existingResults.filter(r => {
+            if (r.period_type !== 'monthly' || !r.period_value) return false;
+            const fp = this._kpiFeePeriodForCalendarDate(r.year, parseInt(r.period_value, 10));
+            return fp && String(fp.kpi_month_no) === String(filterMonthNoForResults);
+        })
+        : existingResults;
+
+    const resultsRows = visibleResults.map(r => {
         // Benchmark label (Exceptional/Acceptable/Unacceptable) per the
         // exact V-column formula — replaces the old 2-tier on_target/
         // below_target badge in this table specifically. Falls back to
@@ -1835,8 +1849,42 @@ app._renderKpiResultsSection = function() {
 
             ${(resultsLevel === 'monthly' && this.state._kpiBulkInsertOpen) ? this._renderKpiBulkInsertPanel(selected, selectedYear) : ''}
 
+            ${(() => {
+                // Month Number filter for the Recorded Results table below —
+                // only meaningful for Monthly-level results, since Quarterly/
+                // Yearly rows don't map to one single KPI Month. Options are
+                // built from the months THIS KPI actually has a recorded
+                // result for (via the same _kpiFeePeriodForCalendarDate
+                // lookup used to display the KPI Month/Fee Month columns),
+                // not the full 121-month calendar, since most of that would
+                // be irrelevant to this specific KPI.
+                if (resultsLevel !== 'monthly' || existingResults.length === 0) return '';
+                const monthNos = [...new Set(existingResults.map(r => {
+                    if (r.period_type !== 'monthly' || !r.period_value) return null;
+                    const fp = this._kpiFeePeriodForCalendarDate(r.year, parseInt(r.period_value, 10));
+                    return fp ? fp.kpi_month_no : null;
+                }).filter(n => n != null))].sort((a, b) => a - b);
+                if (monthNos.length === 0) return '';
+                const filterMonthNo = this.state._kpiResultsFilterMonthNo || '';
+                const options = `<option value="">All Months</option>` + monthNos.map(no => {
+                    const fp = (this.state.kpiFeePeriods || []).find(p => p.kpi_month_no === no);
+                    const label = fp ? `${esc(fp.kpi_fiscal_month)}${fp.kpi_month_name ? ' — ' + esc(fp.kpi_month_name) + ' ' + esc(String(fp.kpi_year)) : ''}` : `M${no}`;
+                    return `<option value="${no}" ${String(filterMonthNo) === String(no) ? 'selected' : ''}>${label}</option>`;
+                }).join('');
+                return `
+                    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+                        <div style="min-width:200px;">
+                            <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Filter Recorded Results by Month Number</label>
+                            <select onchange="app.state._kpiResultsFilterMonthNo=this.value; app.renderKpiPlannerView();" style="width:100%;padding:7px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
+                                ${options}
+                            </select>
+                        </div>
+                    </div>
+                `;
+            })()}
+
             <h4 style="font-size:0.85rem;font-weight:700;margin-bottom:8px;">Recorded results for ${esc(this._kpiDisplayNameWithLine(selected))}</h4>
-            ${existingResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
+            ${visibleResults.length === 0 ? '<p class="text-sm text-gray-400">No results recorded yet.</p>' : `
                 <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                     <thead>
                         <tr style="text-align:left;color:#6b7280;font-size:0.72rem;text-transform:uppercase;">
