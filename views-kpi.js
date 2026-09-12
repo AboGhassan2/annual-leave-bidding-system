@@ -986,9 +986,16 @@ app._renderKpiDefinitionsSection = function() {
     // fix, not a duplication of the underlying data. "All Directorates"
     // (filterDirectorateId === null) skips the ownership-weight check
     // entirely — every KPI in this period, regardless of directorate.
+    // Code filter — same convention/style as KPI Reporting's Code field:
+    // free-text, case-insensitive substring match against kpi_code.
+    const filterCode = (this.state._kpiDefFilterCode || '').trim().toUpperCase();
+
     let kpisInDirPeriod = filterDirectorateId == null
         ? definitions.filter(k => k.period_type === filterPeriod)
         : definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
+    if (filterCode) {
+        kpisInDirPeriod = kpisInDirPeriod.filter(k => (k.kpi_code || '').toUpperCase().includes(filterCode));
+    }
     if (filterLine) {
         kpisInDirPeriod = kpisInDirPeriod.filter(k => {
             const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === k.department_id);
@@ -1036,7 +1043,7 @@ app._renderKpiDefinitionsSection = function() {
         return `
             <tr style="border-top:1px solid #f3f4f6;">
                 <td style="padding:10px 12px;">
-                    <p style="font-weight:700;">${esc(k.name)}</p>
+                    <p style="font-weight:700;">${k.kpi_code ? `<span style="font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(k.kpi_code)}</span>: ` : ''}${esc(k.name)}</p>
                     ${k.category ? `<p style="font-size:0.72rem;color:#6b7280;">${esc(k.category)}</p>` : ''}
                     ${isSharedView ? `<span style="font-size:0.7rem;color:#7c3aed;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share (home: ${esc(homeDir ? homeDir.name : 'unknown')})</span>` : ''}
                 </td>
@@ -1081,6 +1088,12 @@ app._renderKpiDefinitionsSection = function() {
                         style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
                         ${directorateFilterOptions}
                     </select>
+                </div>
+                <div style="min-width:110px;">
+                    <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Code</label>
+                    <input type="text" value="${esc(this.state._kpiDefFilterCode || '')}" placeholder="e.g. A1"
+                        onchange="app.state._kpiDefFilterCode=this.value; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                        style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;" />
                 </div>
                 <div style="min-width:140px;">
                     <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">Line</label>
