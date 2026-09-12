@@ -612,6 +612,9 @@ app._renderKpiFinancialReportingSection = function() {
                                 <select onchange="app.state._kpiFinReportMgtSelectedYear=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
                                     ${yearOptions.map(y => `<option value="${y}" ${selectedYear === y ? 'selected' : ''}>${y}</option>`).join('')}
                                 </select>
+                                <select onchange="app.state._kpiFinReportMgtSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" title="Month Number for the Availability Factor table below (MGT Ratio is showing Year (Sum) above)" style="padding:6px 10px;border:1.5px dashed #d1d5db;border-radius:8px;font-size:0.8rem;color:#6b7280;">
+                                    ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                                </select>
                             `}
                         </div>
                     `;
@@ -729,21 +732,21 @@ app._renderKpiFinancialReportingSection = function() {
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:6px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
                 <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;">Availability Factor — All Lines</p>
-                ${(() => {
-                    const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
-                    if (availFeePeriods.length === 0) return '';
-                    const selected = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods, selectedCompany);
-                    return `
-                        <select onchange="app.state._kpiFinReportAvailSelectedMonthNo=parseInt(this.value,10);app.renderKpiPlannerView();" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                            ${availFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${selected === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
-                        </select>
-                    `;
-                })()}
+                <p style="font-size:0.72rem;color:#9ca3af;font-style:italic;">Follows the Month Number selected above ↑</p>
             </div>
             ${(() => {
                 const availFeePeriods = [...(this.state.kpiFeePeriods || [])].sort((a, b) => a.kpi_month_no - b.kpi_month_no);
                 if (availFeePeriods.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No fee period calendar imported yet — run the Financial Calendar import (Import from Excel tab).</p>`;
-                const availMonthNo = this.state._kpiFinReportAvailSelectedMonthNo != null ? Number(this.state._kpiFinReportAvailSelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(availFeePeriods, selectedCompany);
+                // Shares the exact same selected-month state as the MGT Ratio
+                // Per Line table above (_kpiFinReportMgtSelectedMonthNo)
+                // instead of its own independent _kpiFinReportAvailSelectedMonthNo
+                // — per explicit request, changing the Month Number filter on
+                // either table now updates both. This stays meaningful even
+                // when MGT Ratio is displaying "Year (Sum)" mode: the shared
+                // month value is preserved in state regardless of which mode
+                // MGT Ratio happens to be showing.
+                const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
+                const availMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(availFeePeriods, null);
                 const rows = this._kpiAvailabilityAllRowsForMonth(availMonthNo);
                 return `
                     <div style="overflow-x:auto;margin-top:10px;">
