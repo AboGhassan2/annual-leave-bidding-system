@@ -3353,7 +3353,13 @@ app._kpiParseMPercentCostRows = function(sheet) {
         const monthNo = cellNum(`B${r}`);
         if (monthNo == null) continue;
         const companyRaw = cellText(`C${r}`).toUpperCase();
-        const company = companyRaw === 'ER' ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
+        // Confirmed with the planner: OMC's counterpart is a single real
+        // company, printed in this system as "Audit" — the source
+        // workbook itself isn't consistent about its label, though.
+        // This "M%" sheet uses "ER" (verified directly against the file),
+        // while other sheets (e.g. MANAGEMENT) use "PMS" for the exact
+        // same entity — so all three raw labels normalize to "Audit".
+        const company = (companyRaw === 'ER' || companyRaw === 'PMS' || companyRaw === 'AUDIT') ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
         if (!company) continue;
         const lineLabel = cellText(`E${r}`);
         const lineName = this._kpiMapLineNumberToLineName(lineLabel);
@@ -3795,7 +3801,10 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
         const code = cellText(`H${r}`);
         if (!code) continue;
         const companyRaw = cellText(`J${r}`).toUpperCase();
-        const company = companyRaw === 'ER' ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
+        // Same "ER"/"PMS"/"Audit" normalization as the M% import above —
+        // all three raw labels are the one real second company, always
+        // printed in-app as "Audit".
+        const company = (companyRaw === 'ER' || companyRaw === 'PMS' || companyRaw === 'AUDIT') ? 'Audit' : (companyRaw === 'OMC' ? 'OMC' : null);
         if (!company) continue;
         const resultNum = cellNum(`P${r}`); // MR_Result
         if (resultNum == null) continue; // "-" (not yet reported) or blank
