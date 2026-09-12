@@ -952,7 +952,14 @@ app._renderKpiDefinitionsSection = function() {
     const periodTypes = ['monthly', 'quarterly', 'yearly'];
     const periodLabels = { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
     let filterPeriod = this.state._kpiDefFilterPeriod;
-    if (!periodTypes.includes(filterPeriod)) {
+    // undefined = "not yet touched this session" -> defaults to Monthly,
+    // same as before. null (distinct from undefined) = the user
+    // explicitly picked "All Periods" — same convention as the
+    // Directorate filter below.
+    if (filterPeriod === undefined) {
+        filterPeriod = 'monthly';
+        this.state._kpiDefFilterPeriod = filterPeriod;
+    } else if (filterPeriod !== null && !periodTypes.includes(filterPeriod)) {
         filterPeriod = 'monthly';
         this.state._kpiDefFilterPeriod = filterPeriod;
     }
@@ -991,8 +998,8 @@ app._renderKpiDefinitionsSection = function() {
     const filterCode = (this.state._kpiDefFilterCode || '').trim().toUpperCase();
 
     let kpisInDirPeriod = filterDirectorateId == null
-        ? definitions.filter(k => k.period_type === filterPeriod)
-        : definitions.filter(k => k.period_type === filterPeriod && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
+        ? definitions.filter(k => filterPeriod == null || k.period_type === filterPeriod)
+        : definitions.filter(k => (filterPeriod == null || k.period_type === filterPeriod) && this._kpiOwnershipWeight(k, filterDirectorateId) > 0);
     if (filterCode) {
         kpisInDirPeriod = kpisInDirPeriod.filter(k => (k.kpi_code || '').toUpperCase().includes(filterCode));
     }
@@ -1011,7 +1018,8 @@ app._renderKpiDefinitionsSection = function() {
 
     const visibleDefinitions = filterKpiId != null ? kpisInDirPeriod.filter(k => k.id === filterKpiId) : kpisInDirPeriod;
 
-    const periodFilterOptions = periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
+    const periodFilterOptions = `<option value="" ${filterPeriod == null ? 'selected' : ''}>All Periods</option>` +
+        periodTypes.map(p => `<option value="${p}" ${p === filterPeriod ? 'selected' : ''}>${periodLabels[p]}</option>`).join('');
     const directorateFilterOptions = `<option value="" ${filterDirectorateId == null ? 'selected' : ''}>All Directorates</option>` +
         directorates.map(d => `<option value="${d.id}" ${d.id === filterDirectorateId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
     const lineFilterOptions = `<option value="" ${!filterLine ? 'selected' : ''}>All Lines</option>` +
@@ -1077,7 +1085,7 @@ app._renderKpiDefinitionsSection = function() {
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <div style="min-width:140px;">
                     <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">KPI Period</label>
-                    <select onchange="app.state._kpiDefFilterPeriod=this.value; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
+                    <select onchange="app.state._kpiDefFilterPeriod=this.value||null; app.state._kpiDefFilterKpiId=null; app.renderKpiPlannerView();"
                         style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.82rem;box-sizing:border-box;">
                         ${periodFilterOptions}
                     </select>
