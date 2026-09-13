@@ -25,7 +25,7 @@ app.loadKpiData = async function() {
     if (!this.supabase) return false;
     try {
         const tid = this._tid();
-        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost, availabilityFactorBrackets, resultRevisions] = await Promise.all([
+        const [directorates, deptMap, definitions, results, users, owners, feePeriods, lineFeeSchedule, stationCounts, availability, monthlyCosts, costPools, availabilityCost, availabilityBaseCost, availabilityFactorBrackets, resultRevisions, lineFactorScores] = await Promise.all([
             this.supabase.from('kpi_directorates').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_directorate_departments').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_definitions').select('*').eq('tenant_id', tid),
@@ -42,6 +42,7 @@ app.loadKpiData = async function() {
             this.supabase.from('kpi_line_availability_base_cost').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_availability_factor_brackets').select('*').eq('tenant_id', tid),
             this.supabase.from('kpi_result_revisions').select('*').eq('tenant_id', tid),
+            this.supabase.from('kpi_line_factor_scores').select('*').eq('tenant_id', tid),
         ]);
         if (directorates.error) throw directorates.error;
         if (deptMap.error) throw deptMap.error;
@@ -59,6 +60,12 @@ app.loadKpiData = async function() {
         if (availabilityBaseCost.error) throw availabilityBaseCost.error;
         if (availabilityFactorBrackets.error) throw availabilityFactorBrackets.error;
         if (resultRevisions.error) throw resultRevisions.error;
+        // Deliberately NOT thrown on error — kpi_line_factor_scores is a
+        // brand-new table that won't exist until the migration below is
+        // run, and a missing table must not break the entire KPI subsystem
+        // load. _kpiLineFactorScore already falls back to its live
+        // estimate whenever this is empty.
+        if (lineFactorScores.error) console.warn('kpi_line_factor_scores not available yet (needs migration):', lineFactorScores.error.message);
 
         this.state.kpiDirectorates = directorates.data || [];
         this.state.kpiDirectorateDepartments = deptMap.data || [];
@@ -70,6 +77,7 @@ app.loadKpiData = async function() {
         this.state.kpiLineFeeSchedule = lineFeeSchedule.data || [];
         this.state.kpiLineStationCounts = stationCounts.data || [];
         this.state.kpiLineAvailability = availability.data || [];
+        this.state.kpiLineFactorScores = lineFactorScores.data || [];
         this.state.kpiLineCostPools = costPools.data || [];
         this.state.kpiLineAvailabilityCost = availabilityCost.data || [];
         this.state.kpiLineAvailabilityBaseCost = availabilityBaseCost.data || [];
@@ -3826,12 +3834,21 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
         // Factor=0, Benchmark=blank, no thresholds configured anywhere).
         const benchmarkText = cellText(`AA${r}`);
         const finalFactor = benchmarkText ? cellNum(`T${r}`) : null;
+        // Line-level KPIFt (column V) — see _kpiExtractLineFactorScoresFromHistoryRows
+        // below for why this is captured here and how it's used. Verified
+        // directly against the file: identical across every KPI row for
+        // the same (KPI Month, Line) — it's a company-wide Area->Level1->
+        // Level2->Level3 tree rollup of that Line's own 34 "core" KPIs
+        // (excludes PSA/TSA/FOSA/TLR/TSR, which have no Allocation % and
+        // don't participate in this tree), broadcast onto every row.
+        const lineKpiFt = cellNum(`V${r}`);
         out.push({
             kpi_month_no: Math.trunc(monthNo), line: lineName, code, company,
             periodType: periodTypeMap[freq] || 'monthly',
             actualValue: resultNum, remarks,
             precomputedFactorScore: finalFactor,
             precomputedBenchmark: benchmarkText || null,
+            lineKpiFt,
         });
     }
     return out;
@@ -3881,6 +3898,84 @@ app.importKpiFullResultsHistory = async function(rows) {
     }
     this.showToast(`KPI Results history import complete: ${summary.updated} saved, ${summary.notFound} not found, ${summary.failed} failed.`, (summary.notFound + summary.failed) > 0 ? 'error' : 'success');
     return summary;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Line-level KPIFt — imported directly rather than re-derived in JS.
+//
+// Traced the real formula end-to-end (not guessed): the "M%" sheet's
+// KPIFt column is itself an XLOOKUP into 'KPI Results'!V (keyed by
+// Month+Line only, confirmed with the planner: same figure for both
+// companies). That V column computes, per row:
+//   KPIFt = ROUND(KPIFt1, 4)
+//   KPIFt1 = (Area KPIF x Area%) summed across all 4 Areas
+//   Area KPIF   = (Level1 KPIF x Level1%) summed across that Area's groups
+//   Level1 KPIF = (Level2 KPIF x Level2%) summed across that group's KPIs
+//   Level2 KPIF = (Factor x Level3%) summed across the individual KPIs
+// — verified by reading the actual cell formulas and confirming, by
+// checking every row's real Line/Code values, that rows 2-35 of the
+// source sheet are ALL Line 3's own 34 "core" KPIs (A1 through I1;
+// PSA/TSA/FOSA/TLR/TSR excluded — they have no Allocation % and don't
+// feed this tree), grouped into the same 4 Areas shown on Overview
+// (Operations 30%, Facilities Maintenance 25%, Transit System
+// Maintenance 25%, Management 20%).
+//
+// This app's own _kpiLineFactorScore (below) approximates the same idea
+// with a single flat Final-Weight-weighted average, and — a real,
+// confirmed difference, not just a rounding gap — explicitly EXCLUDES
+// any KPI with no result yet from both the sum and the denominator.
+// Checked directly against the source data: a KPI with no result this
+// month (MS.Result = "-") still gets a real, non-excluded Factor value
+// in the true formula (observed Factor=2 for two such rows on L3/M25),
+// so it still counts fully in the real weighted tree. Reproducing that
+// exactly in JS would mean faithfully replicating every quirk of a
+// 4-level tree across 4 unevenly-shaped Areas — risky for a number that
+// drives an actual bonus percentage. Importing the value Excel already
+// computed sidesteps that risk entirely.
+//
+// Extracted here from the SAME "KPI Results" sheet rows already parsed
+// for the results-history import (see _kpiParseFullKpiResultsSheet's
+// `lineKpiFt` field) — no separate sheet parse needed. Deduped to one
+// row per (KPI Month, Line): every KPI row for that Line/Month carries
+// the identical broadcast value, so the first non-null one seen is
+// authoritative for the whole group.
+// ════════════════════════════════════════════════════════════════════
+app._kpiExtractLineFactorScoresFromHistoryRows = function(rows) {
+    const seen = new Map(); // key `${monthNo}::${line}` -> kpift
+    (rows || []).forEach(r => {
+        if (r.lineKpiFt == null) return;
+        const key = `${r.kpi_month_no}::${r.line}`;
+        if (!seen.has(key)) seen.set(key, { kpi_month_no: r.kpi_month_no, line: r.line, kpift: r.lineKpiFt });
+    });
+    return [...seen.values()];
+};
+
+// Wholesale-replace on import, same pattern as Station Counts and Fee
+// Periods — this is imported reference data nobody hand-edits, and a
+// fresh workbook import should fully reflect whatever's in that file.
+// Deliberately its OWN table (kpi_line_factor_scores) rather than a new
+// column on kpi_line_station_counts — that table's own import is a
+// separate delete-all-then-insert, so bolting kpift onto it would mean
+// whichever of the two imports runs last silently wipes the other's
+// data. A dedicated table sidesteps that ordering hazard entirely.
+app.importKpiLineFactorScores = async function(rows) {
+    if (!this.supabase) return { imported: 0, errors: ['Not connected to Supabase.'] };
+    try {
+        const tid = this._tid();
+        const { error: delError } = await this.supabase.from('kpi_line_factor_scores').delete().eq('tenant_id', tid);
+        if (delError) throw delError;
+        if (rows.length === 0) { this.state.kpiLineFactorScores = []; return { imported: 0, errors: [] }; }
+        const insertRows = rows.map(r => ({ tenant_id: tid, ...r }));
+        const { data, error } = await this.supabase.from('kpi_line_factor_scores').insert(insertRows).select();
+        if (error) throw error;
+        this.state.kpiLineFactorScores = data || [];
+        this.showToast(`Line KPIFt imported: ${data.length} (Month, Line) rows — used directly by MGT Ratio Per Line instead of the live estimate.`, 'success');
+        return { imported: data.length, errors: [] };
+    } catch (e) {
+        console.error('❌ Failed to import line KPIFt:', e.message);
+        this.showToast('Could not import line KPIFt: ' + e.message, 'error');
+        return { imported: 0, errors: [e.message] };
+    }
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -4208,22 +4303,30 @@ app._kpiMPercFromFactor = function(kpiFt) {
     return 0.07; // g >= 2
 };
 
-// A line's overall Factor Score (KPIFt) for a given KPI Month — a
-// weighted average of that line's own KPIs' Factor Scores for the
-// matching calendar month, weighted by each KPI's Final Weight (Area% x
-// Level1% x Level2% x Level3%). This is mathematically equivalent to the
-// source spreadsheet's explicit Area->Level1->Level2->KPI tree rollup,
-// since Final Weight is already that full chain multiplied down to each
-// individual KPI — no need to separately model Area/Level as their own
-// entities. Normalizes by the weight of KPIs that actually HAVE a result
-// this month (rather than zeroing the whole line out if one KPI hasn't
-// reported yet) — the source spreadsheet doesn't handle partial data
-// explicitly, so this is a deliberate, documented judgment call.
-// directorateId: pass a directorate to scope to just that directorate's
-// own KPIs on this line (matches this app's per-directorate L3-L6
-// structure); pass null/omit for a company-wide figure across every
-// directorate's KPIs on that line.
+// A line's overall Factor Score (KPIFt) for a given KPI Month.
+//
+// Prefers the imported, authoritative value from kpi_line_factor_scores
+// (see _kpiExtractLineFactorScoresFromHistoryRows for exactly how that's
+// computed in the real spreadsheet and why it's trusted directly rather
+// than re-derived) — but ONLY for the company-wide figure (directorateId
+// == null), since that import has no directorate breakdown at all, just
+// one flat value per (Month, Line). For a directorate-scoped call, or
+// for a month the import doesn't cover yet, falls back to the estimate
+// below: a weighted average of that line's own KPIs' Factor Scores,
+// weighted by Final Weight (Area% x Level1% x Level2% x Level3%) —
+// mathematically the same tree, just flattened into one multiplication
+// per KPI instead of walking it level by level, and normalized only by
+// the weight of KPIs that already have a result this month rather than
+// including every KPI in the denominator regardless. That last part is
+// a real, confirmed difference from the true formula (a KPI with no
+// result yet still counts fully in the real tree), so treat this
+// fallback as an estimate, not an exact match — surfaced as such in the
+// UI (see the "(estimated)" label on MGT Ratio Per Line).
 app._kpiLineFactorScore = function(lineName, kpiMonthNo, directorateId) {
+    if (directorateId == null) {
+        const imported = (this.state.kpiLineFactorScores || []).find(r => Number(r.kpi_month_no) === Number(kpiMonthNo) && r.line === lineName);
+        if (imported && imported.kpift != null) return Number(imported.kpift);
+    }
     const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
     if (!feePeriod) return null;
     const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
@@ -4263,6 +4366,12 @@ app._kpiLineStationRatio = function(lineName, kpiMonthNo) {
 // The full MGT Ratio Per Line table for a given KPI Month — Line,
 // Stations, Ratio, KPIFt, M%erc, and each line's Weighted Contribution,
 // plus the total (the headline company- or directorate-wide bonus %).
+app._kpiLineFactorScoreIsImported = function(lineName, kpiMonthNo, directorateId) {
+    if (directorateId != null) return false; // the import has no directorate breakdown
+    const imported = (this.state.kpiLineFactorScores || []).find(r => Number(r.kpi_month_no) === Number(kpiMonthNo) && r.line === lineName);
+    return !!(imported && imported.kpift != null);
+};
+
 app._kpiMgtRatioPerLine = function(kpiMonthNo, directorateId) {
     const lines = ['L3', 'L4', 'L5', 'L6'];
     const rows = lines.map(line => {
@@ -4270,9 +4379,10 @@ app._kpiMgtRatioPerLine = function(kpiMonthNo, directorateId) {
         const stations = stationRow ? stationRow.station_count : null;
         const ratio = this._kpiLineStationRatio(line, kpiMonthNo);
         const kpiFt = this._kpiLineFactorScore(line, kpiMonthNo, directorateId);
+        const kpiFtIsImported = this._kpiLineFactorScoreIsImported(line, kpiMonthNo, directorateId);
         const mPerc = this._kpiMPercFromFactor(kpiFt);
         const weighted = (ratio != null && mPerc != null) ? ratio * mPerc : null;
-        return { line, stations, ratio, kpiFt, mPerc, weighted };
+        return { line, stations, ratio, kpiFt, kpiFtIsImported, mPerc, weighted };
     });
     const total = rows.reduce((sum, r) => sum + (r.weighted || 0), 0);
     return { rows, total };
