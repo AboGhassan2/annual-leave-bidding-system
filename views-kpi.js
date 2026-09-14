@@ -431,6 +431,7 @@ app._renderKpiReportingSection = function() {
                 <td style="padding:8px 12px;text-align:right;color:#6b7280;">${displayResult && displayResult.factor_score != null ? Number(displayResult.factor_score).toFixed(2) : '—'}</td>
                 <td style="padding:8px 12px;text-align:right;font-weight:600;">${displayResult && displayResult.final_kpi != null ? Number(displayResult.final_kpi).toFixed(2) : '—'}</td>
                 <td style="padding:8px 12px;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
+                <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;color:${displayResult && displayResult.imported_total_cost != null && Number(displayResult.imported_total_cost) > 0 ? '#991b1b' : '#6b7280'};">${displayResult && displayResult.imported_total_cost != null ? Number(displayResult.imported_total_cost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;max-width:180px;">${displayResult && displayResult.remarks ? esc(displayResult.remarks) : '—'}</td>
             </tr>
         `;
@@ -502,6 +503,7 @@ app._renderKpiReportingSection = function() {
                                 <th style="padding:8px 12px;text-align:right;">Factor</th>
                                 <th style="padding:8px 12px;text-align:right;">Final KPI</th>
                                 <th style="padding:8px 12px;">Benchmark</th>
+                                <th style="padding:8px 12px;text-align:right;">Total Cost</th>
                                 <th style="padding:8px 12px;">Remarks</th>
                             </tr>
                         </thead>
