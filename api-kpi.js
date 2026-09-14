@@ -553,7 +553,7 @@ app._kpiResultBenchmark = function(result, kpiDef) {
 };
 
 
-app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark, revisionType }) {
+app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark, revisionType, importedTotalCost }) {
     if (!this.supabase) return null;
     try {
         const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
@@ -574,6 +574,11 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         const factorScore = precomputedFactorScore != null ? precomputedFactorScore
             : this._kpiFactorScore(actualValue, kpiDef.exceptional_value, kpiDef.target_value, kpiDef.unacceptable_value, kpiDef.direction);
         const importedBenchmark = precomputedBenchmark != null ? precomputedBenchmark : null;
+        // Same "trust the import, null out otherwise" convention as
+        // imported_benchmark above — a manual save through the normal UI
+        // never passes this, so it correctly clears back to null if
+        // someone re-enters this same result by hand after an import.
+        const importedTotalCostValue = importedTotalCost != null ? importedTotalCost : null;
         // Final KPI auto-follows the freshly computed Factor Score UNLESS
         // it was already manually overridden on a previous save of this
         // same result (i.e. its stored value no longer matches its own
@@ -622,6 +627,7 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
             factor_score: factorScore,
             final_kpi: finalKpi,
             imported_benchmark: importedBenchmark,
+            imported_total_cost: importedTotalCostValue,
             remarks: remarks || '',
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
@@ -3842,6 +3848,25 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
         // (excludes PSA/TSA/FOSA/TLR/TSR, which have no Allocation % and
         // don't participate in this tree), broadcast onto every row.
         const lineKpiFt = cellNum(`V${r}`);
+        // Total Cost (column AM) — this KPI's own $ share of that Line's
+        // penalty pool for the month. Traced the real formula: AM =
+        // [Weighted Penalty Distribution] x XLOOKUP(Month+Line, M%
+        // sheet's Month+Line, M% sheet's "Line Cost" column) — i.e. this
+        // KPI's proportional share of underperforming-KPI weight on its
+        // Line, times that Line's Line Cost (not the combined Mgmt+Line
+        // total — that's a separate column, "Total Cost L1"). Weighted
+        // Penalty Distribution itself = this KPI's Allocation% (only
+        // counted if Final Factor < 2) / the sum of Allocation% across
+        // every underperforming KPI on that Line that month. Imported
+        // directly rather than reimplemented in JS, same reasoning as
+        // KPIFt above: this app's existing _kpiPenaltyAllocationForLine
+        // already computes something similar but differs in at least two
+        // confirmed ways — it uses the combined Mgmt+Line pool instead of
+        // Line Cost alone, and it drops any KPI with no result entirely
+        // instead of counting a missing result as underperforming (blank
+        // < 2 is TRUE in Excel) — so trusting a live recompute here would
+        // risk repeating the exact same class of mismatch found in KPIFt.
+        const totalCostPerKpi = cellNum(`AM${r}`);
         out.push({
             kpi_month_no: Math.trunc(monthNo), line: lineName, code, company,
             periodType: periodTypeMap[freq] || 'monthly',
@@ -3849,6 +3874,7 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
             precomputedFactorScore: finalFactor,
             precomputedBenchmark: benchmarkText || null,
             lineKpiFt,
+            totalCostPerKpi,
         });
     }
     return out;
@@ -3888,6 +3914,7 @@ app.importKpiFullResultsHistory = async function(rows) {
                 year, periodType: row.periodType, periodValue,
                 actualValue: row.actualValue, remarks: row.remarks || `Imported from KPI Results (M${row.kpi_month_no})`, source: 'kpi_results_history_import',
                 precomputedFactorScore: row.precomputedFactorScore, precomputedBenchmark: row.precomputedBenchmark,
+                importedTotalCost: row.totalCostPerKpi,
             });
             if (!saved) { summary.failed++; summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): failed to save`); continue; }
             summary.updated++;
