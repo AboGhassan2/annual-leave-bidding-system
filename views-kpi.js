@@ -3095,6 +3095,21 @@ app._renderKpiFinancialImportPreview = function(preview) {
                 ${tile('KPI Results (IWF)', !!iwfResults, iwfResults ? iwfResults.length : 0, iwfResults ? `KPI Month ${iwfMonthNo}, all lines` : '')}
                 ${tile('Cost Pool rows (M%)', !!costPools, costPools ? costPools.length : 0, costPools ? `KPI Months ${costPoolMonths[0]}\u2013${costPoolMonths[costPoolMonths.length - 1]}` : '')}
                 ${tile('KPI Results history', !!resultsHistory, resultsHistory ? resultsHistory.length : 0, resultsHistory ? `KPI Months ${historyMonths[0]}\u2013${historyMonths[historyMonths.length - 1]}, both companies` : '')}
+                ${resultsHistory ? (() => {
+                    // Diagnostic tile — column V (KPIFt) is read from the
+                    // SAME rows as KPI Results history above, but SheetJS
+                    // can fail to cache a value for certain formula types
+                    // (e.g. array/spilled formulas) even when the row's
+                    // other columns read fine. This makes that failure
+                    // visible in the preview itself instead of only
+                    // showing up later as an empty kpi_line_factor_scores
+                    // table with no explanation.
+                    const lineFactorScoreRows = this._kpiExtractLineFactorScoresFromHistoryRows(resultsHistory);
+                    const monthsWithLineKpiFt = [...new Set(lineFactorScoreRows.map(r => r.kpi_month_no))].sort((a, b) => a - b);
+                    const ok = lineFactorScoreRows.length > 0;
+                    return tile('Line KPIFt (col V, for MGT Ratio)', ok, `${lineFactorScoreRows.length} of ${historyMonths.length * 4} (Month\u00d7Line)`,
+                        ok ? `Months ${monthsWithLineKpiFt[0]}\u2013${monthsWithLineKpiFt[monthsWithLineKpiFt.length - 1]}` : '\u26a0\ufe0f Column V read as blank for every row \u2014 tell Claude this exact count');
+                })() : ''}
                 ${tile('Availability Cost (WF)', !!availabilityCostRows, availabilityCostRows ? availabilityCostRows.length : 0, availabilityCostRows ? 'one month\u2019s snapshot \u2014 month resolved from Cost Pool data' : '')}
                 ${tile('Availability Base Cost (WF)', !!availabilityBaseCostRows, availabilityBaseCostRows ? availabilityBaseCostRows.length : 0, availabilityBaseCostRows ? 'feeds KPI Cost = KPIF \u00d7 this, every month' : '')}
                 ${tile('Availability Factor brackets', !!availabilityFactorBrackets, availabilityFactorBrackets ? availabilityFactorBrackets.length : 0, availabilityFactorBrackets ? 'the REAL KPIF lookup for PSA/TSA/FOSA' : '')}
