@@ -3153,6 +3153,7 @@ app._renderKpiFinancialImportResult = function(result) {
     if (result.iwfResults) lines.push(`KPI Results (IWF): ${result.iwfResults.updated} updated, ${result.iwfResults.notFound} not found, ${result.iwfResults.failed} failed`);
     if (result.costPools) lines.push(`Cost Pools (M%): ${result.costPools.imported} imported`);
     if (result.resultsHistory) lines.push(`KPI Results history: ${result.resultsHistory.updated} updated, ${result.resultsHistory.notFound} not found, ${result.resultsHistory.failed} failed`);
+    if (result.lineFactorScores) lines.push(`Line KPIFt (MGT Ratio): ${result.lineFactorScores.imported} (Month\u00d7Line) rows saved`);
     if (result.availabilityCost) lines.push(`Availability Cost (WF): ${result.availabilityCost.imported} imported`);
     if (result.availabilityBaseCost) lines.push(`Availability Base Cost (WF): ${result.availabilityBaseCost.imported} imported`);
     if (result.availabilityFactorBrackets) lines.push(`Availability Factor brackets: ${result.availabilityFactorBrackets.imported} imported`);
@@ -3170,6 +3171,7 @@ app._renderKpiFinancialImportResult = function(result) {
         ...(result.iwfResults ? result.iwfResults.errors.map(e => `KPI Results (IWF) — ${e}`) : []),
         ...(result.costPools ? result.costPools.errors.map(e => `Cost Pools (M%) — ${e}`) : []),
         ...(result.resultsHistory ? result.resultsHistory.errors.map(e => `KPI Results history — ${e}`) : []),
+        ...(result.lineFactorScores ? result.lineFactorScores.errors.map(e => `Line KPIFt — ${e}`) : []),
         ...(result.availabilityCost ? result.availabilityCost.errors.map(e => `Availability Cost (WF) — ${e}`) : []),
         ...(result.availabilityBaseCost ? result.availabilityBaseCost.errors.map(e => `Availability Base Cost (WF) — ${e}`) : []),
         ...(result.availabilityFactorBrackets ? result.availabilityFactorBrackets.errors.map(e => `Availability Factor brackets — ${e}`) : []),
