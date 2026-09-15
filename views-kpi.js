@@ -815,6 +815,70 @@ app._renderKpiFinancialReportingSection = function() {
             })()}
         </div>
 
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:6px;">
+            <p style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;font-weight:600;margin-bottom:4px;">Cost Per KPI (AI\u2013AP)</p>
+            <p style="font-size:0.72rem;color:#9ca3af;margin-bottom:14px;">Per-KPI cost breakdown behind MGT Ratio Per Line above \u2014 follows the same Month Number filter.</p>
+            ${(() => {
+                const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
+                const costMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData((this.state.kpiFeePeriods || []), null);
+                if (costMonthNo == null) return `<p style="font-size:0.85rem;color:#9ca3af;">No Month Number selected.</p>`;
+                const costTable = this._kpiCostPerKpiTable(costMonthNo, selectedCompany);
+                if (costTable.rows.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No cost data imported for this month yet \u2014 re-run the "KPI Results" import (Import from Excel \u2192 section 4).</p>`;
+                const fmt = (v) => v != null ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '\u2014';
+                return `
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;white-space:nowrap;">
+                            <thead>
+                                <tr style="text-align:left;color:#6b7280;text-transform:uppercase;font-size:0.68rem;letter-spacing:0.03em;border-bottom:2px solid #e5e7eb;">
+                                    <th style="padding:8px 10px;">Line</th>
+                                    <th style="padding:8px 10px;">Code</th>
+                                    <th style="padding:8px 10px;">KPI Name</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AI \u2014 pending: combined Mgmt+Line cost, held until the corrected workbook per explicit instruction">Total Cost L1 (AI)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AJ \u2014 pending">Cost L1 HIT% (AJ)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AK \u2014 pending">Cost L1 FS% (AK)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AL \u2014 pending">Cost L1 ALS% (AL)</th>
+                                    <th style="padding:8px 10px;text-align:right;">Total Cost (AM)</th>
+                                    <th style="padding:8px 10px;text-align:right;">Cost HIT% (AN)</th>
+                                    <th style="padding:8px 10px;text-align:right;">Cost FS% (AO)</th>
+                                    <th style="padding:8px 10px;text-align:right;">Cost ALS% (AP)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${costTable.rows.map(r => `
+                                    <tr style="border-top:1px solid #f3f4f6;">
+                                        <td style="padding:7px 10px;font-weight:700;">${esc(r.line)}</td>
+                                        <td style="padding:7px 10px;font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(r.code)}</td>
+                                        <td style="padding:7px 10px;">${esc(r.name)}</td>
+                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;" title="Pending \u2014 held until the corrected workbook">pending</td>
+                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
+                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
+                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
+                                        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${fmt(r.totalCost)}</td>
+                                        <td style="padding:7px 10px;text-align:right;">${fmt(r.costHit)}</td>
+                                        <td style="padding:7px 10px;text-align:right;">${fmt(r.costFs)}</td>
+                                        <td style="padding:7px 10px;text-align:right;">${fmt(r.costAls)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                            ${costTable.totals ? `
+                                <tfoot>
+                                    <tr style="border-top:2px solid #e5e7eb;font-weight:700;">
+                                        <td colspan="3" style="padding:8px 10px;text-align:right;">Total</td>
+                                        <td colspan="4" style="padding:8px 10px;"></td>
+                                        <td style="padding:8px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${fmt(costTable.totals.totalCost)}</td>
+                                        <td style="padding:8px 10px;text-align:right;">${fmt(costTable.totals.costHit)}</td>
+                                        <td style="padding:8px 10px;text-align:right;">${fmt(costTable.totals.costFs)}</td>
+                                        <td style="padding:8px 10px;text-align:right;">${fmt(costTable.totals.costAls)}</td>
+                                    </tr>
+                                </tfoot>
+                            ` : ''}
+                        </table>
+                    </div>
+                    <p style="font-size:0.7rem;color:#9ca3af;margin-top:8px;">Columns shaded and marked \u201cpending\u201d (AI\u2013AL, the combined Management+Line cost) are intentionally not calculated yet \u2014 held per explicit instruction until the corrected workbook defines that calculation. AM\u2013AP (Line-only cost and its HIT/FS/ALS split) are live. The AM total above should reconcile with MGT Ratio Per Line's Cost Per Line total for the same month.</p>
+                `;
+            })()}
+        </div>
+
         <p style="font-size:0.75rem;color:#9ca3af;">This is a summary view built on the Financial Calendar &amp; Partner Allocation data — see the Enter Results tab for each KPI's own HIT/FS/ALS Share, the KPIs tab for per-KPI Final Weight breakdowns, and each Director's Overview page for their own directorate's MGT Ratio Per Line.</p>
     `;
 };
