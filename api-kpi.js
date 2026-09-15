@@ -2496,6 +2496,67 @@ app._kpiPartnerShares = function(kpiDef, score) {
     };
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Cost Per KPI (source workbook's "KPI Results" sheet, columns AI-AP) —
+// per-KPI $ cost breakdown for a given KPI Month, shown as its own table
+// on Financial Reporting (separate from MGT Ratio Per Line, which is a
+// per-LINE summary — this is the per-KPI detail behind it).
+//
+// AM-AP (Line-only cost + its HIT/FS/ALS split) are fully live:
+//   AM = imported_total_cost, captured directly during the "KPI Results"
+//        history import (see _kpiParseFullKpiResultsSheet) rather than
+//        recomputed — same reasoning as KPIFt: the real formula is a
+//        proportional-share distribution across every KPI on a Line
+//        that's underperforming that month, with its own specific
+//        (and previously mismatched) rule for how a missing result
+//        counts, so the already-computed source value is trusted
+//        directly instead of risking a second mismatch.
+//   AN/AO/AP = AM x that KPI's own HIT%/FS%/ALS% (_kpiPartnerShares) —
+//        this part IS safe to compute live: it's a flat, single
+//        multiplication using fields already imported and already
+//        verified (Partner Allocation), not a proportional-distribution
+//        formula with edge cases like AM's.
+//
+// AI-AL (the COMBINED Management+Line cost + its own HIT/FS/ALS split)
+// are deliberately left null/pending — explicit instruction: don't
+// implement column AI until the corrected workbook is provided. The
+// table renders these as "pending" rather than a wrong number or a
+// silently-missing column.
+app._kpiCostPerKpiTable = function(kpiMonthNo, company) {
+    const targetCompany = company || 'OMC';
+    const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
+    if (!feePeriod) return { rows: [], totals: null };
+    const calMonthStr = String(feePeriod.kpi_cal_month).padStart(2, '0');
+
+    const directorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === targetCompany);
+    const dirIds = new Set(directorates.map(d => d.id));
+
+    const rows = (this.state.kpiResults || [])
+        .filter(r => r.period_type === 'monthly' && Number(r.year) === feePeriod.kpi_year && r.period_value === calMonthStr && r.imported_total_cost != null)
+        .map(r => {
+            const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === r.kpi_definition_id);
+            if (!kpiDef || !dirIds.has(kpiDef.directorate_id)) return null;
+            const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === kpiDef.department_id);
+            const shares = this._kpiPartnerShares(kpiDef, r.imported_total_cost);
+            return {
+                code: kpiDef.kpi_code || '', name: kpiDef.name, line: line ? line.department_name : '?',
+                totalCostL1: null, costL1Hit: null, costL1Fs: null, costL1Als: null, // AI-AL — pending, see note above
+                totalCost: Number(r.imported_total_cost), costHit: shares.hit, costFs: shares.fs, costAls: shares.als, // AM-AP
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.line === b.line ? a.code.localeCompare(b.code) : a.line.localeCompare(b.line));
+
+    const totals = rows.reduce((acc, r) => ({
+        totalCost: acc.totalCost + (r.totalCost || 0),
+        costHit: acc.costHit + (r.costHit || 0),
+        costFs: acc.costFs + (r.costFs || 0),
+        costAls: acc.costAls + (r.costAls || 0),
+    }), { totalCost: 0, costHit: 0, costFs: 0, costAls: 0 });
+
+    return { rows, totals: rows.length > 0 ? totals : null };
+};
+
 // "Period KPI vs Fees" sheet — a straightforward 1-row-per-KPI-Month
 // reference table, no fill-down or grouping needed.
 app._kpiParseFeePeriodRows = function(rawRows) {
