@@ -553,7 +553,7 @@ app._kpiResultBenchmark = function(result, kpiDef) {
 };
 
 
-app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark, revisionType, importedTotalCost }) {
+app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodValue, actualValue, remarks, source, precomputedFactorScore, precomputedBenchmark, revisionType, importedTotalCost, importedTotalCostL1 }) {
     if (!this.supabase) return null;
     try {
         const kpiDef = (this.state.kpiDefinitions || []).find(k => k.id === kpiDefinitionId);
@@ -579,6 +579,7 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
         // never passes this, so it correctly clears back to null if
         // someone re-enters this same result by hand after an import.
         const importedTotalCostValue = importedTotalCost != null ? importedTotalCost : null;
+        const importedTotalCostL1Value = importedTotalCostL1 != null ? importedTotalCostL1 : null;
         // Final KPI auto-follows the freshly computed Factor Score UNLESS
         // it was already manually overridden on a previous save of this
         // same result (i.e. its stored value no longer matches its own
@@ -628,6 +629,7 @@ app.saveKpiResult = async function(kpiDefinitionId, { year, periodType, periodVa
             final_kpi: finalKpi,
             imported_benchmark: importedBenchmark,
             imported_total_cost: importedTotalCostValue,
+            imported_total_cost_l1: importedTotalCostL1Value,
             remarks: remarks || '',
             source: source || 'manual',
             entered_by: this.state.verifiedKpiUser ? this.state.verifiedKpiUser.name : '',
@@ -2502,26 +2504,17 @@ app._kpiPartnerShares = function(kpiDef, score) {
 // on Financial Reporting (separate from MGT Ratio Per Line, which is a
 // per-LINE summary — this is the per-KPI detail behind it).
 //
-// AM-AP (Line-only cost + its HIT/FS/ALS split) are fully live:
-//   AM = imported_total_cost, captured directly during the "KPI Results"
-//        history import (see _kpiParseFullKpiResultsSheet) rather than
-//        recomputed — same reasoning as KPIFt: the real formula is a
-//        proportional-share distribution across every KPI on a Line
-//        that's underperforming that month, with its own specific
-//        (and previously mismatched) rule for how a missing result
-//        counts, so the already-computed source value is trusted
-//        directly instead of risking a second mismatch.
-//   AN/AO/AP = AM x that KPI's own HIT%/FS%/ALS% (_kpiPartnerShares) —
-//        this part IS safe to compute live: it's a flat, single
-//        multiplication using fields already imported and already
-//        verified (Partner Allocation), not a proportional-distribution
-//        formula with edge cases like AM's.
-//
-// AI-AL (the COMBINED Management+Line cost + its own HIT/FS/ALS split)
-// are deliberately left null/pending — explicit instruction: don't
-// implement column AI until the corrected workbook is provided. The
-// table renders these as "pending" rather than a wrong number or a
-// silently-missing column.
+// Both halves are live, same reasoning throughout: AI and AM (Total
+// Cost L1 / Total Cost) are imported directly rather than recomputed —
+// both are the same proportional-distribution-across-underperforming-
+// KPIs formula (only differing in which cost pool they multiply
+// against: combined Mgmt+Line for AI, Line-only for AM), with the same
+// previously-mismatched rule for how a missing result counts, so the
+// already-computed source values are trusted directly instead of
+// risking a second mismatch. AJ/AK/AL and AN/AO/AP (the HIT/FS/ALS
+// splits) ARE computed live via _kpiPartnerShares — that part is safe,
+// since it's just AI or AM x that KPI's own HIT%/FS%/ALS%, a flat
+// multiplication using fields already imported and already verified.
 app._kpiCostPerKpiTable = function(kpiMonthNo, company) {
     const targetCompany = company || 'OMC';
     const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
@@ -2538,9 +2531,11 @@ app._kpiCostPerKpiTable = function(kpiMonthNo, company) {
             if (!kpiDef || !dirIds.has(kpiDef.directorate_id)) return null;
             const line = (this.state.kpiDirectorateDepartments || []).find(l => l.id === kpiDef.department_id);
             const shares = this._kpiPartnerShares(kpiDef, r.imported_total_cost);
+            const sharesL1 = this._kpiPartnerShares(kpiDef, r.imported_total_cost_l1);
             return {
                 code: kpiDef.kpi_code || '', name: kpiDef.name, line: line ? line.department_name : '?',
-                totalCostL1: null, costL1Hit: null, costL1Fs: null, costL1Als: null, // AI-AL — pending, see note above
+                totalCostL1: r.imported_total_cost_l1 != null ? Number(r.imported_total_cost_l1) : null,
+                costL1Hit: sharesL1.hit, costL1Fs: sharesL1.fs, costL1Als: sharesL1.als, // AI-AL
                 totalCost: Number(r.imported_total_cost), costHit: shares.hit, costFs: shares.fs, costAls: shares.als, // AM-AP
             };
         })
@@ -2548,11 +2543,15 @@ app._kpiCostPerKpiTable = function(kpiMonthNo, company) {
         .sort((a, b) => a.line === b.line ? a.code.localeCompare(b.code) : a.line.localeCompare(b.line));
 
     const totals = rows.reduce((acc, r) => ({
+        totalCostL1: acc.totalCostL1 + (r.totalCostL1 || 0),
+        costL1Hit: acc.costL1Hit + (r.costL1Hit || 0),
+        costL1Fs: acc.costL1Fs + (r.costL1Fs || 0),
+        costL1Als: acc.costL1Als + (r.costL1Als || 0),
         totalCost: acc.totalCost + (r.totalCost || 0),
         costHit: acc.costHit + (r.costHit || 0),
         costFs: acc.costFs + (r.costFs || 0),
         costAls: acc.costAls + (r.costAls || 0),
-    }), { totalCost: 0, costHit: 0, costFs: 0, costAls: 0 });
+    }), { totalCostL1: 0, costL1Hit: 0, costL1Fs: 0, costL1Als: 0, totalCost: 0, costHit: 0, costFs: 0, costAls: 0 });
 
     return { rows, totals: rows.length > 0 ? totals : null };
 };
@@ -3928,6 +3927,17 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
         // < 2 is TRUE in Excel) — so trusting a live recompute here would
         // risk repeating the exact same class of mismatch found in KPIFt.
         const totalCostPerKpi = cellNum(`AM${r}`);
+        // Total Cost L1 (column AI) — the combined Management+Line
+        // version of the same distribution, now unblocked per explicit
+        // instruction. Verified formula: identical Weighted Penalty
+        // Distribution multiplier as AM, but against the M% sheet's
+        // "Total Mngmnt Per Line and Line Cost" column (N) instead of
+        // "Line Cost" alone (M) — same already-imported Cost Pool data,
+        // just the combined figure rather than the Line-only one.
+        // Imported directly for the same reason as AM: it's the same
+        // proportional-distribution formula with the same missing-result
+        // edge case, not a flat multiplication.
+        const totalCostL1PerKpi = cellNum(`AI${r}`);
         out.push({
             kpi_month_no: Math.trunc(monthNo), line: lineName, code, company,
             periodType: periodTypeMap[freq] || 'monthly',
@@ -3936,6 +3946,7 @@ app._kpiParseFullKpiResultsSheet = function(sheet) {
             precomputedBenchmark: benchmarkText || null,
             lineKpiFt,
             totalCostPerKpi,
+            totalCostL1PerKpi,
         });
     }
     return out;
@@ -3976,6 +3987,7 @@ app.importKpiFullResultsHistory = async function(rows) {
                 actualValue: row.actualValue, remarks: row.remarks || `Imported from KPI Results (M${row.kpi_month_no})`, source: 'kpi_results_history_import',
                 precomputedFactorScore: row.precomputedFactorScore, precomputedBenchmark: row.precomputedBenchmark,
                 importedTotalCost: row.totalCostPerKpi,
+                importedTotalCostL1: row.totalCostL1PerKpi,
             });
             if (!saved) { summary.failed++; summary.errors.push(`M${row.kpi_month_no}/${row.line}/${row.code} (${row.company}): failed to save`); continue; }
             summary.updated++;
