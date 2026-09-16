@@ -833,10 +833,10 @@ app._renderKpiFinancialReportingSection = function() {
                                     <th style="padding:8px 10px;">Line</th>
                                     <th style="padding:8px 10px;">Code</th>
                                     <th style="padding:8px 10px;">KPI Name</th>
-                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AI \u2014 pending: combined Mgmt+Line cost, held until the corrected workbook per explicit instruction">Total Cost L1 (AI)</th>
-                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AJ \u2014 pending">Cost L1 HIT% (AJ)</th>
-                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AK \u2014 pending">Cost L1 FS% (AK)</th>
-                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AL \u2014 pending">Cost L1 ALS% (AL)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AI \u2014 combined Management+Line cost: same distribution as AM, against the M% sheet's combined Mgmt+Line total instead of Line-only">Total Cost L1 (AI)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AJ \u2014 AI x this KPI's own HIT%">Cost L1 HIT% (AJ)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AK \u2014 AI x this KPI's own FS%">Cost L1 FS% (AK)</th>
+                                    <th style="padding:8px 10px;text-align:right;background:#f9fafb;" title="Column AL \u2014 AI x this KPI's own ALS%">Cost L1 ALS% (AL)</th>
                                     <th style="padding:8px 10px;text-align:right;">Total Cost (AM)</th>
                                     <th style="padding:8px 10px;text-align:right;">Cost HIT% (AN)</th>
                                     <th style="padding:8px 10px;text-align:right;">Cost FS% (AO)</th>
@@ -849,10 +849,10 @@ app._renderKpiFinancialReportingSection = function() {
                                         <td style="padding:7px 10px;font-weight:700;">${esc(r.line)}</td>
                                         <td style="padding:7px 10px;font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(r.code)}</td>
                                         <td style="padding:7px 10px;">${esc(r.name)}</td>
-                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;" title="Pending \u2014 held until the corrected workbook">pending</td>
-                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
-                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
-                                        <td style="padding:7px 10px;text-align:right;color:#d1d5db;background:#fafafa;">pending</td>
+                                        <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;background:#fafafa;">${fmt(r.totalCostL1)}</td>
+                                        <td style="padding:7px 10px;text-align:right;background:#fafafa;">${fmt(r.costL1Hit)}</td>
+                                        <td style="padding:7px 10px;text-align:right;background:#fafafa;">${fmt(r.costL1Fs)}</td>
+                                        <td style="padding:7px 10px;text-align:right;background:#fafafa;">${fmt(r.costL1Als)}</td>
                                         <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${fmt(r.totalCost)}</td>
                                         <td style="padding:7px 10px;text-align:right;">${fmt(r.costHit)}</td>
                                         <td style="padding:7px 10px;text-align:right;">${fmt(r.costFs)}</td>
@@ -864,7 +864,10 @@ app._renderKpiFinancialReportingSection = function() {
                                 <tfoot>
                                     <tr style="border-top:2px solid #e5e7eb;font-weight:700;">
                                         <td colspan="3" style="padding:8px 10px;text-align:right;">Total</td>
-                                        <td colspan="4" style="padding:8px 10px;"></td>
+                                        <td style="padding:8px 10px;text-align:right;font-family:'JetBrains Mono',monospace;background:#fafafa;">${fmt(costTable.totals.totalCostL1)}</td>
+                                        <td style="padding:8px 10px;text-align:right;background:#fafafa;">${fmt(costTable.totals.costL1Hit)}</td>
+                                        <td style="padding:8px 10px;text-align:right;background:#fafafa;">${fmt(costTable.totals.costL1Fs)}</td>
+                                        <td style="padding:8px 10px;text-align:right;background:#fafafa;">${fmt(costTable.totals.costL1Als)}</td>
                                         <td style="padding:8px 10px;text-align:right;font-family:'JetBrains Mono',monospace;">${fmt(costTable.totals.totalCost)}</td>
                                         <td style="padding:8px 10px;text-align:right;">${fmt(costTable.totals.costHit)}</td>
                                         <td style="padding:8px 10px;text-align:right;">${fmt(costTable.totals.costFs)}</td>
@@ -874,7 +877,7 @@ app._renderKpiFinancialReportingSection = function() {
                             ` : ''}
                         </table>
                     </div>
-                    <p style="font-size:0.7rem;color:#9ca3af;margin-top:8px;">Columns shaded and marked \u201cpending\u201d (AI\u2013AL, the combined Management+Line cost) are intentionally not calculated yet \u2014 held per explicit instruction until the corrected workbook defines that calculation. AM\u2013AP (Line-only cost and its HIT/FS/ALS split) are live. The AM total above should reconcile with MGT Ratio Per Line's Cost Per Line total for the same month.</p>
+                    <p style="font-size:0.7rem;color:#9ca3af;margin-top:8px;">AI\u2013AL (shaded, the combined Management+Line cost) and AM\u2013AP (Line-only cost) both reconcile against MGT Ratio Per Line above for the same month \u2014 AI's total should match Total Cost there, and AM's total should match Cost Per Line.</p>
                 `;
             })()}
         </div>
