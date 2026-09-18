@@ -2515,6 +2515,72 @@ app._kpiPartnerShares = function(kpiDef, score) {
 // splits) ARE computed live via _kpiPartnerShares — that part is safe,
 // since it's just AI or AM x that KPI's own HIT%/FS%/ALS%, a flat
 // multiplication using fields already imported and already verified.
+// Export to Excel — Financial Reporting. Three sheets in one workbook,
+// one per table on that page, each pulling from the exact same data the
+// tables just rendered (stashed during render — see the
+// _kpiFinReportExport* assignments inside _renderKpiFinancialReportingSection)
+// rather than recomputing anything here, so the download matches what's
+// on screen for whichever Month Number was selected.
+app.exportFinancialReportingToExcel = function() {
+    const mgt = this.state._kpiFinReportExportMgt;
+    const avail = this.state._kpiFinReportExportAvailability;
+    const cost = this.state._kpiFinReportExportCostPerKpi;
+    if (!mgt && !avail && !cost) { this.showToast('Nothing to export yet \u2014 open Financial Reporting first.', 'error'); return; }
+    const wb = XLSX.utils.book_new();
+
+    if (mgt && mgt.table && mgt.table.rows.length > 0) {
+        const wsData = [['Line', 'Stations', 'Ratio', 'KPIFt', 'KPIFt Source', 'M%erc', 'M%erct-avgte', 'Cost per Mgmt', 'Cost per Line', 'Total Cost']];
+        mgt.table.rows.forEach((r, i) => {
+            const c = (mgt.costRows || [])[i];
+            wsData.push([
+                r.line, r.stations, r.ratio, r.kpiFt, r.kpiFtIsImported ? 'Imported' : 'Estimated',
+                r.mPerc, r.weighted, c ? c.managementAllocation : null, c ? c.lineCost : null, c ? c.totalPool : null,
+            ]);
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'MGT Ratio Per Line');
+    }
+    if (avail && avail.length > 0) {
+        const wsData = [['Line', 'Metric', 'Enter Result', 'KPIF', 'KPI Cost']];
+        avail.forEach(r => wsData.push([r.line, r.metric, r.enteredResult, r.kpif, r.kpiCost]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Availability Factor');
+    }
+    if (cost && cost.rows.length > 0) {
+        const wsData = [['Line', 'Code', 'KPI Name', 'Total Cost L1 (AI)', 'Cost L1 HIT% (AJ)', 'Cost L1 FS% (AK)', 'Cost L1 ALS% (AL)', 'Total Cost (AM)', 'Cost HIT% (AN)', 'Cost FS% (AO)', 'Cost ALS% (AP)']];
+        cost.rows.forEach(r => wsData.push([r.line, r.code, r.name, r.totalCostL1, r.costL1Hit, r.costL1Fs, r.costL1Als, r.totalCost, r.costHit, r.costFs, r.costAls]));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), 'Cost Per KPI (AI-AP)');
+    }
+    if (wb.SheetNames.length === 0) { this.showToast('No data available to export for the selected month.', 'error'); return; }
+    const company = this.state._kpiSelectedCompany || 'OMC';
+    XLSX.writeFile(wb, `Financial_Reporting_${company}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
+// Export to Excel — KPI Reporting. Reads the exact same filtered/sorted
+// rows the table just rendered (this.state._kpiReportingExportRows, kept
+// in sync every render — see _renderKpiReportingSection) rather than
+// re-deriving the filters here, so the download always matches exactly
+// what's on screen. Uses the same XLSX.utils.aoa_to_sheet /
+// XLSX.writeFile pattern already used elsewhere in this app (see
+// exportResults/exportMaintResults in views-admin.js) — no new library
+// needed, SheetJS is already loaded for the Excel import features.
+app.exportKpiReportingToExcel = function() {
+    const rows = this.state._kpiReportingExportRows || [];
+    if (rows.length === 0) { this.showToast('No KPIs to export — adjust the filters first.', 'error'); return; }
+    const wsData = [
+        ['KPI Code', 'KPI Name', 'Directorate', 'Line', 'Frequency', 'Period', 'Result', 'Factor', 'Final KPI', 'Benchmark', 'Total Cost', 'Remarks'],
+    ];
+    rows.forEach(r => {
+        wsData.push([
+            r.code, r.name, r.directorate, r.line, r.periodType, r.period,
+            r.result, r.factor, r.finalKpi, r.benchmark, r.totalCost, r.remarks,
+        ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'KPI Reporting');
+    const company = this.state._kpiSelectedCompany || 'OMC';
+    XLSX.writeFile(wb, `KPI_Reporting_${company}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
 app._kpiCostPerKpiTable = function(kpiMonthNo, company) {
     const targetCompany = company || 'OMC';
     const feePeriod = (this.state.kpiFeePeriods || []).find(p => Number(p.kpi_month_no) === Number(kpiMonthNo));
