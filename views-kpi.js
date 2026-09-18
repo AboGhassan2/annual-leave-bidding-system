@@ -762,8 +762,8 @@ app._renderKpiFinancialReportingSection = function() {
                                         <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}${r.kpiFt != null ? (r.kpiFtIsImported ? ' <span title="Imported directly from the KPI Results sheet\u2019s own KPIFt column" style="font-family:inherit;font-size:0.65rem;color:#166534;">✓</span>' : ' <span title="Estimated \u2014 no imported KPIFt for this month yet; live-computed from this line\u2019s own KPI results, which excludes any not-yet-reported KPI rather than counting it in the tree" style="font-family:inherit;font-size:0.65rem;color:#b45309;">(est.)</span>') : ''}</td>
-                                        <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
-                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(4) + '%' : '—'}</td>
+                                        <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(4) + '%' : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;">${cost ? fmtCost(cost.managementAllocation) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;">${cost ? fmtCost(cost.lineCost) : '—'}</td>
                                         <td style="padding:8px 12px;text-align:right;font-weight:700;">${cost ? fmtCost(cost.totalPool) : '—'}</td>
@@ -3733,8 +3733,8 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                                     <td style="padding:8px 12px;text-align:right;">${r.stations != null ? r.stations : '—'}</td>
                                     <td style="padding:8px 12px;text-align:right;">${r.ratio != null ? (r.ratio * 100).toFixed(1) + '%' : '—'}</td>
                                     <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;">${r.kpiFt != null ? r.kpiFt.toFixed(4) : '—'}${r.kpiFt != null ? (r.kpiFtIsImported ? ' <span title="Imported directly from the KPI Results sheet\u2019s own KPIFt column" style="font-family:inherit;font-size:0.65rem;color:#166534;">✓</span>' : ' <span title="Estimated \u2014 no imported KPIFt for this month yet" style="font-family:inherit;font-size:0.65rem;color:#b45309;">(est.)</span>') : ''}</td>
-                                    <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(3) + '%' : '—'}</td>
-                                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(3) + '%' : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;">${r.mPerc != null ? (r.mPerc * 100).toFixed(4) + '%' : '—'}</td>
+                                    <td style="padding:8px 12px;text-align:right;font-weight:700;color:#1B4332;">${r.weighted != null ? (r.weighted * 100).toFixed(4) + '%' : '—'}</td>
                                 </tr>
                             `).join('')}
                             <tr style="border-top:2px solid #e5e7eb;">
