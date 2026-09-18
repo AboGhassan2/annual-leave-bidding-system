@@ -420,26 +420,50 @@ app._renderKpiReportingSection = function() {
             Acceptable: ['Acceptable', '#dbeafe', '#1e40af'],
             Unacceptable: ['Unacceptable', '#fee2e2', '#991b1b'],
         }[benchmark] || ['—', '#f3f4f6', '#6b7280'];
-        return `
+        return {
+            code: k.kpi_code || '', name: k.name, isSharedView, viewWeight,
+            directorate: dir ? dir.name : '', line: line ? line.department_name : '',
+            periodType: { monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type,
+            period: displayResult ? displayResult.period_label : '',
+            result: displayResult ? displayResult.actual_value : null,
+            factor: displayResult ? displayResult.factor_score : null,
+            finalKpi: displayResult ? displayResult.final_kpi : null,
+            benchmark: benchmark || '',
+            totalCost: displayResult ? displayResult.imported_total_cost : null,
+            remarks: displayResult ? displayResult.remarks : '',
+            benchmarkBadge,
+        };
+    });
+    // Kept in sync with the table on every render — the Export to Excel
+    // button reads this directly so what downloads always matches
+    // exactly what's on screen (same filters already applied), instead
+    // of a separate export function re-deriving the filters itself and
+    // risking drifting out of sync with this one over time.
+    this.state._kpiReportingExportRows = rows;
+    const rowsHtml = rows.map(r => `
             <tr style="border-top:1px solid #f3f4f6;">
-                <td style="padding:8px 12px;font-weight:600;">${k.kpi_code ? `<span style="font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(k.kpi_code)}</span>: ` : ''}${esc(k.name)}${isSharedView ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">🤝 ${Math.round(viewWeight * 100)}% share</span>` : ''}</td>
-                <td style="padding:8px 12px;">${dir ? esc(dir.name) : '—'}${isSharedView ? ' (home)' : ''}</td>
-                <td style="padding:8px 12px;">${line ? esc(line.department_name) : '—'}</td>
-                <td style="padding:8px 12px;">${{ monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }[k.period_type] || k.period_type}</td>
-                <td style="padding:8px 12px;">${displayResult ? esc(displayResult.period_label) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;">${displayResult ? esc(String(displayResult.actual_value)) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;color:#6b7280;">${displayResult && displayResult.factor_score != null ? Number(displayResult.factor_score).toFixed(2) : '—'}</td>
-                <td style="padding:8px 12px;text-align:right;font-weight:600;">${displayResult && displayResult.final_kpi != null ? Number(displayResult.final_kpi).toFixed(2) : '—'}</td>
-                <td style="padding:8px 12px;"><span style="background:${benchmarkBadge[1]};color:${benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${benchmarkBadge[0]}</span></td>
-                <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;color:${displayResult && displayResult.imported_total_cost != null && Number(displayResult.imported_total_cost) > 0 ? '#991b1b' : '#6b7280'};">${displayResult && displayResult.imported_total_cost != null ? Number(displayResult.imported_total_cost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;max-width:180px;">${displayResult && displayResult.remarks ? esc(displayResult.remarks) : '—'}</td>
+                <td style="padding:8px 12px;font-weight:600;">${r.code ? `<span style="font-family:'JetBrains Mono',monospace;color:#B8860B;">${esc(r.code)}</span>: ` : ''}${esc(r.name)}${r.isSharedView ? ` <span style="color:#7c3aed;font-size:0.7rem;font-weight:700;">🤝 ${Math.round(r.viewWeight * 100)}% share</span>` : ''}</td>
+                <td style="padding:8px 12px;">${r.directorate ? esc(r.directorate) : '—'}${r.isSharedView ? ' (home)' : ''}</td>
+                <td style="padding:8px 12px;">${r.line ? esc(r.line) : '—'}</td>
+                <td style="padding:8px 12px;">${esc(r.periodType)}</td>
+                <td style="padding:8px 12px;">${r.period ? esc(r.period) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;">${r.result != null ? esc(String(r.result)) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;color:#6b7280;">${r.factor != null ? Number(r.factor).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;text-align:right;font-weight:600;">${r.finalKpi != null ? Number(r.finalKpi).toFixed(2) : '—'}</td>
+                <td style="padding:8px 12px;"><span style="background:${r.benchmarkBadge[1]};color:${r.benchmarkBadge[2]};padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;">${r.benchmarkBadge[0]}</span></td>
+                <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',monospace;color:${r.totalCost != null && Number(r.totalCost) > 0 ? '#991b1b' : '#6b7280'};">${r.totalCost != null ? Number(r.totalCost).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;max-width:180px;">${r.remarks ? esc(r.remarks) : '—'}</td>
             </tr>
-        `;
-    }).join('');
+        `).join('');
 
     return `
-        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;margin-bottom:2px;">KPI Reporting</h1>
-        <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">${esc(selectedCompany)} · Every KPI's most recent recorded result</p>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:2px;">
+            <div>
+                <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;">KPI Reporting</h1>
+                <p style="font-size:0.8rem;color:#6b7280;">${esc(selectedCompany)} · Every KPI's most recent recorded result</p>
+            </div>
+            <button onclick="app.exportKpiReportingToExcel()" style="padding:8px 16px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer;white-space:nowrap;">📥 Export to Excel</button>
+        </div>
 
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:18px;">
             <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;">
@@ -507,7 +531,7 @@ app._renderKpiReportingSection = function() {
                                 <th style="padding:8px 12px;">Remarks</th>
                             </tr>
                         </thead>
-                        <tbody>${rows}</tbody>
+                        <tbody>${rowsHtml}</tbody>
                     </table>
                 </div>
             `}
@@ -568,8 +592,14 @@ app._renderKpiFinancialReportingSection = function() {
     });
 
     return `
-        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;margin-bottom:2px;">Financial Reporting</h1>
-        <p style="font-size:0.8rem;color:#6b7280;margin-bottom:20px;">${esc(selectedCompany)} · Fee periods &amp; partner allocation</p>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:2px;">
+            <div>
+                <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.7rem;color:#14251C;">Financial Reporting</h1>
+                <p style="font-size:0.8rem;color:#6b7280;">${esc(selectedCompany)} · Fee periods &amp; partner allocation</p>
+            </div>
+            <button onclick="app.exportFinancialReportingToExcel()" style="padding:8px 16px;background:#166534;color:#fff;border:none;border-radius:8px;font-size:0.82rem;font-weight:700;cursor:pointer;white-space:nowrap;">📥 Export to Excel</button>
+        </div>
+        <div style="margin-bottom:18px;"></div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
             <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;">
@@ -694,6 +724,7 @@ app._renderKpiFinancialReportingSection = function() {
                 const mgtSelectedMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, null);
                 const mgtSelectedPeriod = mgtFeePeriods.find(p => p.kpi_month_no === mgtSelectedMonthNo);
                 const mgtTable = this._kpiMgtRatioPerLine(mgtSelectedMonthNo, null);
+                this.state._kpiFinReportExportMgt = { monthNo: mgtSelectedMonthNo, period: mgtSelectedPeriod, table: mgtTable };
                 // Cost per Mgmt / Cost per Line / Total Cost — the M%
                 // sheet's own L/M/N columns, per line, for this same
                 // month. Uses the same _kpiLineCostPool the Cost Inputs
@@ -701,6 +732,7 @@ app._renderKpiFinancialReportingSection = function() {
                 // this is exactly the imported-or-manual figure, never a
                 // separate calculation.
                 const costRows = mgtTable.rows.map(r => this._kpiLineCostPool(r.line, mgtSelectedMonthNo, selectedCompany));
+                this.state._kpiFinReportExportMgt.costRows = costRows;
                 const fmtCost = (v) => v != null ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
                 const costTotal = (key) => costRows.reduce((sum, c) => sum + (c && c[key] != null ? c[key] : 0), 0);
                 const anyCostData = costRows.some(c => c != null);
@@ -774,6 +806,12 @@ app._renderKpiFinancialReportingSection = function() {
                 const rawSelected = this.state._kpiFinReportMgtSelectedMonthNo;
                 const availMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(availFeePeriods, null);
                 const rows = this._kpiAvailabilityAllRowsForMonth(availMonthNo);
+                this.state._kpiFinReportExportAvailability = rows.map(r => ({
+                    line: r.line, metric: r.metric,
+                    enteredResult: this._kpiAvailabilityMetricResult(r.metric, r.line, availMonthNo, selectedCompany),
+                    kpif: this._kpiAvailabilityMetricFactorScore(r.metric, r.line, availMonthNo, selectedCompany),
+                    kpiCost: this._kpiAvailabilityMetricCost(r.metric, r.line, availMonthNo, selectedCompany),
+                }));
                 return `
                     <div style="overflow-x:auto;margin-top:10px;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
@@ -823,6 +861,7 @@ app._renderKpiFinancialReportingSection = function() {
                 const costMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData((this.state.kpiFeePeriods || []), null);
                 if (costMonthNo == null) return `<p style="font-size:0.85rem;color:#9ca3af;">No Month Number selected.</p>`;
                 const costTable = this._kpiCostPerKpiTable(costMonthNo, selectedCompany);
+                this.state._kpiFinReportExportCostPerKpi = costTable;
                 if (costTable.rows.length === 0) return `<p style="font-size:0.85rem;color:#9ca3af;">No cost data imported for this month yet \u2014 re-run the "KPI Results" import (Import from Excel \u2192 section 4).</p>`;
                 const fmt = (v) => v != null ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : '\u2014';
                 return `
