@@ -3711,6 +3711,11 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
                             ${mgtYearOptions.map(y => `<option value="${y}" ${mgtSelectedYear === y ? 'selected' : ''}>${y}</option>`).join('')}
                         </select>
                     ` : ''}
+                    ${mgtMode === 'year' && mgtFeePeriods.length > 0 ? `
+                        <select onchange="app.state._kpiMgtRatioSelectedMonthNo=parseInt(this.value,10);${rerender};" title="Month Number for the Availability Factor section below (MGT Ratio is showing Year (Sum) above)" style="padding:6px 10px;border:1.5px dashed #d1d5db;border-radius:8px;font-size:0.8rem;color:#6b7280;">
+                            ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${mgtSelectedMonthNo === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
+                        </select>
+                    ` : ''}
                 </div>
             </div>
             ${mgtMode === 'month' ? (!mgtTable ? `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet — run the Import from Excel section to enable this table.</p>` : `
@@ -3775,23 +3780,29 @@ app._buildKpiDashboardBody = function(directorateId, year, rerenderCall) {
 
         <!-- Availability Factor -->
         ${(() => {
-            const dirForAvailCompany = (this.state.kpiDirectorates || []).find(d => d.id === directorateId);
-            const availCompany = dirForAvailCompany ? (dirForAvailCompany.company || 'OMC') : 'OMC';
             return `
         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
                 <div>
                     <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;color:#14251C;">Availability Factor</h3>
-                    <p style="font-size:0.72rem;color:#9ca3af;">PSA / TSA / FOSA, per line</p>
+                    <p style="font-size:0.72rem;color:#9ca3af;">PSA / TSA / FOSA, per line \u2014 follows the Month Number selected on MGT Ratio Per Line above \u2191</p>
                 </div>
-                ${mgtFeePeriods.length > 0 ? `
-                    <select onchange="app.state._kpiAvailabilitySelectedMonthNo=parseInt(this.value,10);${rerender};" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.8rem;">
-                        ${mgtFeePeriods.map(p => `<option value="${p.kpi_month_no}" ${(this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods, availCompany)) === p.kpi_month_no ? 'selected' : ''}>${esc(p.kpi_fiscal_month)}${p.kpi_month_name ? ' — ' + esc(p.kpi_month_name) + ' ' + esc(String(p.kpi_year)) : ''}</option>`).join('')}
-                    </select>
-                ` : ''}
             </div>
             ${(() => {
-                const availMonthNo = this.state._kpiAvailabilitySelectedMonthNo != null ? Number(this.state._kpiAvailabilitySelectedMonthNo) : this._kpiLatestMonthWithAvailabilityData(mgtFeePeriods, availCompany);
+                // Shares the exact same selected-month state as MGT Ratio
+                // Per Line above (_kpiMgtRatioSelectedMonthNo) instead of
+                // its own independent _kpiAvailabilitySelectedMonthNo \u2014
+                // per explicit request, changing the Month Number on
+                // either section now updates both, on both the Planner's
+                // Preview Dashboard tab AND the Director/Viewer's own
+                // login page (this function, _buildKpiDashboardBody, is
+                // shared by both \u2014 see the calls in
+                // _renderKpiPreviewSection and renderKpiDirectorView), so
+                // fixing it here fixes both places at once, and the fix
+                // persists across refresh/navigation the same way the
+                // rest of this app's state already does.
+                const rawSelected = this.state._kpiMgtRatioSelectedMonthNo;
+                const availMonthNo = rawSelected != null ? Number(rawSelected) : this._kpiLatestMonthWithMgtData(mgtFeePeriods, directorateId);
                 if (availMonthNo == null) return `<p style="font-size:0.8rem;color:#9ca3af;text-align:center;padding:20px 0;">No Financial Calendar imported yet.</p>`;
                 // Availability Factor is physical network data (like
                 // station counts), not owned by one directorate — a
