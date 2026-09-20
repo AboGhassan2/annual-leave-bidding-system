@@ -352,47 +352,57 @@ app.deleteKpiDefinition = async function(id) {
 };
 
 // ════════════════════════════════════════════════════════════════════
-// Bulk copy — duplicates the entire OMC directorate/line/KPI/owner
-// STRUCTURE into Audit (per enhancement request). Deliberately built on
-// top of the existing save functions (saveKpiDirectorate,
-// ensureKpiLinesForDirectorate, saveKpiDefinition) rather than raw
-// inserts, so tenant scoping and existing validation/state-sync all stay
-// correct automatically.
+// Bulk copy — duplicates the entire OMC directorate/line/KPI/owner/
+// results DATA into Audit (per explicit request, extended from an
+// earlier structure-only version per a follow-up explicit request to
+// also copy recorded results/values). Built on top of the existing save
+// functions (saveKpiDirectorate, ensureKpiLinesForDirectorate,
+// saveKpiDefinition, saveKpiResult) rather than raw inserts, so tenant
+// scoping, validation, and state-sync all stay correct automatically —
+// including saveKpiResult's own baseline-tracking and auto Quarterly/
+// Yearly rollup, exactly as a normal import or manual entry would.
 //
 // What this copies: directorates (as new Audit rows with the same
-// name), their 4 standard lines (created fresh via the same idempotent
-// helper every directorate already uses), every KPI definition under
-// them (name, thresholds, unit, period type, direction), and any KPI
-// owners.
+// name, or reusing one that already exists under that name), their 4
+// standard lines, every KPI definition under them — now including the
+// full Weight Hierarchy (Area/Level1/Level2/Level3 + %) and Partner
+// Allocation (allocation_pct, hit/fs/als_pct, allocation_hit/fs/als_pct)
+// fields, which an earlier version of this function omitted — any KPI
+// owners, and now (per explicit follow-up) every recorded MONTHLY
+// result (actual value, factor score, imported benchmark, imported
+// Total Cost / Total Cost L1, baseline). Quarterly/Yearly rows are
+// deliberately NOT copied directly — saveKpiResult's own auto-rollup
+// regenerates them correctly as each monthly value is saved, the same
+// way entering results normally or importing from Excel already works,
+// so copying the source's quarterly/yearly rows too would just create
+// duplicates or conflict with what auto-rollup produces.
 //
-// What this deliberately does NOT copy: kpi_results (actual entered
-// values per period). Those are real recorded performance numbers —
-// duplicating OMC's historical figures under Audit would create
-// fabricated data that looks real. Audit starts with the same KPI
-// *structure* but a clean slate of results, same as any newly-set-up
-// company would.
-//
-// Safe to re-run: an OMC directorate whose name already exists under
-// Audit is skipped entirely (not re-copied, not merged) to avoid
-// creating duplicates if this is ever run more than once.
+// Idempotent at every level, not just "skip the whole directorate" —
+// re-running this is always safe and will fill in anything new since
+// the last run:
+//   - a directorate whose name already exists under Audit is REUSED
+//     (not skipped, not duplicated)
+//   - a KPI matched by (kpi_code + line) if coded, else by name, is
+//     REUSED rather than re-created
+//   - owners are only copied for a KPI that doesn't already have any
+//     under Audit (avoids piling up duplicate owner rows on re-run)
+//   - a result is only copied if no Audit result already exists for
+//     that KPI + period_label
 app.copyKpiOmcStructureToAudit = async function() {
-    if (!this.supabase) return { directorates: 0, kpis: 0, owners: 0, skipped: 0 };
+    if (!this.supabase) return { directorates: 0, kpis: 0, owners: 0, results: 0, skipped: 0 };
     const omcDirectorates = (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === 'OMC');
-    const existingAuditNames = new Set(
-        (this.state.kpiDirectorates || []).filter(d => (d.company || 'OMC') === 'Audit').map(d => d.name)
-    );
 
-    let directoratesCopied = 0, kpisCopied = 0, ownersCopied = 0, skipped = 0;
+    let directoratesCopied = 0, kpisCopied = 0, ownersCopied = 0, resultsCopied = 0, skipped = 0;
 
     for (const omcDir of omcDirectorates) {
-        if (existingAuditNames.has(omcDir.name)) {
-            skipped++;
-            continue;
+        let newDir = (this.state.kpiDirectorates || []).find(d => (d.company || 'OMC') === 'Audit' && d.name === omcDir.name);
+        if (newDir) {
+            skipped++; // directorate itself already existed — still proceeds to fill in any missing KPIs/results below
+        } else {
+            newDir = await this.saveKpiDirectorate(omcDir.name, null, 'Audit');
+            if (!newDir) continue;
+            directoratesCopied++;
         }
-
-        const newDir = await this.saveKpiDirectorate(omcDir.name, null, 'Audit');
-        if (!newDir) continue;
-        directoratesCopied++;
 
         await this.ensureKpiLinesForDirectorate(newDir.id);
         const newLines = (this.state.kpiDirectorateDepartments || []).filter(l => l.directorate_id === newDir.id);
@@ -405,41 +415,68 @@ app.copyKpiOmcStructureToAudit = async function() {
             const newDeptId = omcLine ? newLineIdByName[omcLine.department_name] : null;
             if (!newDeptId) continue; // every directorate always has the same 4 standard lines, so this shouldn't happen
 
-            const savedKpi = await this.saveKpiDefinition({
-                directorateId: newDir.id,
-                departmentId: newDeptId,
-                name: k.name,
-                category: k.category,
-                unit: k.unit,
-                targetValue: k.target_value,
-                exceptionalValue: k.exceptional_value,
-                unacceptableValue: k.unacceptable_value,
-                periodType: k.period_type,
-                direction: k.direction,
-                kpiCode: k.kpi_code,
-            }, null);
-            if (!savedKpi) continue;
-            kpisCopied++;
+            let savedKpi = (this.state.kpiDefinitions || []).find(d => d.directorate_id === newDir.id && d.department_id === newDeptId &&
+                (k.kpi_code ? d.kpi_code === k.kpi_code : d.name === k.name));
+            if (!savedKpi) {
+                savedKpi = await this.saveKpiDefinition({
+                    directorateId: newDir.id,
+                    departmentId: newDeptId,
+                    name: k.name,
+                    category: k.category,
+                    unit: k.unit,
+                    targetValue: k.target_value,
+                    exceptionalValue: k.exceptional_value,
+                    unacceptableValue: k.unacceptable_value,
+                    periodType: k.period_type,
+                    direction: k.direction,
+                    kpiCode: k.kpi_code,
+                    area: k.area, areaPct: k.area_pct,
+                    level1: k.level1, level1Pct: k.level1_pct,
+                    level2: k.level2, level2Pct: k.level2_pct,
+                    level3Pct: k.level3_pct,
+                    allocationPct: k.allocation_pct,
+                    hitPct: k.hit_pct, fsPct: k.fs_pct, alsPct: k.als_pct,
+                    allocationHitPct: k.allocation_hit_pct, allocationFsPct: k.allocation_fs_pct, allocationAlsPct: k.allocation_als_pct,
+                }, null);
+                if (!savedKpi) continue;
+                kpisCopied++;
+            }
 
-            const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
-            if (owners.length > 0) {
-                const ownerRows = owners.map(o => ({
-                    tenant_id: this._tid(),
-                    kpi_definition_id: savedKpi.id,
-                    owner_name: o.owner_name,
-                    owner_dept: o.owner_dept,
-                    owner_percentage: o.owner_percentage,
-                }));
-                const { data: insertedOwners, error: ownerError } = await this.supabase.from('kpi_owners').insert(ownerRows).select();
-                if (!ownerError) {
-                    this.state.kpiOwners = [...(this.state.kpiOwners || []), ...(insertedOwners || [])];
-                    ownersCopied += insertedOwners.length;
+            const alreadyHasOwners = (this.state.kpiOwners || []).some(o => o.kpi_definition_id === savedKpi.id);
+            if (!alreadyHasOwners) {
+                const owners = (this.state.kpiOwners || []).filter(o => o.kpi_definition_id === k.id);
+                if (owners.length > 0) {
+                    const ownerRows = owners.map(o => ({
+                        tenant_id: this._tid(),
+                        kpi_definition_id: savedKpi.id,
+                        owner_name: o.owner_name,
+                        owner_dept: o.owner_dept,
+                        owner_percentage: o.owner_percentage,
+                    }));
+                    const { data: insertedOwners, error: ownerError } = await this.supabase.from('kpi_owners').insert(ownerRows).select();
+                    if (!ownerError) {
+                        this.state.kpiOwners = [...(this.state.kpiOwners || []), ...(insertedOwners || [])];
+                        ownersCopied += insertedOwners.length;
+                    }
                 }
+            }
+
+            const omcMonthlyResults = (this.state.kpiResults || []).filter(r => r.kpi_definition_id === k.id && r.period_type === 'monthly');
+            const existingAuditPeriods = new Set((this.state.kpiResults || []).filter(r => r.kpi_definition_id === savedKpi.id).map(r => r.period_label));
+            for (const r of omcMonthlyResults) {
+                if (existingAuditPeriods.has(r.period_label)) continue;
+                const saved = await this.saveKpiResult(savedKpi.id, {
+                    year: r.year, periodType: r.period_type, periodValue: r.period_value,
+                    actualValue: r.actual_value, remarks: r.remarks, source: 'copied_from_omc',
+                    precomputedFactorScore: r.factor_score, precomputedBenchmark: r.imported_benchmark,
+                    importedTotalCost: r.imported_total_cost, importedTotalCostL1: r.imported_total_cost_l1,
+                });
+                if (saved) resultsCopied++;
             }
         }
     }
 
-    return { directorates: directoratesCopied, kpis: kpisCopied, owners: ownersCopied, skipped };
+    return { directorates: directoratesCopied, kpis: kpisCopied, owners: ownersCopied, results: resultsCopied, skipped };
 };
 
 // ════════════════════════════════════════════════════════════════════
