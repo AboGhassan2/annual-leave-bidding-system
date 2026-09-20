@@ -1020,17 +1020,18 @@ app.confirmDeleteKpiDirectorate = async function(id) {
 
 app.doCopyKpiOmcStructureToAudit = async function() {
     const ok = confirm(
-        'Copy every OMC directorate, line, and KPI (with its thresholds and owners) into Audit?\n\n' +
-        'Recorded results are NOT copied — Audit starts with the same KPI structure but a clean slate of entered data.\n\n' +
-        'Any OMC directorate whose name already exists under Audit will be skipped, so this is safe to run more than once.'
+        'Copy every OMC directorate, line, KPI (with thresholds, weight hierarchy, partner allocation, and owners), AND every recorded monthly result into Audit?\n\n' +
+        'Audit ends up with the same numbers OMC has \u2014 Quarterly/Yearly figures are not copied directly, they\u2019ll regenerate automatically from the monthly values, same as normal.\n\n' +
+        'Safe to run more than once \u2014 anything that already exists under Audit (a directorate, a KPI, a specific period\u2019s result) is reused/skipped rather than duplicated, so re-running only fills in anything new.'
     );
     if (!ok) return;
-    this.showToast('Copying OMC structure to Audit…', 'success');
+    this.showToast('Copying OMC data to Audit\u2026 this can take a while if there are many results.', 'success');
     const result = await this.copyKpiOmcStructureToAudit();
     const parts = [`${result.directorates} directorate${result.directorates !== 1 ? 's' : ''}`, `${result.kpis} KPI${result.kpis !== 1 ? 's' : ''}`];
     if (result.owners > 0) parts.push(`${result.owners} owner record${result.owners !== 1 ? 's' : ''}`);
+    if (result.results > 0) parts.push(`${result.results} result${result.results !== 1 ? 's' : ''}`);
     let msg = `Copied ${parts.join(', ')} to Audit.`;
-    if (result.skipped > 0) msg += ` (${result.skipped} directorate${result.skipped !== 1 ? 's' : ''} skipped — already existed under Audit.)`;
+    if (result.skipped > 0) msg += ` (${result.skipped} directorate${result.skipped !== 1 ? 's' : ''} already existed \u2014 reused, still checked for anything new underneath.)`;
     this.showToast(msg, 'success');
     this.renderKpiPlannerView();
 };
