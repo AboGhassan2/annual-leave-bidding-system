@@ -221,6 +221,185 @@
                 XLSX.writeFile(wb, `Seniority_Report_${this.state.biddingYear}.xlsx`);
             };
 
+            // ════════════════════════════════════════════════════════════
+            // Leave Entitlement & Balance Report — the display layer for the
+            // accrual engine in utils.js (_leaveBalanceSummary and friends).
+            // Same scope and structure as the Seniority Report right above
+            // (Ops staff from state.employees + Maintenance staff from
+            // state.maintenanceStaffUsers) for consistency; GC/CS staff
+            // aren't included here yet since their entitlement is tracked
+            // separately in views-bidding.js — flag if those should be
+            // folded in too.
+            // ════════════════════════════════════════════════════════════
+            app.renderLeaveBalanceReportView = function() {
+                const content = document.getElementById('contentArea');
+                const asOfDate = this.state._leaveBalanceAsOfDate || new Date().toISOString().slice(0, 10);
+                const asOf = new Date(asOfDate);
+
+                const buildRow = (e, isMaintenance) => {
+                    const ownResults = (isMaintenance ? this.state.maintResults : this.state.results) || [];
+                    const slots = ownResults.filter(r => r.employeeId === e.id && Number(r.year) === asOf.getFullYear());
+                    const summary = this._leaveBalanceSummary(e.seniorityDate, asOfDate, slots);
+                    return {
+                        id: e.id, name: e.name || '—', department: e.department || 'Unassigned', position: e.position || '—',
+                        seniorityDate: e.seniorityDate || '', isMaintenance, ...summary,
+                    };
+                };
+
+                const rows = [
+                    ...(this.state.employees || []).map(e => buildRow(e, false)),
+                    ...(this.state.maintenanceStaffUsers || []).map(e => buildRow(e, true)),
+                ];
+                rows.sort((a, b) => a.name.localeCompare(b.name));
+
+                const missingCount = rows.filter(r => !r.seniorityDate).length;
+                const negativeCount = rows.filter(r => r.remainingBalance < 0).length;
+                const deptOptions = [...new Set(rows.map(r => r.department))].sort();
+                const fmt = (n) => Number.isFinite(n) ? n.toFixed(2) : '—';
+
+                content.innerHTML = `
+                    <div class="max-w-7xl mx-auto">
+                        <div class="metro-card p-6 mb-6">
+                            <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                                <div>
+                                    <h2 class="text-2xl font-bold" style="font-family:'Barlow Condensed',sans-serif;color:var(--app-text);">🗓️ Leave Entitlement &amp; Balance Report</h2>
+                                    <p class="text-sm mt-1" style="color:var(--app-text-muted);">Automatic accrual by length of service — 30 days/year under 5 years, 35 days/year at 5+ years, prorated across the anniversary</p>
+                                </div>
+                                <div class="flex gap-2 items-center flex-wrap">
+                                    <label class="text-sm font-semibold" style="color:var(--app-text-muted);">As of</label>
+                                    <input type="date" id="leaveBalanceAsOfDate" value="${asOfDate}"
+                                        onchange="app.state._leaveBalanceAsOfDate=this.value; app.renderLeaveBalanceReportView();"
+                                        class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);" />
+                                    <button onclick="app.exportLeaveBalanceReportCSV()" class="metro-tab metro-tab-primary">⬇ Export Excel</button>
+                                    <button onclick="app.setActiveView('dashboard')" class="metro-tab">← Back</button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div class="p-4 rounded-lg" style="background:var(--app-green-50);">
+                                    <p class="text-2xl font-bold" style="color:var(--app-text);">${rows.length}</p>
+                                    <p class="text-sm" style="color:var(--app-text-muted);">Total Staff</p>
+                                </div>
+                                <div class="bg-orange-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-orange-700">${rows.filter(r => r.yearsOfService >= 5).length}</p>
+                                    <p class="text-sm text-gray-600">At 35 days/year (5+ yrs)</p>
+                                </div>
+                                <div class="bg-red-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-red-700">${negativeCount}</p>
+                                    <p class="text-sm text-gray-600">Negative Remaining Balance</p>
+                                </div>
+                                <div class="bg-red-50 p-4 rounded-lg">
+                                    <p class="text-2xl font-bold text-red-700">${missingCount}</p>
+                                    <p class="text-sm text-gray-600">Missing Seniority/Joining Date</p>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-3 mb-4">
+                                <input type="text" id="leaveBalanceReportSearch" placeholder="Search by name or ID…"
+                                    oninput="app._filterLeaveBalanceReport()"
+                                    class="px-3 py-2 border-2 rounded-lg text-sm flex-1 min-w-[200px]" style="border-color:var(--app-border);" />
+                                <select id="leaveBalanceReportDeptFilter" onchange="app._filterLeaveBalanceReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Departments</option>
+                                    ${deptOptions.map(d => `<option value="${this._escHtml(d)}">${this._escHtml(d)}</option>`).join('')}
+                                </select>
+                                <select id="leaveBalanceReportTypeFilter" onchange="app._filterLeaveBalanceReport()" class="px-3 py-2 border-2 rounded-lg text-sm" style="border-color:var(--app-border);">
+                                    <option value="all">All Staff Types</option>
+                                    <option value="ops">Operations Staff</option>
+                                    <option value="maintenance">Maintenance Staff</option>
+                                </select>
+                            </div>
+
+                            <div class="overflow-x-auto" style="border:1px solid var(--app-border);border-radius:10px;">
+                                <table class="metro-table" id="leaveBalanceReportTable">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th><th>Staff ID</th><th>Name</th><th>Department</th><th>Type</th>
+                                            <th>Joining Date</th><th>Years of Svc</th><th>Annual Entitlement</th>
+                                            <th>Daily Rate</th><th>Monthly Rate</th><th>Accrued Balance</th>
+                                            <th>Leave Taken</th><th>Approved Future</th><th>Remaining Balance</th><th>Next Increase</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="leaveBalanceReportBody">
+                                        ${rows.map((r, idx) => this._leaveBalanceReportRow(r, idx)).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs mt-3" style="color:var(--app-text-muted);">Showing <span id="leaveBalanceReportCount">${rows.length}</span> of ${rows.length} staff, as of ${this._escHtml(asOfDate)}. Uses the 30/35-day annual entitlement as the authoritative value for all calculations — the daily/monthly rates shown are for reference only.</p>
+                        </div>
+                    </div>
+                `;
+
+                window._leaveBalanceReportRows = rows;
+            };
+
+            app._leaveBalanceReportRow = function(r, idx) {
+                const fmt = (n) => Number.isFinite(n) ? n.toFixed(2) : '—';
+                const missingStyle = !r.seniorityDate ? 'background:#fef2f2;' : '';
+                const negativeStyle = r.remainingBalance < 0 ? 'color:#b91c1c;font-weight:700;' : '';
+                return `
+                    <tr style="${missingStyle}" data-dept="${this._escHtml(r.department)}" data-type="${r.isMaintenance ? 'maintenance' : 'ops'}" data-search="${this._escHtml((r.name + ' ' + r.id).toLowerCase())}">
+                        <td style="text-align:center;color:var(--app-text-muted);">${idx + 1}</td>
+                        <td style="font-family:monospace;font-size:0.8rem;">${this._escHtml(r.id)}</td>
+                        <td style="font-weight:600;">${this._escHtml(r.name)}</td>
+                        <td>${this._escHtml(r.department)}</td>
+                        <td>${r.isMaintenance ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-800">Maintenance</span>' : '<span class="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">Operations</span>'}</td>
+                        <td>${r.seniorityDate ? this._escHtml(r.seniorityDate.slice(0, 10)) : '<span class="text-red-500 font-semibold">Missing</span>'}</td>
+                        <td style="text-align:center;">${fmt(r.yearsOfService)}</td>
+                        <td style="text-align:center;font-weight:700;">${fmt(r.annualEntitlement)}</td>
+                        <td style="text-align:center;color:var(--app-text-muted);">${r.dailyRate}</td>
+                        <td style="text-align:center;color:var(--app-text-muted);">${r.monthlyRate}</td>
+                        <td style="text-align:center;">${fmt(r.accruedBalance)}</td>
+                        <td style="text-align:center;">${fmt(r.leaveTaken)}</td>
+                        <td style="text-align:center;">${fmt(r.approvedFutureLeave)}</td>
+                        <td style="text-align:center;${negativeStyle}">${fmt(r.remainingBalance)}</td>
+                        <td>${r.nextIncreaseDate ? this._escHtml(r.nextIncreaseDate.toISOString().slice(0, 10)) : '<span style="color:var(--app-text-muted);">None scheduled</span>'}</td>
+                    </tr>`;
+            };
+
+            app._filterLeaveBalanceReport = function() {
+                const q = (document.getElementById('leaveBalanceReportSearch')?.value || '').toLowerCase().trim();
+                const dept = document.getElementById('leaveBalanceReportDeptFilter')?.value || 'all';
+                const type = document.getElementById('leaveBalanceReportTypeFilter')?.value || 'all';
+                const rowsEls = document.querySelectorAll('#leaveBalanceReportBody tr');
+                let visible = 0;
+                rowsEls.forEach(tr => {
+                    const matchesQ = !q || (tr.dataset.search || '').includes(q);
+                    const matchesDept = dept === 'all' || tr.dataset.dept === dept;
+                    const matchesType = type === 'all' || tr.dataset.type === type;
+                    const show = matchesQ && matchesDept && matchesType;
+                    tr.style.display = show ? '' : 'none';
+                    if (show) visible++;
+                });
+                const countEl = document.getElementById('leaveBalanceReportCount');
+                if (countEl) countEl.textContent = visible;
+            };
+
+            app.exportLeaveBalanceReportCSV = function() {
+                const rows = window._leaveBalanceReportRows || [];
+                if (rows.length === 0) {
+                    alert('No staff data to export.');
+                    return;
+                }
+                const fmt = (n) => Number.isFinite(n) ? Number(n.toFixed(2)) : '';
+                const wsData = [
+                    ['Staff ID', 'Name', 'Department', 'Staff Type', 'Joining Date', 'Years of Service', 'Annual Entitlement',
+                        'Daily Rate', 'Monthly Rate', 'Accrued Balance', 'Leave Taken', 'Approved Future Leave', 'Remaining Balance', 'Next Increase Date']
+                ];
+                rows.forEach(r => {
+                    wsData.push([
+                        r.id, r.name, r.department, r.isMaintenance ? 'Maintenance' : 'Operations',
+                        r.seniorityDate ? r.seniorityDate.slice(0, 10) : 'Missing',
+                        fmt(r.yearsOfService), fmt(r.annualEntitlement), r.dailyRate, r.monthlyRate,
+                        fmt(r.accruedBalance), fmt(r.leaveTaken), fmt(r.approvedFutureLeave), fmt(r.remainingBalance),
+                        r.nextIncreaseDate ? r.nextIncreaseDate.toISOString().slice(0, 10) : 'None scheduled',
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Leave Balance Report');
+                XLSX.writeFile(wb, `Leave_Balance_Report_${(this.state._leaveBalanceAsOfDate || new Date().toISOString().slice(0, 10))}.xlsx`);
+            };
+
             app._buildJustificationRowsForResults = function(results, groupField, category) {
                 if (!results || results.length === 0) return [];
 
