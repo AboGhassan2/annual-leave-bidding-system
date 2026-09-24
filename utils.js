@@ -151,3 +151,174 @@ app._blocksJanuaryBid = function(employeeId, startDate, endDate, year) {
     return s <= janEnd && e >= janStart; // any overlap with January counts
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Leave Entitlement & Accrual Engine (Annual Leave Entitlement Balance
+// module) — per explicit spec:
+//   < 5 years of service: 30 days/year (0.0833/day, 2.5/month — DISPLAY
+//     rates only, see below)
+//   >= 5 years of service: 35 days/year (0.0972/day, 2.9166/month)
+// The 5-year step takes effect exactly on the employee's 5th service
+// anniversary (from their seniority/joining date — this app already
+// uses seniority_date as the joining-date basis for entitlement, see
+// the existing flat getEmployeeEntitlement in views-bidding.js).
+//
+// "Leave year" = calendar year (Jan 1 - Dec 31) of the year in
+// question — consistent with how bidding/results are already
+// year-scoped everywhere else in this app (results/bids carry a plain
+// `year` field, "My Leave Results — 2027" etc.), not an anniversary-
+// based year. Flagging this as the one real assumption in here: if the
+// leave year should instead run anniversary-to-anniversary, the
+// proration math below would need a different year-boundary, not just
+// a tweak.
+//
+// Accuracy requirement: every calculation here uses the AUTHORITATIVE
+// annual entitlement (30 or 35) directly — daily/monthly figures are
+// derived by fraction-of-year math (days/daysInYear x 30, etc.), never
+// by multiplying a rounded 0.0833/2.5/0.0972/2.9166 constant. Those
+// rounded constants are exposed ONLY as display-only "applicable rate"
+// fields (_leaveDisplayRates), exactly matching the two constants in
+// the spec table, never fed back into any balance math.
+
+app._leaveYearsOfService = function(seniorityDate, asOfDate) {
+    if (!seniorityDate) return 0;
+    const join = new Date(seniorityDate);
+    const asOf = asOfDate ? new Date(asOfDate) : new Date();
+    if (isNaN(join.getTime()) || isNaN(asOf.getTime())) return 0;
+    return (asOf - join) / (1000 * 60 * 60 * 24 * 365.25);
+};
+
+// The exact calendar date of an employee's Nth service anniversary —
+// exact date math (setFullYear), not a 365.25-day approximation, so
+// this stays correct across leap years.
+app._leaveAnniversaryDate = function(seniorityDate, n) {
+    if (!seniorityDate) return null;
+    const join = new Date(seniorityDate);
+    if (isNaN(join.getTime())) return null;
+    const anniv = new Date(join);
+    anniv.setFullYear(join.getFullYear() + n);
+    return anniv;
+};
+
+// Days in the calendar year containing `date` — 366 in a leap year.
+// Used as the exact proration denominator instead of a fixed 365.
+app._leaveDaysInYear = function(date) {
+    const y = date.getFullYear();
+    return (new Date(y, 1, 29).getMonth() === 1) ? 366 : 365; // Feb 29 exists only in a leap year
+};
+
+// The authoritative annual entitlement (30 or 35) applicable AT a
+// specific date, with no proration — the single source of truth every
+// other calculation below is built from.
+app._leaveAnnualRateAt = function(seniorityDate, date) {
+    return this._leaveYearsOfService(seniorityDate, date) >= 5 ? 35 : 30;
+};
+
+// Entitlement for a full calendar year, correctly prorated across the
+// 5-year anniversary if it falls inside that year: days before the
+// anniversary accrue at 30/year, days from the anniversary onward
+// accrue at 35/year, each as an exact fraction of the year — not the
+// rounded daily constant. If the anniversary isn't in this year at
+// all, this collapses to a flat 30 or 35 exactly.
+app._leaveEntitlementForYear = function(seniorityDate, year) {
+    if (!seniorityDate) return 30;
+    const yearStart = new Date(year, 0, 1);
+    const yearEndExclusive = new Date(year + 1, 0, 1);
+    const daysInYear = this._leaveDaysInYear(yearStart);
+    const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
+
+    if (!fifthAnniv || fifthAnniv <= yearStart) {
+        return 35; // already 5+ years for the entire year
+    }
+    if (fifthAnniv >= yearEndExclusive) {
+        return 30; // won't reach 5 years until a later year
+    }
+    // Anniversary falls inside this year — split proportionally.
+    const daysBefore = Math.round((fifthAnniv - yearStart) / (1000 * 60 * 60 * 24));
+    const daysAfter = daysInYear - daysBefore;
+    return (daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35;
+};
+
+// Accrued balance as of a specific date within its calendar year —
+// same before/after-anniversary split as _leaveEntitlementForYear, but
+// only up through `asOfDate` instead of the full year.
+app._leaveAccruedAsOf = function(seniorityDate, asOfDate) {
+    if (!seniorityDate) return 0;
+    const asOf = new Date(asOfDate);
+    const year = asOf.getFullYear();
+    const yearStart = new Date(year, 0, 1);
+    const daysInYear = this._leaveDaysInYear(yearStart);
+    const daysElapsed = Math.round((asOf - yearStart) / (1000 * 60 * 60 * 24)) + 1; // inclusive of asOfDate itself
+    const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
+
+    if (!fifthAnniv || fifthAnniv <= yearStart) {
+        return (daysElapsed / daysInYear) * 35;
+    }
+    if (fifthAnniv > asOf) {
+        return (daysElapsed / daysInYear) * 30; // anniversary hasn't happened yet as of this date
+    }
+    // Anniversary already passed within this same year, before asOfDate.
+    const daysBefore = Math.round((fifthAnniv - yearStart) / (1000 * 60 * 60 * 24));
+    const daysAfterElapsed = daysElapsed - daysBefore;
+    return (daysBefore / daysInYear) * 30 + (daysAfterElapsed / daysInYear) * 35;
+};
+
+// The next scheduled entitlement increase strictly after `asOfDate` —
+// this 2-tier system only has ONE step (at 5 years), so once an
+// employee has passed it, there is no further scheduled increase and
+// this returns null (display this as "—" / "None scheduled").
+app._leaveNextIncreaseDate = function(seniorityDate, asOfDate) {
+    const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
+    const asOf = asOfDate ? new Date(asOfDate) : new Date();
+    if (!fifthAnniv || fifthAnniv <= asOf) return null;
+    return fifthAnniv;
+};
+
+// Display-only rates — the exact two constants from the spec table.
+// Never used in any balance/accrual math above; purely what's shown to
+// the user as "your applicable daily/monthly rate".
+app._leaveDisplayRates = function(seniorityDate, asOfDate) {
+    const isSenior = this._leaveYearsOfService(seniorityDate, asOfDate) >= 5;
+    return isSenior ? { daily: 0.0972, monthly: 2.9166 } : { daily: 0.0833, monthly: 2.5 };
+};
+
+// Full balance summary for one employee as of a given date — this is
+// the one function a report/screen should actually call; it bundles
+// everything the spec asks to be displayed. `awardedSlots` is that
+// employee's own awarded leave records for the current leave year
+// (from state.results / state.maintResults — each with startDate,
+// endDate, days) so "already taken" vs "approved future" can be split
+// by whether the slot has fully passed `asOfDate` yet.
+app._leaveBalanceSummary = function(seniorityDate, asOfDate, awardedSlots) {
+    const asOf = asOfDate ? new Date(asOfDate) : new Date();
+    const year = asOf.getFullYear();
+    const entitlement = this._leaveEntitlementForYear(seniorityDate, year);
+    const accrued = this._leaveAccruedAsOf(seniorityDate, asOf);
+    const rates = this._leaveDisplayRates(seniorityDate, asOf);
+    const nextIncrease = this._leaveNextIncreaseDate(seniorityDate, asOf);
+
+    let taken = 0, approvedFuture = 0;
+    (awardedSlots || []).forEach(slot => {
+        const end = new Date(slot.endDate);
+        const start = new Date(slot.startDate);
+        if (isNaN(end.getTime()) || isNaN(start.getTime())) return;
+        if (end <= asOf) taken += slot.days; // fully in the past (or ending today)
+        else if (start > asOf) approvedFuture += slot.days; // hasn't started yet
+        else taken += slot.days; // in progress as of today — already underway
+    });
+
+    const remaining = accrued - taken - approvedFuture;
+
+    return {
+        yearsOfService: this._leaveYearsOfService(seniorityDate, asOf),
+        annualEntitlement: entitlement,
+        accruedBalance: accrued,
+        leaveTaken: taken,
+        approvedFutureLeave: approvedFuture,
+        remainingBalance: remaining,
+        dailyRate: rates.daily,
+        monthlyRate: rates.monthly,
+        nextIncreaseDate: nextIncrease,
+    };
+};
+
+
