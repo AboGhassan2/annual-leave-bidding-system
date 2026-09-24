@@ -334,6 +334,9 @@
                     case 'seniorityReport':
                         this.renderSeniorityReportView();
                         break;
+                    case 'leaveBalanceReport':
+                        this.renderLeaveBalanceReportView();
+                        break;
                     case 'configureMaintSlots':
                         this.renderConfigureMaintSlotsView();
                         break;
