@@ -43,8 +43,12 @@
             
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                    return yearsOfService >= 5 ? 35 : 30;
+                    // Prorated across the 5-year anniversary when it falls
+                    // inside this bidding year, using the authoritative
+                    // 30/35-day annual entitlement (never the rounded
+                    // daily/monthly rates) — see utils.js's Leave
+                    // Entitlement & Accrual Engine for the full math.
+                    return this._leaveEntitlementForYear(employee.seniorityDate, this.state.biddingYear);
                 };
             
                 const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
@@ -805,7 +809,13 @@
                     return (today - joinDate) / (1000 * 60 * 60 * 24 * 365.25);
                 };
                 const csYearsOfService = calculateCsYearsOfService(csUser.seniorityDate);
-                const entitlement = csYearsOfService >= 5 ? 35 : 30;
+                // Prorated across the 5-year anniversary when it falls
+                // inside this bidding year, using the authoritative 30/35
+                // annual entitlement — see utils.js's Leave Entitlement &
+                // Accrual Engine.
+                const entitlement = csUser.seniorityDate
+                    ? this._leaveEntitlementForYear(csUser.seniorityDate, this.state.biddingYearCorp)
+                    : 30;
 
                 // Countdown
                 const deadlineCountdownCS = (() => {
@@ -1586,8 +1596,12 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                    return yearsOfService >= 5 ? 35 : 30;
+                    // Prorated across the 5-year anniversary when it falls
+                    // inside this bidding year, using the authoritative
+                    // 30/35-day annual entitlement (never the rounded
+                    // daily/monthly rates) — see utils.js's Leave
+                    // Entitlement & Accrual Engine for the full math.
+                    return this._leaveEntitlementForYear(employee.seniorityDate, this.state.biddingYear);
                 };
                 
                 const entitlement = getEmployeeEntitlement(this.state.verifiedEmployee);
