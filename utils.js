@@ -199,11 +199,16 @@ app._leaveAnniversaryDate = function(seniorityDate, n) {
     return anniv;
 };
 
-// Days in the calendar year containing `date` — 366 in a leap year.
-// Used as the exact proration denominator instead of a fixed 365.
+// Days in the leave year — fixed at 365 (365-day basis), per the
+// corrected accrual table: Daily = 30/365 = 0.08219, 35/365 = 0.09589.
+// Deliberately NOT leap-year-adjusted (this used to vary 365/366) so
+// every calculation in this engine — proration, accrual, and the
+// display-only daily/monthly rates below — sits on the exact same
+// fixed 365-day convention; mixing a variable actual-days-in-year
+// denominator here with a fixed 365 in the display rates would make
+// the two silently drift apart.
 app._leaveDaysInYear = function(date) {
-    const y = date.getFullYear();
-    return (new Date(y, 1, 29).getMonth() === 1) ? 366 : 365; // Feb 29 exists only in a leap year
+    return 365;
 };
 
 // The authoritative annual entitlement (30 or 35) applicable AT a
@@ -232,10 +237,14 @@ app._leaveEntitlementForYear = function(seniorityDate, year) {
     if (fifthAnniv >= yearEndExclusive) {
         return 30; // won't reach 5 years until a later year
     }
-    // Anniversary falls inside this year — split proportionally.
+    // Anniversary falls inside this year — split proportionally. Rounded
+    // to 2 decimals for clean display everywhere this value is shown
+    // (bidding screens, allocation records, the balance report) — the
+    // rounding happens once, here, at the source, rather than
+    // differently at each place that displays it.
     const daysBefore = Math.round((fifthAnniv - yearStart) / (1000 * 60 * 60 * 24));
     const daysAfter = daysInYear - daysBefore;
-    return (daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35;
+    return Math.round(((daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35) * 100) / 100;
 };
 
 // Accrued balance as of a specific date within its calendar year —
@@ -249,17 +258,18 @@ app._leaveAccruedAsOf = function(seniorityDate, asOfDate) {
     const daysInYear = this._leaveDaysInYear(yearStart);
     const daysElapsed = Math.round((asOf - yearStart) / (1000 * 60 * 60 * 24)) + 1; // inclusive of asOfDate itself
     const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
+    const round2 = (n) => Math.round(n * 100) / 100;
 
     if (!fifthAnniv || fifthAnniv <= yearStart) {
-        return (daysElapsed / daysInYear) * 35;
+        return round2((daysElapsed / daysInYear) * 35);
     }
     if (fifthAnniv > asOf) {
-        return (daysElapsed / daysInYear) * 30; // anniversary hasn't happened yet as of this date
+        return round2((daysElapsed / daysInYear) * 30); // anniversary hasn't happened yet as of this date
     }
     // Anniversary already passed within this same year, before asOfDate.
     const daysBefore = Math.round((fifthAnniv - yearStart) / (1000 * 60 * 60 * 24));
     const daysAfterElapsed = daysElapsed - daysBefore;
-    return (daysBefore / daysInYear) * 30 + (daysAfterElapsed / daysInYear) * 35;
+    return round2((daysBefore / daysInYear) * 30 + (daysAfterElapsed / daysInYear) * 35);
 };
 
 // The next scheduled entitlement increase strictly after `asOfDate` —
@@ -273,12 +283,14 @@ app._leaveNextIncreaseDate = function(seniorityDate, asOfDate) {
     return fifthAnniv;
 };
 
-// Display-only rates — the exact two constants from the spec table.
+// Display-only rates — the corrected table (365-day basis):
+//   30 days/year -> daily 30/365 = 0.08219, monthly 30/12 = 2.50000
+//   35 days/year -> daily 35/365 = 0.09589, monthly 35/12 = 2.91667
 // Never used in any balance/accrual math above; purely what's shown to
 // the user as "your applicable daily/monthly rate".
 app._leaveDisplayRates = function(seniorityDate, asOfDate) {
     const isSenior = this._leaveYearsOfService(seniorityDate, asOfDate) >= 5;
-    return isSenior ? { daily: 0.0972, monthly: 2.9166 } : { daily: 0.0833, monthly: 2.5 };
+    return isSenior ? { daily: 0.09589, monthly: 2.91667 } : { daily: 0.08219, monthly: 2.50000 };
 };
 
 // Full balance summary for one employee as of a given date — this is
