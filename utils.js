@@ -179,12 +179,16 @@ app._blocksJanuaryBid = function(employeeId, startDate, endDate, year) {
 // fields (_leaveDisplayRates), exactly matching the two constants in
 // the spec table, never fed back into any balance math.
 
+// BUGFIX: clamp to 0 for employees who join after asOfDate — previously
+// returned a negative value (e.g. -0.31) instead of reading as "not yet
+// joined" / 0 years of service.
 app._leaveYearsOfService = function(seniorityDate, asOfDate) {
     if (!seniorityDate) return 0;
     const join = new Date(seniorityDate);
     const asOf = asOfDate ? new Date(asOfDate) : new Date();
     if (isNaN(join.getTime()) || isNaN(asOf.getTime())) return 0;
-    return (asOf - join) / (1000 * 60 * 60 * 24 * 365.25);
+    const years = (asOf - join) / (1000 * 60 * 60 * 24 * 365.25);
+    return years > 0 ? years : 0;
 };
 
 // The exact calendar date of an employee's Nth service anniversary —
@@ -247,29 +251,51 @@ app._leaveEntitlementForYear = function(seniorityDate, year) {
     return Math.round(((daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35) * 100) / 100;
 };
 
-// Accrued balance as of a specific date within its calendar year —
-// same before/after-anniversary split as _leaveEntitlementForYear, but
-// only up through `asOfDate` instead of the full year.
+// Accrued balance as of a specific date — a RUNNING balance accumulated
+// continuously since the employee's own seniority/joining date, split
+// across the 30/year and 35/year rate at their 5th anniversary. This is
+// deliberately NOT calendar-year-scoped (unlike _leaveEntitlementForYear,
+// which is a per-year target, not a balance): a leave *balance* report
+// has to reflect total days earned over the full length of service, or
+// every employee with >1 year of tenure would be shown the same figure
+// as someone who joined this January.
+//
+// BUGFIX (two compounding bugs, found from the same reported symptom —
+// every employee showing an identical accrued balance):
+//   1. The old version measured elapsed days from the calendar year's
+//      Jan 1 regardless of when the employee joined, crediting accrual
+//      for time before they were even hired.
+//   2. It also reset that measurement every Jan 1, so an employee's
+//      balance never grew past ~8 months of accrual no matter how many
+//      years they'd actually worked.
+// An employee who joins after asOfDate hasn't started accruing yet, so
+// that still correctly returns 0.
 app._leaveAccruedAsOf = function(seniorityDate, asOfDate) {
     if (!seniorityDate) return 0;
     const asOf = new Date(asOfDate);
-    const year = asOf.getFullYear();
-    const yearStart = new Date(year, 0, 1);
-    const daysInYear = this._leaveDaysInYear(yearStart);
-    const daysElapsed = Math.round((asOf - yearStart) / (1000 * 60 * 60 * 24)) + 1; // inclusive of asOfDate itself
+    const join = new Date(seniorityDate);
+    if (isNaN(asOf.getTime()) || isNaN(join.getTime())) return 0;
+
+    // Not yet joined as of the report date — nothing has accrued.
+    if (join > asOf) return 0;
+
+    const daysInYear = this._leaveDaysInYear(join);
     const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
     const round2 = (n) => Math.round(n * 100) / 100;
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
-    if (!fifthAnniv || fifthAnniv <= yearStart) {
-        return round2((daysElapsed / daysInYear) * 35);
+    if (!fifthAnniv || asOf < fifthAnniv) {
+        // Still under 5 years for this whole span — straight 30/year
+        // accrual across the entire service-to-date period.
+        const daysElapsed = Math.round((asOf - join) / MS_PER_DAY) + 1; // inclusive of asOfDate
+        return round2((daysElapsed / daysInYear) * 30);
     }
-    if (fifthAnniv > asOf) {
-        return round2((daysElapsed / daysInYear) * 30); // anniversary hasn't happened yet as of this date
-    }
-    // Anniversary already passed within this same year, before asOfDate.
-    const daysBefore = Math.round((fifthAnniv - yearStart) / (1000 * 60 * 60 * 24));
-    const daysAfterElapsed = daysElapsed - daysBefore;
-    return round2((daysBefore / daysInYear) * 30 + (daysAfterElapsed / daysInYear) * 35);
+    // Passed the 5th anniversary at some point before asOfDate — split
+    // the full service period into the pre-anniversary span (30/year)
+    // and post-anniversary span (35/year).
+    const daysBefore = Math.round((fifthAnniv - join) / MS_PER_DAY);
+    const daysAfter = Math.round((asOf - fifthAnniv) / MS_PER_DAY) + 1; // inclusive of asOfDate
+    return round2((daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35);
 };
 
 // The next scheduled entitlement increase strictly after `asOfDate` —
