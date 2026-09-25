@@ -95,8 +95,15 @@
                 
                 const getEmployeeEntitlement = (employee) => {
                     if (!employee || !employee.seniorityDate) return 30;
-                    const yearsOfService = calculateYearsOfService(employee.seniorityDate);
-                    return yearsOfService >= 5 ? 35 : 30;
+                    // Prorated across the 5-year anniversary when it falls
+                    // inside this bidding year, using the authoritative
+                    // 30/35-day annual entitlement — see utils.js's Leave
+                    // Entitlement & Accrual Engine. This value gets stored
+                    // directly onto each awarded result record below, so
+                    // fixing it here is what actually changes what staff
+                    // see on the My Results page (that page reads the
+                    // stored entitlement field, it doesn't recompute it).
+                    return this._leaveEntitlementForYear(employee.seniorityDate, this.state.biddingYear);
                 };
                 
                 // Track slot availability per month per department
