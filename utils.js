@@ -251,50 +251,78 @@ app._leaveEntitlementForYear = function(seniorityDate, year) {
     return Math.round(((daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35) * 100) / 100;
 };
 
+// The date every employee's accrued leave balance restarts from — all
+// balance accrued before this date is treated as fully consumed, so
+// every employee's opening balance on this date is 0, regardless of how
+// long ago they actually joined. Change this single constant if the
+// reset date ever needs to move.
+app._leaveBalanceResetDate = new Date(2026, 0, 1); // 1 January 2026
+
 // Accrued balance as of a specific date — a RUNNING balance accumulated
-// continuously since the employee's own seniority/joining date, split
-// across the 30/year and 35/year rate at their 5th anniversary. This is
-// deliberately NOT calendar-year-scoped (unlike _leaveEntitlementForYear,
-// which is a per-year target, not a balance): a leave *balance* report
-// has to reflect total days earned over the full length of service, or
-// every employee with >1 year of tenure would be shown the same figure
-// as someone who joined this January.
+// from whichever is LATER: the employee's own seniority/joining date, or
+// the fixed balance-reset date (_leaveBalanceResetDate) — since all
+// balance from before the reset date is considered consumed and every
+// employee's opening balance on that date is 0. The 30/year vs 35/year
+// split at the employee's 5th anniversary still uses their REAL
+// seniority date (the reset only zeroes the balance, it doesn't reset
+// their tenure for rate-tier purposes). This is deliberately NOT
+// calendar-year-scoped beyond that one reset point (unlike
+// _leaveEntitlementForYear, which is a per-year target, not a balance):
+// a leave *balance* report has to reflect total days earned since the
+// reset, or every employee would be shown the same figure regardless of
+// tenure.
 //
-// BUGFIX (two compounding bugs, found from the same reported symptom —
-// every employee showing an identical accrued balance):
-//   1. The old version measured elapsed days from the calendar year's
-//      Jan 1 regardless of when the employee joined, crediting accrual
-//      for time before they were even hired.
+// BUGFIX history (two earlier compounding bugs, found from the same
+// reported symptom — every employee showing an identical accrued
+// balance):
+//   1. The original version measured elapsed days from the calendar
+//      year's Jan 1 regardless of when the employee joined, crediting
+//      accrual for time before they were even hired.
 //   2. It also reset that measurement every Jan 1, so an employee's
 //      balance never grew past ~8 months of accrual no matter how many
 //      years they'd actually worked.
-// An employee who joins after asOfDate hasn't started accruing yet, so
-// that still correctly returns 0.
+// An employee who joins after asOfDate — or after the reset date —
+// hasn't started accruing yet, so that still correctly returns 0.
 app._leaveAccruedAsOf = function(seniorityDate, asOfDate) {
     if (!seniorityDate) return 0;
     const asOf = new Date(asOfDate);
     const join = new Date(seniorityDate);
     if (isNaN(asOf.getTime()) || isNaN(join.getTime())) return 0;
 
-    // Not yet joined as of the report date — nothing has accrued.
-    if (join > asOf) return 0;
+    // Balance accrues from whichever is later: the employee's actual
+    // joining date, or the fixed reset date — prior balance is void.
+    const accrualStart = join > this._leaveBalanceResetDate ? join : this._leaveBalanceResetDate;
+
+    // Not yet accruing as of the report date — nothing has accrued.
+    if (accrualStart > asOf) return 0;
 
     const daysInYear = this._leaveDaysInYear(join);
-    const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5);
+    const fifthAnniv = this._leaveAnniversaryDate(seniorityDate, 5); // based on REAL seniority date — rate tier is unaffected by the balance reset
     const round2 = (n) => Math.round(n * 100) / 100;
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
     if (!fifthAnniv || asOf < fifthAnniv) {
         // Still under 5 years for this whole span — straight 30/year
-        // accrual across the entire service-to-date period.
-        const daysElapsed = Math.round((asOf - join) / MS_PER_DAY) + 1; // inclusive of asOfDate
+        // accrual across the accrualStart-to-asOfDate period. Elapsed
+        // days is EXCLUSIVE of accrualStart itself (no +1) so that the
+        // balance is exactly 0.00 on accrualStart — this is what makes
+        // the opening balance on the reset date exactly zero for every
+        // employee, not just close to it.
+        const daysElapsed = Math.round((asOf - accrualStart) / MS_PER_DAY);
         return round2((daysElapsed / daysInYear) * 30);
     }
-    // Passed the 5th anniversary at some point before asOfDate — split
-    // the full service period into the pre-anniversary span (30/year)
-    // and post-anniversary span (35/year).
-    const daysBefore = Math.round((fifthAnniv - join) / MS_PER_DAY);
-    const daysAfter = Math.round((asOf - fifthAnniv) / MS_PER_DAY) + 1; // inclusive of asOfDate
+    if (fifthAnniv <= accrualStart) {
+        // Already past 5 years' tenure by the time accrual starts —
+        // straight 35/year for the whole accrualStart-to-asOfDate span.
+        const daysElapsed = Math.round((asOf - accrualStart) / MS_PER_DAY);
+        return round2((daysElapsed / daysInYear) * 35);
+    }
+    // 5th anniversary falls between accrualStart and asOfDate — split
+    // the accrued span into the pre-anniversary part (30/year) and
+    // post-anniversary part (35/year). Same exclusive-of-start-day
+    // convention as above, applied at each boundary.
+    const daysBefore = Math.round((fifthAnniv - accrualStart) / MS_PER_DAY);
+    const daysAfter = Math.round((asOf - fifthAnniv) / MS_PER_DAY);
     return round2((daysBefore / daysInYear) * 30 + (daysAfter / daysInYear) * 35);
 };
 
